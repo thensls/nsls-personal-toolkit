@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "description": "Maps Obsidian project folder names to keyword patterns for person-project inference. Keywords are case-insensitive substring matches against goals, actions, and meeting topics.",
+    "last_updated": "2026-03-22"
+  },
+  "board-intelligence": ["board", "advisory board", "board meeting", "board deck", "board prep"],
+  "nsls-ceo-transition": ["ceo transition", "ceo role", "kevin-gary", "gary-kevin", "swim lane", "milestone-based transition", "founder"],
+  "nsls-board-prep": ["board prep", "board deck", "board focus group", "board meeting prep"],
+  "people-ops": ["scorecard", "quick notes", "check-in", "performance review", "CPM", "people ops", "HR", "head of people"],
+  "slt-bot": ["slt bot", "slt coach", "meeting agenda", "coaching feedback", "facilitator rotation"],
+  "product-roadshow": ["product roadshow", "product demo", "ignite", "society", "product vision", "MVP"],
+  "product-ops": ["product ops", "product operations", "sprint", "backlog", "JIRA"],
+  "marketing": ["marketing", "response rate", "enrollment", "funnel", "CAC", "LTV", "ARPM", "invitations"],
+  "posthog-analytics": ["posthog", "analytics", "A/B test", "experiment", "conversion"],
+  "quick-notes-rollout": ["quick notes rollout", "department rollout", "bot rollout"],
+  "chapter-health-metrics": ["chapter health", "chapter", "campus"],
+  "chapter-health-automations": ["chapter automation", "nco", "chapter operations"],
+  "meeting-automation": ["meeting automation", "agenda automation", "transcript"],
+  "directory-requests": ["directory request", "letter", "school directory"],
+  "nsls-foundation": ["foundation", "nonprofit", "scholarship"],
+  "hs-market-data": ["high school", "market data", "TAM"],
+  "nco-automation": ["nco", "new chapter", "chapter onboarding"],
+  "org-owned-automations": ["org automation", "zapier", "make.com", "workflow automation"],
+  "product-team-recruiting": ["recruiting", "hiring", "VP of eng", "CPO", "COO", "head of", "candidate"],
+  "work-journal-standardization": ["work journal", "journal format", "huddle log"],
+  "nsls-board-deck-march-2026": ["march board deck", "Q1 board deck", "march 2026 board"],
+  "peace-rock-site": ["peace rock", "peacerock"]
+}

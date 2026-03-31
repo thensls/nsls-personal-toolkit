@@ -1,0 +1,16 @@
+{
+  "name": "nsls-personal-toolkit",
+  "version": "1.0.0",
+  "description": "Personal productivity skills for Claude Code — daily planning, end-of-day summaries, weekly reviews, project logging, and relationship tracking. Fork this repo and make it your own.",
+  "author": {
+    "name": "NSLS",
+    "email": "kprentiss@nsls.org"
+  },
+  "repository": "https://github.com/thensls/nsls-personal-toolkit",
+  "keywords": [
+    "personal-productivity",
+    "obsidian",
+    "daily-planning",
+    "weekly-review"
+  ]
+}
