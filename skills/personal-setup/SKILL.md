@@ -1,10 +1,10 @@
 ---
-name: setup
+name: personal-setup
 description: >-
-  Interactive setup for the personal productivity toolkit. Walks through
+  Reconfigure the personal productivity toolkit. Walks through
   getting Slack user ID, Asana GIDs, and Airtable API key, then writes
-  the .env file. Use when the user says "set up my toolkit", "configure
-  personal toolkit", "/setup", or when .env is missing or incomplete.
+  the .env file. Use when the user says "reconfigure personal toolkit",
+  "/personal-setup", or when .env is missing or incomplete.
 ---
 
 # Personal Toolkit Setup

@@ -6,18 +6,21 @@ Personal productivity skills for [Claude Code](https://claude.ai/code). Daily pl
 
 ## Install
 
-1. **Fork this repo** to your own GitHub account
-2. Install from your fork:
+**Easiest way:** Install the [NSLS Builder Toolkit](https://github.com/thensls/nsls-builder-toolkit) first, then say `/setup` in Claude Code — it offers to install this automatically.
+
+**Standalone install:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/thensls/nsls-personal-toolkit/main/install.sh | bash
+```
+
+Then say `/personal-setup` in Claude Code to connect your accounts.
+
+**From your own fork:**
 
 ```bash
 NSLS_PERSONAL_REPO=https://github.com/<your-github>/nsls-personal-toolkit.git \
   curl -fsSL https://raw.githubusercontent.com/<your-github>/nsls-personal-toolkit/main/install.sh | bash
-```
-
-Or install directly from the NSLS template (you can still customize locally):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/thensls/nsls-personal-toolkit/main/install.sh | bash
 ```
 
 ## Skills
