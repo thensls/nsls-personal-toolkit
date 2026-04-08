@@ -26,7 +26,7 @@ Calculate:
 
 **1a. Read all daily notes for the week**
 
-Read files from `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/01-daily/`:
+Read files from `$OBSIDIAN_VAULT_PATH/01-daily/`:
 - `YYYY-MM-DD.md` for Monday through Thursday (Friday's may not exist yet)
 
 Extract from each:
@@ -100,7 +100,7 @@ mcp__claude_ai_asana__asana_search_tasks(
 
 **Time Allocation:** Aggregate Familiar data across all 5 (or 7) days using the same work categories and time calculation algorithm from `/close-day`:
 
-1. Read the builder profile from `[vault_path]/50-reference/builder-profile.md` for time categories. If no profile exists, use the Executive preset (Coding/Building, Management/People, Product Management, Marketing/Sales, Admin/Ops, Learning/Research).
+1. Read the builder profile from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` for time categories. If no profile exists, use the Executive preset (Coding/Building, Management/People, Product Management, Marketing/Sales, Admin/Ops, Learning/Research).
 2. For each day, compute active work hours using the session-merge algorithm (filter cron micro-sessions, merge gaps ≤ 20 min, filter trivial blocks < 5 min).
 3. Categorize captures using the same app/Slack-channel/Chrome/Fathom rules from close-day.
 4. Sum across the week for totals and daily breakdown.
@@ -129,7 +129,7 @@ Plus the weekly summary line matching the builder's `time_tracking_mode`:
 
 **Output A: Weekly Review note** (for Obsidian)
 
-Write to: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/02-weekly/YYYY-[W]WW.md`
+Write to: `$OBSIDIAN_VAULT_PATH/02-weekly/YYYY-[W]WW.md`
 
 Full format with Dataview queries for projects touched/not touched.
 

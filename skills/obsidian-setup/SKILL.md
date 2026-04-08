@@ -86,12 +86,12 @@ Ask the builder:
 
 Create the vault directory:
 ```bash
-mkdir -p [vault_path]
+mkdir -p $OBSIDIAN_VAULT_PATH
 ```
 
 ## Step 1a: Generate Builder Profile
 
-Based on the onboarding answers, create `[vault_path]/50-reference/builder-profile.md`. This file is the single source of truth that close-day, open-day, and plan-week read to customize their output.
+Based on the onboarding answers, create `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. This file is the single source of truth that close-day, open-day, and plan-week read to customize their output.
 
 ```markdown
 ---
@@ -261,7 +261,7 @@ Run each connected source's test command. Report which ones are working and whic
 ## Step 2: Create Folder Structure
 
 ```bash
-mkdir -p [vault_path]/{_templates,00-inbox,00-inbox/attachments,01-daily,02-weekly,03-journal,10-slt,20-projects,30-people,40-learning,50-reference}
+mkdir -p $OBSIDIAN_VAULT_PATH/{_templates,00-inbox,00-inbox/attachments,01-daily,02-weekly,03-journal,10-slt,20-projects,30-people,40-learning,50-reference}
 ```
 
 ### What each folder is for:
@@ -281,7 +281,7 @@ mkdir -p [vault_path]/{_templates,00-inbox,00-inbox/attachments,01-daily,02-week
 
 ## Step 3: Create Templates
 
-Create these 5 template files in `[vault_path]/_templates/`. Read `references/templates/` for the full content of each template.
+Create these 5 template files in `$OBSIDIAN_VAULT_PATH/_templates/`. Read `references/templates/` for the full content of each template.
 
 | Template | Purpose |
 |----------|---------|
@@ -293,7 +293,7 @@ Create these 5 template files in `[vault_path]/_templates/`. Read `references/te
 
 ## Step 4: Configure Obsidian Settings
 
-Create `[vault_path]/.obsidian/app.json`:
+Create `$OBSIDIAN_VAULT_PATH/.obsidian/app.json`:
 ```json
 {
   "newFileLocation": "folder",
@@ -314,7 +314,7 @@ This sets:
 
 ## Step 5: Configure Plugin List
 
-Create `[vault_path]/.obsidian/community-plugins.json`:
+Create `$OBSIDIAN_VAULT_PATH/.obsidian/community-plugins.json`:
 ```json
 [
   "templater-obsidian",
@@ -330,7 +330,7 @@ Create `[vault_path]/.obsidian/community-plugins.json`:
 
 ## Step 6: Configure Templater
 
-Create `[vault_path]/.obsidian/plugins/templater-obsidian/` directory and `data.json`:
+Create `$OBSIDIAN_VAULT_PATH/.obsidian/plugins/templater-obsidian/` directory and `data.json`:
 ```json
 {
   "command_timeout": 5,
@@ -363,7 +363,7 @@ After creating all files, present this checklist to the builder:
 
 > I've set up your vault structure, templates, and configuration files. Now open Obsidian and do these steps:
 >
-> 1. **Open the vault** — Launch Obsidian > "Open folder as vault" > select `[vault_path]`
+> 1. **Open the vault** — Launch Obsidian > "Open folder as vault" > select `$OBSIDIAN_VAULT_PATH`
 > 2. **Enable community plugins** — Settings (gear icon) > Community Plugins > Turn on community plugins > click "Turn on"
 > 3. **Install plugins** — Settings > Community Plugins > Browse. Install these 8 plugins:
 >    - **Templater** — template engine with date/logic support
@@ -392,8 +392,8 @@ After the builder confirms the manual steps are done, offer to create their firs
 > - Who else is involved?
 
 Then create:
-- `[vault_path]/20-projects/[slug]/[slug].md` using the project-home template
-- `[vault_path]/20-projects/[slug]/sessions/` directory
+- `$OBSIDIAN_VAULT_PATH/20-projects/[slug]/[slug].md` using the project-home template
+- `$OBSIDIAN_VAULT_PATH/20-projects/[slug]/sessions/` directory
 
 ## Customization Notes
 

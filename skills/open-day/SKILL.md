@@ -81,7 +81,7 @@ Filter out auto-generated noise ("It's time to update your goal(s)").
 
 Read yesterday's daily note:
 ```
-~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/01-daily/YYYY-MM-DD-1.md
+$OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD-1.md
 ```
 
 Extract the `## Carrying Over` section. These are unfinished items from yesterday.
@@ -90,7 +90,7 @@ Extract the `## Carrying Over` section. These are unfinished items from yesterda
 
 Check for a weekly plan note:
 ```
-~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/02-weekly/YYYY-[W]WW.md
+$OBSIDIAN_VAULT_PATH/02-weekly/YYYY-[W]WW.md
 ```
 
 If it exists, extract the `## Next Week Priorities` or `## This Week's Focus` section. These are the strategic priorities for the week.
@@ -165,7 +165,7 @@ Check if `01-daily/YYYY-MM-DD.md` already exists:
 
 Write to:
 ```
-~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/01-daily/YYYY-MM-DD.md
+$OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md
 ```
 
 The daily note should include:
@@ -197,7 +197,7 @@ The `## Work Log`, `## Projects Touched`, `## Carrying Over`, and `## End of Day
 
 If today's note had AI suggestions from close-day AND the user set his own Top 3, compare them and append a record to:
 ```
-~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/03-meta/priority-alignment.md
+$OBSIDIAN_VAULT_PATH/03-meta/priority-alignment.md
 ```
 
 Create this file if it doesn't exist, with this header:

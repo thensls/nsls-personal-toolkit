@@ -56,7 +56,7 @@ Extract: meeting title, start/end time, attendees (if `condenseEventDetails=fals
 
 This step produces three outputs: (1) app/tool time distribution, (2) total active work hours, and (3) a work-category breakdown by department/function.
 
-**Builder profile:** Before categorizing, read the builder's profile from their Obsidian vault at `[vault_path]/50-reference/builder-profile.md`. This file defines:
+**Builder profile:** Before categorizing, read the builder's profile from their Obsidian vault at `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. This file defines:
 - `time_categories` — the work categories to use (varies by role: executive, department lead, manager, IC)
 - `time_tracking_mode` — what summary line to produce (doing-vs-orchestrating, deep-vs-meetings, etc.)
 - `data_sources` — which integrations are available (familiar, fathom, slack, etc.)
@@ -463,7 +463,7 @@ Show the full daily note draft. Ask:
 
 ### Step 5: Write daily note
 
-Write to: `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/01-daily/YYYY-MM-DD.md`
+Write to: `$OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md`
 
 **If the file already exists** (user started it in the morning with priorities), **merge** — keep the existing Morning Check-in section and append/update the generated sections below it.
 
@@ -562,7 +562,7 @@ User approves, modifies, or skips before any Asana writes happen.
 
 ### Step 8: Seed tomorrow's daily note
 
-Check if tomorrow's note exists at `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/01-daily/YYYY-MM-DD+1.md`. If it does NOT exist, create it with this template:
+Check if tomorrow's note exists at `$OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD+1.md`. If it does NOT exist, create it with this template:
 
 ```markdown
 # YYYY-MM-DD+1 — [Day of Week]
