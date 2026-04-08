@@ -14,13 +14,29 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 
 | Skill | What it does |
 |-------|-------------|
-| `/open-day` | Morning planning — calendar, tasks, priorities |
+| `/plan-day` | Morning planning — calendar, tasks, priorities, schedule focus blocks + vitality time |
+| `/plan-week` | Weekly planning — project stack ranking, push/protect mode, strategy alignment |
 | `/close-day` | End-of-day summary — what happened, what's next |
-| `/close-week` | Friday roll-up — weekly achievements and review |
+| `/close-week` | Friday roll-up — weekly achievements, stack rank review, alignment scoring |
+| `/self-insight` | Personal insight — analyzes your calendar, meetings, and behavior to build a personal profile + operating memo |
 | `/log` | Log session progress to project notes |
 | `/familiar` | Recall past screen activity and work context |
 | `/person-intelligence` | Build relationship profiles, track 1:1 context |
 | `obsidian-setup` | Set up an Obsidian knowledge base |
+
+## Strategy Layer (Optional)
+
+Your first `/plan-week` will offer to set up a **strategy layer** — a system that connects your daily/weekly planning to company goals and personal strategy:
+
+- **Operating memo** — "I Do / I Don't / My Traps" generated from your behavioral data
+- **Personal profile** — your strengths, energy patterns, values, and working genius
+- **Project stack ranking** — weekly priority ordering connected to LOPs
+- **Push/protect modes** — are you advancing strategy or stabilizing?
+- **Meeting coaching** — are you in too many meetings? Which ones should you challenge?
+
+Run `/self-insight` to generate your operating memo and personal profile. Once created, all the daily/weekly skills read from them to provide personalized coaching.
+
+**This is opt-in.** Everything works without it — just less smart.
 
 ## Customizing
 

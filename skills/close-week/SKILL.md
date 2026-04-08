@@ -125,6 +125,106 @@ Plus the weekly summary line matching the builder's `time_tracking_mode`:
 - **Partial** — worked on but not finished (note what remains)
 - **Missed** — no evidence of progress (note why if detectable)
 
+**Stack Rank Review (if strategy layer active):**
+
+Read this week's stack rank from `$OBSIDIAN_VAULT_PATH/10-strategy/stack-rank/YYYY-WNN.md`.
+Cross-reference with daily notes to estimate hours per project.
+
+For each project in the Top 5:
+- Estimate hours spent (from daily note Work Log bullets and Familiar time data)
+- Compare rank to actual attention
+
+Present as:
+```
+## Stack Rank vs Reality
+
+| Rank | Project | Planned Focus | Hours Spent | Verdict |
+|------|---------|---------------|-------------|---------|
+| 1 | [project] | [from stack rank focus section] | [X.Xh] | Hit / Partial / Missed |
+| 2 | ... | ... | ... | ... |
+| ... |
+
+**Unranked projects that got significant time:**
+- [project]: [X]h (not in Top 5 — was this reactive or intentional?)
+```
+
+This is the core accountability moment: did you spend time on what you said mattered?
+
+**Push/Protect Mode Review (if strategy layer active):**
+
+Read the planned mode from the stack rank frontmatter. Determine actual mode from behavior:
+- If >50% of significant work went to reactive/maintenance/fix projects: actual = protect
+- If most time went to new initiatives and push projects: actual = push
+- Mixed is fine — note it honestly
+
+Present and append to the weekly note:
+```
+## Push/Protect
+
+| Planned | Actual | Notes |
+|---------|--------|-------|
+| [mode] | [mode] | [1-line honest assessment] |
+```
+
+Note the running streak: "This is your Nth consecutive [push/protect] week." If protect streak >= 3, flag: "3 protect weeks in a row. Your push projects haven't moved since W[N]. Is there a structural issue to address, or is this the right call?"
+
+**Role Transition Tracking (if strategy layer active):**
+
+For projects tagged with `->` in their `role` frontmatter (e.g., `architect->sponsor`):
+- Did time spent decrease compared to last week? (Progress toward handoff)
+- Did the collaborator take on more? (Check daily notes for their name)
+- Or did you do more IC work on it? (Regression)
+
+Present:
+```
+## Handoff Progress
+
+| Project | Role | This Week | Last Week | Direction |
+|---------|------|-----------|-----------|-----------|
+| [project] | architect->sponsor | [X]h | [Y]h | Progressing / Stalled / Regressing |
+| ... |
+
+[For each regressing project]: "[project]: You spent more time this week than last. Your memo says teach first — could you pair with [collaborator] next week instead?"
+```
+
+**Operating Memo Alignment (if strategy layer active):**
+
+Read `$OBSIDIAN_VAULT_PATH/10-strategy/operating-memo.md`. Categorize this week's work log items and time allocation against "I Do" and "I Don't":
+
+Present:
+```
+## Memo Alignment
+
+| Category | Hours | % | Examples |
+|----------|-------|---|---------|
+| I Do work | [X]h | [Y]% | [top 2-3 activities] |
+| I Don't work | [X]h | [Y]% | [top 2-3 activities] |
+| Teaching/delegating | [X]h | [Y]% | [examples of pairing, training] |
+| Neutral | [X]h | [Y]% | admin, learning, meetings |
+```
+
+Flag trends: "Your 'I Don't' time [increased/decreased] from [X]% last week to [Y]% this week. Main driver: [specific activity]."
+
+Check the teach/delegate/do ratio: "Of your maintenance work this week, how much was teaching someone vs. doing it yourself?"
+
+**Meeting Retrospective (if strategy layer active):**
+
+Compare actual meeting hours (from calendar) to the target in the operating memo:
+
+Present:
+```
+## Meetings
+
+**This week:** [X]h meetings (target: [Y]h from operating memo)
+**Recurring:** [X]h | **Ad-hoc:** [X]h
+
+Recurring meetings this week: [count]
+- [meeting name]: [duration] — [decision made? Y/N]
+- ...
+
+**Challenge:** [If any recurring meeting produced no decisions for 3+ weeks, flag it here: "Consider converting [meeting] to async — no decisions in [N] weeks."]
+```
+
 ### Step 3: Generate two outputs
 
 **Output A: Weekly Review note** (for Obsidian)
@@ -132,6 +232,13 @@ Plus the weekly summary line matching the builder's `time_tracking_mode`:
 Write to: `$OBSIDIAN_VAULT_PATH/02-weekly/YYYY-[W]WW.md`
 
 Full format with Dataview queries for projects touched/not touched.
+
+**If strategy layer is active**, include the following sections in the weekly note after "Priorities vs. Reality":
+- Stack Rank vs Reality
+- Push/Protect
+- Handoff Progress
+- Memo Alignment
+- Meetings
 
 **Output B: Quick Notes format** (for copy-paste into NSLS Coach journal)
 
