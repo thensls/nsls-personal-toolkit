@@ -28,6 +28,7 @@ Required values:
 | `SLACK_USER_ID` | Your Slack member ID | Auto-detected from Slack MCP |
 | `ASANA_WORKSPACE_GID` | Your Asana workspace | Auto-detected from Asana MCP |
 | `ASANA_USER_GID` | Your Asana user | Auto-detected from Asana MCP |
+| `FATHOM_API_KEY` | Fathom meeting intelligence API key | User provides manually |
 | `AIRTABLE_API_KEY` | Personal access token for Airtable | User provides manually |
 | `PEOPLE_OPS_BASE_ID` | People Ops Airtable base | Pre-filled for NSLS employees |
 | `SLT_BASE_ID` | SLT Meeting Intelligence base | Pre-filled for NSLS SLT members |
@@ -64,6 +65,27 @@ If Asana MCP is not available, ask the user to provide the values manually or sk
 
 ## Step 3: Ask for what we can't auto-detect
 
+**Fathom API Key** — This must come from the user:
+```
+Fathom records and summarizes your meetings. The API key lets /close-day
+pull today's meeting summaries and /person-intelligence pull 1:1 transcripts.
+
+To get your key:
+1. Go to https://fathom.video/settings/api
+2. Copy your API key
+
+Paste it here:
+```
+
+Wait for the user to provide the key. Validate it by making a quick test call:
+```bash
+curl -s -H "X-Api-Key: <key>" "https://api.fathom.ai/external/v1/meetings?created_after=$(date +%Y-%m-%d)T00:00:00Z" | head -c 100
+```
+
+If the response contains meeting data or an empty array, the key works. If it returns an error, tell the user the key didn't work and ask them to check it.
+
+If the user doesn't use Fathom or doesn't want to set it up, skip it. Close-day works without it (just won't have meeting summaries). Person-intelligence works without it (just won't have 1:1 transcripts).
+
 **Airtable API Key** — This must come from the user:
 ```
 To get your Airtable API key:
@@ -99,6 +121,9 @@ SLACK_USER_ID=<detected or provided>
 ASANA_WORKSPACE_GID=<detected or provided or empty>
 ASANA_USER_GID=<detected or provided or empty>
 
+# Fathom (needed for /close-day meeting summaries, /person-intelligence 1:1 transcripts)
+FATHOM_API_KEY=<provided or empty>
+
 # Airtable (needed for /person-intelligence)
 AIRTABLE_API_KEY=<provided or empty>
 PEOPLE_OPS_BASE_ID=appnXPTu01esWWbrK
@@ -118,6 +143,7 @@ Your personal toolkit is configured! Here's what's set up:
 ✓ Slack user ID: UXXXXXXXX
 ✓ Asana workspace: XXXX
 ✓ Asana user: XXXX
+✓ Fathom API key: configured
 ✓ Airtable API key: pat...XXX (redacted)
 ✓ People Ops base: appnXPTu01esWWbrK
 ✓ SLT base: appHDEHQA4bvlWwQq
@@ -135,8 +161,9 @@ This file is gitignored — your keys stay on your machine.
 
 If any values are missing, note which skills won't work until they're added:
 ```
+⚠ Fathom not configured — /close-day won't include meeting summaries.
 ⚠ Airtable not configured — /person-intelligence won't work until you add it.
-  Run /setup again anytime to add your Airtable key.
+  Run /personal-setup again anytime to add missing keys.
 ```
 
 ## Edge Cases
