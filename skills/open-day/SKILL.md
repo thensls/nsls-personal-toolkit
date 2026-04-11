@@ -19,7 +19,7 @@ Pull today's calendar, Asana tasks, overdue items, and yesterday's carry-overs. 
 Productivity is one pillar of a good day — not the whole thing. This skill plans around three pillars:
 
 1. **Productivity** — Top 3 work priorities. High-leverage, builder-only.
-2. **Growth** — Coaching, learning, skill development. Reading, courses, exploring ideas.
+2. **Growth** — Intentional learning from `40-learning/` goals. Daily: 15-min micro-learning block (one article, one tutorial, one inbox link). Weekly: 1.5h deep dive scheduled by `/open-week`. Coaching and skill development also count.
 3. **Vitality** — Exercise, hobbies, relationships, rest. The stuff that keeps the engine running.
 
 A day with all three pillars touched is a good day, even if the Asana list didn't shrink.
@@ -133,6 +133,28 @@ gcal_find_my_free_time(
 
 This returns all free blocks >= 30 min between 7 AM and 8 PM. Used in Step 5 for scheduling.
 
+**2h. Learning inbox ingestion**
+
+If `learning_capture_method` in the builder profile is set to `slack`, scrape the builder's Slack self-DMs for URLs:
+
+1. Use `mcp__plugin_slack_slack__slack_read_channel` to read the builder's self-DM channel (using `$SLACK_USER_ID`). Look for messages from the last 24 hours containing URLs.
+2. For each URL found:
+   - Fetch the page title via WebFetch (just the title and first paragraph, not the full page)
+   - Generate a 1-2 sentence summary
+   - Check if it matches any active learning goal topic (read `$OBSIDIAN_VAULT_PATH/40-learning/_learning-goals.md` for active topic names)
+   - Append to `$OBSIDIAN_VAULT_PATH/40-learning/_inbox.md`:
+     ```
+     - [ ] [Page Title](URL) — YYYY-MM-DD, from: Slack self-DM
+       > [1-2 sentence summary]
+       > Tags: #[matched-topic] or #untagged
+     ```
+3. If no new URLs found or capture method is not `slack`, skip silently.
+4. If new links were ingested, mention in the morning summary: "Ingested [N] new links into your learning inbox."
+
+Also read:
+- `$OBSIDIAN_VAULT_PATH/40-learning/_weekly-plan.md` — today's micro-learning assignment
+- `$OBSIDIAN_VAULT_PATH/40-learning/_inbox.md` — count of unprocessed links for active goals
+
 ### Step 3: Draft Morning Check-in
 
 Present to the builder. If AI suggestions were seeded by close-day, show them first:
@@ -214,7 +236,9 @@ After the builder confirms priorities, propose a concrete schedule by mapping pr
 
 2. **Vitality gets real calendar time.** If you chose a movement activity, schedule it. A block on the calendar is the difference between "I should exercise" and actually doing it. Default 30-45 min.
 
-3. **Growth gets a block if there's room.** Even 20 min of reading counts. Schedule it in a lower-energy slot (after lunch, late afternoon).
+3. **Micro-learning gets a 15-min block every day.** Read `40-learning/_weekly-plan.md` for today's assignment. If no weekly plan exists, pick the highest-priority unprocessed link from `_inbox.md` that matches an active goal. Schedule in a lower-energy slot (after lunch, late afternoon, between meetings). Use summary: "Learn: [topic] — [item title]". Color: Grape (3).
+
+   **Deep dive gets a longer block on the scheduled day.** If `_weekly-plan.md` shows a deep dive for today, schedule the full block (~1.5h). Use summary: "Deep Dive: [topic] — [item title]". Color: Grape (3).
 
 4. **Respect energy patterns:**
    - Early morning (before 9 AM): Best for deep/creative work

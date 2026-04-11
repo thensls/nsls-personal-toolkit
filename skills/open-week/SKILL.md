@@ -85,6 +85,19 @@ Read the last 3-4 weekly reviews from `02-weekly/` to detect patterns:
 - Are certain projects consistently stalled?
 - Is the builder doing work that should be delegated?
 
+**1e. Learning goals and progress**
+
+Read from `$OBSIDIAN_VAULT_PATH/40-learning/`:
+- `_learning-goals.md` — active learning goals and priorities
+- Each active topic's dashboard (e.g., `agentic-harnesses.md`) — check `status`, `next-session`, and Learning Path completion (count `[x]` vs `[ ]` items)
+- `_inbox.md` — count unprocessed links
+
+Extract:
+- Active goal count and names
+- Per-goal progress (X of Y items complete)
+- Days since last session per goal (from `next-session` or Progress Log)
+- Unprocessed inbox link count
+
 ### Step 1.5: Strategy layer check
 
 Check if `$OBSIDIAN_VAULT_PATH/10-strategy/operating-memo.md` exists.
@@ -214,6 +227,8 @@ Before suggesting priorities, surface patterns:
 - **Time misalignment:** If the builder said something was #1 but spent <10% of time on it, flag: "[Priority] was your stated #1 but got [X]% of your time. [Top activity] dominated. Is this the right allocation for your role?"
 - **Doing-vs-delegating trap:** If building/coding time exceeds 20% of the week for someone in a leadership role, flag: "You spent [X]% of your time building. That's valuable but consider: is there someone else who could build this while you focus on [strategic item]?" (Skip this check for IC roles.)
 - **Stalled projects:** If a project has been in `status: active` but `last-touched` is >2 weeks ago, flag: "These projects are marked active but haven't been touched in 2+ weeks: [list]. Kill, delegate, or schedule time."
+- **Learning stagnation:** If an active learning goal hasn't had progress in 3+ weeks, flag it: "[Topic] has been active for [N] weeks with no progress. Either schedule a deep dive this week, park it, or admit it's not a priority right now."
+- **Learning vs. filler:** If last week's close-week showed >5h of YouTube/news but <1h of structured learning, note: "Last week had [X]h of media consumption but only [Y]h of intentional learning. Consider converting one filler session into a 15-min micro-learning block."
 
 ### Step 3: Draft week plan
 
@@ -239,6 +254,20 @@ Present to the builder:
 
 *Rationale: [1-2 sentences on why these 3, what's deliberately being left off]*
 
+### Learning & Growth
+
+**Active goals:** [list from _learning-goals.md]
+
+**This week's focus:**
+- **Deep dive:** [topic] — [learning path item], ~1.5h. Suggested: [day based on calendar gaps].
+- **Daily micro-learning:** 15 min/day from [topic] learning path or inbox links.
+
+**Ask the builder:** "What do you want to learn more about this week? Confirm the above, add a new topic (I'll run `/learn`), or skip learning this week."
+
+**Stale goals:** [any goals with no progress in 3+ weeks — suggest park or schedule]
+
+**Inbox:** [N] unprocessed links. [If >10: "Your learning inbox is backing up. Run `/learn inbox` to process, or I'll triage during `/open-day`."]
+
 ### Also Important (but not Top 3)
 - [Item] — due [date], can be done in [time estimate]
 - [Item] — delegate to [person] if possible
@@ -262,6 +291,15 @@ The builder adjusts the Top 3, accepts or rejects coaching, and commits to the w
 Write to: `$OBSIDIAN_VAULT_PATH/02-weekly/YYYY-[W]WW.md`
 
 If a close-week already wrote this file, **merge** — keep the close-week sections (achievements, learnings, etc.) and add the plan sections below.
+
+The weekly note must include a Learning Plan section after the Top 3:
+
+```markdown
+### Learning Plan
+- **Deep dive:** [topic] — [item], [day], ~1.5h
+- **Micro-learning:** 15 min/day — [topic] learning path
+- **Goals:** [N] active, [N] inbox links pending
+```
 
 ### Step 6: Asana sync
 

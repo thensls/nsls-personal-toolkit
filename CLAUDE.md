@@ -18,6 +18,7 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 | `/open-week` | Weekly planning — project stack ranking, push/protect mode, strategy alignment |
 | `/close-day` | End-of-day summary — what happened, what's next |
 | `/close-week` | Friday roll-up — weekly achievements, stack rank review, alignment scoring |
+| `/learn` | Learning goals, resource ingestion, scaffolded learning paths, progress tracking |
 | `/self-insight` | Personal insight — analyzes your calendar, meetings, and behavior to build a personal profile + operating memo |
 | `/log` | Log session progress to project notes |
 | `/familiar` | Recall past screen activity and work context |
