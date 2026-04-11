@@ -189,3 +189,39 @@ Rules:
 ## After writing
 
 Confirm: "Logged to `20-projects/[slug]/sessions/YYYY-MM-DD.md`" and show the session log so it can be verified.
+
+---
+
+## Toolkit Announcement Mode
+
+When running `/log` (or `/log --announce`) inside a toolkit repo (`nsls-personal-toolkit` or `nsls-builder-toolkit`), add an announcement step after writing the session log.
+
+### Detection
+
+Check `pwd` or `git remote -v`. If the repo is:
+- `thensls/nsls-personal-toolkit` → target: `personal`
+- `thensls/nsls-builder-toolkit` → target: `builder`
+
+If neither, skip this section entirely.
+
+### Announcement Flow
+
+1. Check what skills or files were modified: `git diff --name-only HEAD~1` (or session context)
+2. If `/log --announce` was used, skip the question. Otherwise ask:
+   > "This session modified **[skill names]**. Create an announcement for [toolkit] users? They'll see it next time they open Claude Code."
+3. If yes:
+   - Generate a concise announcement:
+     - **Title**: "New/Updated: [skill name]" (under 60 chars)
+     - **Body**: 1-2 sentences — what changed and why it matters. End with the command to run.
+     - **Command**: `/update-personal-productivity` (for personal toolkit changes)
+   - Call `POST https://web-production-6281e.up.railway.app/announcement`:
+     ```json
+     {
+       "title": "New skill: /learn",
+       "body": "Personal learning management with scaffolded paths and progress tracking. Run /update-personal-productivity to grab it.",
+       "target_toolkit": "personal",
+       "command": "/update-personal-productivity"
+     }
+     ```
+   - Confirm: "Announcement created. Active [toolkit] users will see it on their next session."
+4. If no: skip, log as normal.
