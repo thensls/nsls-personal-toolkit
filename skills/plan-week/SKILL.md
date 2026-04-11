@@ -277,7 +277,7 @@ Write the Monday daily note `01-daily/YYYY-MM-DD.md` with:
 - Today's meetings from calendar
 - Overdue Asana items
 
-This means Monday morning, the builder can skip `/plan-day` — it's already done.
+This means Monday morning, the builder can skip `/open-day` — it's already done.
 
 ## Leadership Coaching Philosophy
 

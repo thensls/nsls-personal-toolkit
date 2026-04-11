@@ -11,7 +11,7 @@ description: >-
 
 # Self-Insight
 
-Analyze behavioral data to generate a personal operating memo — a strategic alignment doc that plan-week and plan-day use for coaching and trap detection.
+Analyze behavioral data to generate a personal operating memo — a strategic alignment doc that plan-week and open-day use for coaching and trap detection.
 
 ## Philosophy
 

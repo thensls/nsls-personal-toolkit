@@ -1,6 +1,6 @@
 ---
 name: close-week
-description: Friday morning weekly roll-up — synthesizes Mon-Thu daily notes into achievements, learnings, project progress, time allocation, and priorities-vs-reality. Formatted for quick notes copy-paste. Trigger phrases: close week, weekly review, week summary, week roll up, friday summary, weekly wrap, end of week
+description: Friday weekly roll-up — synthesizes the full week (Sat-Fri) of daily notes into achievements, learnings, project progress, time allocation, and priorities-vs-reality. Formatted for quick notes copy-paste. Trigger phrases: close week, weekly review, week summary, week roll up, friday summary, weekly wrap, end of week
 ---
 
 # Close Week
@@ -15,19 +15,25 @@ Friday morning, before the user's quick notes reminder fires. Output feeds direc
 
 ### Step 0: Determine the week
 
-Default to the current week (Monday through today). User can override: `/close-week 2026-03-17` (uses that Monday as the start).
+The week runs **Saturday through Friday** (7 days). Weekend work must be captured if the user works weekends.
+
+Default behavior: find the **previous Saturday** and use it as the start date, with today (Friday) as the end.
+
+If a previous close-week exists (check `02-weekly/` for the most recent file), start from the **day after** that close-week's end date instead. This handles skipped weeks (vacation, holidays) by rolling up all uncovered days.
+
+User can override: `/close-week 2026-03-15` (uses that Saturday as the start).
 
 Calculate:
-- Monday date = start of week
+- Saturday date = start of range (or day after last close-week)
 - Friday date = today (or target Friday)
-- Date range string for display: "Mar 24 - Mar 28, 2026"
+- Date range string for display: "Mar 15 - Mar 21, 2026"
 
 ### Step 1: Collect data (run in parallel)
 
 **1a. Read all daily notes for the week**
 
 Read files from `$OBSIDIAN_VAULT_PATH/01-daily/`:
-- `YYYY-MM-DD.md` for Monday through Thursday (Friday's may not exist yet)
+- `YYYY-MM-DD.md` for Saturday through Friday (7 days). Weekend notes may not exist — that's fine, skip missing days.
 
 Extract from each:
 - `## Morning Check-in` → Top 3 priorities (especially Monday's — these are the week plan)
@@ -40,8 +46,8 @@ Extract from each:
 **1b. Familiar time data for the full week**
 
 ```bash
-for d in Mon Tue Wed Thu Fri; do
-  DATE=$(date -v-${offset}d +%Y-%m-%d)  # compute each day
+for DATE in $SAT $SUN $MON $TUE $WED $THU $FRI; do  # all 7 days, Sat-Fri
+  echo "=== $DATE ==="
   grep -h "^app:" $HOME/familiar/stills-markdown/session-${DATE}T*/*.md 2>/dev/null \
     | sort | uniq -c | sort -rn
 done
@@ -49,7 +55,8 @@ done
 
 And Chrome breakdown:
 ```bash
-for d in Mon-Fri dates; do
+for DATE in $SAT $SUN $MON $TUE $WED $THU $FRI; do  # all 7 days
+  echo "=== $DATE ==="
   awk '/^app: Google Chrome/{found=1} found && /^window_title_raw:/{print; found=0}' \
     $HOME/familiar/stills-markdown/session-${DATE}T*/*.md 2>/dev/null
 done | sort | uniq -c | sort -rn
@@ -63,8 +70,8 @@ Use the same categorization rules from `/close-day` (Gmail, YouTube, Airtable, e
 mcp__claude_ai_asana__asana_search_tasks(
   assignee_any="me",
   completed=true,
-  completed_on_after="YYYY-MM-DD",  // Monday
-  completed_on_before="YYYY-MM-DD",  // Saturday
+  completed_on_after="YYYY-MM-DD",  // Saturday (start of range)
+  completed_on_before="YYYY-MM-DD",  // day after Friday (end of range + 1)
   sort_by="completed_at",
   opt_fields="name,completed_at,projects.name",
   limit=100
@@ -326,7 +333,9 @@ Use the same Asana write-back pattern as `/close-day` — present plan, user app
 
 ## Edge Cases
 
-- **Missing daily notes:** Some days may not have `/close-day` run. Use whatever exists — even partial daily notes have Morning Check-in priorities.
+- **Missing daily notes:** Some days may not have `/close-day` run (especially weekends). Use whatever exists — even partial daily notes have Morning Check-in priorities. Weekend notes may not exist at all; pull Familiar data directly for those days.
 - **No Familiar data for a day:** Skip that day in time allocation, note the gap.
 - **Short week (holiday, PTO):** Adjust date range. Still generate — even a 3-day week deserves a roll-up.
+- **Weekend work:** If the user works weekends, always check for Saturday and Sunday daily notes and Familiar data. Weekend hours count toward weekly totals and time allocation.
 - **User ran /close-week already this week:** Check if `02-weekly/YYYY-[W]WW.md` exists. If so, ask if they want to regenerate or append.
+- **Skipped weeks:** If the previous close-week was 2+ weeks ago, the current close-week covers ALL days since. Expand the date range accordingly.

@@ -1,16 +1,16 @@
 ---
-name: plan-day
+name: open-day
 description: >-
   Morning planning routine — pulls Google Calendar events, Asana tasks,
   overdue items, and yesterday's carry-overs to set daily priorities, schedule
   focus blocks and vitality time on the calendar, and populate the Morning
-  Check-in in today's Obsidian daily note. Use when the user says "plan day",
-  "plan my day", "start my day", "morning", "good morning", "what's on my
-  plate", "what do I have today", "daily planning", "open day", or opens a new
-  session in the morning. Requires Google Calendar and Asana access.
+  Check-in in today's Obsidian daily note. Use when the user says "open day",
+  "plan day", "plan my day", "start my day", "morning", "good morning",
+  "what's on my plate", "what do I have today", "daily planning", or opens a
+  new session in the morning. Requires Google Calendar and Asana access.
 ---
 
-# Plan Day
+# Open Day
 
 Pull today's calendar, Asana tasks, overdue items, and yesterday's carry-overs. Help the builder set priorities across work and vitality, schedule them on the calendar, and populate today's daily note.
 
@@ -268,20 +268,20 @@ Use `gcal_create_event` for each approved block:
 - **Focus blocks:**
   - Summary: `Focus: [priority description]`
   - Color: Peacock (7) — blue
-  - Description: `Priority #[N] from /plan-day\n[Brief context: what specifically to do]`
+  - Description: `Priority #[N] from /open-day\n[Brief context: what specifically to do]`
   - No attendees, no notifications except 5-min popup
   - `sendUpdates: "none"`
 
 - **Vitality blocks:**
   - Summary: `[Activity]` (e.g., "Walk", "Gym", "Read")
   - Color: Basil (10) — green
-  - Description: `Vitality block from /plan-day`
+  - Description: `Vitality block from /open-day`
   - `sendUpdates: "none"`
 
 - **Growth blocks:**
   - Summary: `Learn: [topic]` or `Read: [book]` or `Coaching reflection`
   - Color: Grape (3) — purple
-  - Description: `Growth block from /plan-day`
+  - Description: `Growth block from /open-day`
   - `sendUpdates: "none"`
 
 - **Admin blocks** (if scheduled):
@@ -296,7 +296,7 @@ All blocks use the builder's timezone.
 gcal_create_event(
   event={
     summary: "Focus: directory-requests — scrape remaining schools",
-    description: "Priority #1 from /plan-day\nDraft subcontractor contract with IP carve-outs.",
+    description: "Priority #1 from /open-day\nDraft subcontractor contract with IP carve-outs.",
     start: { dateTime: "2026-04-08T07:00:00-06:00", timeZone: "<builder timezone>" },
     end: { dateTime: "2026-04-08T08:30:00-06:00", timeZone: "<builder timezone>" },
     colorId: "7",
@@ -343,8 +343,8 @@ The daily note should include:
 
 ## Calendar
 - **HH:MM-HH:MM** — [Title] (attendees)
-- **HH:MM-HH:MM** — Focus: [priority] <- *scheduled by /plan-day*
-- **HH:MM-HH:MM** — [Vitality block] <- *scheduled by /plan-day*
+- **HH:MM-HH:MM** — Focus: [priority] <- *scheduled by /open-day*
+- **HH:MM-HH:MM** — [Vitality block] <- *scheduled by /open-day*
 
 *[N] meetings (~[X]h). [N] focus blocks scheduled. [Vitality/growth blocks noted.]*
 
@@ -406,7 +406,7 @@ Example format (customize per builder):
 - **No carry-overs:** Skip that section.
 - **Empty calendar:** Note "No meetings today — deep work day?" Suggest tackling overdue Asana items. Schedule larger focus blocks.
 - **Back-to-back meetings all day:** Note the constraint. Suggest one vitality micro-block (15 min walk between meetings). Don't force focus blocks into 20-min gaps.
-- **Mid-day reset:** If the builder runs `/plan-day` mid-day, pull updated calendar, check what's been accomplished, and reschedule remaining priorities into afternoon blocks. Remove morning blocks that already passed.
+- **Mid-day reset:** If the builder runs `/open-day` mid-day, pull updated calendar, check what's been accomplished, and reschedule remaining priorities into afternoon blocks. Remove morning blocks that already passed.
 - **Builder declines scheduling:** That's fine. The skill works without calendar scheduling — just write the daily note with priorities and move on. Don't push.
 
 ## Progressive Opt-in: Strategy Layer

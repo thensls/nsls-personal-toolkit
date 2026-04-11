@@ -14,7 +14,7 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 
 | Skill | What it does |
 |-------|-------------|
-| `/plan-day` | Morning planning — calendar, tasks, priorities, schedule focus blocks + vitality time |
+| `/open-day` | Morning planning — calendar, tasks, priorities, schedule focus blocks + vitality time |
 | `/plan-week` | Weekly planning — project stack ranking, push/protect mode, strategy alignment |
 | `/close-day` | End-of-day summary — what happened, what's next |
 | `/close-week` | Friday roll-up — weekly achievements, stack rank review, alignment scoring |
