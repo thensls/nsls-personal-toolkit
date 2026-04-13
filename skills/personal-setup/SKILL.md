@@ -1,109 +1,123 @@
 ---
 name: personal-setup
 description: >-
-  Reconfigure the personal productivity toolkit. Walks through
-  getting Slack user ID, Asana GIDs, and Airtable API key, then writes
-  the .env file. Use when the user says "reconfigure personal toolkit",
-  "/personal-setup", or when .env is missing or incomplete.
+  Set up or reconfigure the personal productivity toolkit. Walks through
+  Obsidian knowledge base, account connections, and optional integrations.
+  Use when the user says "personal-setup", "/personal-setup", "configure
+  personal toolkit", or when .env is missing or incomplete.
 ---
 
-# Personal Toolkit Setup
+# Personal Productivity Setup
 
-Walk the user through configuring their personal productivity toolkit. Detects what's already set and only asks for what's missing.
+Set up your personal productivity toolkit — the skills that turn Claude into a daily co-pilot for morning planning, end-of-day summaries, weekly reviews, and project logging.
 
-## When to Run
+Show the roadmap upfront:
 
-- First time after installing the personal toolkit
-- When a skill fails because of a missing env var
-- When the user says `/setup` or "configure my toolkit"
+```
+Let's set up your personal productivity toolkit.
 
-## Step 1: Check current state
+This takes about 10 minutes:
+  1. Set up your knowledge base (Obsidian)        — 5 min
+  2. Connect your accounts (mostly auto-detected)  — 2 min
+  3. Optional integrations (Fathom meeting notes)  — 3 min
+  4. Done — try "open my day" to see it in action
+```
 
-Read `~/.claude/local-plugins/nsls-personal-toolkit/.env` (if it exists). Identify which values are set and which are empty or missing.
+## Step 0: Check current state
 
-Required values:
-| Variable | What it is | How to get it |
-|----------|-----------|---------------|
-| `OBSIDIAN_VAULT_PATH` | Path to your Obsidian vault | Auto-detected or user provides |
-| `SLACK_USER_ID` | Your Slack member ID | Auto-detected from Slack MCP |
-| `ASANA_WORKSPACE_GID` | Your Asana workspace | Auto-detected from Asana MCP |
-| `ASANA_USER_GID` | Your Asana user | Auto-detected from Asana MCP |
-| `FATHOM_API_KEY` | Fathom meeting intelligence API key | User provides manually |
-| `AIRTABLE_API_KEY` | Personal access token for Airtable | User provides manually |
-| `PEOPLE_OPS_BASE_ID` | People Ops Airtable base | Pre-filled for NSLS employees |
-| `SLT_BASE_ID` | SLT Meeting Intelligence base | Pre-filled for NSLS SLT members |
+Read `~/.claude/local-plugins/nsls-personal-toolkit/.env` (if it exists). Identify which values are set and which are empty or missing. If everything is already set, confirm and offer to reconfigure.
 
-If everything is set, say so and stop.
+## Step 1: Knowledge Base (Obsidian) — ~5 min
 
-## Step 2: Auto-detect what we can
+This is the foundation — your notes, project logs, and daily plans all live here.
 
-**Obsidian Vault Path** — Try to find the user's vault automatically:
-1. Check for common locations: `~/Obsidian/*/`, `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/*/`
+### Auto-detect existing vaults
+
+1. Check common locations: `~/Obsidian/*/`, `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/*/`
 2. Look for directories containing `.obsidian/` (the marker for an Obsidian vault)
 3. If found, confirm: "I found an Obsidian vault at `[path]` — is that the one you use?"
 4. If multiple found, ask which one
-5. If none found, ask: "Where is your Obsidian vault? Common locations are `~/Obsidian/[initials]/` (local) or `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/[initials]/` (iCloud). Or if you haven't set up Obsidian yet, run `/obsidian-setup` first."
 
-**Slack User ID** — Use the Slack MCP to look up the current user:
-```
-The Slack MCP provides your user ID automatically. It's shown in the
-tool descriptions as "Current logged in user's Slack user_id is U...".
-```
-Read the user ID from the MCP tool description and confirm: "Your Slack user ID is `UXXXXXXXX` — look right?"
+### If no vault found
 
-**Asana** — Use the Asana MCP to detect workspace and user:
 ```
-mcp__claude_ai_asana__asana_list_workspaces()
-```
-From the results, find the NSLS workspace (or the only workspace). Then:
-```
-mcp__claude_ai_asana__asana_get_me()
-```
-This returns the user's GID. Confirm both: "Your Asana workspace is `XXXX` and your user GID is `XXXX` — look right?"
+You don't have an Obsidian vault set up yet. Obsidian is where your daily
+plans, project logs, and weekly reviews live. It's a free markdown editor
+that syncs across devices.
 
-If Asana MCP is not available, ask the user to provide the values manually or skip (Asana integration is only needed for `/open-day` and `/close-day` task sync).
-
-## Step 3: Ask for what we can't auto-detect
-
-**Fathom API Key** — This must come from the user:
+Want me to set one up for you? (~5 min)
 ```
-Fathom records and summarizes your meetings. The API key lets /close-day
-pull today's meeting summaries and /person-intelligence pull 1:1 transcripts.
+
+If yes → invoke `/obsidian-setup` to scaffold the vault structure.
+If no → ask for the path to their notes directory (works with any folder, just won't have the full Obsidian features).
+
+### Confirm vault path
+
+Once detected or created, confirm: "Your knowledge base is at `[path]` — I'll use this for all your notes and logs."
+
+## Step 2: Connect Accounts — ~2 min
+
+Auto-detect everything possible. Only ask about what can't be detected.
+
+### Slack User ID
+The Slack MCP provides the user ID automatically in tool descriptions: "Current logged in user's Slack user_id is U...".
+
+- **Detected**: "Your Slack user ID is `UXXXXXXXX` — look right?"
+- **Not detected**: "Click your profile picture in Slack → Profile → ⋮ → Copy member ID, then paste it here."
+
+### Asana
+Use the Asana MCP:
+```
+mcp__claude_ai_Asana__get_me()
+```
+
+- **Detected**: "Your Asana workspace GID is `XXXX` and your user GID is `XXXX` — correct?"
+- **Not detected**: "Asana integration is only needed for /open-day and /close-day task sync. Want to skip this for now?" If they want to set it up, walk them through finding their GIDs manually.
+
+### Builder Email and GitHub Username
+Ask the user:
+```
+What's your NSLS email? (e.g., jdoe@nsls.org)
+And your GitHub username? (optional, for /register-automation)
+```
+
+## Step 3: Optional Integrations — ~3 min
+
+### Fathom API Key
+
+```
+Do you use Fathom (fathom.video) for meeting recording?
+
+If yes, your API key lets /close-day pull today's meeting summaries
+and /person-intelligence pull 1:1 transcripts.
 
 To get your key:
-1. Go to https://fathom.video/settings/api
-2. Copy your API key
+  1. Go to https://fathom.video/settings/api
+  2. Copy your API key
 
-Paste it here:
+Paste it here, or skip — /close-day works without it.
 ```
 
-Wait for the user to provide the key. Validate it by making a quick test call:
+If provided, validate with a test call:
 ```bash
 curl -s -H "X-Api-Key: <key>" "https://api.fathom.ai/external/v1/meetings?created_after=$(date +%Y-%m-%d)T00:00:00Z" | head -c 100
 ```
 
-If the response contains meeting data or an empty array, the key works. If it returns an error, tell the user the key didn't work and ask them to check it.
+### Airtable API Key (optional)
 
-If the user doesn't use Fathom or doesn't want to set it up, skip it. Close-day works without it (just won't have meeting summaries). Person-intelligence works without it (just won't have 1:1 transcripts).
-
-**Airtable API Key** — This must come from the user:
 ```
-To get your Airtable API key:
-1. Go to airtable.com/create/tokens
-2. Click "Create new token"
-3. Name it something like "Personal Toolkit"
-4. Add these scopes: data.records:read, data.records:write, schema.bases:read
-5. Add access to the People Ops and SLT bases
-6. Copy the token (starts with "pat...")
+Airtable API key is optional. You don't need one for org chart, LOPs,
+or strategy — those come from the toolkit automatically.
 
-Paste it here:
+An API key is only needed if you want /person-intelligence to write
+relationship profiles to Airtable (rare). Most people skip this.
+
+Skip? (y/n)
 ```
 
-Wait for the user to provide the key. Validate it starts with "pat" and is reasonable length.
+If they want it, walk them through creating a personal access token at airtable.com/create/tokens with scopes: `data.records:read`, `data.records:write`, `schema.bases:read`.
 
-If the user doesn't have Airtable access or doesn't want to set it up, that's fine — skip it. The person-intelligence skill needs it, but close-day/open-day/close-week work without it.
-
-## Step 4: Write the .env file
+## Step 4: Write Config and Confirm
 
 Write `~/.claude/local-plugins/nsls-personal-toolkit/.env`:
 
@@ -121,10 +135,14 @@ SLACK_USER_ID=<detected or provided>
 ASANA_WORKSPACE_GID=<detected or provided or empty>
 ASANA_USER_GID=<detected or provided or empty>
 
+# Builder identity
+BUILDER_EMAIL=<provided>
+GITHUB_USERNAME=<provided or empty>
+
 # Fathom (needed for /close-day meeting summaries, /person-intelligence 1:1 transcripts)
 FATHOM_API_KEY=<provided or empty>
 
-# Airtable (needed for /person-intelligence)
+# Airtable (optional — only needed for writing to Airtable)
 AIRTABLE_API_KEY=<provided or empty>
 PEOPLE_OPS_BASE_ID=appnXPTu01esWWbrK
 SLT_BASE_ID=appHDEHQA4bvlWwQq
@@ -132,44 +150,45 @@ SLT_BASE_ID=appHDEHQA4bvlWwQq
 
 If a value wasn't provided, leave it empty with a comment:
 ```
-# AIRTABLE_API_KEY=  # Run /setup again when you have this
+# FATHOM_API_KEY=  # Run /personal-setup again when you have this
 ```
 
-## Step 5: Confirm and suggest next steps
+### Confirm and suggest first action
 
 ```
-Your personal toolkit is configured! Here's what's set up:
+Your personal productivity toolkit is configured!
 
-✓ Slack user ID: UXXXXXXXX
-✓ Asana workspace: XXXX
-✓ Asana user: XXXX
-✓ Fathom API key: configured
-✓ Airtable API key: pat...XXX (redacted)
-✓ People Ops base: appnXPTu01esWWbrK
-✓ SLT base: appHDEHQA4bvlWwQq
+  [check] Knowledge base: [vault path]
+  [check] Slack: UXXXXXXXX
+  [check or skip] Asana: configured / skipped
+  [check or skip] Fathom: configured / skipped
+  [check or skip] Airtable: skipped (not needed for org context)
 
-Try it out:
-- Say "open my day" to run morning planning
-- Say "close my day" tonight for your daily summary
-- Say "person intel [name]" to build a relationship profile
+Try it now — say "open my day" to see your morning planning.
+
+Other things you can do:
+  "close my day"           — end-of-day summary
+  "plan my week"           — weekly planning (Sunday/Monday)
+  /log                     — capture session progress
+  /person-intelligence     — relationship profiles
 
 Your .env file is at:
   ~/.claude/local-plugins/nsls-personal-toolkit/.env
 
 This file is gitignored — your keys stay on your machine.
+Edit any skill in the toolkit — they're yours to customize.
 ```
 
-If any values are missing, note which skills won't work until they're added:
+If any values are missing, note which skills are affected:
 ```
-⚠ Fathom not configured — /close-day won't include meeting summaries.
-⚠ Airtable not configured — /person-intelligence will work from Fathom + Obsidian but won't pull SLT meeting data or People Ops org data.
-  Run /personal-setup again anytime to add missing keys.
+Note: Fathom not configured — /close-day won't include meeting summaries.
+Run /personal-setup again anytime to add it.
 ```
 
 ## Edge Cases
 
-- **User already has a .env**: Read existing values, only ask for missing ones. Don't overwrite values that are already set.
-- **No Slack MCP**: Ask the user to find their Slack ID manually: "Click your profile picture in Slack → Profile → ⋮ → Copy member ID"
-- **No Asana MCP**: Ask for GIDs manually or skip Asana integration.
-- **User doesn't want Airtable**: That's fine. Skip it. Most skills work without it.
-- **Non-NSLS user**: If they say they're not at NSLS, leave the base IDs empty and tell them to fill in their own Airtable base IDs if they use Airtable.
+- **User already has a .env**: Read existing values, only ask for missing ones. Don't overwrite values that are already set unless the user explicitly asks to reconfigure.
+- **No Slack MCP**: Ask the user to find their Slack ID manually.
+- **No Asana MCP**: Ask for GIDs manually or skip.
+- **Non-NSLS user**: Leave base IDs empty, tell them to fill in their own if they use Airtable.
+- **User runs this after /setup already configured some values**: Reuse values from the /setup flow (Slack ID, Asana GIDs) — don't ask again.
