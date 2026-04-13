@@ -179,6 +179,25 @@ Present to the builder. If AI suggestions were seeded by close-day, show them fi
 
 *[N] meetings, ~[X]h. Deep work windows: [list gaps >= 60 min].*
 
+### Relationship Context (after calendar display)
+
+After displaying today's meetings, scan attendees against `$OBSIDIAN_VAULT_PATH/30-people/*.md` profiles. For each attendee who has an active coaching goal (grep for `status: active` in `## Coaching Goals`) or a `## Personal` section:
+
+```
+👥 Relationship Context for Today
+
+  [time] — [meeting title] ([attendee name])
+    🎯 Active goal: [goal title]
+       → Today: [one-line contextual action from the goal's action list]
+    👤 Personal: [1-2 key personal details if available]
+```
+
+**Rules:**
+- Only show people with active coaching goals or personal details — skip empty profiles
+- Compact: 2-3 lines per person max
+- The contextual action should be specific to the meeting type (sprint → sprint-specific action, 1:1 → relationship action)
+- If no attendees have coaching goals or personal details, skip this section entirely — don't show an empty block
+
 ### Morning Top 3 (fresh from Asana + calendar + carry-overs)
 1. [P1 — explain why it's #1]
 2. [Next most important]
