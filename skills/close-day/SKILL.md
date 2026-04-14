@@ -481,6 +481,10 @@ Doing vs. Orchestrating: [X%] hands-on building, [X%] managing/meeting, [X%] adm
 ## Carrying Over
 - [Unfinished items from Claude tasks, meeting action items, or Asana overdue]
 
+## Brain Dump
+[Capture anything on your mind throughout the day — ideas, half-formed plans, decisions to make, things to figure out, reminders. Close-day routes these at end of day.]
+-
+
 ## End of Day
 - Energy:
 
@@ -672,6 +676,39 @@ Then confirm with `mcp__claude_ai_Asana__create_task_confirm` using workspace `$
 ```
 
 User approves, modifies, or skips before any Asana writes happen.
+
+**7d. Brain Dump Routing**
+
+Read the `## Brain Dump` section from today's daily note. If empty (just `-` with no content), skip silently.
+
+For each item, classify and propose a route:
+
+| Classification | Criteria | Action |
+|---|---|---|
+| **Task** | Actionable, owned by user, completable in 1-2 sessions | Create Asana task with priority/due date |
+| **Project idea** | Bigger than a task, needs dedicated planning and a note | Suggest creating Obsidian project note or adding to-do to an existing project |
+| **Decision** | A fork to resolve before other work can proceed | Surface in tomorrow's AI Suggested Top 3 |
+| **Learning / research** | Link, article, tech to explore, skill to build | Add to `40-learning/_inbox.md` |
+| **Parking lot** | Interesting but not now, no clear owner or timing | Add to `50-reference/parking-lot.md` |
+| **Concern / question** | Something on your mind that isn't actionable yet | Surface in tomorrow's Morning Check-in |
+
+**Present a triage table before writing anything:**
+
+```
+## Brain Dump Routing
+
+| # | Item | Classification | Proposed action |
+|---|---|---|---|
+| 1 | "gary's enrollment funnel → SLT EA Bot?" | Decision | Add to tomorrow's Top 3: "Decide: Gary funnel routing" |
+| 2 | "LOP dashboard split" | Task | Create Asana P2: "Split LOP dashboard from SLT base" |
+| 3 | "NCO quality update" | Task | Create Asana P2: "NCO quality update — who owns?" |
+
+Approve to route, or tell me which to change/skip.
+```
+
+After confirmation: create Asana tasks (`create_task_preview` → `create_task_confirm`), append to Obsidian files for Project/Learning/Parking lot items. Decisions surface in Step 8 (tomorrow's note).
+
+**Do not create Asana tasks for items already in Asana or already in today's Carrying Over section.**
 
 ### Step 8: Seed tomorrow's daily note
 
