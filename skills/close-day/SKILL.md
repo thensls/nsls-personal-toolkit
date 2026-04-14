@@ -435,6 +435,12 @@ Generate in this format (matching the user's existing `01-daily/` structure):
 ```markdown
 # YYYY-MM-DD — [Day of Week]
 
+## Insight Reflection
+
+[Paragraph 1 — primary pattern: what the data reveals that you might not have noticed. One concrete data point must anchor it. Max 3 sentences.]
+
+[Paragraph 2 — second dimension or implication: what this pattern might mean going forward, or a second non-obvious angle. Max 3 sentences. Omit if there's nothing genuinely interesting to add.]
+
 ## Time Allocation
 
 | Category | Hours | % | Top tools |
@@ -502,12 +508,6 @@ Doing vs. Orchestrating: [X%] hands-on building, [X%] managing/meeting, [X%] adm
 1.
 2.
 3.
-
-## Insight Reflection
-
-[Paragraph 1 — primary pattern: what the data reveals that you might not have noticed. One concrete data point must anchor it. Max 3 sentences.]
-
-[Paragraph 2 — second dimension or implication: what this pattern might mean going forward, or a second non-obvious angle. Max 3 sentences. Omit if there's nothing genuinely interesting to add.]
 ```
 
 **Rules:**
@@ -734,6 +734,10 @@ Check if tomorrow's note exists at `$OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD+1.m
 1.
 2.
 3.
+
+### Brain Dump
+[Capture anything on your mind throughout the day — ideas, half-formed plans, decisions to make, things to figure out, reminders. Close-day routes these at end of day.]
+-
 
 ## Active Projects
 \```dataview
