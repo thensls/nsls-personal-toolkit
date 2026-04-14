@@ -232,6 +232,31 @@ Recurring meetings this week: [count]
 **Challenge:** [If any recurring meeting produced no decisions for 3+ weeks, flag it here: "Consider converting [meeting] to async — no decisions in [N] weeks."]
 ```
 
+**Weekly Insight Reflection:**
+
+After all synthesis above is complete, apply full-shape thinking to the week itself. Pick the 2 most non-obvious dimensions and write one tight paragraph each. Max 3 paragraphs total.
+
+Dimensions to check:
+
+| Dimension | Question |
+|---|---|
+| **Plan vs. reality gap** | What did Monday's Top 3 predict vs. what actually shipped? Is there a structural cause, not just a bad week? |
+| **Doing vs. Orchestrating skew** | Did the time split match the stated push/protect mode? Where did the week actually go vs. where it was supposed to go? |
+| **Hidden through-line** | One theme that connected the week's meetings, builds, and decisions that no individual daily note named. |
+| **Structural output pattern** | Which day types produced the most output? What does that say about how this week should have been designed? |
+| **CEO trap** | What did you do this week that should have been delegated? Where did IC work crowd out strategic work? |
+| **Negative space** | What important thing didn't happen? What should have moved but didn't, and why? |
+| **Carry-over decay** | How many items appeared in 3+ consecutive carry-overs? Each needs a verdict: break down, delegate, or kill. |
+
+Rules:
+- Must be non-obvious — don't restate Achievements or Priorities vs. Reality
+- Must be anchored to a specific number, project name, day, or person
+- Declarative framing only: "David's first week absorbed 60% of Friday's coordination load" not "onboarding took time"
+- Second-person framing — the user should feel seen, not lectured
+- Omit a paragraph if it doesn't clear the bar. Two sharp insights beat three generic ones.
+
+The Insight Reflection is the **first section** in the weekly note (Output A), before Achievements. It is also summarized as a single "Insight of the Week" sentence in Output B.
+
 ### Step 3: Generate two outputs
 
 **Output A: Weekly Review note** (for Obsidian)
@@ -276,6 +301,9 @@ Priorities vs. Reality:
 1. [Monday priority] → [Done/Partial/Missed] — [1-line]
 2. [Monday priority] → [Done/Partial/Missed]
 3. [Monday priority] → [Done/Partial/Missed]
+
+Insight of the Week:
+[One sentence — the sharpest non-obvious thing the week's data revealed. Specific, declarative, anchored.]
 ```
 
 **Output C: AI-Suggested Next Week Priorities** (seeded into the weekly note for `/open-week` to pick up)

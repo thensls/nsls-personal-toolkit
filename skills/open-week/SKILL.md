@@ -77,13 +77,20 @@ gcal_list_events(
 
 Count: total meetings, total meeting hours, key meetings (external, board, candidates).
 
-**1d. Previous weeks' patterns (coaching data)**
+**1d. Previous weeks' patterns and insight signals (coaching data)**
 
 Read the last 3-4 weekly reviews from `02-weekly/` to detect patterns:
 - Are the same priorities repeating week after week without progress?
 - Is time allocation shifting toward or away from strategic work?
 - Are certain projects consistently stalled?
 - Is the builder doing work that should be delegated?
+
+Also extract the `## Insight Reflection` section from each weekly note. Look for **cross-week insight signals** — dimensions that appear in 2+ consecutive weekly reflections:
+- Same structural pattern named twice → it's not a fluke, it's a system
+- Same trap recurring → the memo needs updating or the constraint isn't being addressed
+- Consistent negative space (something important not happening) → candidate for structural change
+
+If a cross-week signal is found, surface it in Step 3's Coaching Notes as: "For the [N]th consecutive week, [signal]. This suggests [structural implication], not just a scheduling issue."
 
 **1e. Learning goals and progress**
 
@@ -256,6 +263,7 @@ Before suggesting priorities, surface patterns:
 - **Stalled projects:** If a project has been in `status: active` but `last-touched` is >2 weeks ago, flag: "These projects are marked active but haven't been touched in 2+ weeks: [list]. Kill, delegate, or schedule time."
 - **Learning stagnation:** If an active learning goal hasn't had progress in 3+ weeks, flag it: "[Topic] has been active for [N] weeks with no progress. Either schedule a deep dive this week, park it, or admit it's not a priority right now."
 - **Learning vs. filler:** If last week's close-week showed >5h of YouTube/news but <1h of structured learning, note: "Last week had [X]h of media consumption but only [Y]h of intentional learning. Consider converting one filler session into a 15-min micro-learning block."
+- **Cross-week insight signal:** If the same theme appeared in the `## Insight Reflection` of 2+ consecutive weekly notes (from Step 1d), escalate it: "This is week [N] of [theme] surfacing in your weekly reflection. That's a structural pattern, not a one-off. What would it take to address it?"
 
 ### Step 3: Draft week plan
 
@@ -266,6 +274,7 @@ Present to the builder:
 
 ### Coaching Notes
 [1-2 pattern observations from Step 2 — be direct, not preachy]
+[If cross-week insight signal detected: "For the [N]th consecutive week, [signal]. [What this suggests structurally, not as a one-off]."]
 
 ### Calendar Reality
 - [N] meetings this week ([X] hours)
