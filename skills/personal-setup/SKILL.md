@@ -153,6 +153,34 @@ If a value wasn't provided, leave it empty with a comment:
 # FATHOM_API_KEY=  # Run /personal-setup again when you have this
 ```
 
+### Populate org context into knowledge base
+
+After writing the .env, sync the org chart into the builder's Obsidian vault. This creates people files with management relationships (reports-to, manages) as wikilinks so the graph view shows the org tree.
+
+Run:
+```bash
+OBSIDIAN_VAULT_PATH="<vault path from step 1>" python3.12 \
+  ~/.claude/local-plugins/nsls-builder-toolkit/_shared/scripts/sync_org_context.py \
+  --update-vault
+```
+
+This reads from `_shared/context/org-chart.json` (synced weekly by the builder toolkit) and:
+- **Existing people files** → merges `department`, `email`, `slack`, `reports-to`, `manages` into frontmatter without clobbering other fields
+- **New people** → creates a minimal stub with org data
+
+Tell the builder:
+```
+I've populated your knowledge base with the NSLS org chart — 
+[N] people files with management relationships. Open Obsidian's
+graph view to see the org tree.
+
+These stay current automatically. The org chart syncs weekly 
+from Airtable, and running /personal-setup again will refresh
+your people files with any new hires or role changes.
+```
+
+If the builder toolkit isn't installed or `org-chart.json` doesn't exist, skip this step silently — it's a nice-to-have, not a blocker.
+
 ### Confirm and suggest first action
 
 ```
@@ -163,6 +191,7 @@ Your personal productivity toolkit is configured!
   [check or skip] Asana: configured / skipped
   [check or skip] Fathom: configured / skipped
   [check or skip] Airtable: skipped (not needed for org context)
+  [check] Org chart: [N] people files synced
 
 Try it now — say "open my day" to see your morning planning.
 
@@ -190,5 +219,6 @@ Run /personal-setup again anytime to add it.
 - **User already has a .env**: Read existing values, only ask for missing ones. Don't overwrite values that are already set unless the user explicitly asks to reconfigure.
 - **No Slack MCP**: Ask the user to find their Slack ID manually.
 - **No Asana MCP**: Ask for GIDs manually or skip.
-- **Non-NSLS user**: Leave base IDs empty, tell them to fill in their own if they use Airtable.
+- **Non-NSLS user**: Leave base IDs empty, tell them to fill in their own if they use Airtable. Skip the org chart vault sync.
 - **User runs this after /setup already configured some values**: Reuse values from the /setup flow (Slack ID, Asana GIDs) — don't ask again.
+- **User re-runs /personal-setup**: This is the refresh path. Skip steps where values are already set, but always re-run the org chart vault sync — it's idempotent and picks up new hires, role changes, and management reshuffles since last run.
