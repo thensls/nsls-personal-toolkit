@@ -159,6 +159,14 @@ Rollup = average of 6 dimensions, mapped to emoji: ≥3.5 = 💚, ≥2.5 = 🟢,
 
 ### How the Check Works
 
+0. **Refresh org chart data first.** Before reading people files, sync any org chart updates into the vault so new hires, role changes, and management reshuffles are reflected in the files you're about to review. Run:
+```bash
+OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
+  ~/.claude/local-plugins/nsls-builder-toolkit/_shared/scripts/sync_org_context.py \
+  --update-vault
+```
+If the builder toolkit isn't installed or `org-chart.json` doesn't exist, skip silently — it's a nice-to-have, not a blocker for the health check.
+
 1. Read all `$OBSIDIAN_VAULT_PATH/30-people/*.md` files that have `health:` in frontmatter. **Skip files with `status: departed`** — their history is closed, no new assessments. Departed profiles use `health-departed` tag (dark gray on graph) instead of `health-attention` to avoid visual noise.
 2. Present current state:
 
