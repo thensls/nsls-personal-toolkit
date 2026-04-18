@@ -39,16 +39,34 @@ fi
 
 ## Step 2: Load adoption state
 
-Read `~/nsls-skills/nsls-personal-toolkit/.toolkit-state.json`. If missing, initialize:
+Read `~/nsls-skills/nsls-personal-toolkit/.toolkit-state.json`. If missing, initialize with:
 
 ```json
 {
   "adopted_releases": [],
   "skipped_releases": [],
   "pending_manual_steps": [],
-  "last_checked": null
+  "last_checked": null,
+  "first_run_initialized": false
 }
 ```
+
+**First-run initialization.** If `first_run_initialized: false` (or the file was just created), before prompting the user about any release, auto-detect which releases the fork has already effectively adopted by virtue of prior `git pull`s.
+
+For each release doc in `updates/*.md`, read its `last_commit` frontmatter. Then check:
+
+```bash
+git -C "$REPO" merge-base --is-ancestor <last_commit> HEAD
+```
+
+If the ancestor check succeeds (exit 0), the fork's HEAD already includes that release's commits — auto-add the slug to `adopted_releases`. If it fails (exit 1), the release is genuinely unadopted.
+
+Show the user a one-time summary:
+> "First run — I auto-detected [N] releases already in your fork. [M] unadopted releases to walk through."
+
+Then set `first_run_initialized: true`. Subsequent runs skip this step.
+
+**Caveat:** auto-detection is accurate for the skill files but can't know if the fork completed the **manual steps** for those releases. After the auto-mark, ask: "I marked [N] historical releases as adopted based on your commit history. Want to review their manual-step checklists to confirm you've done them, or trust that you have?" If review, surface manual steps from each auto-adopted release as pending items.
 
 **State schema:**
 - `adopted_releases`: release slugs where the user pulled some or all of the changes
@@ -114,24 +132,26 @@ If `adopt`: go to 4c.
 
 For each skill in `skills_changed`:
 
-**Detect customization** — has the user locally customized this skill relative to its last-known upstream state?
+**Detect customization** — has the user made **local commits** that touch this skill? This is the clean test because `git diff upstream/main` conflates local changes with "behind upstream."
 
 ```bash
-# Skills the user has edited since last upstream sync
-git -C "$REPO" diff upstream/main -- skills/<name>/SKILL.md > /tmp/customization-check
+# Local-only commits touching this file (not in upstream)
+git -C "$REPO" log upstream/main..HEAD --oneline -- skills/<name>/SKILL.md
 ```
 
-- If the diff is empty → user has no local changes. **Fast path available.**
-- If the diff has content → user has customizations. **Merge path needed.**
+- If empty → user has no local customizations. **Fast path available.**
+- If non-empty → user has commits upstream doesn't have. **Merge path needed.** Show the user their local commit history:
+  > "You have [N] local commit(s) touching this file:
+  >   - <sha>: <subject>"
 
-Also check: is the upstream skill file newer than what the user currently has?
+**Check whether upstream has new content to offer:**
 
 ```bash
 git -C "$REPO" log HEAD..upstream/main -- skills/<name>/SKILL.md --oneline
 ```
 
-- If empty → nothing to pull for this skill (may have been adopted earlier, or this release didn't actually change it)
-- Otherwise → list the upstream commits so the user can see what's coming
+- If empty → nothing to pull for this skill (may have been adopted earlier, or this release didn't actually change it). Skip.
+- Otherwise → list the upstream commits so the user can see what's coming.
 
 **Present the merge choice:**
 
@@ -241,6 +261,14 @@ Update `pending_manual_steps` based on user confirmations.
 > - Manual steps pending: [N]
 >
 > Changes are in your local fork — they'll be active in your next Claude Code session."
+
+---
+
+## Critical safety rule
+
+**Never run `git checkout upstream/main -- skills/` across multiple releases at once.** This overwrites customizations you preserved in an earlier release's merge. The command walks per-skill, per-release specifically so customizations survive across multiple releases when the same skill is touched more than once.
+
+If you're tempted to "accept all" across several releases at once, run the command once per release — the state file tracks progress, so you can stop and resume anytime.
 
 ---
 
