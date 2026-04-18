@@ -231,6 +231,15 @@ If NO AI suggestions were seeded, skip the "Last Night's AI Suggestions" section
 
 **Stack rank flag (Wed+):** If it's Wednesday or later and the #1 ranked project for the week hasn't been touched, add a prominent note: "Your #1 project for the week ([name]) hasn't been touched yet. Today might be the day."
 
+**Project mapping for Top 3:** Every Top 3 item should be traced to a project when possible. Use the stack rank file (Step 2f) plus `20-projects/` folder listing as the source of truth.
+- If the priority clearly maps to a project with a home at `20-projects/<slug>/<slug>.md`, write it as `[Priority description] — [[<slug>]] *(week rank: N)*`.
+- If the project is in this week's Top 5 stack rank, show the rank (`*(week rank: 3)*`).
+- If the project exists but isn't in this week's Top 5, show `*(not in week's Top 5)*` — this is an explicit signal the builder is spending a Top 3 slot on something not ranked for the week (sometimes right, sometimes a drift to flag).
+- If no project home exists (pure people work, goals, one-off tasks), omit the link and rank annotation.
+- Example: `"Get Chelsea comp package settled — [[product-team-recruiting]] *(week rank: 5)*"`
+
+Ask the builder to confirm the project mapping if ambiguous rather than guessing silently.
+
 **Vitality suggestions:** Base these on patterns. If close-day shows coding was 60%+ yesterday, suggest movement. If meetings were 50%+, suggest solo time. If no learning captures in recent days, suggest growth. Default to suggesting at least one movement activity.
 
 **Operating memo check (if strategy layer active):**
@@ -375,9 +384,11 @@ The daily note should include:
 [preserved from close-day seed if it existed]
 
 ### My Top 3
-1. [Builder's chosen #1]
-2. [#2]
-3. [#3]
+1. [Priority #1 description] — [[project-slug]] *(week rank: N)*
+2. [Priority #2 description] — [[project-slug]] *(week rank: N)*
+3. [Priority #3 description] — [[project-slug]] *(week rank: N)*
+
+*Link the project and surface the week rank when a project home exists. Use `*(not in week's Top 5)*` for active projects outside the stack rank. Omit link/rank for pure people work or goals with no project home.*
 
 ### Vitality
 - [ ] [Movement activity]

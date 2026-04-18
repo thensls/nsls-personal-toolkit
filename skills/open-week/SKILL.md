@@ -238,8 +238,10 @@ mode-rationale: "[evidence string]"
 
 | Rank | Project | LOP | Role | Impact | Effort | Status |
 |------|---------|-----|------|--------|--------|--------|
-| 1 | [project] | [lop] | [role] | [S/M/L] | [S/M/L] | [status note] |
+| 1 | [[project-slug]] | [lop] | [role] | [S/M/L] | [S/M/L] | [status note] |
 | ... |
+
+**Project column linking rule:** Before writing, check `$OBSIDIAN_VAULT_PATH/20-projects/` for a matching project folder. If a project home exists at `20-projects/<slug>/<slug>.md`, write the cell as `[[<slug>]]` (Obsidian resolves it). If no home exists (goals, contracts, one-off work), write plain text. This makes the table clickable when transcluded into the daily note.
 
 ## Focus This Week
 1. **[project]** — [what to do this week, suggested time blocks]
