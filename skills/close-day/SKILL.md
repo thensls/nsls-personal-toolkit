@@ -498,7 +498,7 @@ Doing vs. Orchestrating: [X%] hands-on building, [X%] managing/meeting, [X%] adm
 - [Unfinished items from Claude tasks, meeting action items, or Asana overdue]
 
 ## Brain Dump
-[Capture anything on your mind throughout the day — ideas, half-formed plans, decisions to make, things to figure out, reminders. Close-day routes these at end of day.]
+*Capture anything on your mind throughout the day — ideas, half-formed plans, decisions to make, things to figure out, reminders. Close-day routes these at end of day.*
 -
 
 ## End of Day
@@ -778,7 +778,7 @@ Check if tomorrow's note exists at `$OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD+1.m
 3.
 
 ### Brain Dump
-[Capture anything on your mind throughout the day — ideas, half-formed plans, decisions to make, things to figure out, reminders. Close-day routes these at end of day.]
+*Capture anything on your mind throughout the day — ideas, half-formed plans, decisions to make, things to figure out, reminders. Close-day routes these at end of day.*
 -
 
 ## Active Projects
