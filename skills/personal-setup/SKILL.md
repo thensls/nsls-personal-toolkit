@@ -146,6 +146,7 @@ FATHOM_API_KEY=<provided or empty>
 AIRTABLE_API_KEY=<provided or empty>
 PEOPLE_OPS_BASE_ID=appnXPTu01esWWbrK
 SLT_BASE_ID=appHDEHQA4bvlWwQq
+LOP_BASE_ID=appAcnl4o8AQVZR1j
 ```
 
 If a value wasn't provided, leave it empty with a comment:

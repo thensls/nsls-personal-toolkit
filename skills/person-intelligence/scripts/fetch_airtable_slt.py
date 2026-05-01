@@ -23,6 +23,9 @@ if not BASE_ID:
     print("ERROR: SLT_BASE_ID not set. Copy .env.example to .env and fill in your values.", file=sys.stderr)
     sys.exit(1)
 API_BASE = f"https://api.airtable.com/v0/{BASE_ID}"
+# LOP tables split to new base 2026-05-01; fall back to SLT_BASE_ID for backwards compat
+LOP_BASE_ID = os.environ.get("LOP_BASE_ID", BASE_ID)
+LOP_API_BASE = f"https://api.airtable.com/v0/{LOP_BASE_ID}"
 
 # Table IDs — update these to match your Airtable base
 TBL_MEMBERS = os.environ.get("SLT_MEMBERS_TABLE", "tbl9GMiujOzOD7xXn")
@@ -49,12 +52,19 @@ def get_api_key() -> str:
     return key
 
 
-def airtable_get(table_id: str, params: dict | None = None) -> list[dict]:
-    """Fetch all records from a table, handling pagination."""
+def airtable_get(table_id: str, params: dict | None = None, base_url: str | None = None) -> list[dict]:
+    """Fetch all records from a table, handling pagination.
+
+    Args:
+        table_id: Airtable table ID.
+        params: Optional query parameters.
+        base_url: Override the default API_BASE (use LOP_API_BASE for LOP tables).
+    """
     global _last_request_time
     api_key = get_api_key()
     all_records = []
     offset = None
+    resolved_base = base_url if base_url else API_BASE
 
     while True:
         # Rate limiting
@@ -66,7 +76,7 @@ def airtable_get(table_id: str, params: dict | None = None) -> list[dict]:
         if offset:
             query_params["offset"] = offset
 
-        url = f"{API_BASE}/{table_id}"
+        url = f"{resolved_base}/{table_id}"
         if query_params:
             url += "?" + urllib.parse.urlencode(query_params, doseq=True)
 
@@ -174,7 +184,7 @@ def fetch_l1_goals(person_name: str) -> list[dict]:
     formula = f"AND(FIND('{person_name}', ARRAYJOIN({{User (from DRI)}}, ',')), {{Year}}='2026', {{Active?}}='Active')"
     records = airtable_get(TBL_L1_GOALS, {
         "filterByFormula": formula,
-    })
+    }, base_url=LOP_API_BASE)
     results = []
     for r in records:
         f = r["fields"]
@@ -194,7 +204,7 @@ def fetch_l2_goals(person_name: str) -> list[dict]:
     formula = f"AND(FIND('{person_name}', ARRAYJOIN({{User (from DRI)}}, ',')), {{Year}}='2026', {{Status}}='Active')"
     records = airtable_get(TBL_L2_GOALS, {
         "filterByFormula": formula,
-    })
+    }, base_url=LOP_API_BASE)
     results = []
     for r in records:
         f = r["fields"]
