@@ -180,6 +180,86 @@ Also read:
 - `$OBSIDIAN_VAULT_PATH/40-learning/_weekly-plan.md` — today's micro-learning assignment
 - `$OBSIDIAN_VAULT_PATH/40-learning/_inbox.md` — count of unprocessed links for active goals
 
+**2j. Open PRs on watched repos**
+
+Surface open pull requests on repos the builder maintains so they don't sit forgotten. Skip silently if `PR_WATCH_REPOS` is not set in `~/.claude/local-plugins/nsls-personal-toolkit/.env`, or if the `gh` CLI is unavailable.
+
+`PR_WATCH_REPOS` format: comma-separated `owner/repo` pairs.
+Example: `PR_WATCH_REPOS=thensls/nsls-builder-toolkit,thensls/nsls-personal-toolkit`
+
+```bash
+REPOS=$(grep '^PR_WATCH_REPOS=' ~/.claude/local-plugins/nsls-personal-toolkit/.env 2>/dev/null | cut -d= -f2- | tr -d ' ')
+# Safety: must have a non-empty list AND it must contain a slash (owner/repo).
+# Without this, `gh search prs --state open` would query all of GitHub.
+if [ -n "$REPOS" ] && [[ "$REPOS" == *"/"* ]] && command -v gh >/dev/null; then
+  gh search prs --state open --repo "$REPOS" --limit 30 \
+    --json number,title,author,repository,createdAt,isDraft \
+    2>/dev/null
+fi
+```
+
+Categorize results into two buckets:
+- **Yours sitting open** — `author.login == $GITHUB_USERNAME`. These are PRs the builder opened that haven't merged. Flag any older than 7 days.
+- **Waiting on you** — everything else, treated as needing the builder's review.
+
+Skip the entire section in Step 3 if both buckets are empty.
+
+**2i. SLT Meeting Actions — open items from the SLT knowledge base**
+
+Pull Kevin's open Meeting Actions from the SLT Meeting Intelligence base. Symmetric with `/close-day` Step 1h. These are action items from SLT meetings tracked separately from Asana — many have no due date but are time-sensitive (retreat prep, offsite logistics, quarterly deliverables).
+
+Skip this step if `$AIRTABLE_API_KEY` is not set or the builder profile does not enable SLT integration.
+
+- **Base:** `appHDEHQA4bvlWwQq`
+- **Table:** `tblasgjUjadHCqzrg` (Meeting Actions)
+- **Auth:** `AIRTABLE_API_KEY` env var
+
+**CRITICAL — query pattern gotchas:**
+- `{assignee_name}` in `filterByFormula` silently fails with `INVALID_FILTER_BY_FORMULA: Unknown field names: assignee_name`. Display name drifts from schema doc.
+- Safe default: filter on `{status}` only, return fields by ID with `returnFieldsByFieldId=true`, then Python-filter by assignee name.
+
+```bash
+PYTHONPATH=/tmp/pptx_deps python3.12 -c "
+import httpx, os, urllib.parse
+
+key = os.environ['AIRTABLE_API_KEY']
+BASE = 'appHDEHQA4bvlWwQq'
+TABLE = 'tblasgjUjadHCqzrg'
+
+formula = \"AND(NOT({status}='Completed'),NOT({status}='Not doing'))\"
+fields = ['fldiPWq8q3NXyNXil',  # action_description
+          'fldJleDMJFfcj5gPN',  # status
+          'fldXZJaatwC9FNbtX',  # due_date
+          'fldmpu3lN0lrgrdSa',  # assignee_name
+          'fldJ1EKcHoncBtkoo',  # Priority
+          'fldJpobWjo3J7uWuc',  # action_type
+          'fldZlxizRCZnHvWH0']  # meeting
+field_params = '&'.join(f'fields[]={fid}' for fid in fields)
+
+all_records = []
+offset = None
+while True:
+    u = f'https://api.airtable.com/v0/{BASE}/{TABLE}?filterByFormula={urllib.parse.quote(formula)}&{field_params}&returnFieldsByFieldId=true&pageSize=100'
+    if offset: u += f'&offset={offset}'
+    r = httpx.get(u, headers={'Authorization': f'Bearer {key}'}, timeout=30)
+    all_records.extend(r.json().get('records', []))
+    offset = r.json().get('offset')
+    if not offset: break
+
+my_actions = [r for r in all_records if '[BUILDER NAME]' in (r.get('fields', {}).get('fldmpu3lN0lrgrdSa') or '')]
+# Carry record IDs forward for Step 4a promotion.
+"
+```
+
+**Classify into 3 morning-relevant buckets:**
+1. **Overdue** — `due_date < today` and status ≠ Completed
+2. **Today / retreat-critical** — dated ≤ today + 2 days, OR no due date but description mentions retreat/offsite/Tue-Wed-Thu logistics with a known upcoming deadline
+3. **Strategic backlog count** — everything else. Don't bullet; just report count.
+
+**Carry each record's Airtable record ID forward** so Step 4a can embed it in Asana shadow tasks for close-day sync.
+
+**Sanity check:** Total open actions across all assignees should return 50-100+. If 0 or errors, formula reverted to field IDs — switch back to the pattern above.
+
 ### Step 3: Draft Morning Check-in
 
 Present to the builder. If AI suggestions were seeded by close-day, show them first:
@@ -233,6 +313,25 @@ After displaying today's meetings, scan attendees against `$OBSIDIAN_VAULT_PATH/
 ### Overdue ([count])
 - [ ] [Task] (due [date]) — [project]
 
+### SLT Meeting Actions ([N] open)
+**Overdue:**
+- [ ] [Action] (due [date], [N weeks overdue]) — `recXXX`
+
+**Today / retreat-critical:**
+- [ ] [Action] — `recXXX`
+
+*+[N] in strategic backlog. Full list in Airtable `appHDEHQA4bvlWwQq/tblasgjUjadHCqzrg`.*
+
+### Open PRs ([waiting] waiting, [yours] yours)
+
+*Skip this entire section if both lists are empty.*
+
+**Waiting on your review:**
+- `repo#NN` — author — Title (opened YYYY-MM-DD, [N]d open)
+
+**Yours sitting open:**
+- `repo#NN` — Title (opened YYYY-MM-DD, [N]d open) ⚠️ if >7d
+
 ### Also on the plate
 - [ ] [Due today / Do today tasks]
 - [ ] [Carry-overs not in top 3]
@@ -277,7 +376,50 @@ Also check the teach/delegate/do ladder: if a priority is maintenance work on a 
 
 You set your actual Top 3, energy level, and vitality intentions. The AI and morning suggestions are starting points — you may adopt, modify, or completely replace them.
 
-After you confirm, proceed to scheduling.
+### Step 4a: SLT → Asana shadow creation (if SLT actions were pulled in Step 2i)
+
+After the builder confirms their Top 3 and before scheduling, check whether any Top 3 item corresponds to an open SLT Meeting Action, and whether the builder wants any overdue/retreat-critical SLT items mirrored to Asana for today's flow.
+
+**Present a promotion menu:**
+
+```
+🧠 SLT Meeting Actions to shadow in Asana?
+
+Top 3 matches detected:
+  [1] "Retreat logistics lockdown" → matches 4 SLT actions:
+      - rec123 "Order Thu lunch via Katie's sheet"
+      - rec456 "Bring wired setup for offsite tech"
+      - rec789 "Schedule buddy check-ins w/ Chelsea"
+      - recABC "Research non-Bluetooth speaker-attributed recorder"
+
+Other SLT items ripe for promotion:
+  - recDEF "Follow up with Matt MacInnis at Rippling" (overdue 5+ weeks)
+  - recGHI "Email Anish & Heather re: Red's comp"
+
+Which should I shadow to Asana? (comma list of rec IDs, "all", or "none")
+```
+
+For each selected SLT action, create an Asana companion task:
+
+```
+mcp__claude_ai_Asana__create_task_preview(
+  taskName="[action_description]",
+  assignee="me",
+  dueDate="YYYY-MM-DD",
+  description="Priority: [P1/P2/P3 inferred from Top 3 placement]
+Source: SLT Meeting
+SLT record: recXXX
+Context: [meeting_title from linked meeting] — [why this matters today]"
+)
+```
+
+Then confirm with `create_task_confirm` (workspace `657431271309846`).
+
+**CRITICAL — the `SLT record: recXXX` line format is load-bearing.** `/close-day` Step 7d parses Asana task notes for exactly this pattern (case-sensitive, followed by a record ID starting with `rec`) to close the loop back to Airtable when the task is marked complete. Don't reformat it as "SLT: rec..." or "Airtable: rec..." — close-day won't match.
+
+**Deduplication:** Before creating, search Asana for open tasks whose notes already contain the same `SLT record: recXXX` line. If found, skip (already shadowed). This prevents creating duplicate companions day after day.
+
+**After creation:** Proceed to scheduling. The promoted SLT items now appear in today's Asana flow and are included in the scheduling pool the same as any other Top 3 item.
 
 ### Step 5: Schedule the day on the calendar
 
