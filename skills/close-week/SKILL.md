@@ -160,9 +160,10 @@ This is the core accountability moment: did you spend time on what you said matt
 **Push/Protect Mode Review (if strategy layer active):**
 
 Read the planned mode from the stack rank frontmatter. Determine actual mode from behavior:
-- If >50% of significant work went to reactive/maintenance/fix projects: actual = protect
-- If most time went to new initiatives and push projects: actual = push
-- Mixed is fine — note it honestly
+- If >50% of significant work went to reactive/maintenance/fix projects → actual = **protect**
+- If most time went to new initiatives, exploratory work, or expanding the surface → actual = **push-to-build**
+- If most time went to closing carry-over P1s, finishing handoffs, or clearing the queue without starting new lines → actual = **push-to-close**
+- Mixed is fine — note it honestly. Push-to-close is often invisible: it looks like maintenance because the artifacts are emails and decisions, not new builds.
 
 Present and append to the weekly note:
 ```
@@ -173,7 +174,10 @@ Present and append to the weekly note:
 | [mode] | [mode] | [1-line honest assessment] |
 ```
 
-Note the running streak: "This is your Nth consecutive [push/protect] week." If protect streak >= 3, flag: "3 protect weeks in a row. Your push projects haven't moved since W[N]. Is there a structural issue to address, or is this the right call?"
+Note the running streak: "This is your Nth consecutive [mode] week." Flags:
+- **Protect streak >= 3:** "3 protect weeks in a row. Your push projects haven't moved since W[N]. Structural issue or right call?"
+- **Push streak (any flavor) >= 3:** "3+ push weeks in a row. Body and calendar over-extended? Protect mode bias next week unless carry-over forces push-to-close."
+- **Push-to-close streak >= 2 with same items recurring:** "Carry-overs aren't closing across 2+ push-to-close weeks. The structure has to change, not the resolve. Break items down smaller, delegate, or kill."
 
 **Role Transition Tracking (if strategy layer active):**
 

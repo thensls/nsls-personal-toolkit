@@ -167,22 +167,45 @@ Check if the builder has automations that could be moved toward Org-Owned.
 
 **Only surface automations at Prototype or Production.** If `days_at_stage` isn't available from the API, surface any Prototype or Production automation.
 
-### Step 1.6: Mode detection (push vs protect)
+### Step 1.6: Mode detection (push-to-build vs push-to-close vs protect)
 
-Scan for crisis indicators:
-- Carry-overs from last week that mention "urgent", "crisis", "blocked", "at risk"
-- Asana overdue tasks count (if > 5 overdue, lean toward protect)
-- Last week's close-week: did actual mode match planned mode?
-- Known signals from recent daily notes
+Three modes, each with a different constraint:
+
+| Mode | Constraint | What you decline | When to choose |
+|---|---|---|---|
+| **Push-to-build** | Focus | Scope creep, "while we're at it" additions, exploratory side projects | Low carry-over, energy is fine, the goal is expanding the surface (new initiatives, deck work, retreat prep) |
+| **Push-to-close** | Discipline | New initiatives outside Top 3, side builds, scope expansion | High carry-over (especially relationship-decay items), no body/calendar crisis but the queue is burning |
+| **Protect** | Capacity | Meetings, new commitments, Friday building, weekend work | Body or calendar over-extended; stabilize before pushing again |
+
+**Signals to scan (objective + vibes):**
+
+*Objective:*
+- **Carry-over P1 count** from last week's close-week. ≥3 unfinished P1s with relationship-decay character (overdue emails, slipping contracts, retention items) → push-to-close. ≥5 with body/calendar strain → protect.
+- **Asana overdue tasks count.** > 5 overdue total → lean toward protect or push-to-close (not build).
+- **Repeat priorities.** Same Top 3 item carrying 3+ weeks → push-to-close (the structure has to change, not the resolve).
+- **Hours overshoot.** Last week's actual hours > planned hours by >20% → protect bias.
+- **Push streak.** 3+ consecutive push weeks → protect bias unless carry-over forces push-to-close.
+
+*Vibes (ask, don't infer alone):*
+- Body — sleep, energy, exercise this week?
+- Family — did the people at home get the version they want?
+- Mental — racing or settled?
+- Decisions weighing — anything heavy that needs a real pause?
+
+The objective signals propose; the vibes confirm. A clean carry-over queue + tired body = protect even though the queue says push-to-close. A loaded queue + good body = push-to-close even though the streak says protect.
 
 Propose the week mode with evidence:
-> "**Proposed mode: Push** — No active crises detected. Last week was protect; you have room to push this week."
-> 
+> "**Proposed mode: Push-to-close** — 4 P1 carry-overs with relationship decay. Body OK per /open-day. Push streak is 4, but the queue is burning louder than the streak. Constraint: no new initiatives, no Friday building."
+>
 > or
 >
-> "**Proposed mode: Protect** — 8 Asana tasks overdue, 2 carry-overs flagged urgent. Recommend stabilizing before pushing new initiatives."
+> "**Proposed mode: Push-to-build** — Carry-over queue is clean (1 P1 open). Energy fine. Constraint: don't accept 'while we're at it' scope — keep the surface narrow."
+>
+> or
+>
+> "**Proposed mode: Protect** — 8 Asana overdue, 5th consecutive push week, sleep < 6.5h all week. Constraint: ≤10h meetings, no new commitments."
 
-User confirms or flips.
+User confirms or flips. Vibes always override the proposal — the builder reads their own state better than the data does.
 
 ### Step 1.7: Project stack rank
 
@@ -192,13 +215,14 @@ Read `10-strategy/lops-summary.md` for current LOP health statuses.
 Read last week's stack rank from `10-strategy/stack-rank/` (if exists) to see what moved and what stalled.
 
 **Ranking algorithm (in priority order):**
-1. Projects tied to at-risk LOPs get boosted (protect mode) or maintained (push mode)
+1. Projects tied to at-risk LOPs get boosted (protect mode) or maintained (push modes)
 2. Higher `impact` projects rank above lower
 3. Projects where `role` = owner rank above sponsor/architect (you're the bottleneck)
 4. Projects with `role` containing `->` get a "handoff checkpoint" flag
 5. Projects untouched > 2 weeks get flagged as stale
-6. In push mode: explorer and new-lever projects get boosted
-7. In protect mode: fix/stabilize projects get boosted
+6. In **push-to-build** mode: explorer and new-lever projects get boosted
+7. In **push-to-close** mode: projects tied to repeat carry-over P1s get boosted; no new exploratory entries
+8. In **protect** mode: fix/stabilize projects get boosted; cap Top 5 at 3 if needed
 8. **Knowledge-graph signal (from Step 1f):** if an owned SLT topic is marked present-but-unpopulated or stale, the related project gets a "knowledge gap" note in the "Why This Rank" column. Not a boost — just a visibility flag so the builder can decide if closing the knowledge gap matters this week.
 
 **Present Top 5 with rationale:**
@@ -252,8 +276,8 @@ Format:
 ```
 ---
 week: YYYY-WNN
-mode: push | protect
-mode-rationale: "[evidence string]"
+mode: push-to-build | push-to-close | protect
+mode-rationale: "[evidence string — name the signals that drove the call, both objective and vibes]"
 ---
 
 # WNN Project Stack Rank
