@@ -719,7 +719,75 @@ Then confirm with `mcp__claude_ai_Asana__create_task_confirm` using workspace `$
 
 User approves, modifies, or skips before any Asana writes happen.
 
-**7d. Brain Dump Routing**
+**7d. SLT Meeting Actions — comment, complete, and advance status**
+
+*Gated: only runs if the builder is an SLT member. Detect by checking `$OBSIDIAN_VAULT_PATH/10-strategy/operating-memo.md` for SLT references, or skip silently if `AIRTABLE_API_KEY` is unset or the SLT base isn't accessible.*
+
+The SLT knowledge base has its own action tracking. Meeting Actions are first-class — not just reflections of Asana tasks. Step 7d closes the loop between daily-workflow completions and the SLT base when {user} marks SLT-shadowed tasks done.
+
+**Fetch open SLT actions inline** (skip if already cached from earlier in the run):
+
+```
+Airtable REST API:
+Base: appHDEHQA4bvlWwQq
+Table: tblasgjUjadHCqzrg (Meeting Actions)
+filterByFormula: AND(NOT({status}='Completed'),NOT({status}='Not doing'))
+fields[]: action_description, status, assignee_name
+returnFieldsByFieldId: true
+```
+
+Filter to {user}'s actions Python-side — `filterByFormula` on `{assignee_name}` is unreliable (see MEMORY.md Airtable gotchas).
+
+**(i) Mark Meeting Actions complete** — when evidence shows the action is done
+
+For each ✅ completion candidate from Step 1h (Task Evidence Detection) that maps to an SLT Meeting Action:
+
+```
+PATCH https://api.airtable.com/v0/appHDEHQA4bvlWwQq/tblasgjUjadHCqzrg/{record_id}
+Body: { "fields": {
+  "fldJleDMJFfcj5gPN": "Completed",
+  "fldkqhlQRTug3A1ui": true
+}}
+```
+
+Use plain option-name strings for select fields (`{"id": "selXXX"}` silently fails when using field-ID keys — see MEMORY.md).
+
+**(ii) Advance Meeting Actions to In Progress** — when evidence shows progress but not completion
+
+For 🔶 progress candidates that map to SLT actions:
+
+```
+PATCH ... Body: { "fields": { "fldJleDMJFfcj5gPN": "In Progress" }}
+```
+
+Also append a progress note to the Notes field (`fldo7xzjuXIneaw5J`) using a `## Progress YYYY-MM-DD` header so updates stack chronologically without overwriting meeting context. Fetch the current Notes value first (single-record GET), then PATCH the concatenated value.
+
+**(iii) Cross-system sync when Asana fires** — avoid double-tracking
+
+If a completed Asana task's notes contain `SLT record: recXXX` (per `/open-day` Step 4a's convention), run the SLT PATCH for that record alongside marking the Asana task complete in 7a. If an Asana comment is added in 7b for an in-progress task that originated from SLT, post the same comment content as a Notes append on the SLT record.
+
+**Finding the Airtable record ID (matching order):**
+
+1. **Preferred — Asana task notes convention.** `/open-day` Step 4a writes an exact line in the form `SLT record: recXXX` into the Asana task description when shadowing an SLT action. Parse the completed Asana task's `notes` (or `html_notes`) field for the regex `SLT record:\s*(rec[A-Za-z0-9]+)`. Case-sensitive on the prefix. Deterministic — no text fuzzing required.
+2. **Fallback — text-match.** If the parse doesn't resolve, fuzzy-match the Asana task name against open Meeting Action `action_description` values from the inline fetch above. Surface matches for {user}'s approval; never write automatically on a fuzzy hit.
+
+**Presentation to {user} (before writing):**
+
+```
+🧠 SLT Airtable sync plan:
+✅ Complete (2):
+  - rec123... "Order Thu lunch via Katie's sheet" — Slack: confirmed in Huddle thread
+  - recABC... "Bring wired setup for offsite tech" — Familiar: 30+ caps on SLT prep doc
+
+🔄 Advance to In Progress (1):
+  - recXYZ... "Build offsite presentation mental-model deck" — Familiar: 157 caps on Big Idea doc; not done
+
+No Asana-triggered SLT writes today.
+```
+
+{user} approves before any Airtable writes fire. This closes the loop between daily workflow completions and the SLT knowledge base — and surfaces the open SLT backlog that Asana otherwise misses.
+
+**7e. Brain Dump Routing**
 
 Read the `## Brain Dump` section from today's daily note. If empty (just `-` with no content), skip silently.
 
