@@ -74,6 +74,15 @@ Before creating anything, ask these questions **one at a time** to understand th
 > c) 7 days a week
 > d) Non-standard (tell me)
 
+**Question 6: SLT membership**
+
+> Are you a member of the Senior Leadership Team (SLT) — meaning your action items are tracked in the SLT Meeting Intelligence Airtable base?
+>
+> a) Yes — close-day will sync completed/in-progress SLT actions back to Airtable.
+> b) No — close-day will skip the SLT sync step silently.
+>
+> *Default: No. Only flip to Yes if you're an actual SLT member with Airtable access. If you're unsure, answer No — the SLT sync step requires a working `AIRTABLE_API_KEY` anyway.*
+
 After collecting answers, generate the **builder profile** (see Step 1a) and confirm it with the builder before proceeding.
 
 ## Step 1: Create the Vault
@@ -98,6 +107,7 @@ Based on the onboarding answers, create `$OBSIDIAN_VAULT_PATH/50-reference/build
 type: builder-profile
 name: [Builder's name]
 role: [executive | department-lead | manager | ic]
+slt_member: [true | false]  # true if action items are tracked in the SLT Meeting Intelligence Airtable base
 departments:
   - [department1]
   - [department2]
