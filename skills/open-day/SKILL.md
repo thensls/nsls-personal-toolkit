@@ -247,7 +247,7 @@ while True:
     offset = r.json().get('offset')
     if not offset: break
 
-my_actions = [r for r in all_records if '[BUILDER NAME]' in (r.get('fields', {}).get('fldmpu3lN0lrgrdSa') or '')]
+my_actions = [r for r in all_records if os.environ.get('BUILDER_NAME', '') in (r.get('fields', {}).get('fldmpu3lN0lrgrdSa') or '')]
 # Carry record IDs forward for Step 4a promotion.
 "
 ```
