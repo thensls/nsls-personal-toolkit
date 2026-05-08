@@ -181,7 +181,7 @@ Also read:
 - `$OBSIDIAN_VAULT_PATH/40-learning/_weekly-plan.md` — today's micro-learning assignment
 - `$OBSIDIAN_VAULT_PATH/40-learning/_inbox.md` — count of unprocessed links for active goals
 
-**2j. Open PRs on watched repos**
+**2i. Open PRs on watched repos**
 
 Surface open pull requests on repos the builder maintains so they don't sit forgotten. Skip silently if `PR_WATCH_REPOS` is not set in `~/.claude/local-plugins/nsls-personal-toolkit/.env`, or if the `gh` CLI is unavailable.
 
@@ -205,7 +205,7 @@ Categorize results into two buckets:
 
 Skip the entire section in Step 3 if both buckets are empty.
 
-**2i. SLT Meeting Actions — open items from the SLT knowledge base**
+**2j. SLT Meeting Actions — open items from the SLT knowledge base**
 
 Pull Kevin's open Meeting Actions from the SLT Meeting Intelligence base. Symmetric with `/close-day` Step 1h. These are action items from SLT meetings tracked separately from Asana — many have no due date but are time-sensitive (retreat prep, offsite logistics, quarterly deliverables).
 
@@ -247,7 +247,7 @@ while True:
     offset = r.json().get('offset')
     if not offset: break
 
-my_actions = [r for r in all_records if '[BUILDER NAME]' in (r.get('fields', {}).get('fldmpu3lN0lrgrdSa') or '')]
+my_actions = [r for r in all_records if os.environ.get('BUILDER_NAME', '') in (r.get('fields', {}).get('fldmpu3lN0lrgrdSa') or '')]
 # Carry record IDs forward for Step 4a promotion.
 "
 ```
