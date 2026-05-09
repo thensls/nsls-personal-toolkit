@@ -731,8 +731,8 @@ The SLT knowledge base has its own action tracking. Meeting Actions are first-cl
 Airtable REST API:
 Base: appHDEHQA4bvlWwQq
 Table: tblasgjUjadHCqzrg (Meeting Actions)
-filterByFormula: AND(NOT({status}='Completed'),NOT({status}='Not doing'))
-fields[]: action_description, status, assignee_name
+filterByFormula: AND(NOT({fldJleDMJFfcj5gPN}='Completed'),NOT({fldJleDMJFfcj5gPN}='Not doing'))
+fields[]: fldJleDMJFfcj5gPN, fldo7xzjuXIneaw5J, fldkqhlQRTug3A1ui, fldiPWq8q3NXyNXil, fldmpu3lN0lrgrdSa
 returnFieldsByFieldId: true
 ```
 
