@@ -307,6 +307,56 @@ slack_search_public_and_private(
 ```
 Your Slack user ID is read from `.env` (`SLACK_USER_ID`). Extract: who was messaged, what channels, key topics discussed. Group by conversation thread — don't list every individual message, summarize the thread topic. Distinguish work conversations from personal. Skip trivial messages ("ok", "thanks", reactions).
 
+**1f-pre. Slack follow-up scan (today only)**
+
+If `data_sources.slack: true` in the builder profile, scan today's Slack activity to flag commitments made and asks pending — so they roll into Carrying Over instead of evaporating overnight.
+
+**Two parallel queries scoped to today (`on:YYYY-MM-DD`):**
+
+1. **Today's sent messages** — find commitment language
+   ```
+   slack_search_public_and_private(
+     query="from:<@$SLACK_USER_ID> on:YYYY-MM-DD",
+     sort="timestamp",
+     limit=20,
+     include_context=false
+   )
+   ```
+   Filter for: "I'll", "I will", "I can", "let me", "going to", "I'll put on the calendar", "I'll send", "I'll draft", "by EOD", "by Friday", "happy to", "let's do it", "yes" (when in response to a proposed action).
+
+2. **Today's incoming asks** — find threads where someone asked the builder something and the builder didn't reply, OR where the builder's reply was a commitment that wasn't acted on by EOD.
+   ```
+   slack_search_public_and_private(
+     query="to:<@$SLACK_USER_ID> on:YYYY-MM-DD",
+     sort="timestamp",
+     limit=20,
+     include_context=false
+   )
+   ```
+   For each result, use `slack_read_channel` with `limit=5` on that channel/DM to determine the conversation state: did the builder respond? Was the response substantive or a deferral?
+
+**Cross-reference against today's data:**
+- Commitments visible in **Sent Email** (1d) or **Claude session context** (1f) → mark as "kept"
+- Commitments mentioned in **Familiar window titles** (1b) showing relevant work → mark as "in progress"
+- Otherwise → flag as "open"
+
+**Surface in the Carrying Over section** of today's daily note as:
+
+```markdown
+### Slack threads to follow up
+
+- [HH:MM] in [channel/DM]: committed to "[short description]" — status: open / in progress / kept
+- [HH:MM] in [channel/DM]: [Name] asked "[question snippet]" — no reply yet — [permalink]
+```
+
+If `data_sources.asana: true`, also create P2 tasks for each "open" item via Step 7c (carry-over task creation) with description noting the Slack source. If `asana: false`, the item lives only in the daily note's Carrying Over and migrates into tomorrow's seed.
+
+**Rules:**
+- Skip the builder's own bot DMs unless containing a person-facing commitment
+- Skip "ok", "thanks", "got it", reactions
+- Suppress items that already appear in today's Asana tasks created by other steps
+- Limit to 8 entries — beyond that, surface a "and N more" line and let the builder triage
+
 **1f. Claude session context**
 
 Review the current conversation for:
