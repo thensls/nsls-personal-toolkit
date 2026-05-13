@@ -48,7 +48,15 @@ Extract:
 
 If the close-week AI suggestions exist, present them to the builder as a starting point alongside the open-week recommendations. Show where they agree and where they differ — close-week suggestions are based on last week's data patterns, while open-week recommendations factor in the upcoming calendar and Asana state.
 
-**1b. Asana backlog**
+**1b. Task backlog**
+
+Pull open tasks from whichever task system the builder uses. Most builders use one of:
+- Asana (default — query via Asana MCP)
+- Airtable Meeting Actions (NSLS pattern — Fathom auto-extracts SLT/1:1 action items into Airtable)
+
+**Detection:** check `~/.claude/local-plugins/nsls-personal-toolkit/.env` for `ASANA_USER_GID`. If it's set and uncommented, use Asana (1b.1). If it's missing/commented, fall back to Airtable Meeting Actions (1b.2). Run **both** if both are configured — combine the results.
+
+**1b.1 — Asana**
 
 ```
 mcp__claude_ai_Asana__get_my_tasks(
@@ -58,11 +66,49 @@ mcp__claude_ai_Asana__get_my_tasks(
 )
 ```
 
-Categorize:
-- P1 (overdue or due this week)
-- P2 (due next 2 weeks)
-- P3 (backlog, no date)
-- "Do today" section items (self-flagged urgent)
+Also pull the "Do today" section items (self-flagged urgent) separately.
+
+**1b.2 — Airtable Meeting Actions** (NSLS)
+
+Query open tasks (status = Not Started or In Progress) assigned to the builder. The builder's name appears in the singleLineText `assignee` field; the linked record sits in `assignee (linked)`.
+
+```
+mcp__b9e0ba62-fba1-48c0-8814-6f701844c723__list_records_for_table(
+  baseId="appHDEHQA4bvlWwQq",
+  tableId="tblasgjUjadHCqzrg",
+  filters={
+    "operator": "and",
+    "operands": [
+      {"operator": "contains", "operands": ["fldmpu3lN0lrgrdSa", "<builder full name>"]},
+      {"operator": "isAnyOf", "operands": ["fldJleDMJFfcj5gPN", ["selSlSYN2tjGdZHZa", "selfOZiZ8QJ9jfDnw"]]}
+    ]
+  },
+  fieldIds=["fldrD45ouHX2KD52A", "fldiPWq8q3NXyNXil", "fldJleDMJFfcj5gPN", "fldXZJaatwC9FNbtX", "fldJ1EKcHoncBtkoo", "fldZlxizRCZnHvWH0", "fldtGjdcicLNRiFvi", "fldo7xzjuXIneaw5J"],
+  pageSize=100
+)
+```
+
+Field IDs decoded:
+- `fldrD45ouHX2KD52A` — action (formula, primary)
+- `fldiPWq8q3NXyNXil` — action_description
+- `fldJleDMJFfcj5gPN` — status (`selSlSYN2tjGdZHZa` = Not Started, `selfOZiZ8QJ9jfDnw` = In Progress)
+- `fldXZJaatwC9FNbtX` — due_date
+- `fldJ1EKcHoncBtkoo` — Priority
+- `fldmpu3lN0lrgrdSa` — assignee (singleLineText)
+- `fldZlxizRCZnHvWH0` — meeting (link to source meeting)
+- `fldtGjdcicLNRiFvi` — created_dtm
+- `fldo7xzjuXIneaw5J` — Notes
+
+**Categorization rules** (apply to combined Asana + Airtable result):
+- **P1** — overdue OR due this week (within the planning window)
+- **P2** — due in next 2 weeks
+- **P3** — anything else, including:
+    - tasks with no due date
+    - tasks due more than 2 weeks out (still surface them — they belong in the week's awareness even if not action-this-week)
+    - tasks self-flagged "Do today" in Asana
+- **De-dupe**: if the same item appears in both Asana and Airtable, prefer the Airtable record (it carries the meeting context).
+
+The full list goes into Step 3's "Also Important" / "What to Say No To" sections. The P1 cluster informs the Top 3 candidates. The P3 cluster — even far-out ones — should be visible in the weekly note so they don't fall off the radar between weeks.
 
 **1c. This week's calendar**
 
