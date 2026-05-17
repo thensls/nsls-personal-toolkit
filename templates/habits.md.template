@@ -1,0 +1,19 @@
+# Daily Habits
+
+## Active
+
+- id: walk
+  name: Walk
+  emoji: 🚶
+  target: 30min
+  frequency: daily
+
+- id: read
+  name: Read
+  emoji: 📖
+  target: 15min
+  frequency: daily
+
+## Archived
+
+(none yet)
