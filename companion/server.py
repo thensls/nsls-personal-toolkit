@@ -17,10 +17,45 @@ from companion.safe_write import safe_modify
 from companion.streak import DayResult, compute_concern, status_for, streak_days
 from companion.validation import (
     HABIT_ID_RE,
+    validate_habit_fields,
     validate_save,
     validate_toggle,
 )
 from companion.watcher import VaultWatcher
+
+
+def _serialize_habits(habits: dict) -> str:
+    """Write the habits dict back to canonical markdown format.
+
+    Active section first, then Archived. Each habit is a 5- or 6-line
+    block (id, name, emoji, target, frequency, optional archived_at).
+    """
+    out = ["# Daily Habits", ""]
+    out.append("## Active")
+    out.append("")
+    if not habits["active"]:
+        out.append("(none)")
+        out.append("")
+    else:
+        for h in habits["active"]:
+            out.append(f"- id: {h['id']}")
+            for field in ("name", "emoji", "target", "frequency"):
+                if field in h:
+                    out.append(f"  {field}: {h[field]}")
+            out.append("")
+    out.append("## Archived")
+    out.append("")
+    if not habits["archived"]:
+        out.append("(none yet)")
+        out.append("")
+    else:
+        for h in habits["archived"]:
+            out.append(f"- id: {h['id']}")
+            for field in ("name", "emoji", "target", "frequency", "archived_at"):
+                if field in h:
+                    out.append(f"  {field}: {h[field]}")
+            out.append("")
+    return "\n".join(out)
 
 
 def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
@@ -433,6 +468,68 @@ def create_app(vault_path: str) -> Flask:
 
         safe_modify(note_path, replace_section)
         broadcast(f"01-daily/{today}.md")
+        return ("", 204)
+
+    @app.route("/add-habit-form")
+    def add_habit_form():
+        return render_template("_components/add_habit_form.html")
+
+    @app.route("/habit", methods=["POST"])
+    def add_habit():
+        try:
+            fields = validate_habit_fields(request.form)
+        except ValueError as e:
+            return (str(e), 400)
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        new_entry = (
+            f"\n- id: {fields['id']}\n"
+            f"  name: {fields['name']}\n"
+            f"  emoji: {fields['emoji']}\n"
+            f"  target: {fields['target']}\n"
+            f"  frequency: {fields['frequency']}\n"
+        )
+
+        def insert(existing: str) -> str:
+            md = existing or "# Daily Habits\n\n## Active\n\n## Archived\n"
+            # Reject duplicate ids (substring match — id charset is restricted so
+            # `- id: walk` and `- id: walking` are distinguishable in practice).
+            if f"id: {fields['id']}" in md:
+                raise ValueError("habit id already exists")
+            return md.replace("## Active\n", "## Active\n" + new_entry, 1)
+
+        try:
+            safe_modify(habits_path, insert)
+        except ValueError as e:
+            return (str(e), 400)
+        broadcast("30-habits/habits.md")
+        return ("", 204)
+
+    @app.route("/habit/archive", methods=["POST"])
+    def archive_habit():
+        habit_id = request.form.get("habit_id", "").strip()
+        if not HABIT_ID_RE.fullmatch(habit_id):
+            return ("invalid habit_id", 400)
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        if not habits_path.exists():
+            return ("", 404)
+        found = [False]
+
+        def archive(existing: str) -> str:
+            habits = parse_habits(existing)
+            active = habits["active"]
+            target = next((h for h in active if h["id"] == habit_id), None)
+            if target is None:
+                return existing  # signal not-found via found[0]
+            found[0] = True
+            target["archived_at"] = date.today().isoformat()
+            habits["active"] = [h for h in active if h["id"] != habit_id]
+            habits["archived"].append(target)
+            return _serialize_habits(habits)
+
+        safe_modify(habits_path, archive)
+        if not found[0]:
+            return ("habit not found", 404)
+        broadcast("30-habits/habits.md")
         return ("", 204)
 
     watcher = VaultWatcher(vault_path, on_change=broadcast)

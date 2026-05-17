@@ -1,0 +1,15 @@
+<form hx-post="/habit" hx-target="closest div" hx-swap="outerHTML" class="bg-white rounded-lg shadow p-4 mb-4">
+  <div class="grid grid-cols-2 gap-3">
+    <input name="id" placeholder="id (e.g. walk)" class="border rounded px-3 py-2" required>
+    <input name="name" placeholder="Name" class="border rounded px-3 py-2" required>
+    <input name="emoji" placeholder="🚶" class="border rounded px-3 py-2" required>
+    <input name="target" placeholder="30min" class="border rounded px-3 py-2" required>
+    <select name="frequency" class="border rounded px-3 py-2 col-span-2">
+      <option>daily</option>
+      <option>3/week</option>
+      <option>4/week</option>
+      <option>5/week</option>
+    </select>
+  </div>
+  <button class="mt-3 px-4 py-2 bg-blue-900 text-white rounded">Add</button>
+</form>
