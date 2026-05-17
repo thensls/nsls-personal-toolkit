@@ -11,6 +11,30 @@ set -euo pipefail
 
 PLUGIN_DIR="$HOME/.claude/local-plugins/nsls-personal-toolkit"
 
+install_companion_launchd() {
+  local plugin_dir="$HOME/.claude/local-plugins/nsls-personal-toolkit"
+  local plist_dest="$HOME/Library/LaunchAgents/com.nsls.toolkit-companion.plist"
+
+  # Resolve vault path via Python (handles env var, builder-profile, and prompt)
+  local vault_path
+  vault_path=$(python3 "$plugin_dir/companion/install_helper.py" resolve-vault)
+  if [ -z "$vault_path" ] || [ ! -d "$vault_path/01-daily" ]; then
+    echo "✗ Could not find a vault with 01-daily/ at: $vault_path"
+    echo "  Set OBSIDIAN_VAULT_PATH or add the vault to builder-profile.md, then re-run install."
+    return 1
+  fi
+
+  # Generate the plist via Python (handles quoting correctly)
+  python3 "$plugin_dir/companion/install_helper.py" write-plist \
+    --vault "$vault_path" \
+    --dest "$plist_dest"
+
+  launchctl load -w "$plist_dest"
+  echo "✓ Auto-start enabled. Companion will run at login."
+  echo "  Vault: $vault_path"
+  echo "  To disable later: launchctl unload -w $plist_dest"
+}
+
 # Detect the repo URL from the install script URL (passed via curl | bash)
 # Fall back to the NSLS template if we can't detect it
 REPO_URL="${NSLS_PERSONAL_REPO:-https://github.com/thensls/nsls-personal-toolkit.git}"
@@ -44,3 +68,20 @@ echo "Next: Open Claude Code and say /personal-setup to connect your accounts."
 echo ""
 echo "These are YOUR skills. Edit anything in:"
 echo "  $PLUGIN_DIR/skills/<name>/SKILL.md"
+echo ""
+
+# Optional: install web companion
+read -p "Install the web companion (browser-based UI)? [Y/n] " yn
+if [[ "${yn:-y}" =~ ^[Yy] ]]; then
+  if command -v pip3 >/dev/null 2>&1; then
+    (cd "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion" && pip3 install -e . -q)
+    echo "✓ Installed nsls-toolkit-companion CLI"
+  else
+    echo "⚠ pip3 not found; skipping companion install"
+  fi
+
+  read -p "Auto-start the companion at login? [y/N] " auto
+  if [[ "${auto:-n}" =~ ^[Yy] ]]; then
+    install_companion_launchd
+  fi
+fi
