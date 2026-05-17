@@ -23,38 +23,45 @@ from companion.validation import (
 from companion.watcher import VaultWatcher
 
 
-def _extract_top_3(morning_section: str) -> list[str]:
-    items: list[str] = []
-    in_top_3 = False
-    for line in morning_section.splitlines():
+def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
+    """Extract `1. [x] Foo` / `1. [ ] Foo` / `1. Foo` items under a `### heading`.
+
+    Returns a list of dicts shaped like ``{"text": str, "checked": bool}``.
+    Tolerates both lowercase `[x]` and uppercase `[X]`. Items without a
+    checkbox at all are treated as unchecked (backward compat for daily notes
+    that omit the box).
+    """
+    items: list[dict] = []
+    in_section = False
+    for line in section.splitlines():
         stripped = line.strip()
-        if stripped.startswith("### My Top 3"):
-            in_top_3 = True
+        if stripped.startswith(heading):
+            in_section = True
             continue
-        if in_top_3 and stripped.startswith("###"):
+        if in_section and stripped.startswith("###"):
             break
-        if in_top_3 and stripped and stripped[0].isdigit():
-            text = stripped.split(".", 1)[-1].strip()
+        if in_section and stripped and stripped[0].isdigit():
+            # Drop the leading "1." / "12." numbering.
+            after_num = stripped.split(".", 1)[-1].strip()
+            checked = False
+            if after_num.startswith("[ ]"):
+                text = after_num[3:].strip()
+            elif after_num[:3].lower() == "[x]":
+                checked = True
+                text = after_num[3:].strip()
+            else:
+                text = after_num
             if text:
-                items.append(text)
+                items.append({"text": text, "checked": checked})
     return items
 
 
-def _extract_bonus(morning_section: str) -> list[str]:
-    items: list[str] = []
-    in_bonus = False
-    for line in morning_section.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("### Bonus"):
-            in_bonus = True
-            continue
-        if in_bonus and stripped.startswith("###"):
-            break
-        if in_bonus and stripped and stripped[0].isdigit():
-            text = stripped.split(".", 1)[-1].strip()
-            if text:
-                items.append(text)
-    return items
+def _extract_top_3(morning_section: str) -> list[dict]:
+    return _extract_numbered_checkbox_list(morning_section, "### My Top 3")
+
+
+def _extract_bonus(morning_section: str) -> list[dict]:
+    return _extract_numbered_checkbox_list(morning_section, "### Bonus")
 
 
 def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
@@ -67,7 +74,7 @@ def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
     in_section = False
     seen = 0
     for i, line in enumerate(lines):
-        if line.startswith(heading):
+        if line.strip() == heading:
             in_section = True
             continue
         if in_section and line.startswith("### "):

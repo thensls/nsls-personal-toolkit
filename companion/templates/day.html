@@ -12,10 +12,11 @@
   <ul class="space-y-2">
     {% for item in top_3 %}
       <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"
+             {% if item.checked %}checked{% endif %}
              hx-post="/toggle"
              hx-vals='{"section":"top_3","index":{{ loop.index0 }}}'
              hx-swap="none"
-             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> {{ item }}</label></li>
+             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> {{ item.text }}</label></li>
     {% endfor %}
   </ul>
 </section>
@@ -25,10 +26,11 @@
   <ul class="space-y-2 opacity-90">
     {% for item in bonus %}
       <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"
+             {% if item.checked %}checked{% endif %}
              hx-post="/toggle"
              hx-vals='{"section":"bonus","index":{{ loop.index0 }}}'
              hx-swap="none"
-             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> {{ item }}</label></li>
+             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> {{ item.text }}</label></li>
     {% endfor %}
   </ul>
 </section>

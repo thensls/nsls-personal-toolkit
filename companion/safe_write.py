@@ -14,6 +14,9 @@ def safe_modify(path: Path, transform: Callable[[str], str]) -> None:
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     # Open or create — exclusive lock held for the whole read-modify-write.
+    # We use "a+" (not "r+") because it creates the file if missing; we never
+    # actually write through this handle — the tempfile+rename pattern below
+    # is what writes. The handle exists only to hold the fcntl lock.
     with open(path, "a+") as f:
         fcntl.flock(f.fileno(), fcntl.LOCK_EX)
         f.seek(0)

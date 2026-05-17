@@ -70,3 +70,41 @@ def test_day_tab_renders_habits(client_with_today):
     resp = client_with_today.get("/")
     assert b"Walk" in resp.data
     assert b"Read 15m" in resp.data
+
+
+def test_day_tab_renders_checked_state(tmp_path):
+    """Top 3 items marked `[x]` in the file must render as checked; `[ ]` not."""
+    from datetime import date
+    vault = tmp_path / "vault"
+    daily = vault / "01-daily"
+    daily.mkdir(parents=True)
+    habits = vault / "30-habits"
+    habits.mkdir(parents=True)
+    today = date.today().isoformat()
+    (daily / f"{today}.md").write_text(
+        "## Morning Check-in\n### My Top 3\n"
+        "1. [x] Done item\n2. [ ] Pending item\n"
+    )
+    (habits / "habits.md").write_text("# Daily Habits\n\n## Active\n")
+    (habits / "log.md").write_text("# Log\n")
+
+    app = create_app(vault_path=str(vault))
+    app.config["TESTING"] = True
+    try:
+        client = app.test_client()
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert b"checked" in resp.data
+        page = resp.data.decode()
+        assert "Done item" in page
+        assert "Pending item" in page
+        # The <input> immediately preceding "Done item" carries `checked`.
+        done_idx = page.index("Done item")
+        done_input = page[:done_idx][page[:done_idx].rfind("<input"):]
+        assert "checked" in done_input
+        # The <input> immediately preceding "Pending item" does NOT.
+        pending_idx = page.index("Pending item")
+        pending_input = page[:pending_idx][page[:pending_idx].rfind("<input"):]
+        assert "checked" not in pending_input
+    finally:
+        app.config["WATCHER"].stop()
