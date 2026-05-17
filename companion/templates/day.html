@@ -11,7 +11,11 @@
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Top 3</h2>
   <ul class="space-y-2">
     {% for item in top_3 %}
-      <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"> {{ item }}</label></li>
+      <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"
+             hx-post="/toggle"
+             hx-vals='{"section":"top_3","index":{{ loop.index0 }}}'
+             hx-swap="none"
+             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> {{ item }}</label></li>
     {% endfor %}
   </ul>
 </section>
@@ -20,7 +24,11 @@
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Bonus</h2>
   <ul class="space-y-2 opacity-90">
     {% for item in bonus %}
-      <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"> {{ item }}</label></li>
+      <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"
+             hx-post="/toggle"
+             hx-vals='{"section":"bonus","index":{{ loop.index0 }}}'
+             hx-swap="none"
+             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> {{ item }}</label></li>
     {% endfor %}
   </ul>
 </section>
@@ -29,10 +37,7 @@
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Habits today</h2>
   <ul class="space-y-2">
     {% for h in habits_today %}
-      <li class="flex items-center justify-between">
-        <span>{{ h.emoji }} {{ h.name }}</span>
-        <span class="text-sm text-stone-500">{{ h.streak_days }}d{% if h.status == 'at_risk' %} ⚠{% elif h.streak_days >= 7 %} 🔥{% endif %}</span>
-      </li>
+      {% include "_components/habit_row.html" %}
     {% endfor %}
   </ul>
 </section>
