@@ -5,12 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NSLS Toolkit Companion</title>
   <link rel="stylesheet" href="/static/tailwind.css">
-  <script src="https://unpkg.com/htmx.org@1.9.10"
-          integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"
-          crossorigin="anonymous"></script>
-  <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"
-          integrity="sha384-V1qBQB6tNc60jH/ZmDuhDmuywL5p3srn4i9bIarO+gNQfeQiSh7lZ4Mki/Y+rL6"
-          crossorigin="anonymous"></script>
+  <!-- CDN script tags; SRI removed for v1.0 because we're localhost-only and the
+       CDN versions are pinned. Add integrity hashes in a future hardening pass
+       if/when we ship a non-localhost mode. -->
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   </style>
@@ -26,5 +25,80 @@
   <main class="max-w-4xl mx-auto px-6 py-8">
     {% block content %}{% endblock %}
   </main>
+  <script>
+    (function () {
+      let es = null;
+      let reconnectDelay = 1000;        // backoff base
+      let lastReload = Date.now();
+      const RELOAD_DEBOUNCE_MS = 800;
+
+      function isMainDirty() {
+        // Any textarea inside <main> whose current value differs from its initial
+        // value is "dirty" and we should warn before clobbering it.
+        for (const t of document.querySelectorAll("main textarea")) {
+          if (t.value !== (t.defaultValue || "")) return true;
+        }
+        return false;
+      }
+
+      function reloadMain() {
+        if (Date.now() - lastReload < RELOAD_DEBOUNCE_MS) return;
+        lastReload = Date.now();
+        if (isMainDirty()) {
+          const ok = confirm(
+            "The CLI updated this file. Reload and lose the edits you're typing?\n\n" +
+            "OK = reload\nCancel = keep my edits (you can refresh manually later)"
+          );
+          if (!ok) return;
+        }
+        htmx.ajax("GET", window.location.href, { target: "main", swap: "innerHTML" });
+      }
+
+      function connect() {
+        if (es) try { es.close(); } catch (_) {}
+        es = new EventSource("/events");
+        es.onopen = () => { reconnectDelay = 1000; };
+        es.onmessage = (e) => {
+          const path = e.data;
+          if (path.startsWith("01-daily/") || path.startsWith("30-habits/")) {
+            reloadMain();
+          }
+        };
+        es.onerror = () => {
+          try { es.close(); } catch (_) {}
+          setTimeout(connect, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000);  // cap 30s
+        };
+      }
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          // iOS drops SSE when the tab is backgrounded — refresh + reconnect.
+          reloadMain();
+          connect();
+        }
+      });
+
+      connect();
+
+      // Global toast for HTMX response errors. All POSTs in templates use:
+      //   hx-on:htmx:response-error="window.__toolkitErrorToast(event)"
+      window.__toolkitErrorToast = function (evt) {
+        const xhr = evt.detail && evt.detail.xhr;
+        const msg = (xhr && xhr.responseText) || "Save failed";
+        let toast = document.getElementById("toolkit-toast");
+        if (!toast) {
+          toast = document.createElement("div");
+          toast.id = "toolkit-toast";
+          toast.className = "fixed bottom-4 right-4 bg-red-700 text-white px-4 py-2 rounded shadow-lg z-50";
+          document.body.appendChild(toast);
+        }
+        toast.textContent = "⚠ " + msg.slice(0, 200);
+        toast.style.display = "block";
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => { toast.style.display = "none"; }, 4000);
+      };
+    })();
+  </script>
 </body>
 </html>
