@@ -1,0 +1,4 @@
+flask>=3.0
+watchdog>=4.0
+click>=8.1
+pytest>=8.0

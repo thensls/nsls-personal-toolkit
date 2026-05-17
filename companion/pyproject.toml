@@ -1,0 +1,24 @@
+[project]
+name = "nsls-toolkit-companion"
+version = "0.1.0"
+description = "Local web companion for the NSLS personal productivity toolkit"
+requires-python = ">=3.10"
+dependencies = [
+  "flask>=3.0",
+  "watchdog>=4.0",
+  "click>=8.1",
+]
+
+[project.scripts]
+toolkit-companion = "companion.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".."]
