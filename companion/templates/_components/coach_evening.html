@@ -57,7 +57,7 @@
             class="px-4 py-2 bg-amber-700 text-white rounded">Next</button>
     <button x-show="step >= 4"
             hx-post="/lock-in" hx-vals='{"phase":"evening"}'
-            hx-target="body" hx-swap="innerHTML"
+            hx-select="main" hx-target="main" hx-swap="outerHTML"
             class="px-4 py-2 bg-amber-700 text-white rounded">Done →</button>
   </div>
 </div>

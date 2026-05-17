@@ -88,3 +88,18 @@ def test_lock_in_morning_writes_nothing_but_returns_command_view(client_with_tod
     assert resp.status_code == 200
     # Returns the Command Center HTML for HTMX to swap in
     assert b"Top 3" in resp.data
+
+
+def test_lock_in_evening_returns_results_view(client_with_today):
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    note.write_text(
+        "## Morning Check-in\n### My Top 3\n1. [x] Done\n"
+        "## Insight Reflection\n\nReflected.\n"
+        "## Gratitude\n\nGrateful.\n"
+    )
+    resp = client.post("/lock-in", data={"phase": "evening"})
+    assert resp.status_code == 200
+    assert b"Day closed" in resp.data
+    assert b"Reflected" in resp.data
