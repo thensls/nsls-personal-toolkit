@@ -451,6 +451,12 @@ Generate in this format (matching the user's existing `01-daily/` structure):
 
 [Paragraph 2 — second dimension or implication: what this pattern might mean going forward, or a second non-obvious angle. Max 3 sentences. Omit if there's nothing genuinely interesting to add.]
 
+## Gratitude
+
+(Ask the builder for one thing they're grateful for from today. Optional — skip if user has nothing to write.)
+
+[gratitude line]
+
 ## Time Allocation
 
 | Category | Hours | % | Top tools |
@@ -554,6 +560,32 @@ Dimensions to check (choose the most non-obvious):
 - Second-person or "we" framing — the user should feel seen, not lectured
 - Omit the second paragraph if there's no second insight that clears the bar. One sharp insight beats two generic ones.
 - **Never summarize the day.** That's what the rest of the note is for.
+
+### Reconcile to log.md
+
+After producing the `## Habits` summary, append today's results to `30-habits/log.md` in the format:
+
+`YYYY-MM-DD · habit_id:percent · habit_id:percent`
+
+Reconciliation rules (apply in order):
+
+1. **Read existing log.md row for today** (if any). Call this `log_ticks` (a dict `{habit_id: percent}`).
+2. **Read daily-note checkboxes** under `## Morning Check-in` → `### Habits`. Use the parser semantics: `[x]` = 1.0, `[/]` or `[~]` = 0.5, `[ ]` = 0.0. Call this `note_ticks`.
+3. **For each active habit, merge — taking the MAX of the two values.** This gives canonical priority to log.md (companion ticks survive even if the user didn't update the checkbox in the daily note), while still letting users tick checkboxes in Obsidian or the CLI if log.md hasn't been touched for that habit today.
+4. **Write the merged row back to log.md**, idempotent on the date — if a row for today already exists, replace it.
+5. **Update the daily-note `### Habits` checkboxes to reflect the merged result** — checked (`[x]`) for 1.0, partial (`[/]`) for 0.5, unchecked (`[ ]`) for 0.0. This keeps the markdown human-readable in Obsidian, but the log.md value is authoritative.
+
+This MAX-merge resolves the two-writer problem without needing mtime comparison: a tap in the companion never gets undone by close-day running afterwards, and a manual checkbox tick never gets undone by close-day if the companion was already at 1.0. Resetting a habit to 0.0 mid-day requires editing log.md directly.
+
+### Streak rule reference
+
+When describing habit streaks in `## Today's stats` or in Insight Reflection prompts, follow this rule:
+
+Walk a habit's recent log backwards from yesterday until a 100% day is found (or the log is exhausted). Along the way, partial days (50%) add 0.5 to a "concern counter"; missed days (0%) add 1.0. A 100% day clears the counter back to 0 and stops the walk.
+
+Status thresholds: 0–0.5 → OK. 1.0 → one miss recorded, streak still alive. 1.5 → at risk. 2.0 or more → reset.
+
+When a habit is at risk, name it explicitly: *"Workout is at risk — one full day clears it."* When a habit just reset, acknowledge it without judgment: *"Walking streak reset; tomorrow restarts the count."*
 
 ### Step 4: Present draft to user
 
