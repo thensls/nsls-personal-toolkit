@@ -1,6 +1,7 @@
 """toolkit-companion CLI: serve, stop, status."""
 
 import os
+import shutil
 import signal
 import socket
 import sys
@@ -11,6 +12,7 @@ import click
 
 
 PID_FILE = Path.home() / ".claude" / "local-plugins" / "nsls-personal-toolkit" / ".companion.pid"
+TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 
 def _find_free_port(start: int = 7777) -> int:
@@ -22,6 +24,31 @@ def _find_free_port(start: int = 7777) -> int:
             except OSError:
                 continue
     raise RuntimeError("No free port found")
+
+
+def ensure_vault_structure(vault_path: Path, templates_dir: Path = TEMPLATES_DIR) -> list[str]:
+    """Idempotently create the directories and seed files the companion expects.
+
+    Returns a list of human-readable strings describing what was created (empty
+    if nothing was missing). Safe to call on every startup — existing files are
+    never overwritten.
+    """
+    created: list[str] = []
+    for sub in ("01-daily", "02-weekly", "30-habits"):
+        d = vault_path / sub
+        if not d.exists():
+            d.mkdir(parents=True, exist_ok=True)
+            created.append(f"created {sub}/")
+    for name in ("habits.md", "log.md"):
+        dest = vault_path / "30-habits" / name
+        if dest.exists():
+            continue
+        src = templates_dir / f"{name}.template"
+        if not src.exists():
+            continue
+        shutil.copyfile(src, dest)
+        created.append(f"seeded 30-habits/{name} from template")
+    return created
 
 
 @click.group()
@@ -39,11 +66,17 @@ def serve(vault, port, no_open):
     if not vault:
         click.echo("Set OBSIDIAN_VAULT_PATH or pass --vault", err=True)
         sys.exit(1)
+    vault_path = Path(vault)
+    if not vault_path.is_dir():
+        click.echo(f"Vault path is not a directory: {vault}", err=True)
+        sys.exit(1)
+    for line in ensure_vault_structure(vault_path):
+        click.echo(f"  {line}")
     port = port or _find_free_port()
     host = "127.0.0.1"
 
     from companion.server import create_app
-    app = create_app(vault_path=vault)
+    app = create_app(vault_path=str(vault_path))
 
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
     PID_FILE.write_text(f"{os.getpid()}\n{host}:{port}\n")
