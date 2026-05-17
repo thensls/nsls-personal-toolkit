@@ -57,3 +57,24 @@ def test_archive_habit_moves_to_archived_section(client_with_today):
     archived_idx = habits_md.find("## Archived")
     walk_idx = habits_md.find("id: walk")
     assert walk_idx > archived_idx
+
+
+def test_add_habit_rejects_exact_duplicate_only(client_with_today):
+    """A new id that's a prefix of an existing id must be ACCEPTED."""
+    client, vault = client_with_today
+    # `walk` already exists in the fixture. Adding `walking` should succeed
+    # (no collision with `walk`).
+    resp = client.post("/habit", data={
+        "id": "walking", "name": "Walking", "emoji": "🚶",
+        "target": "60min", "frequency": "daily",
+    })
+    assert resp.status_code in (200, 204), f"got {resp.status_code}: {resp.data!r}"
+    md = (vault / "30-habits" / "habits.md").read_text()
+    assert "id: walking" in md
+    assert "id: walk" in md  # original still there
+    # And the inverse: adding "walk" again should be rejected
+    resp2 = client.post("/habit", data={
+        "id": "walk", "name": "Walk Again", "emoji": "🚶",
+        "target": "30min", "frequency": "daily",
+    })
+    assert resp2.status_code == 400

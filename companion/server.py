@@ -491,9 +491,9 @@ def create_app(vault_path: str) -> Flask:
 
         def insert(existing: str) -> str:
             md = existing or "# Daily Habits\n\n## Active\n\n## Archived\n"
-            # Reject duplicate ids (substring match — id charset is restricted so
-            # `- id: walk` and `- id: walking` are distinguishable in practice).
-            if f"id: {fields['id']}" in md:
+            parsed = parse_habits(md)
+            existing_ids = {h["id"] for h in parsed["active"]} | {h["id"] for h in parsed["archived"]}
+            if fields["id"] in existing_ids:
                 raise ValueError("habit id already exists")
             return md.replace("## Active\n", "## Active\n" + new_entry, 1)
 
