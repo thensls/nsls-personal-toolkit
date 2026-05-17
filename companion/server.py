@@ -302,6 +302,13 @@ def create_app(vault_path: str) -> Flask:
 
         return render_template("day.html", **ctx)
 
+    @app.route("/week")
+    def week():
+        y, w, _ = date.today().isocalendar()
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{y}-W{w:02d}.md"
+        week_md = path.read_text() if path.exists() else ""
+        return render_template("week.html", week_md=week_md, week_of=f"{y}-W{w:02d}")
+
     @app.route("/streaks")
     def streaks():
         habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
