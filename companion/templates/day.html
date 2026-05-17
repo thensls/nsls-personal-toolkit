@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% set active_tab = 'day' %}
+{% block content %}
+  <h1 class="text-2xl font-bold mb-4">Today — {{ today }}</h1>
+  {% if note_md %}
+    <pre class="bg-white p-4 rounded shadow">{{ note_md }}</pre>
+  {% else %}
+    <p class="text-stone-500">No daily note for today yet. Run <code>/open-day</code> in your terminal.</p>
+  {% endif %}
+{% endblock %}

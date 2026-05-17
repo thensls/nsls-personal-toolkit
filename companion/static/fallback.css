@@ -1,0 +1,57 @@
+/* Minimal hand-written stylesheet covering only the Tailwind utility classes
+ * actually referenced by base.html and day.html. Used as a fallback when a
+ * real Tailwind build (via `npx tailwindcss`) is not available at install
+ * time. install.sh (Task 14) will overwrite tailwind.css with a real build
+ * when possible; otherwise tailwind.css is a copy of this file. */
+
+/* Reset / base */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+/* Backgrounds */
+.bg-stone-50 { background-color: #fafaf9; }
+.bg-white { background-color: #ffffff; }
+
+/* Text colors */
+.text-stone-900 { color: #1c1917; }
+.text-stone-500 { color: #78716c; }
+.text-blue-900 { color: #1e3a8a; }
+
+/* Typography */
+.text-2xl { font-size: 1.5rem; line-height: 2rem; }
+.font-bold { font-weight: 700; }
+.font-semibold { font-weight: 600; }
+
+/* Spacing — margin */
+.mb-4 { margin-bottom: 1rem; }
+
+/* Spacing — padding */
+.p-4 { padding: 1rem; }
+.px-6 { padding-left: 1.5rem; padding-right: 1.5rem; }
+.py-3 { padding-top: 0.75rem; padding-bottom: 0.75rem; }
+.py-8 { padding-top: 2rem; padding-bottom: 2rem; }
+.pb-3 { padding-bottom: 0.75rem; }
+
+/* Layout */
+.max-w-4xl { max-width: 56rem; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+
+/* Flex */
+.flex { display: flex; }
+.gap-6 { gap: 1.5rem; }
+
+/* Borders */
+.border-b { border-bottom: 1px solid #e7e5e4; }
+.border-b-2 { border-bottom-width: 2px; border-bottom-style: solid; }
+.border-blue-900 { border-color: #1e3a8a; }
+
+/* Rounded / shadow */
+.rounded { border-radius: 0.25rem; }
+.shadow {
+  box-shadow:
+    0 1px 3px 0 rgba(0, 0, 0, 0.1),
+    0 1px 2px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* Anchor reset so nav links inherit color utilities */
+a { color: inherit; text-decoration: none; }
