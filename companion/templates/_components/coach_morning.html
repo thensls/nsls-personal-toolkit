@@ -16,11 +16,11 @@
   <template x-if="step === 2">
     <div>
       <h3 class="font-semibold text-lg mb-2">Confirm Top 3</h3>
-      <p class="text-sm text-stone-600 mb-3">Edit if needed. Press Next to continue — changes save on Lock in.</p>
+      <p class="text-sm text-stone-600 mb-3">Review your Top 3 from this morning's planning. To change them, edit today's note in Obsidian or rerun <code>/open-day</code>.</p>
       <form id="step2-form">
         {% for item in top_3 %}
-        <input name="top_{{ loop.index0 }}" value="{{ item.text }}"
-               class="block w-full border rounded px-3 py-2 mb-2">
+        <input name="top_{{ loop.index0 }}" value="{{ item.text }}" readonly
+               class="block w-full border rounded px-3 py-2 mb-2 bg-stone-50">
         {% endfor %}
       </form>
     </div>
@@ -29,9 +29,9 @@
   <template x-if="step === 3">
     <div>
       <h3 class="font-semibold text-lg mb-2">Bonus list</h3>
-      <p class="text-sm text-stone-600 mb-3">Lower priority — only if Top 3 is done. One per line.</p>
-      <textarea name="bonus" rows="5" form="step3-form"
-                class="block w-full border rounded px-3 py-2 font-mono text-sm">{{ bonus_text }}</textarea>
+      <p class="text-sm text-stone-600 mb-3">Bonus items from this morning's planning. Lower priority — only if Top 3 is done. To edit, change today's note in Obsidian.</p>
+      <textarea name="bonus" rows="5" form="step3-form" readonly
+                class="block w-full border rounded px-3 py-2 font-mono text-sm bg-stone-50">{{ bonus_text }}</textarea>
       <form id="step3-form"></form>
     </div>
   </template>
@@ -74,11 +74,11 @@
   <template x-if="step === 6">
     <div>
       <h3 class="font-semibold text-lg mb-2">Vitality intentions</h3>
-      <p class="text-sm text-stone-600 mb-3">One movement, one nourishment line. Optional but recommended.</p>
-      <input name="movement" placeholder="Movement (e.g., 30min walk)"
-             class="block w-full border rounded px-3 py-2 mb-2">
-      <input name="nourishment" placeholder="Nourishment (e.g., lunch outside)"
-             class="block w-full border rounded px-3 py-2">
+      <p class="text-sm text-stone-600 mb-3">One movement, one nourishment line. These inputs aren't saved yet (Phase 2) — for now, jot them in today's note manually.</p>
+      <input name="movement" placeholder="Movement (e.g., 30min walk)" disabled
+             class="block w-full border rounded px-3 py-2 mb-2 bg-stone-50">
+      <input name="nourishment" placeholder="Nourishment (e.g., lunch outside)" disabled
+             class="block w-full border rounded px-3 py-2 bg-stone-50">
     </div>
   </template>
 
@@ -86,7 +86,7 @@
     <div>
       <h3 class="font-semibold text-lg mb-2">Lock in the day</h3>
       <p class="text-stone-700 mb-3">Your morning ritual is set. Tap Lock in to switch to the Command Center for the rest of the day.</p>
-      <p class="text-sm text-stone-500">Edits made in earlier steps were saved as you typed. Lock in just transitions the view — it does not write anything new.</p>
+      <p class="text-sm text-stone-500">Lock in transitions the view to the Command Center. Top 3 and Bonus are already saved from morning planning. Tap a habit checkbox during the day to record progress.</p>
     </div>
   </template>
 

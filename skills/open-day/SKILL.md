@@ -552,9 +552,9 @@ The daily note should include:
 [preserved from close-day seed if it existed]
 
 ### My Top 3
-1. [Priority #1 description] — [[project-slug]] *(week rank: N)*
-2. [Priority #2 description] — [[project-slug]] *(week rank: N)*
-3. [Priority #3 description] — [[project-slug]] *(week rank: N)*
+1. [ ] [Priority #1 description] — [[project-slug]] *(week rank: N)*
+2. [ ] [Priority #2 description] — [[project-slug]] *(week rank: N)*
+3. [ ] [Priority #3 description] — [[project-slug]] *(week rank: N)*
 
 *Link the project and surface the week rank when a project home exists. Use `*(not in week's Top 5)*` for active projects outside the stack rank. Omit link/rank for pure people work or goals with no project home.*
 
@@ -562,9 +562,9 @@ The daily note should include:
 
 (nice-to-have items if there's time today — typically 1-3 items)
 
-1. [Bonus item 1]
-2. [Bonus item 2]
-3. [Bonus item 3]
+1. [ ] [Bonus item 1]
+2. [ ] [Bonus item 2]
+3. [ ] [Bonus item 3]
 
 ### Vitality
 - [ ] [Movement activity]

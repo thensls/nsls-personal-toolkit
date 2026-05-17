@@ -2,6 +2,7 @@
 
 import hashlib
 import queue
+import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -99,11 +100,18 @@ def _extract_bonus(morning_section: str) -> list[dict]:
     return _extract_numbered_checkbox_list(morning_section, "### Bonus")
 
 
-def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
-    """Toggle the `- [ ]` / `- [x]` on the Nth (0-indexed) list item under `heading`.
+_LIST_ITEM_RE = re.compile(r"^(\s*(?:\d+\.|-)\s+)(.*)$")
 
-    Items under a level-3 heading like `### My Top 3` are numbered list rows
-    starting with a digit then `. [ ]` or `. [x]`. We rewrite only the Nth.
+
+def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
+    """Toggle the `[ ]` / `[x]` on the Nth (0-indexed) list item under `heading`.
+
+    Items under a level-3 heading like `### My Top 3` are list rows starting
+    with a number-and-period (`1. `) or a dash (`- `). The checkbox marker
+    `[ ]` / `[x]` may be present or absent — older /open-day templates seeded
+    Top 3 and Bonus as plain numbered lists. If the marker is absent we treat
+    the line as unchecked and inject `[x]` (the user just clicked to mark
+    done). Markerless lines still count toward the Nth-item index.
     """
     lines = md.splitlines()
     in_section = False
@@ -118,16 +126,18 @@ def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
             break  # next major section
         if not in_section:
             continue
-        stripped = line.lstrip()
-        if not stripped or stripped[0] not in "0123456789-":
+        m = _LIST_ITEM_RE.match(line)
+        if not m:
             continue
-        if "[ ]" not in stripped and "[x]" not in stripped:
-            continue
+        prefix, rest = m.group(1), m.group(2)
         if seen == index:
-            if "[ ]" in line:
-                lines[i] = line.replace("[ ]", "[x]", 1)
+            if rest.startswith("[ ]"):
+                lines[i] = prefix + "[x]" + rest[3:]
+            elif rest.startswith("[x]") or rest.startswith("[X]"):
+                lines[i] = prefix + "[ ]" + rest[3:]
             else:
-                lines[i] = line.replace("[x]", "[ ]", 1)
+                # No marker — inject as checked (user clicked to mark done).
+                lines[i] = prefix + "[x] " + rest
             break
         seen += 1
     return "\n".join(lines) + ("\n" if md.endswith("\n") else "")

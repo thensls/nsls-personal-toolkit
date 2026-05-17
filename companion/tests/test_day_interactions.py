@@ -92,6 +92,26 @@ def test_toggle_top_3_checks_then_unchecks(client_with_today):
     assert "checked" not in last_input
 
 
+def test_toggle_injects_checkbox_when_missing(client_with_today):
+    """Fresh open-day notes seed Top 3 without checkboxes (legacy seed format).
+    The toggle should still work — inject [x] on the first click."""
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    # Note: no [ ] markers on the Top 3 items
+    note.write_text(
+        "## Morning Check-in\n### My Top 3\n"
+        "1. Markerless priority\n2. Another\n3. Third\n"
+    )
+    resp = client.post("/toggle", data={"section": "top_3", "index": "0"})
+    assert resp.status_code == 204
+    body = note.read_text()
+    # First item now has [x] injected after the period
+    assert "1. [x] Markerless priority" in body
+    # Other items unchanged
+    assert "2. Another" in body
+
+
 def test_toggle_rejects_unknown_section(client_with_today):
     client, _ = client_with_today
     resp = client.post("/toggle", data={"section": "../etc", "index": "0"})
