@@ -14,7 +14,7 @@ The CLI continues to be the canonical interface — terminal users get the exper
 
 1. **Sidesteps every cowork constraint.** No MCP filesystem mount config, no `window.claude.fs` API uncertainty, no Anthropic CSP rules to worry about, no per-tap Claude turn cost, no `cowork:save` protocol round-tripping. The companion has full local power (it's just Python and a browser).
 2. **Builders who love the CLI keep it.** This was always one of the goals — *"it could be awesome for everyone, even people who like the terminal"*. The CLI stays the primary surface; the companion is additive.
-3. **Smaller surface area to build.** No skill prompt rewrites of the Familiar bash → MCP port. No port of `gh` for Open PRs. No telemetry MCP server (the existing `PreToolUse` hook keeps firing). The skills do not change at all — only their *output* gains a richer view.
+3. **Smaller surface area to build.** No skill prompt rewrites of the Familiar bash → MCP port. No port of `gh` for Open PRs. No telemetry MCP server (the existing `PreToolUse` hook keeps firing). Most skills stay exactly as they are; only `open-day` and `close-day` get two narrowly-scoped additions (habits row + Bonus + Gratitude section + log-reconciliation step). The companion is a visual lens over the markdown those skills already produce.
 4. **Mobile-adjacent for free.** Bind the server to LAN, hit it from your phone. No native app needed.
 5. **Independent of Anthropic's product direction.** Cowork's behavior around hooks, artifact APIs, and project skills is evolving. The web companion is plain Python + plain HTML — it does not depend on any of that.
 
@@ -35,8 +35,11 @@ The CLI continues to be the canonical interface — terminal users get the exper
 - Native macOS app, menu bar app, system tray app. v1 is browser-only.
 - Authentication / multi-user. Single-user local-only.
 - Cloud hosting. Runs on your machine, period.
-- Two-way Asana sync of ad-hoc tasks. Quick-add still goes to the daily note's `## Personal` section.
+- Two-way Asana sync of ad-hoc tasks. Quick-add stays in the existing daily-note shape; no new sections are introduced for it in v1.
 - Porting `/log`, `/person-intelligence`, `/learn`, `/self-insight`, `/announce-update` views into the companion. Phase 2.
+- Full Week tab (stack rank, push/protect mode, trap check, meeting check, week-at-a-glance grid). v1 ships a minimal read-only weekly-note markdown viewer; the rich Week tab is Phase 2.
+- LAN/phone access. Phase 2 (requires shared-secret token).
+- Theme switching. Phase 2 (v1 ships a single light theme).
 
 ## Background
 
@@ -56,26 +59,27 @@ That's it. No extra accounts, no MCP registration, no project setup in any app.
 
 ### Daily flow
 
+The Day tab has **four states** that auto-detect from the daily note's current contents (overridable via `?mode=...`):
+
+| State | Detection signal | What renders |
+|---|---|---|
+| Morning Coach Cards | Top 3 not yet filled | 7-step ritual: greet → confirm Top 3 → Bonus → Focus blocks → Habit intentions → Vitality → Lock in |
+| Command Center | Top 3 filled, no `## Insight Reflection` heading yet | Dense dashboard: Top 3 checklist, Bonus, Habits row with streaks |
+| Evening Coach Cards | `## Insight Reflection` heading present but body empty | 4-step close: today's stats → Insight Reflection textarea → Gratitude textarea → Done |
+| Evening Results | `## Insight Reflection` body filled | Read-only summary: stats, what got done, reflection + gratitude text |
+
 **Morning:**
-- The user opens their terminal as usual.
-- They type `claude` and then `/open-day` (or "open day" if the skill description matches the phrase).
-- The skill runs exactly as it does today — pulls Calendar, Asana, carryovers, habits, etc. — and writes the daily note to `01-daily/<today>.md`.
-- The web companion (already running, or started fresh with `toolkit-companion serve`) is showing today's Day tab in a browser tab the user has bookmarked.
-- Within ~1 second of the daily note being saved, the browser auto-refreshes: Top 3, Bonus, Schedule, Habits row, Vitality are now populated.
-- The user reviews in the browser. They can tap checkboxes to mark items done. They can drag focus blocks onto a timeline. They can tap habit boxes.
-- Each tap saves to the daily note instantly.
-- The CLI session is still there for the user to ask Claude follow-ups, edit a priority by voice, etc.
+- User opens terminal, runs `/open-day`. Skill writes the daily note with Morning Check-in scaffolding.
+- Browser auto-refreshes to **Morning Coach Cards**. User steps through the 7-step ritual, edits as needed (each step auto-saves on input). At Step 7, taps "Lock in →" — transitions to Command Center.
 
 **Throughout the day:**
-- User glances at the browser tab to see what's left.
-- Taps things off as they go.
-- Brings the CLI back into play for anything narrative ("what should I push to tomorrow?", "summarize my morning so far") — the existing skills work as they do today.
+- **Command Center** is the working view: Top 3 checklist, Bonus, Habits row. Tap a checkbox → markdown updates instantly via HTMX. Tap a habit → log.md updates immediately.
+- User can switch to CLI any time for narrative work; skills are unchanged.
 
 **Evening:**
-- User types `/close-day` in CLI.
-- Skill produces the recap.
-- Browser auto-refreshes to show stats, Insight Reflection prompt, Gratitude prompt.
-- User types or speaks reflection in CLI, OR types into the browser textarea — both save to the daily note.
+- User runs `/close-day`. Skill writes `## Insight Reflection` and `## Gratitude` headings (with empty bodies the user will fill), updates Habits row, reconciles log.md.
+- Browser auto-refreshes to **Evening Coach Cards**. User steps through: stats recap → Insight Reflection (textarea auto-saves) → Gratitude (textarea auto-saves) → Done.
+- After Done, the view becomes **Evening Results** — read-only summary of the day.
 
 ### Weekly flow
 
@@ -137,13 +141,26 @@ No new MCP servers. No Anthropic-side dependencies. The companion runs as a norm
 
 ## Skills inventory
 
-**Unchanged.** All existing upstream skills (open-day, close-day, open-week, close-week, log, familiar, person-intelligence, learn, self-insight, obsidian-setup, personal-setup, announce-update) work as they do today. Their output (markdown to Obsidian) is consumed by the companion.
+**Mostly unchanged.** Two skills get narrowly-scoped additions; everything else is untouched.
 
-**Additions:**
+- **`open-day` — small change**: seeds new `### Bonus` and `### Habits` subsections in the Morning Check-in template, and ensures `30-habits/habits.md` exists (offers to create from template on first run).
+- **`close-day` — small change**: reconciles the daily-note `### Habits` checkboxes into `30-habits/log.md` (MAX-merge — see "Habit state canonical source" below), adds a `## Gratitude` section to the output template, and includes a streak-rule reference paragraph for narrative prompts. Existing `## Brain Dump` routing and all other sections are preserved.
+- **All other skills** (`open-week`, `close-week`, `log`, `familiar`, `person-intelligence`, `learn`, `self-insight`, `obsidian-setup`, `personal-setup`, `announce-update`) work exactly as they do today. They write to the Obsidian vault as before; the companion is just one of multiple consumers of those markdown files.
 
-- The companion itself is *not* a Claude skill — it's a standalone Python process.
-- An optional new "preferences" command in `/personal-setup` adds a small prompt during onboarding: *"Install the web companion? It gives you a visual UI in your browser, alongside the CLI."*
-- `close-day` and `open-day` are updated only to seed and reconcile the habits log (same change the cowork build needs). Skills do not learn about the companion.
+**Additions outside skill files:**
+
+- The companion itself is a standalone Python process (not a Claude skill).
+- An optional install-time prompt is added to `install.sh` ("Install the web companion?"). There is no new `/personal-setup` skill command in v1 — companion (re)configuration happens via the CLI: `toolkit-companion serve` / `stop` / `status`.
+
+## Habit state canonical source
+
+**`30-habits/log.md` is the canonical source of truth for habit completion.** The companion writes to log.md directly on every tap. close-day merges the daily-note `### Habits` checkboxes into log.md using a **MAX-merge** (max of `log.md[today][habit_id]` and the daily-note checkbox value). This means:
+
+- A tap in the companion (writes `walk:1.0` to log.md) is never undone by close-day running afterwards.
+- A manual checkbox tick in Obsidian is never undone by close-day if the companion was already at 1.0.
+- Resetting a habit to 0.0 mid-day requires editing log.md directly (rare; users normally just don't tap).
+
+The streak engine in `companion/streak.py` reads only `log.md` — never the daily-note checkboxes. The daily-note checkboxes are a human-readable mirror, not an independent state.
 
 ## Data model
 
@@ -210,9 +227,9 @@ Implementation: pure Python function in `companion/streak.py`, plus the same pro
 
 ## Open questions
 
-1. **Authentication on LAN.** If the user binds the server to `0.0.0.0` for phone access, anyone on the LAN can hit it. v1: bind to `127.0.0.1` by default, document the LAN-bind option with a warning. v2: optional shared-secret token for LAN access.
+1. **LAN access deferred to Phase 2.** v1 binds `127.0.0.1` only — the `--host` CLI flag is removed entirely. LAN/phone access requires a shared-secret token, which is Phase 2 work. This matches the existing CLI toolkit's security posture (the CLI has no networked surface today, so the companion shouldn't introduce one without auth).
 2. **Drag-and-drop for focus blocks.** HTMX is awkward for drag interactions. Decision: ship v1 without drag (use a time picker on each schedule item), revisit if users want it.
-3. **Theme preference storage.** Cookie? localStorage? `builder-profile.md`? Decision: localStorage for v1 (simple, no server round-trip on theme switch).
+3. **Theme switching deferred to Phase 2.** v1 ships a single light theme. localStorage-based theme toggle was scoped out as not load-bearing for v1.
 
 ## Phase 2
 

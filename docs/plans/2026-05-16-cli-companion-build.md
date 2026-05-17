@@ -60,7 +60,7 @@ toolkit-companion = "companion.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".."]
 ```
 
 - [ ] **Step 4: Install in editable mode and verify**
@@ -517,6 +517,96 @@ def parse_daily_note_sections(md: str) -> dict[str, str]:
     if current is not None:
         sections[current] = "\n".join(buf).strip()
     return sections
+
+
+def parse_habits_from_daily_note(daily_md: str, active_habits: list[dict]) -> dict[str, float]:
+    """Read the `### Habits` subsection of `## Morning Check-in` and return
+    per-habit completion percent.
+
+    Checkbox semantics:
+      - `[x]` or `[X]` → 1.0 (done)
+      - `[/]` or `[~]` → 0.5 (partial)
+      - `[ ]`          → 0.0 (not done)
+
+    Habit name match: the bolded text after the checkbox MUST match the
+    `name` field of an active habit verbatim (case-sensitive). Unknown
+    names are ignored. Active habits not found in the section default to 0.0.
+
+    Returns: {habit_id: percent} for every active habit.
+    """
+    name_to_id = {h["name"]: h["id"] for h in active_habits}
+    result: dict[str, float] = {h["id"]: 0.0 for h in active_habits}
+
+    sections = parse_daily_note_sections(daily_md)
+    morning = sections.get("Morning Check-in", "")
+    if not morning:
+        return result
+
+    in_habits = False
+    line_re = re.compile(r"^-\s+\[([ xX/~])\]\s+\*\*(.+?)\*\*")
+    for raw in morning.splitlines():
+        line = raw.rstrip()
+        if line.startswith("### Habits"):
+            in_habits = True
+            continue
+        if in_habits and line.startswith("### "):
+            break
+        if not in_habits:
+            continue
+        m = line_re.match(line.lstrip())
+        if not m:
+            continue
+        mark, name = m.group(1), m.group(2)
+        habit_id = name_to_id.get(name)
+        if habit_id is None:
+            continue
+        if mark in ("x", "X"):
+            result[habit_id] = 1.0
+        elif mark in ("/", "~"):
+            result[habit_id] = 0.5
+        else:
+            result[habit_id] = 0.0
+    return result
+```
+
+**Add these tests to `test_parsers.py`:**
+
+```python
+from companion.parsers import parse_habits_from_daily_note
+
+
+ACTIVE = [
+    {"id": "walk", "name": "Walk", "emoji": "🚶", "target": "30min", "frequency": "daily"},
+    {"id": "read", "name": "Read", "emoji": "📖", "target": "15min", "frequency": "daily"},
+]
+
+
+def test_habits_from_daily_all_unchecked():
+    md = "## Morning Check-in\n### Habits\n- [ ] **Walk**\n- [ ] **Read**\n"
+    assert parse_habits_from_daily_note(md, ACTIVE) == {"walk": 0.0, "read": 0.0}
+
+
+def test_habits_from_daily_mixed():
+    md = "## Morning Check-in\n### Habits\n- [x] **Walk**\n- [/] **Read**\n"
+    assert parse_habits_from_daily_note(md, ACTIVE) == {"walk": 1.0, "read": 0.5}
+
+
+def test_habits_from_daily_ignores_unknown_name():
+    md = "## Morning Check-in\n### Habits\n- [x] **Walk**\n- [x] **Meditate**\n"
+    # Meditate isn't in ACTIVE → ignored. Read defaults to 0.
+    assert parse_habits_from_daily_note(md, ACTIVE) == {"walk": 1.0, "read": 0.0}
+
+
+def test_habits_from_daily_missing_section():
+    md = "## Morning Check-in\n### My Top 3\n1. Foo\n"
+    assert parse_habits_from_daily_note(md, ACTIVE) == {"walk": 0.0, "read": 0.0}
+
+
+def test_habits_from_daily_stops_at_next_subsection():
+    md = ("## Morning Check-in\n### Habits\n- [x] **Walk**\n"
+          "### Vitality\n- [x] **Read**\n")
+    # Read in Vitality is not in the Habits section
+    assert parse_habits_from_daily_note(md, ACTIVE) == {"walk": 1.0, "read": 0.0}
 ```
 
 - [ ] **Step 4: Run tests, verify pass**
@@ -525,7 +615,7 @@ def parse_daily_note_sections(md: str) -> dict[str, str]:
 cd companion && pytest tests/test_parsers.py -v
 ```
 
-Expected: 7 passed.
+Expected: 12 passed (7 original + 5 new habits-from-daily tests).
 
 - [ ] **Step 5: Commit**
 
@@ -605,7 +695,33 @@ def create_app(vault_path: str) -> Flask:
     return app
 ```
 
-- [ ] **Step 3: Implement `companion/templates/base.html`**
+- [ ] **Step 3: Vendor Tailwind locally (one-time build at install)**
+
+The Tailwind play CDN doesn't support SRI hashes, so we vendor a pre-built Tailwind CSS file at install time and serve it from Flask's static route. This removes the supply-chain risk and the 200KB+ blocking CDN download.
+
+Add a make target / install step that runs the Tailwind standalone CLI once to produce `companion/static/tailwind.css`:
+
+```bash
+# In install.sh, after companion deps are installed:
+if command -v npx >/dev/null 2>&1; then
+  (cd "$plugin_dir/companion" && npx -y tailwindcss@3 -i ./static/tailwind.in.css -o ./static/tailwind.css --minify)
+else
+  echo "⚠ npx not found — skipping Tailwind build. Companion will use a fallback minimal stylesheet."
+  cp "$plugin_dir/companion/static/fallback.css" "$plugin_dir/companion/static/tailwind.css"
+fi
+```
+
+Where `static/tailwind.in.css` is:
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+```
+
+And `static/fallback.css` is a tiny hand-written stylesheet covering the few classes the templates actually use (so the companion still renders if Tailwind couldn't be built).
+
+- [ ] **Step 4: Implement `companion/templates/base.html` — vendored CSS, SRI on JS**
 
 ```html
 <!DOCTYPE html>
@@ -614,9 +730,13 @@ def create_app(vault_path: str) -> Flask:
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NSLS Toolkit Companion</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+  <link rel="stylesheet" href="/static/tailwind.css">
+  <script src="https://unpkg.com/htmx.org@1.9.10"
+          integrity="sha384-D1Kt99CQMDuVetoL1lrYwg5t+9QdHe7NLX/SoJYkXDFfX37iInKRy5xLSi8nO7UC"
+          crossorigin="anonymous"></script>
+  <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"
+          integrity="sha384-V1qBQB6tNc60jH/ZmDuhDmuywL5p3srn4i9bIarO+gNQfeQiSh7lZ4Mki/Y+rL6"
+          crossorigin="anonymous"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   </style>
@@ -636,7 +756,7 @@ def create_app(vault_path: str) -> Flask:
 </html>
 ```
 
-- [ ] **Step 4: Implement `companion/templates/day.html`**
+- [ ] **Step 5: Implement `companion/templates/day.html`**
 
 ```html
 {% extends "base.html" %}
@@ -651,7 +771,7 @@ def create_app(vault_path: str) -> Flask:
 {% endblock %}
 ```
 
-- [ ] **Step 5: Run tests, verify pass**
+- [ ] **Step 6: Run tests, verify pass**
 
 ```bash
 cd companion && pytest tests/test_server.py -v
@@ -659,7 +779,7 @@ cd companion && pytest tests/test_server.py -v
 
 Expected: 2 passed.
 
-- [ ] **Step 6: Smoke test manually**
+- [ ] **Step 7: Smoke test manually**
 
 ```bash
 cd companion && python3 -c "
@@ -677,7 +797,7 @@ kill %1 2>/dev/null || true
 
 Expected: HTML with "Today —" and "Day / Week / Streaks" nav.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add companion/server.py companion/templates/ companion/tests/test_server.py
@@ -794,19 +914,27 @@ class VaultWatcher:
         self._observer.join(timeout=2)
 ```
 
-- [ ] **Step 3: Add SSE endpoint to server**
+- [ ] **Step 3: Add SSE endpoint to server with content-hash dedup**
+
+iCloud-synced vaults emit watchdog events when iCloud applies changes from another machine, not just on local writes. Without deduplication, the browser thrashes through reloads. We hash the file contents (sha256, first 16 bytes) before broadcasting, and skip if the hash matches what we last emitted for that file.
+
+Cap the subscriber list at 10 concurrent SSE connections to limit memory growth and DOS surface.
 
 Modify `companion/server.py`:
 
 ```python
+import hashlib
 import queue
 from flask import Response, stream_with_context
 
 # inside create_app:
     subscribers: list[queue.Queue] = []
+    last_hashes: dict[str, str] = {}  # relpath -> sha256[:16] of last broadcast
 
     @app.route("/events")
     def events():
+        if len(subscribers) >= 10:
+            return ("too many subscribers", 429)
         q: queue.Queue = queue.Queue()
         subscribers.append(q)
 
@@ -816,16 +944,36 @@ from flask import Response, stream_with_context
                     msg = q.get()
                     yield f"data: {msg}\n\n"
             finally:
-                subscribers.remove(q)
+                try:
+                    subscribers.remove(q)
+                except ValueError:
+                    pass
 
         return Response(stream_with_context(stream()), mimetype="text/event-stream")
 
     def broadcast(relpath: str) -> None:
+        # Content-hash dedup: skip if the file's content hasn't changed since
+        # the last broadcast. Prevents iCloud-echo reload storms when the
+        # same write propagates back through sync.
+        full_path = app.config["VAULT_PATH"] / relpath
+        try:
+            data = full_path.read_bytes()
+        except FileNotFoundError:
+            return
+        digest = hashlib.sha256(data).hexdigest()[:16]
+        if last_hashes.get(relpath) == digest:
+            return
+        last_hashes[relpath] = digest
         for q in list(subscribers):
-            q.put(relpath)
+            try:
+                q.put_nowait(relpath)
+            except queue.Full:
+                pass
 
     app.config["BROADCAST"] = broadcast
 ```
+
+Cap the limit-message length and use `put_nowait` so a slow subscriber doesn't block writes for others.
 
 - [ ] **Step 4: Wire watcher into the app**
 
@@ -840,7 +988,23 @@ from companion.watcher import VaultWatcher
     app.config["WATCHER"] = watcher
 ```
 
-(Tests using `create_app` should stop the watcher in fixture teardown to avoid leftover threads. Update the test fixture in test_server.py accordingly.)
+Update the test fixture in `test_server.py` to stop the watcher on teardown:
+
+```python
+@pytest.fixture
+def client(tmp_path):
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    (vault / "01-daily").mkdir()
+    app = create_app(vault_path=str(vault))
+    app.config["TESTING"] = True
+    try:
+        yield app.test_client()
+    finally:
+        w = app.config.get("WATCHER")
+        if w is not None:
+            w.stop()
+```
 
 - [ ] **Step 5: Run all tests, verify pass**
 
@@ -1053,111 +1217,439 @@ git commit -m "feat(day): render Top 3, Bonus, and Habits sections"
 ### Task 7: Day tab — interactive checkbox saves via HTMX
 
 **Files:**
-- Modify: `companion/server.py` (add `POST /tick` and `POST /toggle`)
+- Modify: `companion/server.py` (add `POST /tick`, `POST /toggle`, `POST /save`)
+- Create: `companion/safe_write.py` (file-locked atomic writes)
+- Create: `companion/validation.py` (input validation helpers)
 - Modify: `companion/templates/day.html`
+- Create: `companion/templates/_components/habit_row.html`
 - Create: `companion/tests/test_day_interactions.py`
 
-- [ ] **Step 1: Failing test for habit-tick endpoint**
+- [ ] **Step 1: Create `companion/safe_write.py`**
+
+All vault writes go through this helper. It takes an `fcntl.flock` on the target file, reads the current content, lets the caller transform it, and writes back atomically via a temp-file rename. This protects against the companion writing while CLI close-day is also writing (and vice versa).
 
 ```python
+"""Atomic, fcntl-locked read-modify-write for vault files."""
+
+import fcntl
+import os
+import tempfile
+from pathlib import Path
+from typing import Callable
+
+
+def safe_modify(path: Path, transform: Callable[[str], str]) -> None:
+    """Read path under exclusive lock, transform, write back atomically.
+
+    If path doesn't exist, transform receives "" and the file is created.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # Open or create — exclusive lock held for the whole read-modify-write.
+    with open(path, "a+") as f:
+        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+        f.seek(0)
+        existing = f.read()
+        updated = transform(existing)
+        # Atomic write: tempfile in same dir, fsync, rename.
+        fd, tmp = tempfile.mkstemp(
+            prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
+        )
+        try:
+            with os.fdopen(fd, "w") as tf:
+                tf.write(updated)
+                tf.flush()
+                os.fsync(tf.fileno())
+            os.replace(tmp, path)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+            raise
+        # flock released when 'f' closes
+```
+
+- [ ] **Step 2: Create `companion/validation.py`**
+
+Every POST that writes to the vault validates its input here. Rejecting at the edge keeps unsanitized strings out of markdown.
+
+```python
+"""Input validation for routes that write to the vault."""
+
+import re
+
+HABIT_ID_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
+SAFE_SHORT_RE = re.compile(r"^[^\n\r]{1,64}$")  # no newlines, 64 char cap
+SAFE_LONG_RE = re.compile(r"^[\s\S]{0,4096}$")  # arbitrary text up to 4KB
+
+ALLOWED_SAVE_SECTIONS = {
+    "Insight Reflection", "Gratitude", "Brain Dump", "Carrying Over",
+}
+ALLOWED_TOGGLE_SECTIONS = {"top_3", "bonus"}
+
+
+def validate_habit_fields(form) -> dict:
+    """Validate POST /habit form. Raises ValueError with message on failure."""
+    out = {}
+    out["id"] = form.get("id", "").strip()
+    if not HABIT_ID_RE.fullmatch(out["id"]):
+        raise ValueError("id must be 1-32 chars of [a-z0-9_-]")
+    for field in ("name", "target", "frequency"):
+        val = form.get(field, "").strip()
+        if not SAFE_SHORT_RE.fullmatch(val):
+            raise ValueError(f"{field} must be 1-64 chars, no newlines")
+        out[field] = val
+    emoji = form.get("emoji", "").strip()
+    if len(emoji) > 8 or "\n" in emoji:
+        raise ValueError("emoji too long or contains newline")
+    out["emoji"] = emoji
+    return out
+
+
+def validate_save(form) -> tuple[str, str]:
+    """Validate POST /save. Returns (section, content)."""
+    section = form.get("section", "").strip()
+    if section not in ALLOWED_SAVE_SECTIONS:
+        raise ValueError(f"section must be one of {sorted(ALLOWED_SAVE_SECTIONS)}")
+    content = form.get("content", "")
+    if not SAFE_LONG_RE.fullmatch(content):
+        raise ValueError("content exceeds 4KB or invalid")
+    return section, content
+
+
+def validate_toggle(form) -> tuple[str, int]:
+    """Validate POST /toggle. Returns (section, index)."""
+    section = form.get("section", "").strip()
+    if section not in ALLOWED_TOGGLE_SECTIONS:
+        raise ValueError(f"section must be one of {sorted(ALLOWED_TOGGLE_SECTIONS)}")
+    try:
+        index = int(form.get("index", ""))
+    except (TypeError, ValueError):
+        raise ValueError("index must be a non-negative integer")
+    if index < 0 or index > 9:
+        raise ValueError("index out of bounds (0-9)")
+    return section, index
+```
+
+- [ ] **Step 3: Failing tests**
+
+```python
+# companion/tests/test_day_interactions.py
+from datetime import date
+
+
 def test_tick_habit_writes_to_log(client_with_today, tmp_path):
     resp = client_with_today.post("/tick", data={"habit_id": "walk", "percent": "1.0"})
     assert resp.status_code == 200
     log = (tmp_path / "vault" / "30-habits" / "log.md").read_text()
-    from datetime import date
     today = date.today().isoformat()
     assert today in log
     assert "walk:1.0" in log
+
+
+def test_tick_rejects_bad_habit_id(client_with_today):
+    resp = client_with_today.post("/tick", data={"habit_id": "../etc", "percent": "1.0"})
+    assert resp.status_code == 400
+
+
+def test_toggle_top_3_checks_then_unchecks(client_with_today, tmp_path):
+    today = date.today().isoformat()
+    note = tmp_path / "vault" / "01-daily" / f"{today}.md"
+    # Seed a note with a Top 3 item
+    note.write_text(
+        "## Morning Check-in\n### My Top 3\n"
+        "1. [ ] First priority\n2. [ ] Second\n3. [ ] Third\n"
+    )
+    resp = client_with_today.post("/toggle", data={"section": "top_3", "index": "0"})
+    assert resp.status_code == 204
+    assert "1. [x] First priority" in note.read_text()
+    # Toggle back
+    client_with_today.post("/toggle", data={"section": "top_3", "index": "0"})
+    assert "1. [ ] First priority" in note.read_text()
+
+
+def test_toggle_rejects_unknown_section(client_with_today):
+    resp = client_with_today.post("/toggle", data={"section": "../etc", "index": "0"})
+    assert resp.status_code == 400
+
+
+def test_save_writes_insight_reflection(client_with_today, tmp_path):
+    today = date.today().isoformat()
+    note = tmp_path / "vault" / "01-daily" / f"{today}.md"
+    note.write_text("## Insight Reflection\n\n(empty)\n\n## Gratitude\n\n")
+    resp = client_with_today.post("/save", data={
+        "section": "Insight Reflection",
+        "content": "Today I noticed I rush through morning ritual.",
+    })
+    assert resp.status_code == 204
+    body = note.read_text()
+    assert "Today I noticed" in body
+    assert "## Gratitude" in body  # adjacent section preserved
+
+
+def test_save_rejects_disallowed_section(client_with_today):
+    resp = client_with_today.post("/save", data={"section": "Plan", "content": "x"})
+    assert resp.status_code == 400
 ```
 
-- [ ] **Step 2: Implement `POST /tick` in server.py**
+- [ ] **Step 4: Implement routes in `server.py`**
 
 ```python
-from companion.parsers import parse_log, append_day_to_log
+from datetime import date
+from companion.parsers import parse_log, append_day_to_log, parse_daily_note_sections
+from companion.safe_write import safe_modify
+from companion.validation import (
+    validate_habit_fields, validate_save, validate_toggle, HABIT_ID_RE,
+)
 
 # inside create_app:
     @app.route("/tick", methods=["POST"])
     def tick():
-        habit_id = request.form["habit_id"]
-        percent = float(request.form["percent"])
-        log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
-        existing = log_path.read_text() if log_path.exists() else ""
-        # Merge with existing today's ticks
+        habit_id = request.form.get("habit_id", "").strip()
+        if not HABIT_ID_RE.fullmatch(habit_id):
+            return ("invalid habit_id", 400)
+        try:
+            percent = float(request.form.get("percent", ""))
+        except ValueError:
+            return ("invalid percent", 400)
+        if percent not in (0.0, 0.5, 1.0):
+            return ("percent must be 0.0 / 0.5 / 1.0", 400)
+
         today = date.today().isoformat()
-        rows = parse_log(existing)
-        today_ticks = next((r["ticks"] for r in rows if r["date"] == today), {})
-        today_ticks[habit_id] = percent
-        updated = append_day_to_log(existing, today, today_ticks)
-        log_path.write_text(updated)
-        broadcast(f"30-habits/log.md")
-        # Return updated habit row (HTMX swaps it in)
-        return render_template("_components/habit_row.html",
-                               h=_habit_state_for(app, habit_id, today, percent))
-```
+        log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
 
-- [ ] **Step 3: Add Toggle endpoint for Top 3 / Bonus checkboxes**
+        def merge(existing: str) -> str:
+            rows = parse_log(existing)
+            today_ticks = next(
+                (r["ticks"] for r in rows if r["date"] == today), {}
+            )
+            today_ticks[habit_id] = percent
+            return append_day_to_log(existing, today, today_ticks)
 
-```python
+        safe_modify(log_path, merge)
+        broadcast("30-habits/log.md")
+        return render_template(
+            "_components/habit_row.html",
+            h=_habit_state_for(app, habit_id, today, percent),
+        )
+
     @app.route("/toggle", methods=["POST"])
     def toggle():
-        section = request.form["section"]  # "top_3" or "bonus"
-        index = int(request.form["index"])
-        # Read today's note, find the relevant `### My Top 3` / `### Bonus`,
-        # toggle the leading "- [ ]" / "- [x]" on the Nth item, write back.
-        # Implementation: parse_daily_note_sections + line-level replace.
-        # See full implementation in task self-review.
-        ...
+        try:
+            section, index = validate_toggle(request.form)
+        except ValueError as e:
+            return (str(e), 400)
+
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        # Section name in markdown
+        heading = "### My Top 3" if section == "top_3" else "### Bonus"
+
+        def toggle_in_section(existing: str) -> str:
+            return _toggle_nth_checkbox(existing, heading, index)
+
+        safe_modify(note_path, toggle_in_section)
         broadcast(f"01-daily/{today}.md")
         return ("", 204)
+
+    @app.route("/save", methods=["POST"])
+    def save():
+        try:
+            section, content = validate_save(request.form)
+        except ValueError as e:
+            return (str(e), 400)
+
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def replace_section(existing: str) -> str:
+            return _replace_section_body(existing, section, content)
+
+        safe_modify(note_path, replace_section)
+        broadcast(f"01-daily/{today}.md")
+        return ("", 204)
+
+
+def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
+    """Toggle the `- [ ]` / `- [x]` on the Nth (0-indexed) list item under `heading`.
+
+    Items under a level-3 heading like `### My Top 3` are numbered list rows
+    starting with a digit then `. [ ]` or `. [x]`. We rewrite only the Nth.
+    """
+    lines = md.splitlines()
+    in_section = False
+    seen = 0
+    for i, line in enumerate(lines):
+        if line.startswith(heading):
+            in_section = True
+            continue
+        if in_section and line.startswith("### "):
+            break  # next subsection
+        if in_section and line.startswith("## "):
+            break  # next major section
+        if not in_section:
+            continue
+        # numbered list row: "1. [ ] foo" or "- [ ] foo"
+        stripped = line.lstrip()
+        if not stripped or stripped[0] not in "0123456789-":
+            continue
+        if "[ ]" not in stripped and "[x]" not in stripped:
+            continue
+        if seen == index:
+            if "[ ]" in line:
+                lines[i] = line.replace("[ ]", "[x]", 1)
+            else:
+                lines[i] = line.replace("[x]", "[ ]", 1)
+            break
+        seen += 1
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _replace_section_body(md: str, section_name: str, new_body: str) -> str:
+    """Replace the body of `## <section_name>` with new_body, preserving
+    surrounding sections. If section doesn't exist, append it at the end.
+    """
+    heading = f"## {section_name}"
+    lines = md.splitlines()
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            start = i
+            continue
+        if start is not None and line.startswith("## ") and not line.startswith("### "):
+            end = i
+            break
+    new_block = [heading, "", new_body.rstrip(), ""]
+    if start is None:
+        # append
+        return md.rstrip("\n") + "\n\n" + "\n".join(new_block) + "\n"
+    return "\n".join(lines[:start] + new_block + lines[end:]) + ("\n" if md.endswith("\n") else "")
 ```
 
-- [ ] **Step 4: Add HTMX attributes to checkbox templates**
+- [ ] **Step 5: Create `_components/habit_row.html`**
 
-In `day.html`, change checkboxes to HTMX-posting buttons:
+```html
+<li class="flex items-center justify-between py-1" id="habit-{{ h.id }}">
+  <button hx-post="/tick"
+          hx-vals='{"habit_id":"{{ h.id }}","percent":{{ "0.0" if h.percent == 1.0 else "1.0" }}}'
+          hx-target="#habit-{{ h.id }}"
+          hx-swap="outerHTML"
+          class="flex items-center gap-2 text-left">
+    <span class="inline-block w-5 h-5 border-2 rounded text-center text-sm leading-4
+                 {% if h.percent == 1.0 %}bg-blue-900 text-white border-blue-900{% elif h.percent == 0.5 %}bg-blue-200 border-blue-400{% else %}bg-white border-stone-300{% endif %}">
+      {% if h.percent == 1.0 %}✓{% elif h.percent == 0.5 %}~{% endif %}
+    </span>
+    <span>{{ h.emoji }} {{ h.name }}</span>
+  </button>
+  <span class="text-sm text-stone-500">{{ h.streak_days }}d{% if h.status == 'at_risk' %} ⚠{% elif h.streak_days >= 7 %} 🔥{% endif %}</span>
+</li>
+```
+
+- [ ] **Step 6: Update `day.html` checkbox markup**
 
 ```html
 <input type="checkbox" class="w-4 h-4"
+       {% if item.checked %}checked{% endif %}
        hx-post="/toggle"
-       hx-vals='{"section":"top_3", "index":{{ loop.index0 }}}'
-       hx-swap="none">
+       hx-vals='{"section":"top_3","index":{{ loop.index0 }}}'
+       hx-swap="none"
+       hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
 ```
 
-- [ ] **Step 5: Run tests, verify pass, commit**
+- [ ] **Step 7: Run tests, verify pass, commit**
 
 ```bash
 cd companion && pytest tests/test_day_interactions.py -v
-git add companion/server.py companion/templates/day.html companion/tests/test_day_interactions.py
-git commit -m "feat(day): interactive checkbox + habit tick via HTMX"
+git add companion/server.py companion/safe_write.py companion/validation.py companion/templates/ companion/tests/test_day_interactions.py
+git commit -m "feat(day): /tick + /toggle + /save with validation and file locking"
 ```
 
 ---
 
-### Task 8: Day tab — Coach Cards morning mode
+### Task 8: Day tab — Coach Cards (morning + evening)
+
+The Day tab has **four states** that depend on time of day and whether close-day has run:
+
+| State | When | What renders |
+|---|---|---|
+| Morning Coach Cards | Day starts; user runs `/open-day` | 7-step ritual to lock in Top 3, Bonus, focus blocks, habit intentions, vitality |
+| Command Center | After morning ritual; throughout workday | Dense dashboard: Top 3 checklist, Bonus, Habits row with streaks |
+| Evening Coach Cards | User runs `/close-day`; daily note has `## Insight Reflection` heading | 4-step close ritual: stats recap → Insight Reflection textarea → Gratitude textarea → Done |
+| Evening Results | After evening ritual is submitted | Read-only summary: stats, what was done, reflection + gratitude text |
+
+State detection on `GET /`:
+- Has today's daily note got a non-empty `## Insight Reflection`? → **Evening Results** (read-only)
+- Does it have the `## Insight Reflection` heading but the body is empty/template? → **Evening Coach Cards**
+- Does Morning Check-in have all Top 3 lines filled? → **Command Center**
+- Otherwise → **Morning Coach Cards**
+
+User can override via `?mode=coach-morning`, `?mode=command`, `?mode=coach-evening`, `?mode=results` for any state at any time.
 
 **Files:**
-- Modify: `companion/templates/day.html` (add mode toggle)
-- Create: `companion/templates/_components/coach_cards.html`
+- Modify: `companion/templates/day.html`
+- Create: `companion/templates/_components/coach_morning.html`
+- Create: `companion/templates/_components/coach_evening.html`
+- Create: `companion/templates/_components/results.html`
+- Modify: `companion/server.py` (state detection, mode dispatch)
 - Create: `companion/tests/test_coach_cards.py`
 
-- [ ] **Step 1: Failing test for Coach Cards mode rendering**
+- [ ] **Step 1: Failing tests**
 
 ```python
-def test_coach_cards_mode_renders_step_1(client_with_today):
-    resp = client_with_today.get("/?mode=coach")
+from datetime import date
+
+
+def test_morning_coach_renders_7_steps(client_with_today):
+    resp = client_with_today.get("/?mode=coach-morning")
     assert resp.status_code == 200
-    assert b"Step 1" in resp.data
-    assert b"Confirm Top 3" in resp.data
+    for label in (b"Good morning", b"Confirm Top 3", b"Bonus list",
+                  b"Focus blocks", b"Habit intentions", b"Vitality",
+                  b"Lock in"):
+        assert label in resp.data
 
 
-def test_coach_cards_progress(client_with_today):
-    resp = client_with_today.get("/?mode=coach&step=2")
-    assert b"Step 2" in resp.data
+def test_evening_coach_renders_4_steps(client_with_today, tmp_path):
+    today = date.today().isoformat()
+    note = tmp_path / "vault" / "01-daily" / f"{today}.md"
+    note.write_text("## Morning Check-in\n### My Top 3\n\n## Insight Reflection\n\n")
+    resp = client_with_today.get("/?mode=coach-evening")
+    assert resp.status_code == 200
+    for label in (b"Today's stats", b"Insight Reflection",
+                  b"Gratitude", b"Done"):
+        assert label in resp.data
+
+
+def test_state_detection_picks_evening_results_when_insight_filled(
+    client_with_today, tmp_path
+):
+    today = date.today().isoformat()
+    note = tmp_path / "vault" / "01-daily" / f"{today}.md"
+    note.write_text(
+        "## Morning Check-in\n### My Top 3\n1. [x] Done\n"
+        "## Insight Reflection\n\nI noticed something today.\n"
+    )
+    resp = client_with_today.get("/")
+    assert resp.status_code == 200
+    assert b"I noticed something today" in resp.data
+
+
+def test_lock_in_morning_writes_nothing_but_returns_command_view(client_with_today):
+    resp = client_with_today.post("/lock-in", data={"phase": "morning"})
+    assert resp.status_code == 200
+    # Returns the Command Center HTML for HTMX to swap in
+    assert b"Top 3" in resp.data
 ```
 
-- [ ] **Step 2: Implement `_components/coach_cards.html`**
+- [ ] **Step 2: Implement `_components/coach_morning.html` — 7 steps in full**
 
 ```html
-<div x-data="{ step: {{ step or 1 }} }" class="bg-white rounded-lg shadow p-6">
+<div x-data="{ step: {{ step or 1 }} }" class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
   <div class="flex gap-1 mb-3">
     {% for i in range(1, 8) %}
       <div class="flex-1 h-1 rounded" :class="step >= {{ i }} ? 'bg-blue-900' : 'bg-stone-200'"></div>
@@ -1166,38 +1658,267 @@ def test_coach_cards_progress(client_with_today):
   <div class="text-xs uppercase text-stone-500 mb-4">Step <span x-text="step"></span> of 7</div>
 
   <template x-if="step === 1">
-    <div><h3 class="font-semibold mb-2">Good morning</h3><p>Today is {{ today }}. {{ top_3 | length }} priorities pulled from Asana.</p></div>
-  </template>
-  <template x-if="step === 2">
-    <div><h3 class="font-semibold mb-2">Confirm Top 3</h3>
-      {% for item in top_3 %}<input value="{{ item }}" class="block w-full border rounded px-3 py-2 mb-2">{% endfor %}
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Good morning</h3>
+      <p class="text-stone-700">Today is {{ today_pretty }}. {{ top_3 | length }} priorities pulled from your daily planning.</p>
     </div>
   </template>
-  <!-- ... steps 3-7 similar — Bonus, Focus blocks, Habit intentions, Vitality, Lock in -->
 
-  <div class="mt-6 flex justify-end gap-3">
-    <button @click="step--" :disabled="step <= 1" class="px-4 py-2 border rounded">Back</button>
-    <button @click="step++" x-show="step < 7" class="px-4 py-2 bg-blue-900 text-white rounded">Next</button>
-    <button x-show="step >= 7" hx-post="/lock-in" class="px-4 py-2 bg-blue-900 text-white rounded">Lock in</button>
+  <template x-if="step === 2">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Confirm Top 3</h3>
+      <p class="text-sm text-stone-600 mb-3">Edit if needed. Press Next to continue — changes save on Lock in.</p>
+      <form id="step2-form">
+        {% for item in top_3 %}
+        <input name="top_{{ loop.index0 }}" value="{{ item }}"
+               class="block w-full border rounded px-3 py-2 mb-2">
+        {% endfor %}
+      </form>
+    </div>
+  </template>
+
+  <template x-if="step === 3">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Bonus list</h3>
+      <p class="text-sm text-stone-600 mb-3">Lower priority — only if Top 3 is done. One per line.</p>
+      <textarea name="bonus" rows="5" form="step3-form"
+                class="block w-full border rounded px-3 py-2 font-mono text-sm">{{ bonus_text }}</textarea>
+      <form id="step3-form"></form>
+    </div>
+  </template>
+
+  <template x-if="step === 4">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Focus blocks</h3>
+      <p class="text-sm text-stone-600 mb-3">Pick deep-work windows. Time picker per row (drag-and-drop is Phase 2).</p>
+      <div class="space-y-2">
+        {% for block in focus_blocks %}
+        <div class="flex items-center gap-2">
+          <input type="time" value="{{ block.start }}" class="border rounded px-2 py-1">
+          <span>–</span>
+          <input type="time" value="{{ block.end }}" class="border rounded px-2 py-1">
+          <input value="{{ block.label }}" placeholder="What for?" class="flex-1 border rounded px-2 py-1">
+        </div>
+        {% endfor %}
+        <button type="button" class="text-sm text-blue-700">+ Add block</button>
+      </div>
+    </div>
+  </template>
+
+  <template x-if="step === 5">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Habit intentions</h3>
+      <p class="text-sm text-stone-600 mb-3">Which habits will you do today? Tap to mark intent (saves to log.md as 0.0 until completed).</p>
+      <ul class="space-y-2">
+        {% for h in active_habits %}
+        <li class="flex items-center gap-3">
+          <input type="checkbox" id="intent-{{ h.id }}" class="w-5 h-5"
+                 hx-post="/tick" hx-vals='{"habit_id":"{{ h.id }}","percent":"0.0"}'
+                 hx-swap="none">
+          <label for="intent-{{ h.id }}">{{ h.emoji }} {{ h.name }}</label>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </template>
+
+  <template x-if="step === 6">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Vitality intentions</h3>
+      <p class="text-sm text-stone-600 mb-3">One movement, one nourishment line. Optional but recommended.</p>
+      <input name="movement" placeholder="Movement (e.g., 30min walk)"
+             class="block w-full border rounded px-3 py-2 mb-2">
+      <input name="nourishment" placeholder="Nourishment (e.g., lunch outside)"
+             class="block w-full border rounded px-3 py-2">
+    </div>
+  </template>
+
+  <template x-if="step === 7">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Lock in the day</h3>
+      <p class="text-stone-700 mb-3">Your morning ritual is set. Tap Lock in to switch to the Command Center for the rest of the day.</p>
+      <p class="text-sm text-stone-500">Edits made in earlier steps were saved as you typed. Lock in just transitions the view — it does not write anything new.</p>
+    </div>
+  </template>
+
+  <div class="mt-6 flex justify-between gap-3">
+    <button @click="step--" :disabled="step <= 1"
+            class="px-4 py-2 border rounded disabled:opacity-30">Back</button>
+    <button @click="step++" x-show="step < 7"
+            class="px-4 py-2 bg-blue-900 text-white rounded">Next</button>
+    <button x-show="step >= 7"
+            hx-post="/lock-in" hx-vals='{"phase":"morning"}'
+            hx-target="body" hx-swap="innerHTML"
+            class="px-4 py-2 bg-blue-900 text-white rounded">Lock in →</button>
   </div>
 </div>
 ```
 
-- [ ] **Step 3: Add mode toggle to day.html**
+- [ ] **Step 3: Implement `_components/coach_evening.html` — 4-step close ritual**
 
 ```html
-<div class="mb-4 text-sm">
-  <a href="?mode=coach" class="text-blue-700">Coach Cards</a> · 
-  <a href="/" class="text-blue-700">Command Center</a>
+<div x-data="{ step: {{ step or 1 }} }" class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+  <div class="flex gap-1 mb-3">
+    {% for i in range(1, 5) %}
+      <div class="flex-1 h-1 rounded" :class="step >= {{ i }} ? 'bg-amber-700' : 'bg-stone-200'"></div>
+    {% endfor %}
+  </div>
+  <div class="text-xs uppercase text-stone-500 mb-4">Step <span x-text="step"></span> of 4 · Evening</div>
+
+  <template x-if="step === 1">
+    <div>
+      <h3 class="font-semibold text-lg mb-3">Today's stats</h3>
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div class="bg-stone-50 p-3 rounded"><div class="text-stone-500 text-xs">Top 3 completed</div><div class="text-2xl font-semibold">{{ stats.top_3_done }}/{{ stats.top_3_total }}</div></div>
+        <div class="bg-stone-50 p-3 rounded"><div class="text-stone-500 text-xs">Habits completed</div><div class="text-2xl font-semibold">{{ stats.habits_done }}/{{ stats.habits_total }}</div></div>
+        <div class="bg-stone-50 p-3 rounded"><div class="text-stone-500 text-xs">Focus time</div><div class="text-2xl font-semibold">{{ stats.focus_hours }}h</div></div>
+        <div class="bg-stone-50 p-3 rounded"><div class="text-stone-500 text-xs">Streak</div><div class="text-2xl font-semibold">{{ stats.streak_days }}d</div></div>
+      </div>
+    </div>
+  </template>
+
+  <template x-if="step === 2">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Insight Reflection</h3>
+      <p class="text-sm text-stone-600 mb-3">What did you notice about yourself today? One pattern, one resistance, one win — whatever is alive. Auto-saves as you type.</p>
+      <textarea rows="8" class="block w-full border rounded px-3 py-2 font-serif"
+                hx-post="/save" hx-trigger="input changed delay:1500ms"
+                hx-vals='{"section":"Insight Reflection"}' name="content"
+                hx-swap="none"
+                hx-on:htmx:response-error="window.__toolkitErrorToast(event)">{{ insight_reflection_text }}</textarea>
+    </div>
+  </template>
+
+  <template x-if="step === 3">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Gratitude</h3>
+      <p class="text-sm text-stone-600 mb-3">One thing you're grateful for today. Short or long. Auto-saves as you type.</p>
+      <textarea rows="4" class="block w-full border rounded px-3 py-2 font-serif"
+                hx-post="/save" hx-trigger="input changed delay:1500ms"
+                hx-vals='{"section":"Gratitude"}' name="content"
+                hx-swap="none"
+                hx-on:htmx:response-error="window.__toolkitErrorToast(event)">{{ gratitude_text }}</textarea>
+    </div>
+  </template>
+
+  <template x-if="step === 4">
+    <div>
+      <h3 class="font-semibold text-lg mb-3">Done for today</h3>
+      <p class="text-stone-700 mb-2">Insight and Gratitude saved to today's daily note.</p>
+      <p class="text-sm text-stone-500">Tap Done to switch to the read-only Results view.</p>
+    </div>
+  </template>
+
+  <div class="mt-6 flex justify-between gap-3">
+    <button @click="step--" :disabled="step <= 1"
+            class="px-4 py-2 border rounded disabled:opacity-30">Back</button>
+    <button @click="step++" x-show="step < 4"
+            class="px-4 py-2 bg-amber-700 text-white rounded">Next</button>
+    <button x-show="step >= 4"
+            hx-post="/lock-in" hx-vals='{"phase":"evening"}'
+            hx-target="body" hx-swap="innerHTML"
+            class="px-4 py-2 bg-amber-700 text-white rounded">Done →</button>
+  </div>
 </div>
-{% if mode == 'coach' %}
-  {% include "_components/coach_cards.html" %}
-{% else %}
-  <!-- existing Top 3 / Bonus / Habits sections -->
-{% endif %}
 ```
 
-- [ ] **Step 4: Run tests, verify pass, commit**
+- [ ] **Step 4: Implement `_components/results.html` — read-only evening summary**
+
+```html
+<div class="max-w-2xl mx-auto space-y-4">
+  <header class="bg-amber-50 p-4 rounded"><h2 class="font-semibold">Day closed · {{ today_pretty }}</h2></header>
+
+  <section class="bg-white p-5 rounded shadow">
+    <h3 class="text-sm uppercase text-stone-500 mb-2">Stats</h3>
+    <div class="grid grid-cols-4 gap-3 text-sm">
+      <div><div class="text-stone-500">Top 3</div><div class="font-semibold">{{ stats.top_3_done }}/{{ stats.top_3_total }}</div></div>
+      <div><div class="text-stone-500">Habits</div><div class="font-semibold">{{ stats.habits_done }}/{{ stats.habits_total }}</div></div>
+      <div><div class="text-stone-500">Focus</div><div class="font-semibold">{{ stats.focus_hours }}h</div></div>
+      <div><div class="text-stone-500">Streak</div><div class="font-semibold">{{ stats.streak_days }}d</div></div>
+    </div>
+  </section>
+
+  <section class="bg-white p-5 rounded shadow">
+    <h3 class="text-sm uppercase text-stone-500 mb-2">Top 3</h3>
+    <ul class="space-y-1">
+      {% for item in top_3 %}
+      <li class="flex items-start gap-2">
+        <span>{% if item.checked %}✅{% else %}⬜{% endif %}</span>
+        <span class="{% if item.checked %}line-through text-stone-400{% endif %}">{{ item.text }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {% if insight_reflection_text %}
+  <section class="bg-white p-5 rounded shadow">
+    <h3 class="text-sm uppercase text-stone-500 mb-2">Insight Reflection</h3>
+    <p class="whitespace-pre-wrap font-serif text-stone-800">{{ insight_reflection_text }}</p>
+  </section>
+  {% endif %}
+
+  {% if gratitude_text %}
+  <section class="bg-white p-5 rounded shadow">
+    <h3 class="text-sm uppercase text-stone-500 mb-2">Gratitude</h3>
+    <p class="whitespace-pre-wrap font-serif text-stone-800">{{ gratitude_text }}</p>
+  </section>
+  {% endif %}
+</div>
+```
+
+- [ ] **Step 5: State detection + dispatch in `server.py`**
+
+```python
+def _detect_day_state(daily_md: str, top_3: list) -> str:
+    """Return one of 'coach-morning', 'command', 'coach-evening', 'results'."""
+    sections = parse_daily_note_sections(daily_md)
+    insight = sections.get("Insight Reflection", "").strip()
+    if insight:
+        return "results"
+    if "Insight Reflection" in sections:
+        return "coach-evening"
+    if top_3 and all(item.get("text") for item in top_3):
+        return "command"
+    return "coach-morning"
+
+
+# In the index route:
+    @app.route("/")
+    def index():
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text() if note_path.exists() else ""
+        top_3 = _extract_top_3(daily_md)
+        # User override → respected; otherwise auto-detect
+        mode = request.args.get("mode") or _detect_day_state(daily_md, top_3)
+        ctx = _build_day_context(app, daily_md, top_3)
+        if mode == "coach-morning":
+            return render_template("_components/coach_morning.html", step=int(request.args.get("step", 1)), **ctx)
+        if mode == "coach-evening":
+            return render_template("_components/coach_evening.html", step=int(request.args.get("step", 1)), **ctx)
+        if mode == "results":
+            return render_template("_components/results.html", **ctx)
+        return render_template("day.html", **ctx)  # Command Center
+
+
+    @app.route("/lock-in", methods=["POST"])
+    def lock_in():
+        # No vault write — the ritual is the confirmation, individual steps
+        # autosaved as the user moved through them. Lock in just transitions
+        # the view from Coach Cards to the next state.
+        phase = request.form.get("phase", "morning")
+        target_mode = "command" if phase == "morning" else "results"
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text() if note_path.exists() else ""
+        top_3 = _extract_top_3(daily_md)
+        ctx = _build_day_context(app, daily_md, top_3)
+        if target_mode == "results":
+            return render_template("_components/results.html", **ctx)
+        return render_template("day.html", **ctx)
+```
+
+- [ ] **Step 6: Run tests, verify pass, commit**
 
 ```bash
 cd companion && pytest tests/test_coach_cards.py -v
@@ -1207,27 +1928,95 @@ git commit -m "feat(day): Coach Cards morning mode with Alpine-driven step progr
 
 ---
 
-### Task 9: SSE wiring — browser auto-refresh on file change
+### Task 9: SSE wiring — browser auto-refresh with reconnect + dirty-textarea guard
 
 **Files:**
-- Modify: `companion/templates/base.html` (add SSE client)
+- Modify: `companion/templates/base.html` (add SSE client + error toast)
 - Create: `companion/tests/test_sse_integration.py`
 
-- [ ] **Step 1: Add SSE client to base.html**
+- [ ] **Step 1: Add the SSE client + global error toast to base.html**
+
+The client handles four real-world failure modes:
+- **iOS Safari / mobile** drops the EventSource when the tab backgrounds → `visibilitychange` triggers a manual refresh + reconnect on return.
+- **Disconnect** during a sleep or transient network blip → `onerror` triggers exponential-backoff reconnect.
+- **Dirty textarea** (user typing while a CLI write fires) → before swapping `main`, check for unsaved input; prompt before clobbering.
+- **POST failure** (server returns 4xx/5xx) → a global toast surfaces the error instead of failing silently.
 
 ```html
 <script>
-  // Reload the current page when the vault changes.
-  // We use EventSource (Server-Sent Events).
-  const es = new EventSource("/events");
-  let lastReload = Date.now();
-  es.onmessage = (e) => {
-    if (Date.now() - lastReload < 800) return;  // debounce
-    lastReload = Date.now();
-    if (e.data.startsWith("01-daily/") || e.data.startsWith("30-habits/")) {
+  (function () {
+    let es = null;
+    let reconnectDelay = 1000;        // backoff base
+    let lastReload = Date.now();
+    const RELOAD_DEBOUNCE_MS = 800;
+
+    function isMainDirty() {
+      // Any textarea inside <main> whose current value differs from its initial
+      // value is "dirty" and we should warn before clobbering it.
+      for (const t of document.querySelectorAll("main textarea")) {
+        if (t.value !== (t.defaultValue || "")) return true;
+      }
+      return false;
+    }
+
+    function reloadMain() {
+      if (Date.now() - lastReload < RELOAD_DEBOUNCE_MS) return;
+      lastReload = Date.now();
+      if (isMainDirty()) {
+        const ok = confirm(
+          "The CLI updated this file. Reload and lose the edits you're typing?\n\n" +
+          "OK = reload\nCancel = keep my edits (you can refresh manually later)"
+        );
+        if (!ok) return;
+      }
       htmx.ajax("GET", window.location.href, { target: "main", swap: "innerHTML" });
     }
-  };
+
+    function connect() {
+      if (es) try { es.close(); } catch (_) {}
+      es = new EventSource("/events");
+      es.onopen = () => { reconnectDelay = 1000; };
+      es.onmessage = (e) => {
+        const path = e.data;
+        if (path.startsWith("01-daily/") || path.startsWith("30-habits/")) {
+          reloadMain();
+        }
+      };
+      es.onerror = () => {
+        try { es.close(); } catch (_) {}
+        setTimeout(connect, reconnectDelay);
+        reconnectDelay = Math.min(reconnectDelay * 2, 30000);  // cap 30s
+      };
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") {
+        // iOS drops SSE when the tab is backgrounded — refresh + reconnect.
+        reloadMain();
+        connect();
+      }
+    });
+
+    connect();
+
+    // Global toast for HTMX response errors. All POSTs in templates use:
+    //   hx-on:htmx:response-error="window.__toolkitErrorToast(event)"
+    window.__toolkitErrorToast = function (evt) {
+      const xhr = evt.detail && evt.detail.xhr;
+      const msg = (xhr && xhr.responseText) || "Save failed";
+      let toast = document.getElementById("toolkit-toast");
+      if (!toast) {
+        toast = document.createElement("div");
+        toast.id = "toolkit-toast";
+        toast.className = "fixed bottom-4 right-4 bg-red-700 text-white px-4 py-2 rounded shadow-lg z-50";
+        document.body.appendChild(toast);
+      }
+      toast.textContent = `⚠ ${msg.slice(0, 200)}`;
+      toast.style.display = "block";
+      clearTimeout(toast._timer);
+      toast._timer = setTimeout(() => { toast.style.display = "none"; }, 4000);
+    };
+  })();
 </script>
 ```
 
@@ -1236,16 +2025,20 @@ git commit -m "feat(day): Coach Cards morning mode with Alpine-driven step progr
 Start the server, open `http://localhost:7777` in a browser, then in another terminal touch a file:
 
 ```bash
-touch ~/Obsidian/DW/01-daily/$(date +%Y-%m-%d).md
+touch "$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md"
 ```
 
 The browser should re-render the Day tab within ~1 second.
+
+Also test:
+- Open the page on an iPhone over LAN (Phase 2), background the tab for 30s, return — page reloads.
+- Type into an Insight Reflection textarea, then trigger a vault change from another tab — confirm dialog fires.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add companion/templates/base.html
-git commit -m "feat: SSE-driven auto-refresh when vault files change"
+git commit -m "feat(sse): robust auto-refresh with reconnect, visibilitychange, dirty-textarea guard"
 ```
 
 ---
@@ -1392,46 +2185,66 @@ def test_archive_habit_moves_to_archived_section(client_with_today, tmp_path):
     assert walk_idx > archived_idx
 ```
 
-- [ ] **Step 2: Implement add/archive in server.py**
+- [ ] **Step 2: Implement add/archive in server.py — with validation and file-locked writes**
 
 ```python
+from companion.safe_write import safe_modify
+from companion.validation import validate_habit_fields, HABIT_ID_RE
+
     @app.route("/add-habit-form")
     def add_habit_form():
         return render_template("_components/add_habit_form.html")
 
     @app.route("/habit", methods=["POST"])
     def add_habit():
+        try:
+            fields = validate_habit_fields(request.form)
+        except ValueError as e:
+            return (str(e), 400)
         habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
-        md = habits_path.read_text() if habits_path.exists() else "# Daily Habits\n\n## Active\n\n## Archived\n"
         new_entry = (
-            f"\n- id: {request.form['id']}\n"
-            f"  name: {request.form['name']}\n"
-            f"  emoji: {request.form['emoji']}\n"
-            f"  target: {request.form['target']}\n"
-            f"  frequency: {request.form['frequency']}\n"
+            f"\n- id: {fields['id']}\n"
+            f"  name: {fields['name']}\n"
+            f"  emoji: {fields['emoji']}\n"
+            f"  target: {fields['target']}\n"
+            f"  frequency: {fields['frequency']}\n"
         )
-        # Insert after "## Active"
-        md = md.replace("## Active\n", "## Active\n" + new_entry, 1)
-        habits_path.write_text(md)
+        def insert(existing: str) -> str:
+            md = existing or "# Daily Habits\n\n## Active\n\n## Archived\n"
+            # Reject duplicate ids
+            if f"id: {fields['id']}" in md:
+                raise ValueError("habit id already exists")
+            return md.replace("## Active\n", "## Active\n" + new_entry, 1)
+        try:
+            safe_modify(habits_path, insert)
+        except ValueError as e:
+            return (str(e), 400)
         broadcast("30-habits/habits.md")
         return ("", 204)
 
     @app.route("/habit/archive", methods=["POST"])
     def archive_habit():
-        habit_id = request.form["habit_id"]
+        habit_id = request.form.get("habit_id", "").strip()
+        if not HABIT_ID_RE.fullmatch(habit_id):
+            return ("invalid habit_id", 400)
         habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
-        md = habits_path.read_text()
-        habits = parse_habits(md)
-        active = habits["active"]
-        target = next((h for h in active if h["id"] == habit_id), None)
-        if target is None:
+        if not habits_path.exists():
             return ("", 404)
-        target["archived_at"] = date.today().isoformat()
-        habits["active"] = [h for h in active if h["id"] != habit_id]
-        habits["archived"].append(target)
-        # Re-serialize and write
-        md = _serialize_habits(habits)
-        habits_path.write_text(md)
+        found = [False]
+        def archive(existing: str) -> str:
+            habits = parse_habits(existing)
+            active = habits["active"]
+            target = next((h for h in active if h["id"] == habit_id), None)
+            if target is None:
+                return existing  # signal not-found via found[0]
+            found[0] = True
+            target["archived_at"] = date.today().isoformat()
+            habits["active"] = [h for h in active if h["id"] != habit_id]
+            habits["archived"].append(target)
+            return _serialize_habits(habits)
+        safe_modify(habits_path, archive)
+        if not found[0]:
+            return ("habit not found", 404)
         broadcast("30-habits/habits.md")
         return ("", 204)
 ```
@@ -1469,9 +2282,11 @@ git commit -m "feat(streaks): add and archive habit"
 
 ---
 
-## Phase 5 — Week tab
+## Phase 5 — Week tab (stub)
 
-### Task 12: Week tab — render weekly note + stack rank
+### Task 12: Week tab — read-only weekly-note markdown render
+
+The full Week tab (stack rank, mode badge, push/protect, trap check, meeting check, week-at-a-glance) is deferred to **Phase 2**. The actual weekly-note schema written by `/open-week` (`## Week Plan: [date range]` with nested `### Recommended Top 3`, `## Focus This Week`, `## Parked`) plus the separate stack-rank file at `10-strategy/stack-rank/YYYY-WNN.md` is more involved than the original Task 12 acknowledged, and Phase 1's focus is `open-day` / `close-day`. The Phase 1 Week tab is a minimal markdown viewer so the tab isn't a dead link.
 
 **Files:**
 - Create: `companion/templates/week.html`
@@ -1481,44 +2296,40 @@ git commit -m "feat(streaks): add and archive habit"
 - [ ] **Step 1: Failing test**
 
 ```python
-def test_week_tab_renders_weekly_note(client_with_today, tmp_path):
+from datetime import date
+
+
+def test_week_tab_renders_weekly_note_as_markdown(client_with_today, tmp_path):
     weekly = tmp_path / "vault" / "02-weekly"
     weekly.mkdir(parents=True)
-    from datetime import date
     iso_year, iso_week, _ = date.today().isocalendar()
-    (weekly / f"{iso_year}-W{iso_week:02d}.md").write_text("""# Week
-
-## Mode
-push
-
-## Stack Rank
-
-1. Ship toolkit cowork
-2. Q3 LOP draft
-
-## Recommended Top 3
-""")
+    (weekly / f"{iso_year}-W{iso_week:02d}.md").write_text(
+        "# Week\n\n## Week Plan: 2026-05-12 to 2026-05-18\n\n### Recommended Top 3\n1. Ship toolkit\n"
+    )
     resp = client_with_today.get("/week")
-    assert b"PUSH" in resp.data or b"push" in resp.data
-    assert b"Ship toolkit cowork" in resp.data
+    assert resp.status_code == 200
+    assert b"Ship toolkit" in resp.data
+
+
+def test_week_tab_shows_helpful_empty_state(client_with_today):
+    resp = client_with_today.get("/week")
+    assert resp.status_code == 200
+    assert b"No weekly note yet" in resp.data
+    assert b"/open-week" in resp.data
 ```
 
-- [ ] **Step 2: Implement `GET /week`**
+- [ ] **Step 2: Implement `GET /week` — pass raw markdown**
 
 ```python
     @app.route("/week")
     def week():
-        from datetime import date
         y, w, _ = date.today().isocalendar()
         path = app.config["VAULT_PATH"] / "02-weekly" / f"{y}-W{w:02d}.md"
-        if not path.exists():
-            return render_template("week.html", week_md="", sections={})
-        md = path.read_text()
-        sections = parse_daily_note_sections(md)  # same parser works
-        return render_template("week.html", week_md=md, sections=sections, week_of=f"{y}-W{w:02d}")
+        week_md = path.read_text() if path.exists() else ""
+        return render_template("week.html", week_md=week_md, week_of=f"{y}-W{w:02d}")
 ```
 
-- [ ] **Step 3: Implement `companion/templates/week.html`**
+- [ ] **Step 3: Implement `companion/templates/week.html` — markdown stub**
 
 ```html
 {% extends "base.html" %}
@@ -1527,25 +2338,18 @@ push
 <h1 class="text-2xl font-bold mb-4">Week — {{ week_of }}</h1>
 
 {% if not week_md %}
-  <p class="text-stone-500">No weekly note yet. Run <code>/open-week</code> in your terminal.</p>
+  <div class="bg-white rounded-lg shadow p-6 text-center">
+    <p class="text-stone-600">No weekly note yet.</p>
+    <p class="text-sm text-stone-500 mt-2">Run <code class="bg-stone-100 px-1 rounded">/open-week</code> in your terminal to create one.</p>
+  </div>
 {% else %}
-
-<div class="grid grid-cols-2 gap-4">
-  <section class="bg-white rounded-lg shadow p-5">
-    <h2 class="text-sm uppercase text-stone-500 mb-3">Mode</h2>
-    <div class="text-2xl font-bold">{{ sections.get('Mode', '').upper() }}</div>
-  </section>
-  <section class="bg-white rounded-lg shadow p-5">
-    <h2 class="text-sm uppercase text-stone-500 mb-3">Stack rank</h2>
-    <pre class="text-sm whitespace-pre-wrap">{{ sections.get('Stack Rank', '') }}</pre>
-  </section>
-</div>
-
-<section class="bg-white rounded-lg shadow p-5 mt-4">
-  <h2 class="text-sm uppercase text-stone-500 mb-3">Recommended Top 3</h2>
-  <pre class="text-sm whitespace-pre-wrap">{{ sections.get('Recommended Top 3', '') }}</pre>
-</section>
-
+  <div class="bg-white rounded-lg shadow p-6">
+    <details class="mb-4">
+      <summary class="text-sm text-stone-500 cursor-pointer">Phase 1 note — full Week tab is Phase 2</summary>
+      <p class="text-sm text-stone-600 mt-2">For now this view shows the raw weekly-note markdown. Rich rendering of stack rank, push/protect mode, trap check, and meeting check is on the roadmap. The canonical content lives in your Obsidian vault — open it there for full formatting.</p>
+    </details>
+    <pre class="font-mono text-sm whitespace-pre-wrap text-stone-800">{{ week_md }}</pre>
+  </div>
 {% endif %}
 {% endblock %}
 ```
@@ -1555,7 +2359,7 @@ push
 ```bash
 cd companion && pytest tests/test_week_tab.py -v
 git add companion/server.py companion/templates/week.html companion/tests/test_week_tab.py
-git commit -m "feat(week): render weekly note with mode, stack rank, recommended Top 3"
+git commit -m "feat(week): minimal weekly-note markdown viewer (full tab is Phase 2)"
 ```
 
 ---
@@ -1606,23 +2410,30 @@ def main():
 @main.command()
 @click.option("--vault", default=None, help="Override vault path (defaults to OBSIDIAN_VAULT_PATH env var)")
 @click.option("--port", default=None, type=int, help="Port (default: first free starting at 7777)")
-@click.option("--host", default="127.0.0.1", help="Bind host (use 0.0.0.0 for LAN)")
 @click.option("--no-open", is_flag=True, help="Don't open the browser")
-def serve(vault, port, host, no_open):
-    """Start the local web companion."""
+def serve(vault, port, no_open):
+    """Start the local web companion.
+
+    v1 binds 127.0.0.1 only. LAN/phone access is Phase 2 (will require a
+    shared-secret token).
+    """
     vault = vault or os.environ.get("OBSIDIAN_VAULT_PATH")
     if not vault:
         click.echo("Set OBSIDIAN_VAULT_PATH or pass --vault", err=True)
         sys.exit(1)
     port = port or _find_free_port()
+    host = "127.0.0.1"  # hard-coded — no LAN bind in v1
 
     from companion.server import create_app
     app = create_app(vault_path=vault)
 
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
+    # Permissions: 0600 (owner read/write only) — prevents other users on a
+    # shared machine from reading or overwriting the pidfile.
     PID_FILE.write_text(f"{os.getpid()}\n{host}:{port}\n")
+    PID_FILE.chmod(0o600)
 
-    url = f"http://{host if host != '0.0.0.0' else '127.0.0.1'}:{port}"
+    url = f"http://{host}:{port}"
     click.echo(f"Serving at {url}")
     if not no_open:
         webbrowser.open(url)
@@ -1711,61 +2522,136 @@ if [[ "${yn:-y}" =~ ^[Yy] ]]; then
 fi
 ```
 
-- [ ] **Step 2: Implement `install_companion_launchd`**
+- [ ] **Step 2: Implement `install_companion_launchd` — Python-generated plist, vault resolved from builder-profile**
+
+Generate the plist via Python (not `sed`) to avoid shell-quoting issues with vault paths that contain spaces or special characters. Resolve the vault path at install time by checking, in order:
+1. `OBSIDIAN_VAULT_PATH` env var
+2. `data_sources.familiar.paths[]` from `50-reference/builder-profile.md` (first entry where `host` matches the current hostname)
+3. Prompt the user
+
+Verify the resolved path contains `01-daily/` before installing — fail loudly if not.
 
 ```bash
 install_companion_launchd() {
-  local plist_template="$HOME/.claude/local-plugins/nsls-personal-toolkit/templates/com.nsls.toolkit-companion.plist.template"
+  local plugin_dir="$HOME/.claude/local-plugins/nsls-personal-toolkit"
   local plist_dest="$HOME/Library/LaunchAgents/com.nsls.toolkit-companion.plist"
-  local vault_path="${OBSIDIAN_VAULT_PATH:-$HOME/Obsidian}"
 
-  sed "s|{{VAULT_PATH}}|$vault_path|g; s|{{TOOLKIT_PYTHON}}|$(which python3)|g" \
-    "$plist_template" > "$plist_dest"
+  # Resolve vault path via Python (handles env var, builder-profile, and prompt)
+  local vault_path
+  vault_path=$(python3 "$plugin_dir/companion/install_helper.py" resolve-vault)
+  if [ -z "$vault_path" ] || [ ! -d "$vault_path/01-daily" ]; then
+    echo "✗ Could not find a vault with 01-daily/ at: $vault_path"
+    echo "  Set OBSIDIAN_VAULT_PATH or add the vault to builder-profile.md, then re-run install."
+    return 1
+  fi
+
+  # Generate the plist via Python (handles quoting correctly)
+  python3 "$plugin_dir/companion/install_helper.py" write-plist \
+    --vault "$vault_path" \
+    --dest "$plist_dest"
+
   launchctl load -w "$plist_dest"
   echo "✓ Auto-start enabled. Companion will run at login."
+  echo "  Vault: $vault_path"
   echo "  To disable later: launchctl unload -w $plist_dest"
 }
 ```
 
-- [ ] **Step 3: Create `templates/com.nsls.toolkit-companion.plist.template`**
+Create `companion/install_helper.py`:
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.nsls.toolkit-companion</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>{{TOOLKIT_PYTHON}}</string>
-    <string>-m</string>
-    <string>companion.cli</string>
-    <string>serve</string>
-    <string>--no-open</string>
-  </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>OBSIDIAN_VAULT_PATH</key>
-    <string>{{VAULT_PATH}}</string>
-  </dict>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <false/>
-  <key>StandardOutPath</key>
-  <string>/tmp/nsls-toolkit-companion.log</string>
-  <key>StandardErrorPath</key>
-  <string>/tmp/nsls-toolkit-companion.log</string>
-</dict>
-</plist>
+```python
+"""Resolve vault path and generate the launchd plist safely.
+
+Invoked from install.sh as a python subprocess so we avoid sed quoting issues.
+"""
+
+import os
+import plistlib
+import socket
+import sys
+from pathlib import Path
+
+PROFILE_PATH = Path.home() / ".claude" / "local-plugins" / "nsls-personal-toolkit" / "50-reference" / "builder-profile.md"
+
+
+def resolve_vault() -> str:
+    # 1) env var
+    env = os.environ.get("OBSIDIAN_VAULT_PATH")
+    if env and (Path(env) / "01-daily").is_dir():
+        return env
+    # 2) builder-profile (simple YAML-in-markdown — find data_sources.familiar.paths)
+    if PROFILE_PATH.exists():
+        text = PROFILE_PATH.read_text()
+        host = socket.gethostname()
+        # Naive lookup; profile schema is small and stable.
+        in_paths = False
+        current: dict = {}
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped == "paths:":
+                in_paths = True; continue
+            if in_paths and stripped.startswith("- host:"):
+                if current.get("host") == host and current.get("path"):
+                    return current["path"]
+                current = {"host": stripped.split(":", 1)[1].strip()}
+            elif in_paths and stripped.startswith("path:"):
+                current["path"] = stripped.split(":", 1)[1].strip()
+            elif in_paths and stripped == "":
+                if current.get("host") == host and current.get("path"):
+                    return current["path"]
+                current = {}
+        if current.get("host") == host and current.get("path"):
+            return current["path"]
+    # 3) prompt fallback
+    sys.stderr.write("Vault path not found. Enter path to your Obsidian vault: ")
+    sys.stderr.flush()
+    return input().strip()
+
+
+def write_plist(vault: str, dest: str, python_exe: str | None = None) -> None:
+    python_exe = python_exe or sys.executable
+    plist = {
+        "Label": "com.nsls.toolkit-companion",
+        "ProgramArguments": [python_exe, "-m", "companion.cli", "serve", "--no-open"],
+        "EnvironmentVariables": {"OBSIDIAN_VAULT_PATH": vault},
+        "RunAtLoad": True,
+        "KeepAlive": False,
+        "StandardOutPath": str(Path.home() / "Library" / "Logs" / "nsls-toolkit-companion.log"),
+        "StandardErrorPath": str(Path.home() / "Library" / "Logs" / "nsls-toolkit-companion.log"),
+    }
+    Path(dest).parent.mkdir(parents=True, exist_ok=True)
+    with open(dest, "wb") as f:
+        plistlib.dump(plist, f)
+    # Restrict perms — only owner can read/modify the autostart config.
+    os.chmod(dest, 0o600)
+
+
+if __name__ == "__main__":
+    cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    if cmd == "resolve-vault":
+        print(resolve_vault())
+    elif cmd == "write-plist":
+        import argparse
+        ap = argparse.ArgumentParser()
+        ap.add_argument("--vault", required=True)
+        ap.add_argument("--dest", required=True)
+        args = ap.parse_args(sys.argv[2:])
+        write_plist(args.vault, args.dest)
+    else:
+        sys.exit("usage: install_helper.py {resolve-vault|write-plist}")
 ```
+
+This removes the `sed` substitution surface, fixes the `~/Obsidian` fallback that wasn't the actual vault location for most users, and writes logs to `~/Library/Logs/` (mode-0600) instead of world-readable `/tmp/`.
+
+- [ ] **Step 3: (no separate template file needed)**
+
+The plist is generated by `install_helper.py` at install time using `plistlib`, so there is no `.template` file to maintain. This avoids the `sed`-substitution failure modes (special characters in vault paths, command-injection via `$(which python3)`) and keeps the plist format authoritative in one place.
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add install.sh templates/com.nsls.toolkit-companion.plist.template
-git commit -m "install: optional companion + launchd autostart"
+git add install.sh companion/install_helper.py
+git commit -m "install: optional companion + launchd autostart with safe plist generation"
 ```
 
 ---
@@ -1827,9 +2713,11 @@ git commit -m "feat(open-day): seed Bonus and Habits sections, ensure habits.md 
 
 Around line 503 of `close-day/SKILL.md`, find the section that builds today's `## Habits` summary.
 
-- [ ] **Step 2: Add habit-log reconciliation**
+- [ ] **Step 2: Add habit-log reconciliation with canonical-source rule**
 
-After the existing `## Habits` summary block, add:
+**Canonical source of truth for habit state: `30-habits/log.md`.** The companion writes to log.md directly when the user taps a habit. close-day merges from the daily note's `### Habits` checkboxes when it runs, but **log.md wins on conflict**: if the daily-note row says `- [ ] **Walk**` (unchecked) but log.md already has `walk:1.0` for today (because the user tapped in the companion), close-day must keep `1.0` — not overwrite to `0.0`.
+
+Concretely:
 
 ```markdown
 ### Reconcile to log.md
@@ -1838,7 +2726,15 @@ After producing the `## Habits` summary, append today's results to `30-habits/lo
 
 `YYYY-MM-DD · habit_id:percent · habit_id:percent`
 
-Where percent is 1.0 if the habit's checkbox is checked in today's daily note, 0.5 if the user explicitly marked it partial, or 0.0 if unchecked. If a row for today already exists (because /close-day was run earlier), replace it — do not duplicate.
+Reconciliation rules (apply in order):
+
+1. **Read existing log.md row for today** (if any). Call this `log_ticks` (a dict `{habit_id: percent}`).
+2. **Read daily-note checkboxes** under `## Morning Check-in` → `### Habits`. Use the parser semantics: `[x]` = 1.0, `[/]` or `[~]` = 0.5, `[ ]` = 0.0. Call this `note_ticks`.
+3. **For each active habit, merge — taking the MAX of the two values.** This gives canonical priority to log.md (companion ticks survive even if the user didn't update the checkbox in the daily note), while still letting users tick checkboxes in Obsidian or the CLI if log.md hasn't been touched for that habit today.
+4. **Write the merged row back to log.md**, idempotent on the date — if a row for today already exists, replace it.
+5. **Update the daily-note `### Habits` checkboxes to reflect the merged result** — checked (`[x]`) for 1.0, partial (`[/]`) for 0.5, unchecked (`[ ]`) for 0.0. This keeps the markdown human-readable in Obsidian, but the log.md value is authoritative.
+
+This MAX-merge resolves the two-writer problem without needing mtime comparison: a tap in the companion never gets undone by close-day running afterwards, and a manual checkbox tick never gets undone by close-day if the companion was already at 1.0. Resetting a habit to 0.0 mid-day requires editing log.md directly.
 ```
 
 - [ ] **Step 3: Add the streak rule prose paragraph**
