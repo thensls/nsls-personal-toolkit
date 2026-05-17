@@ -25,6 +25,12 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 | `/person-intelligence` | Build relationship profiles, track 1:1 context |
 | `obsidian-setup` | Set up an Obsidian knowledge base |
 
+## Web Companion
+
+The companion runs at `http://localhost:7777` (or `toolkit-companion status` to check). It is optional — install with `install.sh` or `cd companion && pip install -e .`.
+
+Habits live in `30-habits/habits.md`; daily ticks accumulate in `30-habits/log.md` (append-only). The streak rule is documented in `skills/close-day/SKILL.md` and implemented in `companion/streak.py`. Both must stay in sync.
+
 ## Strategy Layer (Optional)
 
 Your first `/open-week` will offer to set up a **strategy layer** — a system that connects your daily/weekly planning to company goals and personal strategy:
