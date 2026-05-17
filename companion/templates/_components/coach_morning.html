@@ -9,30 +9,44 @@
   <template x-if="step === 1">
     <div>
       <h3 class="font-semibold text-lg mb-2">Good morning</h3>
-      <p class="text-stone-700">Today is {{ today_pretty }}. {{ top_3 | length }} priorities pulled from your daily planning.</p>
+      <p class="text-stone-700">Today is {{ today_pretty }}.</p>
+      <p class="text-sm text-stone-600 mt-2">Set your Top 3 priorities, queue a Bonus list, mark habit intentions, and lock in for the day. Each step auto-saves to today's daily note as you type — no separate "save" button.</p>
+      <p class="text-xs text-stone-500 mt-3">Already ran <code>/open-day</code>? Your priorities will be pre-filled below.</p>
     </div>
   </template>
 
   <template x-if="step === 2">
     <div>
-      <h3 class="font-semibold text-lg mb-2">Confirm Top 3</h3>
-      <p class="text-sm text-stone-600 mb-3">Review your Top 3 from this morning's planning. To change them, edit today's note in Obsidian or rerun <code>/open-day</code>.</p>
-      <form id="step2-form">
-        {% for item in top_3 %}
-        <input name="top_{{ loop.index0 }}" value="{{ item.text }}" readonly
-               class="block w-full border rounded px-3 py-2 mb-2 bg-stone-50">
-        {% endfor %}
-      </form>
+      <h3 class="font-semibold text-lg mb-2">Set your Top 3</h3>
+      <p class="text-sm text-stone-600 mb-3">Three things that, if you finish them today, make today a win. Auto-saves as you type.</p>
+      {% for item in top_3_slots %}
+      <input name="text" value="{{ item.text }}"
+             placeholder="Priority {{ loop.index }}"
+             hx-post="/set-top-3"
+             hx-trigger="input changed delay:800ms, blur"
+             hx-vals='{"index": "{{ loop.index0 }}"}'
+             hx-swap="none"
+             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"
+             class="block w-full border rounded px-3 py-2 mb-2">
+      {% endfor %}
+      <p class="text-xs text-stone-500 mt-2">Tip: tap a checkbox in the Command Center later to mark done.</p>
     </div>
   </template>
 
   <template x-if="step === 3">
     <div>
       <h3 class="font-semibold text-lg mb-2">Bonus list</h3>
-      <p class="text-sm text-stone-600 mb-3">Bonus items from this morning's planning. Lower priority — only if Top 3 is done. To edit, change today's note in Obsidian.</p>
-      <textarea name="bonus" rows="5" form="step3-form" readonly
-                class="block w-full border rounded px-3 py-2 font-mono text-sm bg-stone-50">{{ bonus_text }}</textarea>
-      <form id="step3-form"></form>
+      <p class="text-sm text-stone-600 mb-3">Lower priority — only if Top 3 is done. Up to 3 items. Auto-saves as you type.</p>
+      {% for item in bonus_slots %}
+      <input name="text" value="{{ item.text }}"
+             placeholder="Bonus {{ loop.index }}"
+             hx-post="/set-bonus"
+             hx-trigger="input changed delay:800ms, blur"
+             hx-vals='{"index": "{{ loop.index0 }}"}'
+             hx-swap="none"
+             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"
+             class="block w-full border rounded px-3 py-2 mb-2">
+      {% endfor %}
     </div>
   </template>
 
@@ -86,7 +100,7 @@
     <div>
       <h3 class="font-semibold text-lg mb-2">Lock in the day</h3>
       <p class="text-stone-700 mb-3">Your morning ritual is set. Tap Lock in to switch to the Command Center for the rest of the day.</p>
-      <p class="text-sm text-stone-500">Lock in transitions the view to the Command Center. Top 3 and Bonus are already saved from morning planning. Tap a habit checkbox during the day to record progress.</p>
+      <p class="text-sm text-stone-500">Top 3, Bonus, and habit intentions saved as you typed. Lock in just transitions the view — it doesn't write anything new. Tap a habit during the day to mark progress.</p>
     </div>
   </template>
 

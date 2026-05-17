@@ -51,7 +51,7 @@ def test_morning_coach_renders_7_steps(client_with_today):
     client, _ = client_with_today
     resp = client.get("/?mode=coach-morning")
     assert resp.status_code == 200
-    for label in (b"Good morning", b"Confirm Top 3", b"Bonus list",
+    for label in (b"Good morning", b"Set your Top 3", b"Bonus list",
                   b"Focus blocks", b"Habit intentions", b"Vitality",
                   b"Lock in"):
         assert label in resp.data, f"missing: {label}"

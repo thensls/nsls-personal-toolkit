@@ -143,6 +143,96 @@ def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
     return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
 
 
+_DAILY_NOTE_SCAFFOLD = """# Daily Note
+
+## Morning Check-in
+
+### My Top 3
+1. [ ]
+2. [ ]
+3. [ ]
+
+### Bonus
+1. [ ]
+2. [ ]
+3. [ ]
+
+### Habits
+
+(Add habits via the companion's Streaks tab, or seed `30-habits/habits.md` from the template.)
+"""
+
+
+def _ensure_daily_note_scaffold(path: Path) -> None:
+    """Create today's daily note with empty Top 3 / Bonus slots if missing.
+
+    Idempotent — does nothing if the file already exists. Lets the companion
+    serve as the morning planning surface for users who haven't run /open-day
+    yet (or who prefer to plan visually).
+    """
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_DAILY_NOTE_SCAFFOLD)
+
+
+def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
+    """Replace the text of the Nth (0-indexed) item under `heading`, preserving
+    its `[ ]` / `[x]` checkbox marker. If fewer than N+1 items exist, append
+    blank items until index N is present, then set its text.
+
+    Items are numbered list rows (`1. `) or dash rows (`- `). Lines without a
+    marker get one injected (`[ ]`) so subsequent toggle clicks work.
+    """
+    lines = md.splitlines()
+    section_start = None
+    section_end = len(lines)
+    for i, line in enumerate(lines):
+        if section_start is None:
+            if line.strip() == heading:
+                section_start = i
+            continue
+        if line.startswith("### ") or line.startswith("## "):
+            section_end = i
+            break
+
+    if section_start is None:
+        # Heading missing — append the heading + the item at the end of the note.
+        suffix = [heading, f"1. [ ] {text}", ""]
+        return md.rstrip("\n") + "\n\n" + "\n".join(suffix) + "\n"
+
+    # Walk items within the section
+    item_indices: list[int] = []
+    for i in range(section_start + 1, section_end):
+        if _LIST_ITEM_RE.match(lines[i]):
+            item_indices.append(i)
+
+    def _format_item(n: int, body_text: str) -> str:
+        return f"{n}. [ ] {body_text}"
+
+    if index < len(item_indices):
+        # Replace existing Nth item; preserve marker (or inject `[ ]` if missing)
+        target_line = lines[item_indices[index]]
+        m = _LIST_ITEM_RE.match(target_line)
+        prefix, rest = m.group(1), m.group(2)
+        if rest.startswith("[ ]") or rest.startswith("[x]") or rest.startswith("[X]"):
+            marker = rest[:3]
+            lines[item_indices[index]] = f"{prefix}{marker} {text}".rstrip()
+        else:
+            lines[item_indices[index]] = f"{prefix}[ ] {text}".rstrip()
+    else:
+        # Append blank items up to and including the target index
+        insertion_point = item_indices[-1] + 1 if item_indices else section_start + 1
+        new_lines = []
+        for n in range(len(item_indices), index + 1):
+            body = text if n == index else ""
+            new_lines.append(_format_item(n + 1, body).rstrip())
+        # Insert without trailing blank shift
+        lines[insertion_point:insertion_point] = new_lines
+
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
 def _replace_section_body(md: str, section_name: str, new_body: str) -> str:
     """Replace the body of `## <section_name>` with new_body, preserving
     surrounding sections. If section doesn't exist, append it at the end.
@@ -266,12 +356,19 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     except (TypeError, ValueError):
         step = 1
 
+    # Coach Cards always renders 3 Top 3 + 3 Bonus input rows so the user
+    # can start typing even on a fresh vault (auto-save creates the note).
+    top_3_slots = list(top_3) + [{"text": "", "checked": False}] * max(0, 3 - len(top_3))
+    bonus_slots = list(bonus) + [{"text": "", "checked": False}] * max(0, 3 - len(bonus))
+
     return {
         "today": today,
         "today_pretty": today_pretty,
         "note_md": daily_md,
         "top_3": top_3,
+        "top_3_slots": top_3_slots[:3],
         "bonus": bonus,
+        "bonus_slots": bonus_slots[:3],
         "bonus_text": "\n".join(b["text"] for b in bonus),
         "habits_today": habits_today,
         "active_habits": habits["active"],
@@ -484,6 +581,36 @@ def create_app(vault_path: str) -> Flask:
             return _replace_section_body(existing, section, content)
 
         safe_modify(note_path, replace_section)
+        broadcast(f"01-daily/{today}.md")
+        return ("", 204)
+
+    @app.route("/set-top-3", methods=["POST"])
+    def set_top_3():
+        return _set_morning_item("### My Top 3", "top_3")
+
+    @app.route("/set-bonus", methods=["POST"])
+    def set_bonus():
+        return _set_morning_item("### Bonus", "bonus")
+
+    def _set_morning_item(heading: str, broadcast_label: str):
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        if index < 0 or index > 9:
+            return ("index out of bounds", 400)
+        text = request.form.get("text", "").rstrip()
+        if "\n" in text or "\r" in text or len(text) > 256:
+            return ("text must be a single line ≤256 chars", 400)
+
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+
+        def update(existing: str) -> str:
+            return _set_nth_item_text(existing, heading, index, text)
+
+        safe_modify(note_path, update)
         broadcast(f"01-daily/{today}.md")
         return ("", 204)
 

@@ -137,3 +137,61 @@ def test_save_rejects_disallowed_section(client_with_today):
     client, _ = client_with_today
     resp = client.post("/save", data={"section": "Plan", "content": "x"})
     assert resp.status_code == 400
+
+
+def test_set_top_3_creates_note_on_empty_vault(client_with_today):
+    """First /set-top-3 call against a vault with no daily note creates the
+    scaffold and writes the user's text."""
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    note.unlink(missing_ok=True)  # ensure no note exists
+    resp = client.post("/set-top-3", data={"index": "0", "text": "Ship companion v1.1"})
+    assert resp.status_code == 204
+    assert note.exists()
+    body = note.read_text()
+    assert "### My Top 3" in body
+    assert "1. [ ] Ship companion v1.1" in body
+
+
+def test_set_top_3_updates_existing_item_preserves_checkbox(client_with_today):
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    note.write_text(
+        "## Morning Check-in\n### My Top 3\n"
+        "1. [x] Old text\n2. [ ] Second\n3. [ ] Third\n"
+    )
+    resp = client.post("/set-top-3", data={"index": "0", "text": "New text"})
+    assert resp.status_code == 204
+    body = note.read_text()
+    # Checked state preserved; only text replaced
+    assert "1. [x] New text" in body
+    assert "2. [ ] Second" in body
+
+
+def test_set_bonus_updates_nth_item(client_with_today):
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    note.write_text(
+        "## Morning Check-in\n### Bonus\n"
+        "1. [ ] First bonus\n2. [ ] Second\n"
+    )
+    resp = client.post("/set-bonus", data={"index": "1", "text": "Updated second"})
+    assert resp.status_code == 204
+    body = note.read_text()
+    assert "2. [ ] Updated second" in body
+    assert "1. [ ] First bonus" in body
+
+
+def test_set_top_3_rejects_newline_in_text(client_with_today):
+    client, _ = client_with_today
+    resp = client.post("/set-top-3", data={"index": "0", "text": "line1\n## Hijacked"})
+    assert resp.status_code == 400
+
+
+def test_set_top_3_rejects_out_of_bounds_index(client_with_today):
+    client, _ = client_with_today
+    resp = client.post("/set-top-3", data={"index": "99", "text": "x"})
+    assert resp.status_code == 400
