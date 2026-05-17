@@ -9,7 +9,12 @@ def client(tmp_path):
     (vault / "01-daily").mkdir()
     app = create_app(vault_path=str(vault))
     app.config["TESTING"] = True
-    return app.test_client()
+    try:
+        yield app.test_client()
+    finally:
+        w = app.config.get("WATCHER")
+        if w is not None:
+            w.stop()
 
 
 def test_root_renders_day_tab(client):
