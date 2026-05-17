@@ -558,10 +558,26 @@ The daily note should include:
 
 *Link the project and surface the week rank when a project home exists. Use `*(not in week's Top 5)*` for active projects outside the stack rank. Omit link/rank for pure people work or goals with no project home.*
 
+### Bonus
+
+(nice-to-have items if there's time today — typically 1-3 items)
+
+1. [Bonus item 1]
+2. [Bonus item 2]
+3. [Bonus item 3]
+
 ### Vitality
 - [ ] [Movement activity]
 - [ ] [Growth activity]
 - [ ] [Connection activity]
+
+### Habits
+
+(One checkbox per active habit from 30-habits/habits.md. The bolded text MUST match the habit's name field verbatim — the companion and close-day both match on that string.)
+
+- [ ] **Walk**
+- [ ] **Read 15m**
+- [ ] **Workout**
 
 ## Calendar
 - **HH:MM-HH:MM** — [Title] (attendees)
@@ -586,6 +602,8 @@ SORT priority ASC
 ```
 
 The `## Work Log`, `## Projects Touched`, `## Carrying Over`, and `## End of Day` sections are left empty — `/close-day` fills those in.
+
+**Habits section:** Read habits from `$OBSIDIAN_VAULT_PATH/30-habits/habits.md`, parsing the Active list. Use each habit's `name` field for the bolded text in the `### Habits` section (one checkbox per active habit). If the file does not exist, ask the builder once whether to create it (offer the template), then write `30-habits/habits.md` and `30-habits/log.md` from the templates. The bolded habit names must match verbatim — `/close-day` and the CLI companion both match on that string.
 
 ### Step 7: Track priority alignment (if AI suggestions existed)
 
