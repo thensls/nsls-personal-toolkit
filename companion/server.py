@@ -2,7 +2,7 @@
 
 import hashlib
 import queue
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import Flask, Response, render_template, request, stream_with_context
@@ -266,6 +266,43 @@ def create_app(vault_path: str) -> Flask:
         ctx["mode"] = mode
 
         return render_template("day.html", **ctx)
+
+    @app.route("/streaks")
+    def streaks():
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
+        habits = (
+            parse_habits(habits_path.read_text())
+            if habits_path.exists()
+            else {"active": [], "archived": []}
+        )
+        log = parse_log(log_path.read_text()) if log_path.exists() else []
+
+        today = date.today()
+        rows = []
+        for h in habits["active"]:
+            habit_log = [
+                DayResult(d["date"], d["ticks"].get(h["id"], 0.0))
+                for d in log
+                if h["id"] in d["ticks"]
+            ]
+            cells = []
+            for i in range(29, -1, -1):
+                day = (today - timedelta(days=i)).isoformat()
+                pct = next(
+                    (d["ticks"].get(h["id"]) for d in log if d["date"] == day),
+                    None,
+                )
+                cells.append({"date": day, "percent": pct})
+            concern = compute_concern(habit_log)
+            rows.append({
+                "habit": h,
+                "streak_days": streak_days(habit_log),
+                "concern": concern,
+                "status": status_for(concern),
+                "cells": cells,
+            })
+        return render_template("streaks.html", today=today.isoformat(), rows=rows)
 
     @app.route("/lock-in", methods=["POST"])
     def lock_in():

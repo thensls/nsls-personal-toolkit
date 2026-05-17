@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% set active_tab = 'streaks' %}
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+  <h1 class="text-2xl font-bold">Your habits</h1>
+  <button hx-get="/add-habit-form" hx-target="#habit-form-slot" class="px-3 py-2 bg-blue-900 text-white rounded text-sm">+ Add habit</button>
+</div>
+<div id="habit-form-slot"></div>
+
+<div class="space-y-3">
+{% for r in rows %}
+  <div class="bg-white rounded-lg shadow p-4 flex items-center gap-4 {% if r.status == 'at_risk' %}border-l-4 border-yellow-600{% endif %}">
+    <div class="text-2xl">{{ r.habit.emoji }}</div>
+    <div class="flex-1">
+      <div class="font-semibold">{{ r.habit.name }}</div>
+      <div class="text-xs text-stone-500">target: {{ r.habit.target }} · {{ r.habit.frequency }}</div>
+      <div class="grid grid-cols-15 gap-0.5 mt-2" style="display:grid; grid-template-columns: repeat(15, 1fr); gap: 2px;">
+        {% for c in r.cells %}
+          {% if c.percent is none %}
+            <div class="hm-cell" style="aspect-ratio:1; background:#e5e1d6; border-radius:2px;"></div>
+          {% elif c.percent >= 1.0 %}
+            <div class="hm-cell" style="aspect-ratio:1; background:#5a8a3a; border-radius:2px;"></div>
+          {% elif c.percent > 0 %}
+            <div class="hm-cell" style="aspect-ratio:1; background:#f0c460; border-radius:2px;"></div>
+          {% else %}
+            <div class="hm-cell" style="aspect-ratio:1; background:#c4554d; opacity:0.55; border-radius:2px;"></div>
+          {% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    <div class="text-right">
+      <div class="text-xl font-bold {% if r.status == 'at_risk' %}text-yellow-700{% else %}text-green-800{% endif %}">
+        {% if r.status == 'at_risk' %}⚠ at risk{% else %}{{ r.streak_days }}d{% if r.streak_days >= 7 %} 🔥{% endif %}{% endif %}
+      </div>
+      <div class="text-xs text-stone-500">concern {{ '%.1f' % r.concern }}</div>
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% endblock %}
