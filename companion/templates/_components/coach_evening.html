@@ -1,0 +1,63 @@
+<div x-data="{ step: {{ step or 1 }} }" class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+  <div class="flex gap-1 mb-3">
+    {% for i in range(1, 5) %}
+      <div class="flex-1 h-1 rounded" :class="step >= {{ i }} ? 'bg-amber-700' : 'bg-stone-200'"></div>
+    {% endfor %}
+  </div>
+  <div class="text-xs uppercase text-stone-500 mb-4">Step <span x-text="step"></span> of 4 · Evening</div>
+
+  <template x-if="step === 1">
+    <div>
+      <h3 class="font-semibold text-lg mb-3">Today's stats</h3>
+      <div class="grid grid-cols-2 gap-3 text-sm">
+        <div class="bg-stone-50 p-3 rounded"><div class="text-stone-500 text-xs">Top 3 completed</div><div class="text-2xl font-semibold">{{ stats.top_3_done }}/{{ stats.top_3_total }}</div></div>
+        <div class="bg-stone-50 p-3 rounded"><div class="text-stone-500 text-xs">Habits completed</div><div class="text-2xl font-semibold">{{ stats.habits_done }}/{{ stats.habits_total }}</div></div>
+        <div class="bg-stone-50 p-3 rounded"><div class="text-stone-500 text-xs">Focus time</div><div class="text-2xl font-semibold">{{ stats.focus_hours }}h</div></div>
+        <div class="bg-stone-50 p-3 rounded"><div class="text-stone-500 text-xs">Streak</div><div class="text-2xl font-semibold">{{ stats.streak_days }}d</div></div>
+      </div>
+    </div>
+  </template>
+
+  <template x-if="step === 2">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Insight Reflection</h3>
+      <p class="text-sm text-stone-600 mb-3">What did you notice about yourself today? One pattern, one resistance, one win — whatever is alive. Auto-saves as you type.</p>
+      <textarea rows="8" class="block w-full border rounded px-3 py-2 font-serif"
+                hx-post="/save" hx-trigger="input changed delay:1500ms"
+                hx-vals='{"section":"Insight Reflection"}' name="content"
+                hx-swap="none"
+                hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)">{{ insight_reflection_text }}</textarea>
+    </div>
+  </template>
+
+  <template x-if="step === 3">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Gratitude</h3>
+      <p class="text-sm text-stone-600 mb-3">One thing you're grateful for today. Short or long. Auto-saves as you type.</p>
+      <textarea rows="4" class="block w-full border rounded px-3 py-2 font-serif"
+                hx-post="/save" hx-trigger="input changed delay:1500ms"
+                hx-vals='{"section":"Gratitude"}' name="content"
+                hx-swap="none"
+                hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)">{{ gratitude_text }}</textarea>
+    </div>
+  </template>
+
+  <template x-if="step === 4">
+    <div>
+      <h3 class="font-semibold text-lg mb-3">Done for today</h3>
+      <p class="text-stone-700 mb-2">Insight and Gratitude saved to today's daily note.</p>
+      <p class="text-sm text-stone-500">Tap Done to switch to the read-only Results view.</p>
+    </div>
+  </template>
+
+  <div class="mt-6 flex justify-between gap-3">
+    <button @click="step--" :disabled="step <= 1"
+            class="px-4 py-2 border rounded disabled:opacity-30">Back</button>
+    <button @click="step++" x-show="step < 4"
+            class="px-4 py-2 bg-amber-700 text-white rounded">Next</button>
+    <button x-show="step >= 4"
+            hx-post="/lock-in" hx-vals='{"phase":"evening"}'
+            hx-target="body" hx-swap="innerHTML"
+            class="px-4 py-2 bg-amber-700 text-white rounded">Done →</button>
+  </div>
+</div>

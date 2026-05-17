@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% set active_tab = 'day' %}
 {% block content %}
+{% if mode == 'coach-morning' %}
+  {% include "_components/coach_morning.html" %}
+{% elif mode == 'coach-evening' %}
+  {% include "_components/coach_evening.html" %}
+{% elif mode == 'results' %}
+  {% include "_components/results.html" %}
+{% else %}
 <h1 class="text-2xl font-bold mb-6">Today — {{ today }}</h1>
 
 {% if not note_md %}
@@ -44,5 +51,6 @@
   </ul>
 </section>
 
+{% endif %}
 {% endif %}
 {% endblock %}

@@ -1,0 +1,39 @@
+<div class="max-w-2xl mx-auto space-y-4">
+  <header class="bg-amber-50 p-4 rounded"><h2 class="font-semibold">Day closed · {{ today_pretty }}</h2></header>
+
+  <section class="bg-white p-5 rounded shadow">
+    <h3 class="text-sm uppercase text-stone-500 mb-2">Stats</h3>
+    <div class="grid grid-cols-4 gap-3 text-sm">
+      <div><div class="text-stone-500">Top 3</div><div class="font-semibold">{{ stats.top_3_done }}/{{ stats.top_3_total }}</div></div>
+      <div><div class="text-stone-500">Habits</div><div class="font-semibold">{{ stats.habits_done }}/{{ stats.habits_total }}</div></div>
+      <div><div class="text-stone-500">Focus</div><div class="font-semibold">{{ stats.focus_hours }}h</div></div>
+      <div><div class="text-stone-500">Streak</div><div class="font-semibold">{{ stats.streak_days }}d</div></div>
+    </div>
+  </section>
+
+  <section class="bg-white p-5 rounded shadow">
+    <h3 class="text-sm uppercase text-stone-500 mb-2">Top 3</h3>
+    <ul class="space-y-1">
+      {% for item in top_3 %}
+      <li class="flex items-start gap-2">
+        <span>{% if item.checked %}✅{% else %}⬜{% endif %}</span>
+        <span class="{% if item.checked %}line-through text-stone-400{% endif %}">{{ item.text }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  {% if insight_reflection_text %}
+  <section class="bg-white p-5 rounded shadow">
+    <h3 class="text-sm uppercase text-stone-500 mb-2">Insight Reflection</h3>
+    <p class="whitespace-pre-wrap font-serif text-stone-800">{{ insight_reflection_text }}</p>
+  </section>
+  {% endif %}
+
+  {% if gratitude_text %}
+  <section class="bg-white p-5 rounded shadow">
+    <h3 class="text-sm uppercase text-stone-500 mb-2">Gratitude</h3>
+    <p class="whitespace-pre-wrap font-serif text-stone-800">{{ gratitude_text }}</p>
+  </section>
+  {% endif %}
+</div>

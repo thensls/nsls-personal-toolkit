@@ -27,6 +27,9 @@ def test_root_renders_day_tab(client):
 
 
 def test_root_handles_missing_daily_note(client):
+    """With no daily note, state detection picks coach-morning (7-step ritual)."""
     resp = client.get("/")
     assert resp.status_code == 200
-    assert b"No daily note for today yet" in resp.data
+    # State detection routes to the morning Coach Card when no Top 3 exists.
+    assert b"Good morning" in resp.data
+    assert b"Step" in resp.data

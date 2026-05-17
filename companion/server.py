@@ -2,7 +2,7 @@
 
 import hashlib
 import queue
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from flask import Flask, Response, render_template, request, stream_with_context
@@ -151,6 +151,91 @@ def _habit_state_for(app, habit_id: str, today: str, percent: float) -> dict:
     }
 
 
+def _detect_day_state(daily_md: str, top_3: list) -> str:
+    """Return one of 'coach-morning', 'command', 'coach-evening', 'results'.
+
+    Detection rules:
+      - If `## Insight Reflection` body has content → 'results' (day is closed).
+      - Else if `## Insight Reflection` heading exists but body is empty → 'coach-evening'.
+      - Else if Top 3 has items and all have text → 'command' (Command Center).
+      - Else → 'coach-morning' (no note yet, or Top 3 missing/empty).
+    """
+    sections = parse_daily_note_sections(daily_md)
+    insight = sections.get("Insight Reflection", "").strip()
+    if insight:
+        return "results"
+    if "Insight Reflection" in sections:
+        return "coach-evening"
+    if top_3 and all(item.get("text") for item in top_3):
+        return "command"
+    return "coach-morning"
+
+
+def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str) -> dict:
+    """Assemble template context shared by all four day-tab modes."""
+    try:
+        today_pretty = datetime.strptime(today, "%Y-%m-%d").strftime("%A, %B %-d, %Y")
+    except ValueError:
+        today_pretty = datetime.strptime(today, "%Y-%m-%d").strftime("%A, %B %d, %Y")
+
+    habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+    log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
+    habits = (
+        parse_habits(habits_path.read_text())
+        if habits_path.exists()
+        else {"active": [], "archived": []}
+    )
+    log = parse_log(log_path.read_text()) if log_path.exists() else []
+    today_log = next((r["ticks"] for r in log if r["date"] == today), {})
+
+    habits_today = []
+    for h in habits["active"]:
+        habit_log = [
+            DayResult(d["date"], d["ticks"].get(h["id"], 0.0))
+            for d in log
+            if h["id"] in d["ticks"]
+        ]
+        habits_today.append({
+            "id": h["id"],
+            "name": h["name"],
+            "emoji": h.get("emoji", ""),
+            "percent": today_log.get(h["id"], 0.0),
+            "streak_days": streak_days(habit_log),
+            "status": status_for(compute_concern(habit_log)),
+        })
+
+    # Stats for evening modes / results
+    top_3_done = sum(1 for t in top_3 if t.get("checked"))
+    habits_done = sum(1 for h in habits_today if h["percent"] >= 1.0)
+    stats = {
+        "top_3_done": top_3_done,
+        "top_3_total": len(top_3),
+        "habits_done": habits_done,
+        "habits_total": len(habits["active"]),
+        "focus_hours": 0,  # Phase 2 — focus blocks not yet tracked
+        "streak_days": max((h["streak_days"] for h in habits_today), default=0),
+    }
+
+    try:
+        step = int(request.args.get("step", 1))
+    except (TypeError, ValueError):
+        step = 1
+
+    return {
+        "today": today,
+        "today_pretty": today_pretty,
+        "note_md": daily_md,
+        "top_3": top_3,
+        "bonus": bonus,
+        "bonus_text": "\n".join(b["text"] for b in bonus),
+        "habits_today": habits_today,
+        "active_habits": habits["active"],
+        "focus_blocks": [],  # Phase 2
+        "stats": stats,
+        "step": step,
+    }
+
+
 def create_app(vault_path: str) -> Flask:
     app = Flask(__name__)
     app.config["VAULT_PATH"] = Path(vault_path)
@@ -162,49 +247,45 @@ def create_app(vault_path: str) -> Flask:
     def index():
         today = date.today().isoformat()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
-        note_md = note_path.read_text() if note_path.exists() else ""
+        daily_md = note_path.read_text() if note_path.exists() else ""
 
         # Extract sections from the Morning Check-in block
-        sections = parse_daily_note_sections(note_md)
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus = _extract_bonus(morning)
+        insight_reflection_text = sections.get("Insight Reflection", "").strip()
+        gratitude_text = sections.get("Gratitude", "").strip()
+
+        # User override → respected; otherwise auto-detect
+        mode = request.args.get("mode") or _detect_day_state(daily_md, top_3)
+
+        ctx = _build_day_context(app, daily_md, top_3, bonus, today)
+        ctx["insight_reflection_text"] = insight_reflection_text
+        ctx["gratitude_text"] = gratitude_text
+        ctx["mode"] = mode
+
+        return render_template("day.html", **ctx)
+
+    @app.route("/lock-in", methods=["POST"])
+    def lock_in():
+        """Transition the view from Coach Cards to the next state. No vault writes."""
+        phase = request.form.get("phase", "morning")
+        target_mode = "command" if phase == "morning" else "results"
+
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text() if note_path.exists() else ""
+        sections = parse_daily_note_sections(daily_md)
         morning = sections.get("Morning Check-in", "")
         top_3 = _extract_top_3(morning)
         bonus = _extract_bonus(morning)
 
-        # Build habits-today state from habits.md + log.md
-        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
-        log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
-        habits = (
-            parse_habits(habits_path.read_text())
-            if habits_path.exists()
-            else {"active": [], "archived": []}
-        )
-        log = parse_log(log_path.read_text()) if log_path.exists() else []
-
-        today_row = next((r for r in log if r["date"] == today), {"ticks": {}})
-        habits_today = []
-        for h in habits["active"]:
-            habit_log = [
-                DayResult(d["date"], d["ticks"].get(h["id"], 0.0))
-                for d in log
-                if h["id"] in d["ticks"]
-            ]
-            habits_today.append({
-                "id": h["id"],
-                "name": h["name"],
-                "emoji": h.get("emoji", ""),
-                "percent": today_row["ticks"].get(h["id"], 0.0),
-                "streak_days": streak_days(habit_log),
-                "status": status_for(compute_concern(habit_log)),
-            })
-
-        return render_template(
-            "day.html",
-            today=today,
-            note_md=note_md,
-            top_3=top_3,
-            bonus=bonus,
-            habits_today=habits_today,
-        )
+        ctx = _build_day_context(app, daily_md, top_3, bonus, today)
+        ctx["insight_reflection_text"] = sections.get("Insight Reflection", "").strip()
+        ctx["gratitude_text"] = sections.get("Gratitude", "").strip()
+        ctx["mode"] = target_mode
+        return render_template("day.html", **ctx)
 
     @app.route("/events")
     def events():
