@@ -108,6 +108,21 @@ const TOOLS = [
       required: ['slug'],
     },
   },
+  {
+    name: 'signal_person_goals',
+    description:
+      'L2/L3 goal updates for one person over the last N weeks, grouped per goal. Each goal returns goal_name, level (L2/L3), latest_health (GREEN/YELLOW/RED), latest_update_at, latest_update_body, update_count. ' +
+      'Use for OKR/goal questions: "how is Trina trending on her Q2 OKR?", "any of my reports off track?", "which goals haven\'t been updated in 2 weeks?". ' +
+      'Manager scope: 403 unless the slug is your direct report or yourself. Window: 1-52 weeks, default 12.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        slug: { type: 'string', description: 'The person\'s slug.' },
+        weeks: { type: 'number', description: 'Window in weeks (1-52). Default 12.' },
+      },
+      required: ['slug'],
+    },
+  },
 ]
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }))
@@ -144,6 +159,13 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
         if (!slug) throw new Error('slug is required')
         const weeks = typeof a.weeks === 'number' ? a.weeks : 12
         data = await apiGet(`/api/mcp/person/${encodeURIComponent(slug)}/history?weeks=${weeks}`)
+        break
+      }
+      case 'signal_person_goals': {
+        const slug = String(a.slug ?? '').trim()
+        if (!slug) throw new Error('slug is required')
+        const weeks = typeof a.weeks === 'number' ? a.weeks : 12
+        data = await apiGet(`/api/mcp/person/${encodeURIComponent(slug)}/goals?weeks=${weeks}`)
         break
       }
       default:
