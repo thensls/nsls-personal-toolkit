@@ -590,25 +590,30 @@ If today had meetings with people who have active coaching goals in `$OBSIDIAN_V
 
 ### Step 4c: Knowledge Graph Insight Proposals
 
+The goal of `60-nsls-knowledge/` is to reflect **how NSLS works and where it's going**, so any employee can read the topic files and understand the company's strategy, direction, and current state. Treat this step as the daily contribution to that picture.
+
 If `$OBSIDIAN_VAULT_PATH/60-nsls-knowledge/` exists, scan today's meetings and reading for potential knowledge graph contributions.
 
 1. **Match topics**: Compare today's meeting summaries, Familiar screen activity, and conversation context against the topic files in `60-nsls-knowledge/`. Look for topic name matches, related keywords, and frontmatter `related:` links.
 
-2. **Filter for insights**: For matched topics, look for signals of genuine new knowledge — NOT just "discussed X":
-   - Debates or disagreements with specific positions taken
-   - Surprising data points or numbers that contradict assumptions
-   - Changed positions — someone shifted their view on something
-   - New frameworks or mental models introduced
-   - Decisions that resolve an open question
+2. **Filter for insights**: For each matched topic, ask: **"Would a new team member at NSLS want to know this to understand how NSLS works or where it's going?"** If yes, it's a candidate. Examples of what qualifies:
+   - A decision or direction that shapes how something operates ("We're routing X through Y now")
+   - A current-state update — the topic moved forward, changed, or stalled in a way that matters
+   - A surprising data point, number, or example that anchors the topic
+   - A framework, mental model, or definition that clarifies how a thing works
+   - A debate or trade-off with specific positions — useful for understanding *why* we do what we do
+   - An open question being actively worked
 
-3. **Surface 0-3 candidates** with specific evidence:
+   Lower the bar from "novel insight" to "would help an NSLS employee understand the strategy." Most close-days should have at least one candidate.
+
+3. **Surface up to 3 candidates** with specific evidence:
    ```
    📚 Knowledge Graph
 
      You had a detailed exchange with Ashleigh about chapter health.
      She argued advisor turnover is the primary driver of stale chapters,
-     citing UPhoenix and two other examples. This contradicts the
-     assumption that it's event frequency.
+     citing UPhoenix and two other examples. This shifts the working
+     model from event frequency to advisor stability.
 
      → Add to [[chapter-health]] Key Decisions? (y/n)
    ```
@@ -618,7 +623,17 @@ If `$OBSIDIAN_VAULT_PATH/60-nsls-knowledge/` exists, scan today's meetings and r
    - State changes → `## Current State` section
    - Format: `- YYYY-MM-DD: [One sentence with specific evidence]`
 
-5. **If 0 candidates** — skip silently. No noise. This should fire on fewer than half of close-days.
+5. **Heartbeat — always surface one line, even on 0-candidate days.** Silent skips make a working skill and a broken skill look identical. Print one of:
+   ```
+   📚 Knowledge Graph: scanned [N] meetings against [M] topics — [K] candidates proposed.
+   ```
+   ```
+   📚 Knowledge Graph: scanned [N] meetings against [M] topics — nothing met the bar today.
+   ```
+   ```
+   📚 Knowledge Graph: skipped — `$OBSIDIAN_VAULT_PATH/60-nsls-knowledge/` not found.
+   ```
+   This line goes into the daily note's End of Day section so you can audit whether the step ran at all over time.
 
 ### Step 5: Write daily note
 

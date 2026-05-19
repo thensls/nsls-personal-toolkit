@@ -273,12 +273,18 @@ If `$OBSIDIAN_VAULT_PATH/60-nsls-knowledge/` exists, do a weekly pass on the kno
 
 4. **Surface neglected topics** (optional, light touch): If there are topics owned by Kevin with no activity in 4+ weeks, mention them: "Revenue Strategy hasn't been updated since March 15 — still accurate?" Don't do this every week; once a month is enough.
 
-5. **Report**: At the end of the weekly note, add a brief line:
+5. **Report — always surface a heartbeat line**, even if nothing was touched this week:
    ```
    📚 Knowledge graph: [N] topics updated this week, [M] entries consolidated
    ```
+   ```
+   📚 Knowledge graph: no topics touched this week — check that /close-day Step 4c is firing
+   ```
+   ```
+   📚 Knowledge graph: skipped — `$OBSIDIAN_VAULT_PATH/60-nsls-knowledge/` not found
+   ```
 
-Keep this lightweight. The goal is quality control on what close-day added, not a major writing exercise.
+Keep this lightweight. The goal is quality control on what close-day added, not a major writing exercise. The knowledge base is meant to reflect **how NSLS works and where it's going** so any employee can read it and understand company strategy and direction — consolidation should sharpen toward that audience.
 
 ### Step 3: Generate two outputs
 
