@@ -668,18 +668,28 @@ Count the totals: e.g., `2 adopted, 0 modified, 1 replaced`
 **Skip this entire step** if any of these is true:
 - The builder said `open day visual off` (one-shot CLI mode) or `open day visual off forever`
 - `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
-- `toolkit-companion` is not installed (the companion is optional; see `CLAUDE.md`)
+- The companion binary cannot be found at either of the locations below (the companion is optional; see `CLAUDE.md`)
 
 When you skip, finish the morning ritual entirely in chat (Steps 3 and 4 in this skill already cover the chat-based draft + review of Top 3 / Bonus / etc.).
+
+**Resolving the binary path.** `install.sh` runs `pip3 install -e .` inside a venv at `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/`, so on most installs the `toolkit-companion` binary is **not on PATH** in a fresh shell. Always resolve it via this two-step lookup before invoking — never assume PATH:
+
+```bash
+TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+[ -n "$TC" ] || { echo "companion not installed"; }
+```
+
+Use the resolved `"$TC"` in every command below. If both lookups fail, skip the rest of this step.
 
 When you don't skip:
 
 1. **Check whether the companion is running:**
    ```bash
-   toolkit-companion status
+   "$TC" status
    ```
    - Output `Running: pid <pid>, address http://127.0.0.1:<port>` → parse the URL, continue to step 2.
-   - Output `Not running.` → tell the builder once: *"To see your visual companion, run `toolkit-companion serve` in a separate terminal, then come back here. Or run `open day visual off` to stay in chat."* Then skip the rest of this step.
+   - Output `Not running.` → tell the builder once: *"To see your visual companion, run the companion in a separate terminal (`"$TC" serve`), then come back here. Or run `open day visual off` to stay in chat."* Then skip the rest of this step.
 
 2. **Open the URL in the default browser:**
    - macOS: `open <url-from-status>`
