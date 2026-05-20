@@ -187,6 +187,46 @@ def test_set_bonus_updates_nth_item(client_with_today):
     assert "1. [ ] First bonus" in body
 
 
+def test_ai_suggestions_surface_in_plan_your_day(client_with_today):
+    """Items under `### AI Suggested: …` subsections of Morning Check-in
+    should appear as suggestions on Step 2, with the source label visible
+    and rationale/bold markers stripped. Regression for the original gap
+    flagged in server.py:137-139 ('AI suggestions not yet surfaced')."""
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    note.write_text(
+        "## Morning Check-in\n"
+        "### AI Suggested: Top 3 (from yesterday's close)\n"
+        "1. **Reply to Joe on PR #142** — Blocks his merge.\n"
+        "2. **Q3 LOP draft to Kevin** — Deadline Thursday.\n"
+        "\n"
+        "### AI Suggested: Delegate These\n"
+        "1. **Schedule offsite** → Katie — Operational.\n"
+        "\n"
+        "### My Top 3\n1. [ ]\n2. [ ]\n3. [ ]\n"
+        "\n### Bonus\n"
+    )
+    resp = client.get("/?mode=coach-morning&step=2")
+    assert resp.status_code == 200
+    body = resp.data
+    # Cleaned titles
+    assert b"Reply to Joe on PR #142" in body
+    assert b"Q3 LOP draft to Kevin" in body
+    assert b"Schedule offsite" in body
+    # Source labels visible — both Top 3 and Delegate variants
+    assert b"AI: Top 3" in body
+    assert b"AI: Delegate These" in body
+    # Rationale / bold markers stripped from the visible item text
+    assert b"Blocks his merge" not in body  # rationale lives in the note, not the row
+    # Taking the suggestion as a priority writes it to Top 3.
+    resp2 = client.post("/plan-action", data={
+        "text": "Reply to Joe on PR #142", "action": "pri",
+    })
+    assert resp2.status_code == 200
+    assert "1. [ ] Reply to Joe on PR #142" in note.read_text()
+
+
 def test_set_bonus_grows_with_each_save(client_with_today):
     """The bonus list should accept multiple items. Regression for the bug
     where the input's hx-vals index stayed stale and every save overwrote

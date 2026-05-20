@@ -100,6 +100,68 @@ def _extract_bonus(morning_section: str) -> list[dict]:
     return _extract_numbered_checkbox_list(morning_section, "### Bonus")
 
 
+_AI_SUGGEST_HEADING_RE = re.compile(
+    r"^###\s*AI Suggested:\s*(.*?)\s*$", re.IGNORECASE
+)
+# Strip `**bold**` wrappers and `— rationale` / `- rationale` tails so the
+# visible suggestion is just the title. Rationale lives in the daily note for
+# reference; the Plan-Your-Day row stays tidy.
+_AI_ITEM_LEAD_RE = re.compile(r"^\s*\d+\.\s+(.*)$")
+
+
+def _clean_ai_item(raw: str) -> str:
+    text = raw.strip()
+    # Strip leading bold wrappers: **text** … → text …
+    m = re.match(r"^\*\*(.+?)\*\*(.*)$", text)
+    if m:
+        text = (m.group(1) + m.group(2)).strip()
+    # Drop em-dash / hyphen-led rationale tail
+    text = re.split(r"\s+[—–-]\s+", text, maxsplit=1)[0].strip()
+    # Drop any trailing markdown bold markers
+    text = text.strip("*").strip()
+    # Strip surrounding brackets (close-day template uses `[Item]` placeholders)
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1].strip()
+    return text
+
+
+def _extract_ai_suggestions(morning_section: str) -> list[dict]:
+    """Pull items from any `### AI Suggested: …` subsection of Morning Check-in.
+
+    Returns: list of {"text": str, "source": str} preserving discovery order.
+    Empty/template placeholders (`[Item 1]`, etc.) are filtered out so the
+    suggestions table doesn't surface scaffold text.
+    """
+    items: list[dict] = []
+    current_label: str | None = None
+    for raw_line in morning_section.splitlines():
+        stripped = raw_line.strip()
+        m = _AI_SUGGEST_HEADING_RE.match(stripped)
+        if m:
+            label = m.group(1)
+            # Compress verbose suffixes like " (strategic, …)" or " (from … close)"
+            label = re.split(r"\s*\(", label, maxsplit=1)[0].strip()
+            current_label = label or "Top 3"
+            continue
+        if stripped.startswith("### ") or stripped.startswith("## "):
+            current_label = None
+            continue
+        if current_label is None:
+            continue
+        list_m = _AI_ITEM_LEAD_RE.match(raw_line)
+        if not list_m:
+            continue
+        cleaned = _clean_ai_item(list_m.group(1))
+        if not cleaned:
+            continue
+        # Filter pure scaffold placeholders the close-day template leaves
+        # behind if /close-day didn't fill them.
+        if cleaned.lower().startswith(("item ", "highest-impact item", "task")):
+            continue
+        items.append({"text": cleaned, "source": f"AI: {current_label}"})
+    return items
+
+
 def _extract_carryovers(vault_path: Path, today: str, lookback_days: int = 7) -> list[dict]:
     """Find the most recent prior daily note (up to ``lookback_days`` back)
     and return its unchecked Top 3 + Bonus items as carry-over suggestions.
@@ -133,12 +195,22 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
                        priorities: list, bonus: list) -> dict:
     """Build the Plan Your Day screen context: suggestions + carry-overs + taken state.
 
-    Suggestions come from carry-overs (yesterday's open Top 3/Bonus). AI
-    suggestions from a prior /close-day run are not yet surfaced — they live
-    in `### Last Night's AI Suggestions` of today's note and will be added
-    in a follow-on pass.
+    Suggestion ordering: AI suggestions from /close-day (today's note's
+    `### AI Suggested: …` subsections under `## Morning Check-in`) come first,
+    then carry-overs (most recent prior daily note within the lookback window).
+    Texts dedupe across sources — AI wins if both name the same item.
     """
-    suggestions = _extract_carryovers(vault_path, today)
+    morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
+    ai_items = _extract_ai_suggestions(morning)
+    carryovers = _extract_carryovers(vault_path, today)
+
+    seen: set[str] = set()
+    suggestions: list[dict] = []
+    for item in ai_items + carryovers:
+        if item["text"] in seen:
+            continue
+        seen.add(item["text"])
+        suggestions.append(item)
 
     priority_texts = {p["text"] for p in priorities if p.get("text")}
     bonus_texts = {b["text"] for b in bonus if b.get("text")}
