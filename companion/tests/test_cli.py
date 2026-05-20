@@ -31,8 +31,13 @@ def test_ensure_vault_structure_creates_missing_dirs_and_seeds_files(tmp_path):
     # Templates copied
     assert (vault / "30-habits" / "habits.md").exists()
     assert (vault / "30-habits" / "log.md").exists()
-    # habits.md contains the seeded Walk/Read entries
-    assert "Walk" in (vault / "30-habits" / "habits.md").read_text()
+    # habits.md starts empty — examples removed 2026-05-18 because seeding
+    # Walk/Read as defaults confused users who hadn't added them themselves.
+    # The morning Coach Card surfaces an onboarding banner instead.
+    habits_text = (vault / "30-habits" / "habits.md").read_text()
+    assert "Walk" not in habits_text
+    assert "Read" not in habits_text
+    assert "(none yet" in habits_text
     # Reported what it did
     assert any("01-daily" in line for line in created)
     assert any("habits.md" in line for line in created)

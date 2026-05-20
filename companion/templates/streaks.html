@@ -7,6 +7,13 @@
 </div>
 <div id="habit-form-slot"></div>
 
+{% if not rows %}
+<div class="bg-amber-50 border border-amber-200 rounded p-4 mb-4">
+  <p class="font-semibold text-amber-900 mb-1">No habits yet</p>
+  <p class="text-sm text-amber-800">Habits are meant to be done daily. Pick a few that matter — green tiles will fill in as you tick them off in the Day tab.</p>
+</div>
+{% endif %}
+
 <div class="space-y-3">
 {% for r in rows %}
   <div class="bg-white rounded-lg shadow p-4 flex items-center gap-4 {% if r.status == 'at_risk' %}border-l-4 border-yellow-600{% endif %}">

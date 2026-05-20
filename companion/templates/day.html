@@ -8,40 +8,62 @@
 {% elif mode == 'results' %}
   {% include "_components/results.html" %}
 {% else %}
-<h1 class="text-2xl font-bold mb-6">Today — {{ today }}</h1>
+<h1 class="text-2xl font-bold mb-1">Today — {{ today_pretty }}</h1>
+<p class="text-sm text-stone-500 mb-6">Command Center</p>
 
-{% if not note_md %}
-  <p class="text-stone-500">No daily note for today yet. Run <code>/open-day</code> in your terminal.</p>
-{% else %}
+{% if not active_habits %}
+<div class="bg-amber-50 border border-amber-200 rounded p-4 mb-4 flex items-center justify-between">
+  <div>
+    <p class="font-semibold text-amber-900">No habits yet</p>
+    <p class="text-sm text-amber-800">Add habits to start tracking streaks. They're meant to be done daily — pick a few that matter.</p>
+  </div>
+  <button hx-get="/add-habit-form" hx-target="#habit-onboarding-modal" hx-swap="innerHTML"
+          class="px-3 py-2 bg-amber-700 text-white rounded text-sm">Add habits</button>
+</div>
+<div id="habit-onboarding-modal"></div>
+{% endif %}
 
 <section class="bg-white rounded-lg shadow p-5 mb-4">
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Top 3</h2>
+  {% if top_3 and top_3|selectattr("text")|list %}
   <ul class="space-y-2">
     {% for item in top_3 %}
+      {% if item.text %}
       <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"
              {% if item.checked %}checked{% endif %}
              hx-post="/toggle"
              hx-vals='{"section":"top_3","index":{{ loop.index0 }}}'
              hx-swap="none"
-             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> {{ item.text }}</label></li>
+             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span></label></li>
+      {% endif %}
     {% endfor %}
   </ul>
+  {% else %}
+  <p class="text-sm text-stone-500">No priorities set yet. <a href="/?mode=coach-morning" class="text-blue-700 underline">Plan your day →</a></p>
+  {% endif %}
 </section>
 
 <section class="bg-white rounded-lg shadow p-5 mb-4">
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Bonus</h2>
+  {% if bonus and bonus|selectattr("text")|list %}
   <ul class="space-y-2 opacity-90">
     {% for item in bonus %}
+      {% if item.text %}
       <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"
              {% if item.checked %}checked{% endif %}
              hx-post="/toggle"
              hx-vals='{"section":"bonus","index":{{ loop.index0 }}}'
              hx-swap="none"
-             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> {{ item.text }}</label></li>
+             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span></label></li>
+      {% endif %}
     {% endfor %}
   </ul>
+  {% else %}
+  <p class="text-sm text-stone-500">No bonus items.</p>
+  {% endif %}
 </section>
 
+{% if habits_today %}
 <section class="bg-white rounded-lg shadow p-5 mb-4">
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Habits today</h2>
   <ul class="space-y-2">
@@ -50,7 +72,7 @@
     {% endfor %}
   </ul>
 </section>
-
 {% endif %}
+
 {% endif %}
 {% endblock %}

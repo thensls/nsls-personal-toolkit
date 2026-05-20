@@ -1,94 +1,35 @@
 <div x-data="{ step: {{ step or 1 }} }" class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
   <div class="flex gap-1 mb-3">
-    {% for i in range(1, 8) %}
+    {% for i in range(1, 6) %}
       <div class="flex-1 h-1 rounded" :class="step >= {{ i }} ? 'bg-blue-900' : 'bg-stone-200'"></div>
     {% endfor %}
   </div>
-  <div class="text-xs uppercase text-stone-500 mb-4">Step <span x-text="step"></span> of 7</div>
+  <div class="text-xs uppercase text-stone-500 mb-4">Step <span x-text="step"></span> of 5</div>
 
   <template x-if="step === 1">
     <div>
       <h3 class="font-semibold text-lg mb-2">Good morning</h3>
       <p class="text-stone-700">Today is {{ today_pretty }}.</p>
-      <p class="text-sm text-stone-600 mt-2">Set your Top 3 priorities, queue a Bonus list, mark habit intentions, and lock in for the day. Each step auto-saves to today's daily note as you type — no separate "save" button.</p>
-      <p class="text-xs text-stone-500 mt-3">Already ran <code>/open-day</code>? Your priorities will be pre-filled below.</p>
+      <p class="text-sm text-stone-600 mt-2">In five quick steps: pick your Top 3 priorities, add a Bonus list, mark focus blocks, jot a vitality intent, and lock in. Everything you type saves to today's daily note automatically.</p>
     </div>
   </template>
 
-  <template x-if="step === 2">
-    <div>
-      <h3 class="font-semibold text-lg mb-2">Set your Top 3</h3>
-      <p class="text-sm text-stone-600 mb-3">Three things that, if you finish them today, make today a win. Auto-saves as you type.</p>
-      {% for item in top_3_slots %}
-      <input name="text" value="{{ item.text }}"
-             placeholder="Priority {{ loop.index }}"
-             hx-post="/set-top-3"
-             hx-trigger="input changed delay:800ms, blur"
-             hx-vals='{"index": "{{ loop.index0 }}"}'
-             hx-swap="none"
-             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"
-             class="block w-full border rounded px-3 py-2 mb-2">
-      {% endfor %}
-      <p class="text-xs text-stone-500 mt-2">Tip: tap a checkbox in the Command Center later to mark done.</p>
-    </div>
-  </template>
+  <div x-show="step === 2" id="plan-your-day-screen">
+    {% include "_components/plan_your_day.html" %}
+  </div>
 
   <template x-if="step === 3">
     <div>
-      <h3 class="font-semibold text-lg mb-2">Bonus list</h3>
-      <p class="text-sm text-stone-600 mb-3">Lower priority — only if Top 3 is done. Up to 3 items. Auto-saves as you type.</p>
-      {% for item in bonus_slots %}
-      <input name="text" value="{{ item.text }}"
-             placeholder="Bonus {{ loop.index }}"
-             hx-post="/set-bonus"
-             hx-trigger="input changed delay:800ms, blur"
-             hx-vals='{"index": "{{ loop.index0 }}"}'
-             hx-swap="none"
-             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"
-             class="block w-full border rounded px-3 py-2 mb-2">
-      {% endfor %}
+      <h3 class="font-semibold text-lg mb-2">Focus blocks</h3>
+      <p class="text-sm text-stone-600 mb-3">Pick deep-work windows. Drag-and-drop is Phase 2 — for now, type your blocks into today's note manually.</p>
+      <p class="text-xs text-stone-500">This step doesn't save anything yet. Coming in a later release.</p>
     </div>
   </template>
 
   <template x-if="step === 4">
     <div>
-      <h3 class="font-semibold text-lg mb-2">Focus blocks</h3>
-      <p class="text-sm text-stone-600 mb-3">Pick deep-work windows. Time picker per row (drag-and-drop is Phase 2).</p>
-      <div class="space-y-2">
-        {% for block in focus_blocks %}
-        <div class="flex items-center gap-2">
-          <input type="time" value="{{ block.start }}" class="border rounded px-2 py-1">
-          <span>–</span>
-          <input type="time" value="{{ block.end }}" class="border rounded px-2 py-1">
-          <input value="{{ block.label }}" placeholder="What for?" class="flex-1 border rounded px-2 py-1">
-        </div>
-        {% endfor %}
-        <button type="button" class="text-sm text-blue-700">+ Add block</button>
-      </div>
-    </div>
-  </template>
-
-  <template x-if="step === 5">
-    <div>
-      <h3 class="font-semibold text-lg mb-2">Habit intentions</h3>
-      <p class="text-sm text-stone-600 mb-3">Which habits will you do today? Tap to mark intent (saves to log.md as 0.0 until completed).</p>
-      <ul class="space-y-2">
-        {% for h in active_habits %}
-        <li class="flex items-center gap-3">
-          <input type="checkbox" id="intent-{{ h.id }}" class="w-5 h-5"
-                 hx-post="/tick" hx-vals='{"habit_id":"{{ h.id }}","percent":"0.0"}'
-                 hx-swap="none">
-          <label for="intent-{{ h.id }}">{{ h.emoji }} {{ h.name }}</label>
-        </li>
-        {% endfor %}
-      </ul>
-    </div>
-  </template>
-
-  <template x-if="step === 6">
-    <div>
       <h3 class="font-semibold text-lg mb-2">Vitality intentions</h3>
-      <p class="text-sm text-stone-600 mb-3">One movement, one nourishment line. These inputs aren't saved yet (Phase 2) — for now, jot them in today's note manually.</p>
+      <p class="text-sm text-stone-600 mb-3">One movement, one nourishment line. Save direct to today's note in a later release — for now, jot them manually if you want.</p>
       <input name="movement" placeholder="Movement (e.g., 30min walk)" disabled
              class="block w-full border rounded px-3 py-2 mb-2 bg-stone-50">
       <input name="nourishment" placeholder="Nourishment (e.g., lunch outside)" disabled
@@ -96,20 +37,20 @@
     </div>
   </template>
 
-  <template x-if="step === 7">
+  <template x-if="step === 5">
     <div>
       <h3 class="font-semibold text-lg mb-2">Lock in the day</h3>
       <p class="text-stone-700 mb-3">Your morning ritual is set. Tap Lock in to switch to the Command Center for the rest of the day.</p>
-      <p class="text-sm text-stone-500">Top 3, Bonus, and habit intentions saved as you typed. Lock in just transitions the view — it doesn't write anything new. Tap a habit during the day to mark progress.</p>
+      <p class="text-sm text-stone-500">Your Top 3 and Bonus list have been saving as you typed. Lock in just transitions the view — it doesn't write anything new.</p>
     </div>
   </template>
 
   <div class="mt-6 flex justify-between gap-3">
     <button @click="step--" :disabled="step <= 1"
             class="px-4 py-2 border rounded disabled:opacity-30">Back</button>
-    <button @click="step++" x-show="step < 7"
+    <button @click="step++" x-show="step < 5"
             class="px-4 py-2 bg-blue-900 text-white rounded">Next</button>
-    <button x-show="step >= 7"
+    <button x-show="step >= 5"
             hx-post="/lock-in" hx-vals='{"phase":"morning"}'
             hx-select="main" hx-target="main" hx-swap="outerHTML"
             class="px-4 py-2 bg-blue-900 text-white rounded">Lock in →</button>

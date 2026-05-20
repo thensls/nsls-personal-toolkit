@@ -1,0 +1,113 @@
+<div id="plan-your-day" hx-target="#plan-your-day" hx-swap="outerHTML">
+  <h3 class="font-semibold text-lg mb-1">Plan your day</h3>
+  <p class="text-sm text-stone-600 mb-3">
+    Pick <strong>three</strong> priorities. Anything else goes on the Bonus list. Already done it? Click <em>Done</em> and it'll be marked complete.
+  </p>
+
+  {% if plan.suggestions %}
+  <div class="border rounded mb-4">
+    <div class="px-3 py-2 bg-stone-50 text-xs uppercase tracking-wider text-stone-500 border-b">
+      Suggestions &amp; carry-overs
+    </div>
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-stone-500">
+          <th class="px-2 py-1 w-12 text-center">Top 3</th>
+          <th class="px-2 py-1 w-12 text-center">Bonus</th>
+          <th class="px-2 py-1 w-12 text-center">Done</th>
+          <th class="px-2 py-1 text-left">Item</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in plan.suggestions %}
+        <tr class="border-t {{ 'opacity-50' if s.taken else '' }}">
+          <td class="px-2 py-1 text-center">
+            <input type="checkbox" {% if s.taken == 'pri' %}checked{% endif %}
+                   hx-post="/plan-action"
+                   hx-vals='{"text": {{ s.text|tojson }}, "action": "pri"}'
+                   hx-trigger="change"
+                   {% if plan.priorities|length >= 3 and s.taken != 'pri' %}disabled title="3 priorities already chosen"{% endif %}>
+          </td>
+          <td class="px-2 py-1 text-center">
+            <input type="checkbox" {% if s.taken == 'bonus' %}checked{% endif %}
+                   hx-post="/plan-action"
+                   hx-vals='{"text": {{ s.text|tojson }}, "action": "bonus"}'
+                   hx-trigger="change">
+          </td>
+          <td class="px-2 py-1 text-center">
+            <input type="checkbox" {% if s.taken == 'done' %}checked{% endif %}
+                   hx-post="/plan-action"
+                   hx-vals='{"text": {{ s.text|tojson }}, "action": "done"}'
+                   hx-trigger="change">
+          </td>
+          <td class="px-2 py-1">
+            <span {% if s.taken == 'done' %}class="line-through text-stone-400"{% endif %}>{{ s.text }}</span>
+            {% if s.source %}<span class="text-xs text-stone-400 ml-1">({{ s.source }})</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-xs text-stone-500 mb-4 italic">No suggestions yet — they'll appear here after `/close-day` runs the night before, or carry over from yesterday's unfinished Top 3.</p>
+  {% endif %}
+
+  <div class="mb-4">
+    <div class="flex items-baseline justify-between mb-2">
+      <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500">Your Top 3</h4>
+      <span class="text-xs text-stone-500">{{ plan.priorities|length }} of 3</span>
+    </div>
+    <ol class="space-y-2">
+      {% for i in range(3) %}
+        {% set item = plan.priorities[i] if i < plan.priorities|length else None %}
+        <li class="flex items-center gap-2">
+          <span class="text-stone-400 text-sm w-4">{{ i + 1 }}.</span>
+          <input type="text"
+                 value="{{ item.text if item else '' }}"
+                 placeholder="Priority {{ i + 1 }}"
+                 hx-post="/set-top-3"
+                 hx-vals='{"index": "{{ i }}"}'
+                 hx-trigger="change delay:300ms"
+                 hx-swap="none"
+                 name="text"
+                 class="flex-1 border rounded px-3 py-2 text-sm">
+        </li>
+      {% endfor %}
+    </ol>
+  </div>
+
+  <div>
+    <div class="flex items-baseline justify-between mb-2">
+      <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500">Bonus list</h4>
+      <span class="text-xs text-stone-500">{{ plan.bonus|length }} item{{ 's' if plan.bonus|length != 1 else '' }}</span>
+    </div>
+    <ul class="space-y-2">
+      {% for b in plan.bonus %}
+        <li class="flex items-center gap-2">
+          <span class="text-stone-400 text-sm w-4">•</span>
+          <input type="text"
+                 value="{{ b.text }}"
+                 hx-post="/set-bonus"
+                 hx-vals='{"index": "{{ loop.index0 }}"}'
+                 hx-trigger="change delay:300ms"
+                 hx-swap="none"
+                 name="text"
+                 class="flex-1 border rounded px-3 py-2 text-sm">
+        </li>
+      {% endfor %}
+      <li class="flex items-center gap-2">
+        <span class="text-stone-400 text-sm w-4">+</span>
+        <input type="text"
+               value=""
+               placeholder="Add a bonus item..."
+               hx-post="/set-bonus"
+               hx-vals='{"index": "{{ plan.bonus|length }}"}'
+               hx-trigger="change"
+               hx-swap="none"
+               name="text"
+               class="flex-1 border rounded px-3 py-2 text-sm">
+      </li>
+    </ul>
+  </div>
+</div>

@@ -100,6 +100,62 @@ def _extract_bonus(morning_section: str) -> list[dict]:
     return _extract_numbered_checkbox_list(morning_section, "### Bonus")
 
 
+def _extract_carryovers(vault_path: Path, today: str) -> list[dict]:
+    """Read yesterday's daily note and return unchecked Top 3 + Bonus items.
+
+    Returns: list of {"text": str, "source": "carryover"} for the Plan Your Day
+    suggestions table. Returns [] if there is no yesterday note.
+    """
+    try:
+        yesterday = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).date().isoformat()
+    except ValueError:
+        return []
+    note_path = vault_path / "01-daily" / f"{yesterday}.md"
+    if not note_path.exists():
+        return []
+    sections = parse_daily_note_sections(note_path.read_text())
+    morning = sections.get("Morning Check-in", "")
+    items = []
+    for it in _extract_top_3(morning) + _extract_bonus(morning):
+        if it["text"] and not it["checked"]:
+            items.append({"text": it["text"], "source": "carryover"})
+    return items
+
+
+def _build_plan_context(daily_md: str, vault_path: Path, today: str,
+                       priorities: list, bonus: list) -> dict:
+    """Build the Plan Your Day screen context: suggestions + carry-overs + taken state.
+
+    Suggestions come from carry-overs (yesterday's open Top 3/Bonus). AI
+    suggestions from a prior /close-day run are not yet surfaced — they live
+    in `### Last Night's AI Suggestions` of today's note and will be added
+    in a follow-on pass.
+    """
+    suggestions = _extract_carryovers(vault_path, today)
+
+    priority_texts = {p["text"] for p in priorities if p.get("text")}
+    bonus_texts = {b["text"] for b in bonus if b.get("text")}
+    done_texts = {p["text"] for p in priorities if p.get("text") and p.get("checked")}
+
+    for s in suggestions:
+        if s["text"] in done_texts:
+            s["taken"] = "done"
+        elif s["text"] in priority_texts:
+            s["taken"] = "pri"
+        elif s["text"] in bonus_texts:
+            s["taken"] = "bonus"
+        else:
+            s["taken"] = None
+
+    priorities_with_text = [p for p in priorities if p.get("text")]
+    bonus_with_text = [b for b in bonus if b.get("text")]
+    return {
+        "suggestions": suggestions,
+        "priorities": priorities_with_text,
+        "bonus": bonus_with_text,
+    }
+
+
 _LIST_ITEM_RE = re.compile(r"^(\s*(?:\d+\.|-)\s+)(.*)$")
 
 
@@ -153,13 +209,8 @@ _DAILY_NOTE_SCAFFOLD = """# Daily Note
 3. [ ]
 
 ### Bonus
-1. [ ]
-2. [ ]
-3. [ ]
 
 ### Habits
-
-(Add habits via the companion's Streaks tab, or seed `30-habits/habits.md` from the template.)
 """
 
 
@@ -361,6 +412,8 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     top_3_slots = list(top_3) + [{"text": "", "checked": False}] * max(0, 3 - len(top_3))
     bonus_slots = list(bonus) + [{"text": "", "checked": False}] * max(0, 3 - len(bonus))
 
+    plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus)
+
     return {
         "today": today,
         "today_pretty": today_pretty,
@@ -375,6 +428,7 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
         "focus_blocks": [],  # Phase 2
         "stats": stats,
         "step": step,
+        "plan": plan,
     }
 
 
@@ -591,6 +645,81 @@ def create_app(vault_path: str) -> Flask:
     @app.route("/set-bonus", methods=["POST"])
     def set_bonus():
         return _set_morning_item("### Bonus", "bonus")
+
+    @app.route("/plan-action", methods=["POST"])
+    def plan_action():
+        """Handle a Plan-Your-Day suggestion-row action: pri / bonus / done.
+
+        Returns the freshly-rendered plan_your_day.html partial for HTMX swap.
+        """
+        action = (request.form.get("action") or "").strip().lower()
+        text = (request.form.get("text") or "").strip()
+        if action not in {"pri", "bonus", "done"}:
+            return ("invalid action", 400)
+        if not text or "\n" in text or "\r" in text or len(text) > 256:
+            return ("invalid text", 400)
+
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+
+        def update(existing: str) -> str:
+            sections = parse_daily_note_sections(existing)
+            morning = sections.get("Morning Check-in", "")
+            top_3 = _extract_top_3(morning)
+            bonus_items = _extract_bonus(morning)
+
+            # If the suggestion already sits in Top 3 / Bonus and the user
+            # clicked the same column again, treat it as "untake" — clear it.
+            for i, t in enumerate(top_3):
+                if t.get("text") == text:
+                    if action == "pri":
+                        return _set_nth_item_text(existing, "### My Top 3", i, "")
+                    existing = _set_nth_item_text(existing, "### My Top 3", i, "")
+                    break
+            for i, b in enumerate(bonus_items):
+                if b.get("text") == text:
+                    if action == "bonus":
+                        return _set_nth_item_text(existing, "### Bonus", i, "")
+                    existing = _set_nth_item_text(existing, "### Bonus", i, "")
+                    break
+
+            # Re-read state after any clears so we pick the right empty slot.
+            sections = parse_daily_note_sections(existing)
+            morning = sections.get("Morning Check-in", "")
+            top_3 = _extract_top_3(morning)
+            bonus_items = _extract_bonus(morning)
+
+            if action == "pri":
+                for i in range(3):
+                    if i >= len(top_3) or not top_3[i].get("text"):
+                        return _set_nth_item_text(existing, "### My Top 3", i, text)
+                return existing  # Top 3 full; client respects the disabled attr.
+            if action == "bonus":
+                for i, b in enumerate(bonus_items):
+                    if not b.get("text"):
+                        return _set_nth_item_text(existing, "### Bonus", i, text)
+                return _set_nth_item_text(existing, "### Bonus", len(bonus_items), text)
+            # action == "done": land in first empty Top 3 slot with [x]; else Bonus
+            for i in range(3):
+                if i >= len(top_3) or not top_3[i].get("text"):
+                    existing = _set_nth_item_text(existing, "### My Top 3", i, text)
+                    return _toggle_nth_checkbox(existing, "### My Top 3", i)
+            target_idx = len(bonus_items)
+            existing = _set_nth_item_text(existing, "### Bonus", target_idx, text)
+            return _toggle_nth_checkbox(existing, "### Bonus", target_idx)
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+
+        # Re-render the partial with fresh state for HTMX swap.
+        daily_md = note_path.read_text()
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/plan_your_day.html", plan=plan)
 
     def _set_morning_item(heading: str, broadcast_label: str):
         try:

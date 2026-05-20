@@ -7,12 +7,37 @@ description: >-
   Check-in in today's Obsidian daily note. Use when the user says "open day",
   "plan day", "plan my day", "start my day", "morning", "good morning",
   "what's on my plate", "what do I have today", "daily planning", or opens a
-  new session in the morning. Requires Google Calendar and Asana access.
+  new session in the morning. Also handles "open day visual off" (one-shot
+  skip of the browser companion this run), "open day visual off forever"
+  (persistently disable the browser companion), and "open day visual on"
+  (persistently enable). Requires Google Calendar and Asana access.
 ---
 
 # Open Day
 
 Pull today's calendar, Asana tasks, overdue items, and yesterday's carry-overs. Help the builder set priorities across work and vitality, schedule them on the calendar, and populate today's daily note.
+
+## Visual Companion Mode
+
+Before doing anything else, parse the builder's invocation phrase to choose a mode and (sometimes) persist their choice:
+
+| Phrase | Action |
+|---|---|
+| `open day` (or any trigger above without "visual …") | Use `visual_mode` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (default `on` if absent) |
+| `open day visual off` | Run CLI-only **this time** — do not open the browser companion |
+| `open day visual off forever` | Set `visual_mode: off` in builder-profile.md, then run CLI-only |
+| `open day visual on` | Set `visual_mode: on` in builder-profile.md, then run with the visual companion |
+
+When `visual_mode` is **on**:
+- Run Steps 1-6 in chat as normal, **but condense the chat output** — don't print the long suggestion narrative; the builder is going to make those decisions in the browser. A one-line summary per data source is enough ("3 meetings today · 6 open Asana · 1 PR waiting").
+- Run Step 8 (open the visual companion) and stop active chat work there.
+- Tell the builder: *"Continue in the browser at <url>. When you've locked in (clicked Lock in at step 5), come back here and say 'done' (or just run /close-day later) and I'll summarize."*
+- When the builder returns and confirms, read today's daily note, extract Top 3 + Bonus + any habits, and print a brief summary (the same shape `/close-day` would).
+
+When `visual_mode` is **off**:
+- Run the full chat flow (Steps 1-7), present suggestions in chat, accept the builder's edits in chat, and write the daily note from chat. **Skip Step 8.**
+
+Builder-profile read/write: `visual_mode` is a top-level frontmatter field. Add it on first write if missing. Treat any value other than the literal string `off` as `on`.
 
 ## Philosophy
 
@@ -207,13 +232,20 @@ Skip the entire section in Step 3 if both buckets are empty.
 
 **2j. SLT Meeting Actions — open items from the SLT knowledge base**
 
-Pull Kevin's open Meeting Actions from the SLT Meeting Intelligence base. Symmetric with `/close-day` Step 1h. These are action items from SLT meetings tracked separately from Asana — many have no due date but are time-sensitive (retreat prep, offsite logistics, quarterly deliverables).
+Pull the builder's open Meeting Actions from the SLT Meeting Intelligence base. Symmetric with `/close-day` Step 1h. These are action items from SLT meetings tracked separately from Asana — many have no due date but are time-sensitive (retreat prep, offsite logistics, quarterly deliverables).
 
-Skip this step if `$AIRTABLE_API_KEY` is not set or the builder profile does not enable SLT integration.
+**🛑 HARD GATE — check BEFORE doing anything else in this step.** This integration is for SLT members only and is the only thing in this skill that uses Airtable. Skipping it leaves no gaps for non-SLT builders.
+
+Run the gate now, in order:
+
+1. Read `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If frontmatter does NOT contain `slt_member: true`, **skip this entire step (2j) and continue to Step 3.** Do not read `AIRTABLE_API_KEY`. Do not run any Bash command that references it. Do not attempt the call "just to see if it works."
+2. If the profile is missing or unreadable, treat that as `slt_member: false` and skip.
+3. Only if `slt_member: true`: check `$AIRTABLE_API_KEY` is non-empty. If empty, skip with a one-line note to the builder ("SLT integration enabled in profile but `AIRTABLE_API_KEY` is empty — run `/personal-setup` to add it"), then continue to Step 3.
+4. Only after both checks pass, proceed to the query below. Use `source .env` (never inline `export KEY=value`) — see `CLAUDE.md` "Handling Secrets."
 
 - **Base:** `appHDEHQA4bvlWwQq`
 - **Table:** `tblasgjUjadHCqzrg` (Meeting Actions)
-- **Auth:** `AIRTABLE_API_KEY` env var
+- **Auth:** `AIRTABLE_API_KEY` env var (after the gate above)
 
 **CRITICAL — query pattern gotchas:**
 - `{assignee_name}` in `filterByFormula` silently fails with `INVALID_FILTER_BY_FORMULA: Unknown field names: assignee_name`. Display name drifts from schema doc.
@@ -630,6 +662,56 @@ Classification rules:
 Count the totals: e.g., `2 adopted, 0 modified, 1 replaced`
 
 **Do NOT block the morning flow for this.** If you're in a hurry, skip the tracker.
+
+### Step 8: Open the visual companion (browser sidekick for the rest of the day)
+
+**Skip this entire step** if any of these is true:
+- The builder said `open day visual off` (one-shot CLI mode) or `open day visual off forever`
+- `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
+- `toolkit-companion` is not installed (the companion is optional; see `CLAUDE.md`)
+
+When you skip, finish the morning ritual entirely in chat (Steps 3 and 4 in this skill already cover the chat-based draft + review of Top 3 / Bonus / etc.).
+
+When you don't skip:
+
+1. **Check whether the companion is running:**
+   ```bash
+   toolkit-companion status
+   ```
+   - Output `Running: pid <pid>, address http://127.0.0.1:<port>` → parse the URL, continue to step 2.
+   - Output `Not running.` → tell the builder once: *"To see your visual companion, run `toolkit-companion serve` in a separate terminal, then come back here. Or run `open day visual off` to stay in chat."* Then skip the rest of this step.
+
+2. **Open the URL in the default browser:**
+   - macOS: `open <url-from-status>`
+   - Linux: `xdg-open <url-from-status>`
+   - Windows: `start <url-from-status>`
+
+3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now:
+
+   > A tab opened at `<url>`. Step through the morning Coach Card there: pick your Top 3, add anything else to the Bonus list, then click **Lock in** at step 5.
+   >
+   > When you're done, say **done** here and I'll print a one-line summary. Or just go straight into your day — the daily note is being saved as you type. Type `open day visual off` if you'd rather skip the visual next time.
+
+4. **Wait for the builder's "done" signal.** Do not poll, do not print intermediate messages, do not summarize "what they should do next." Just stop. Resume only when they reply.
+
+5. **On "done":** read today's daily note (`$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`), extract `### My Top 3` and `### Bonus`, and print:
+
+   ```
+   ✅ Locked in for {today_pretty}:
+
+   Top 3:
+     1. <item>
+     2. <item>
+     3. <item>
+
+   Bonus ({N}):
+     • <item>
+     ...
+   ```
+
+   Habits section: if there are any, list them but don't ask for status — habits are tracked passively and checked at `/close-day`.
+
+   Keep the summary under 12 lines. Do not append commentary, suggestions, or coaching unless the builder asks.
 
 ### Day-of-Week Additions
 

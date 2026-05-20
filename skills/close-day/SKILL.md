@@ -753,7 +753,15 @@ User approves, modifies, or skips before any Asana writes happen.
 
 **7d. SLT Meeting Actions — comment, complete, and advance status**
 
-*Gated: only runs if **all three** are true: (1) `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` has `slt_member: true` in its frontmatter, (2) `AIRTABLE_API_KEY` is set, (3) the SLT base `appHDEHQA4bvlWwQq` returns 200 on a probe. Skip silently otherwise. If `builder-profile.md` doesn't exist, fall back to grep'ing `$OBSIDIAN_VAULT_PATH/10-strategy/operating-memo.md` for "SLT" — but the explicit field is the canonical signal. New builders should be set up via `/obsidian-setup` Question 6 to populate this correctly.*
+**🛑 HARD GATE — check BEFORE doing anything in this step.** Run these checks in order:
+
+1. Read `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If frontmatter does NOT contain `slt_member: true`, **skip 7d entirely and continue to 7e.** Do not read `AIRTABLE_API_KEY`, do not probe the base, do not run any Bash command referencing the key.
+2. If `builder-profile.md` is missing, fall back to grep'ing `$OBSIDIAN_VAULT_PATH/10-strategy/operating-memo.md` for "SLT" — but the explicit profile field is the canonical signal, and a missing profile should be treated as `slt_member: false`.
+3. Only if the gate above passes: verify `$AIRTABLE_API_KEY` is non-empty. If empty, skip with a one-line note ("SLT integration enabled in profile but `AIRTABLE_API_KEY` is empty — run `/personal-setup`").
+4. Only then: probe the SLT base `appHDEHQA4bvlWwQq` for 200. Skip silently on any other status.
+5. When making the call, use `source .env` — never inline `export KEY=value`. See `CLAUDE.md` "Handling Secrets."
+
+New builders should be set up via `/obsidian-setup` Question 6 to populate `slt_member` correctly.
 
 The SLT knowledge base has its own action tracking. Meeting Actions are first-class — not just reflections of Asana tasks. Step 7d closes the loop between daily-workflow completions and the SLT base when {user} marks SLT-shadowed tasks done.
 

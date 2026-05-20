@@ -2,17 +2,7 @@
 
 ## Active
 
-- id: walk
-  name: Walk
-  emoji: 🚶
-  target: 30min
-  frequency: daily
-
-- id: read
-  name: Read
-  emoji: 📖
-  target: 15min
-  frequency: daily
+(none yet — add habits via the morning companion's onboarding step, or by editing this file directly)
 
 ## Archived
 

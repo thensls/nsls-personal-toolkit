@@ -31,6 +31,22 @@ The companion runs at `http://localhost:7777` (or `toolkit-companion status` to 
 
 Habits live in `30-habits/habits.md`; daily ticks accumulate in `30-habits/log.md` (append-only). The streak rule is documented in `skills/close-day/SKILL.md` and implemented in `companion/streak.py`. Both must stay in sync.
 
+## Handling Secrets (hard rule for Claude)
+
+When a skill calls an HTTP API that reads an API key from the environment (e.g., `AIRTABLE_API_KEY`, `FATHOM_API_KEY`):
+
+- **Never** inline the secret value in a Bash command. Patterns like `export AIRTABLE_API_KEY=patW...; python3 -c "..."` echo the literal key into the tool log, the conversation transcript on disk, and any request logs upstream. That key is then leaked even if it was previously private.
+- **Always** source the env file first, then reference only the variable name:
+  ```bash
+  set -a; source /Users/claw/.claude/local-plugins/nsls-personal-toolkit/.env; set +a
+  python3 -c "import os; print(len(os.environ['AIRTABLE_API_KEY']))"
+  ```
+  Only the variable *name* appears in the command; the value stays in the file.
+- If a skill's example shows an inline `export` or pastes a literal key, treat that as a bug in the skill — fix it before running, don't reproduce it. Flag it to the user.
+- Gates matter. If a skill says "skip this section unless `slt_member: true`," check the gate *before* touching the relevant env var or making the call. Don't run the API step for non-applicable users — it can't succeed, and the attempt can leak the key.
+
+This rule applies to every skill in this toolkit and overrides any inline example that contradicts it.
+
 ## Strategy Layer (Optional)
 
 Your first `/open-week` will offer to set up a **strategy layer** — a system that connects your daily/weekly planning to company goals and personal strategy:

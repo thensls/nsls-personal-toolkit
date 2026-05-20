@@ -47,14 +47,20 @@ def client_with_today(tmp_path):
         app.config["WATCHER"].stop()
 
 
-def test_morning_coach_renders_7_steps(client_with_today):
+def test_morning_coach_renders_5_steps(client_with_today):
+    """Morning coach is 5 steps after the 2026-05-18 redesign: greeting,
+    combined Plan-your-day (Top 3 + Bonus + suggestions), focus blocks,
+    vitality, lock-in. The habit-intentions step was removed (habits are
+    daily by default; checked at /close-day, not declared at /open-day)."""
     client, _ = client_with_today
     resp = client.get("/?mode=coach-morning")
     assert resp.status_code == 200
-    for label in (b"Good morning", b"Set your Top 3", b"Bonus list",
-                  b"Focus blocks", b"Habit intentions", b"Vitality",
-                  b"Lock in"):
+    for label in (b"Good morning", b"Plan your day", b"Your Top 3",
+                  b"Bonus list", b"Focus blocks", b"Vitality",
+                  b"Lock in", b"of 5"):
         assert label in resp.data, f"missing: {label}"
+    # Habit intent step is gone.
+    assert b"Habit intentions" not in resp.data
 
 
 def test_evening_coach_renders_4_steps(client_with_today):
