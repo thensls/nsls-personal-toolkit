@@ -59,22 +59,20 @@ def test_archive_habit_moves_to_archived_section(client_with_today):
     assert walk_idx > archived_idx
 
 
-def test_add_habit_rejects_exact_duplicate_only(client_with_today):
-    """A new id that's a prefix of an existing id must be ACCEPTED."""
+def test_add_habit_dedupes_id_when_name_collides(client_with_today):
+    """The form now collects only ``name``; id is derived (kebab-case).
+    Adding a habit named "Walk" when a habit with id ``walk`` already exists
+    should ACCEPT the new habit with a deduped id like ``walk-2`` — not 400.
+    Adding "Walking" stays unique."""
     client, vault = client_with_today
-    # `walk` already exists in the fixture. Adding `walking` should succeed
-    # (no collision with `walk`).
-    resp = client.post("/habit", data={
-        "id": "walking", "name": "Walking", "emoji": "🚶",
-        "target": "60min", "frequency": "daily",
-    })
-    assert resp.status_code in (200, 204), f"got {resp.status_code}: {resp.data!r}"
+    # `walk` already exists in the fixture. Adding name "Walking" -> id walking, unique.
+    resp = client.post("/habit", data={"name": "Walking"})
+    assert resp.status_code == 200, f"got {resp.status_code}: {resp.data!r}"
     md = (vault / "30-habits" / "habits.md").read_text()
     assert "id: walking" in md
-    assert "id: walk" in md  # original still there
-    # And the inverse: adding "walk" again should be rejected
-    resp2 = client.post("/habit", data={
-        "id": "walk", "name": "Walk Again", "emoji": "🚶",
-        "target": "30min", "frequency": "daily",
-    })
-    assert resp2.status_code == 400
+    assert "id: walk" in md  # original preserved
+    # Adding "Walk" again -> id collides with the original; gets -2 suffix.
+    resp2 = client.post("/habit", data={"name": "Walk"})
+    assert resp2.status_code == 200
+    md2 = (vault / "30-habits" / "habits.md").read_text()
+    assert "id: walk-2" in md2

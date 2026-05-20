@@ -76,6 +76,31 @@ if [[ "${yn:-y}" =~ ^[Yy] ]]; then
   if command -v pip3 >/dev/null 2>&1; then
     (cd "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion" && pip3 install -e . -q)
     echo "✓ Installed nsls-toolkit-companion CLI"
+
+    # macOS's externally-managed Python forces pip into a venv, so the
+    # binary lives at companion/.venv/bin/toolkit-companion and is NOT on
+    # PATH in fresh shells. Symlink it to ~/.local/bin (created by many
+    # tools and on $PATH by default in modern macOS/Linux shells) so the
+    # `toolkit-companion` command just works.
+    venv_bin="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+    if [ -x "$venv_bin" ]; then
+      mkdir -p "$HOME/.local/bin"
+      link_target="$HOME/.local/bin/toolkit-companion"
+      if [ -L "$link_target" ] || [ ! -e "$link_target" ]; then
+        ln -sf "$venv_bin" "$link_target"
+        echo "✓ Symlinked toolkit-companion → $link_target"
+        case ":$PATH:" in
+          *":$HOME/.local/bin:"*) ;;
+          *) echo "  ℹ ~/.local/bin is not on PATH. Add this to your shell rc:" ;;
+        esac
+        case ":$PATH:" in
+          *":$HOME/.local/bin:"*) ;;
+          *) echo "      export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+        esac
+      else
+        echo "  ⚠ $link_target already exists and is not a symlink; skipping. Run by full path or remove the file."
+      fi
+    fi
   else
     echo "⚠ pip3 not found; skipping companion install"
   fi

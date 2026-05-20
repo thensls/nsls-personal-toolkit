@@ -12,22 +12,42 @@ ALLOWED_SAVE_SECTIONS = {
 ALLOWED_TOGGLE_SECTIONS = {"top_3", "bonus"}
 
 
-def validate_habit_fields(form) -> dict:
-    """Validate POST /habit form. Raises ValueError with message on failure."""
-    out = {}
-    out["id"] = form.get("id", "").strip()
-    if not HABIT_ID_RE.fullmatch(out["id"]):
-        raise ValueError("id must be 1-32 chars of [a-z0-9_-]")
-    for field in ("name", "target", "frequency"):
-        val = form.get(field, "").strip()
-        if not SAFE_SHORT_RE.fullmatch(val):
-            raise ValueError(f"{field} must be 1-64 chars, no newlines")
-        out[field] = val
-    emoji = form.get("emoji", "").strip()
-    if len(emoji) > 8 or "\n" in emoji:
-        raise ValueError("emoji too long or contains newline")
-    out["emoji"] = emoji
-    return out
+def _derive_habit_id(name: str, existing_ids: set[str] | None = None) -> str:
+    """Convert a habit name to a stable kebab-case id, deduping if needed.
+
+    Examples: "Walk 30 min" -> "walk-30-min"; "Read" -> "read".
+    Strips non-[a-z0-9-] characters. If the result collides with an existing
+    id, appends -2, -3, etc.
+    """
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    slug = slug[:32] or "habit"
+    existing = existing_ids or set()
+    if slug not in existing:
+        return slug
+    i = 2
+    while f"{slug[:30]}-{i}" in existing:
+        i += 1
+    return f"{slug[:30]}-{i}"
+
+
+def validate_habit_fields(form, existing_ids: set[str] | None = None) -> dict:
+    """Validate POST /habit form. Raises ValueError on failure.
+
+    Form schema is intentionally minimal: just ``name``. The id is derived
+    from the name (kebab-case, deduped against existing_ids). Emoji, target,
+    and frequency default to empty/'daily' — callers can edit habits.md
+    directly if they want richer metadata.
+    """
+    name = form.get("name", "").strip()
+    if not SAFE_SHORT_RE.fullmatch(name):
+        raise ValueError("name must be 1-64 chars, no newlines")
+    return {
+        "id": _derive_habit_id(name, existing_ids),
+        "name": name,
+        "emoji": form.get("emoji", "").strip()[:8],
+        "target": form.get("target", "").strip()[:64] or "daily",
+        "frequency": form.get("frequency", "").strip()[:64] or "daily",
+    }
 
 
 def validate_save(form) -> tuple[str, str]:

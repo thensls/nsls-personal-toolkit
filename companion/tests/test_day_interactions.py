@@ -141,13 +141,15 @@ def test_save_rejects_disallowed_section(client_with_today):
 
 def test_set_top_3_creates_note_on_empty_vault(client_with_today):
     """First /set-top-3 call against a vault with no daily note creates the
-    scaffold and writes the user's text."""
+    scaffold and writes the user's text. Response is the re-rendered
+    plan_your_day partial (200) so the input indices stay in sync."""
     client, vault = client_with_today
     today = date.today().isoformat()
     note = vault / "01-daily" / f"{today}.md"
     note.unlink(missing_ok=True)  # ensure no note exists
     resp = client.post("/set-top-3", data={"index": "0", "text": "Ship companion v1.1"})
-    assert resp.status_code == 204
+    assert resp.status_code == 200
+    assert b"plan-your-day" in resp.data
     assert note.exists()
     body = note.read_text()
     assert "### My Top 3" in body
@@ -163,7 +165,7 @@ def test_set_top_3_updates_existing_item_preserves_checkbox(client_with_today):
         "1. [x] Old text\n2. [ ] Second\n3. [ ] Third\n"
     )
     resp = client.post("/set-top-3", data={"index": "0", "text": "New text"})
-    assert resp.status_code == 204
+    assert resp.status_code == 200  # rerendered partial, not 204
     body = note.read_text()
     # Checked state preserved; only text replaced
     assert "1. [x] New text" in body
@@ -179,10 +181,30 @@ def test_set_bonus_updates_nth_item(client_with_today):
         "1. [ ] First bonus\n2. [ ] Second\n"
     )
     resp = client.post("/set-bonus", data={"index": "1", "text": "Updated second"})
-    assert resp.status_code == 204
+    assert resp.status_code == 200  # rerendered partial, not 204
     body = note.read_text()
     assert "2. [ ] Updated second" in body
     assert "1. [ ] First bonus" in body
+
+
+def test_set_bonus_grows_with_each_save(client_with_today):
+    """The bonus list should accept multiple items. Regression for the bug
+    where the input's hx-vals index stayed stale and every save overwrote
+    item 0 — user could only ever add one bonus."""
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    note.unlink(missing_ok=True)
+    # First save creates the scaffold + writes index 0
+    client.post("/set-bonus", data={"index": "0", "text": "First bonus"})
+    # Second save (index 1 from the freshly-rerendered partial) appends.
+    client.post("/set-bonus", data={"index": "1", "text": "Second bonus"})
+    # Third save (index 2) appends again.
+    client.post("/set-bonus", data={"index": "2", "text": "Third bonus"})
+    body = note.read_text()
+    assert "1. [ ] First bonus" in body
+    assert "2. [ ] Second bonus" in body
+    assert "3. [ ] Third bonus" in body
 
 
 def test_set_top_3_rejects_newline_in_text(client_with_today):

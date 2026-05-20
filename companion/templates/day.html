@@ -17,10 +17,10 @@
     <p class="font-semibold text-amber-900">No habits yet</p>
     <p class="text-sm text-amber-800">Add habits to start tracking streaks. They're meant to be done daily — pick a few that matter.</p>
   </div>
-  <button hx-get="/add-habit-form" hx-target="#habit-onboarding-modal" hx-swap="innerHTML"
+  <button hx-get="/add-habit-form" hx-target="#habit-form-slot" hx-swap="innerHTML"
           class="px-3 py-2 bg-amber-700 text-white rounded text-sm">Add habits</button>
 </div>
-<div id="habit-onboarding-modal"></div>
+<div id="habit-form-slot"></div>
 {% endif %}
 
 <section class="bg-white rounded-lg shadow p-5 mb-4">

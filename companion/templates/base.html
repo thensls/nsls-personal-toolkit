@@ -51,7 +51,14 @@
           );
           if (!ok) return;
         }
-        htmx.ajax("GET", window.location.href, { target: "main", swap: "innerHTML" });
+        // Extract only <main> from the response and replace the entire
+        // <main> element. Using innerHTML here would shove the full page
+        // (including <nav>) into main, producing a duplicated top menu.
+        htmx.ajax("GET", window.location.href, {
+          target: "main",
+          select: "main",
+          swap: "outerHTML",
+        });
       }
 
       function connect() {

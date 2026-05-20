@@ -100,26 +100,33 @@ def _extract_bonus(morning_section: str) -> list[dict]:
     return _extract_numbered_checkbox_list(morning_section, "### Bonus")
 
 
-def _extract_carryovers(vault_path: Path, today: str) -> list[dict]:
-    """Read yesterday's daily note and return unchecked Top 3 + Bonus items.
+def _extract_carryovers(vault_path: Path, today: str, lookback_days: int = 7) -> list[dict]:
+    """Find the most recent prior daily note (up to ``lookback_days`` back)
+    and return its unchecked Top 3 + Bonus items as carry-over suggestions.
 
-    Returns: list of {"text": str, "source": "carryover"} for the Plan Your Day
-    suggestions table. Returns [] if there is no yesterday note.
+    Reads the SINGLE most-recent note rather than concatenating multiple days
+    — once a builder has closed Monday's note, Tuesday's open items should
+    drive the suggestions for Wednesday, not Monday's. If no note exists in
+    the lookback window, returns [].
     """
     try:
-        yesterday = (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).date().isoformat()
+        base = datetime.strptime(today, "%Y-%m-%d")
     except ValueError:
         return []
-    note_path = vault_path / "01-daily" / f"{yesterday}.md"
-    if not note_path.exists():
-        return []
-    sections = parse_daily_note_sections(note_path.read_text())
-    morning = sections.get("Morning Check-in", "")
-    items = []
-    for it in _extract_top_3(morning) + _extract_bonus(morning):
-        if it["text"] and not it["checked"]:
-            items.append({"text": it["text"], "source": "carryover"})
-    return items
+    for offset in range(1, lookback_days + 1):
+        candidate = (base - timedelta(days=offset)).date().isoformat()
+        note_path = vault_path / "01-daily" / f"{candidate}.md"
+        if not note_path.exists():
+            continue
+        sections = parse_daily_note_sections(note_path.read_text())
+        morning = sections.get("Morning Check-in", "")
+        items = []
+        for it in _extract_top_3(morning) + _extract_bonus(morning):
+            if it["text"] and not it["checked"]:
+                items.append({"text": it["text"], "source": f"from {candidate}"})
+        if items:
+            return items
+    return []
 
 
 def _build_plan_context(daily_md: str, vault_path: Path, today: str,
@@ -640,11 +647,17 @@ def create_app(vault_path: str) -> Flask:
 
     @app.route("/set-top-3", methods=["POST"])
     def set_top_3():
-        return _set_morning_item("### My Top 3", "top_3")
+        return _set_morning_item("### My Top 3", "top_3", rerender_partial=True)
 
     @app.route("/set-bonus", methods=["POST"])
     def set_bonus():
-        return _set_morning_item("### Bonus", "bonus")
+        return _set_morning_item("### Bonus", "bonus", rerender_partial=True)
+
+    @app.route("/empty")
+    def empty():
+        """Return an empty body. Used as the target of Cancel buttons that
+        want to clear a slot without server-side state changes."""
+        return ""
 
     @app.route("/plan-action", methods=["POST"])
     def plan_action():
@@ -721,7 +734,7 @@ def create_app(vault_path: str) -> Flask:
         plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
         return render_template("_components/plan_your_day.html", plan=plan)
 
-    def _set_morning_item(heading: str, broadcast_label: str):
+    def _set_morning_item(heading: str, broadcast_label: str, rerender_partial: bool = False):
         try:
             index = int(request.form.get("index", ""))
         except (TypeError, ValueError):
@@ -741,7 +754,18 @@ def create_app(vault_path: str) -> Flask:
 
         safe_modify(note_path, update)
         broadcast(f"01-daily/{today}.md")
-        return ("", 204)
+        if not rerender_partial:
+            return ("", 204)
+
+        # Return the freshly-rendered plan_your_day partial so the input
+        # indices advance and a new empty Bonus slot appears as items pile up.
+        daily_md = note_path.read_text()
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/plan_your_day.html", plan=plan)
 
     @app.route("/add-habit-form")
     def add_habit_form():
@@ -749,25 +773,40 @@ def create_app(vault_path: str) -> Flask:
 
     @app.route("/habit", methods=["POST"])
     def add_habit():
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        existing_md = habits_path.read_text() if habits_path.exists() else ""
+        existing_ids: set[str] = set()
+        if existing_md:
+            parsed = parse_habits(existing_md)
+            existing_ids = {h["id"] for h in parsed["active"]} | {h["id"] for h in parsed["archived"]}
+
         try:
-            fields = validate_habit_fields(request.form)
+            fields = validate_habit_fields(request.form, existing_ids=existing_ids)
         except ValueError as e:
             return (str(e), 400)
-        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+
         new_entry = (
             f"\n- id: {fields['id']}\n"
             f"  name: {fields['name']}\n"
-            f"  emoji: {fields['emoji']}\n"
-            f"  target: {fields['target']}\n"
-            f"  frequency: {fields['frequency']}\n"
         )
+        if fields.get("emoji"):
+            new_entry += f"  emoji: {fields['emoji']}\n"
+        new_entry += f"  target: {fields['target']}\n"
+        new_entry += f"  frequency: {fields['frequency']}\n\n"  # trailing blank separates habits and pushes ## Archived off the last field
 
         def insert(existing: str) -> str:
             md = existing or "# Daily Habits\n\n## Active\n\n## Archived\n"
-            parsed = parse_habits(md)
-            existing_ids = {h["id"] for h in parsed["active"]} | {h["id"] for h in parsed["archived"]}
-            if fields["id"] in existing_ids:
-                raise ValueError("habit id already exists")
+            # Replace the "(none yet — add habits …)" placeholder if present so
+            # the first habit doesn't sit awkwardly underneath it.
+            md = re.sub(
+                r"## Active\n+\(none yet[^\n]*\)\n+",
+                "## Active\n",
+                md,
+                count=1,
+            )
+            if "## Active\n" not in md:
+                # Defensive: badly-shaped habits.md — append a heading.
+                md = md.rstrip("\n") + "\n\n## Active\n"
             return md.replace("## Active\n", "## Active\n" + new_entry, 1)
 
         try:
@@ -775,7 +814,14 @@ def create_app(vault_path: str) -> Flask:
         except ValueError as e:
             return (str(e), 400)
         broadcast("30-habits/habits.md")
-        return ("", 204)
+        # Return a brief success badge that replaces the form. SSE will then
+        # reload main and show the new habit in its real home.
+        return (
+            f'<div class="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-900">'
+            f'  ✓ Added <strong>{fields["name"]}</strong> to your habits.'
+            f'</div>',
+            200,
+        )
 
     @app.route("/habit/archive", methods=["POST"])
     def archive_habit():
