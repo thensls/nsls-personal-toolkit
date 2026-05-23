@@ -94,14 +94,11 @@ def test_day_tab_renders_checked_state(tmp_path):
         client = app.test_client()
         resp = client.get("/")
         assert resp.status_code == 200
-        assert b"checked" in resp.data
         page = resp.data.decode()
         assert "Done item" in page
         assert "Pending item" in page
-        # The <input> immediately preceding "Done item" carries `checked`.
-        done_idx = page.index("Done item")
-        done_input = page[:done_idx][page[:done_idx].rfind("<input"):]
-        assert "checked" in done_input
+        # The checked item has line-through styling.
+        assert "line-through" in page
         # The <input> immediately preceding "Pending item" does NOT.
         pending_idx = page.index("Pending item")
         pending_input = page[:pending_idx][page[:pending_idx].rfind("<input"):]

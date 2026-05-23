@@ -20,15 +20,22 @@
 <section class="bg-white rounded-lg shadow p-5 mb-4">
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Top 3</h2>
   {% if top_3 and top_3|selectattr("text")|list %}
-  <ul class="space-y-2">
+  <ul class="space-y-3">
     {% for item in top_3 %}
       {% if item.text %}
-      <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"
-             {% if item.checked %}checked{% endif %}
-             hx-post="/toggle"
-             hx-vals='{"section":"top_3","index":{{ loop.index0 }}}'
-             hx-swap="none"
-             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span></label></li>
+      {% set item_idx = loop.index0 %}
+      <li class="flex items-center gap-3">
+        <div class="flex gap-1">
+          {% for val, icon in [("", "○"), ("25", "◔"), ("50", "◑"), ("75", "◕"), ("done", "●")] %}
+          <button class="w-6 h-6 text-xs rounded {{ 'bg-blue-900 text-white' if (val == 'done' and item.checked) or (val == '' and not item.checked) else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
+                  hx-post="/toggle"
+                  hx-vals='{"section":"top_3","index":{{ item_idx }}}'
+                  hx-swap="none"
+                  title="{{ val or 'Not started' }}">{{ icon }}</button>
+          {% endfor %}
+        </div>
+        <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span>
+      </li>
       {% endif %}
     {% endfor %}
   </ul>
@@ -40,15 +47,22 @@
 <section class="bg-white rounded-lg shadow p-5 mb-4">
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Bonus</h2>
   {% if bonus and bonus|selectattr("text")|list %}
-  <ul class="space-y-2 opacity-90">
+  <ul class="space-y-3 opacity-90">
     {% for item in bonus %}
       {% if item.text %}
-      <li><label class="flex items-center gap-3"><input type="checkbox" class="w-4 h-4"
-             {% if item.checked %}checked{% endif %}
-             hx-post="/toggle"
-             hx-vals='{"section":"bonus","index":{{ loop.index0 }}}'
-             hx-swap="none"
-             hx-on:htmx:response-error="window.__toolkitErrorToast && window.__toolkitErrorToast(event)"> <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span></label></li>
+      {% set item_idx = loop.index0 %}
+      <li class="flex items-center gap-3">
+        <div class="flex gap-1">
+          {% for val, icon in [("", "○"), ("25", "◔"), ("50", "◑"), ("75", "◕"), ("done", "●")] %}
+          <button class="w-6 h-6 text-xs rounded {{ 'bg-blue-900 text-white' if (val == 'done' and item.checked) or (val == '' and not item.checked) else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
+                  hx-post="/toggle"
+                  hx-vals='{"section":"bonus","index":{{ item_idx }}}'
+                  hx-swap="none"
+                  title="{{ val or 'Not started' }}">{{ icon }}</button>
+          {% endfor %}
+        </div>
+        <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span>
+      </li>
       {% endif %}
     {% endfor %}
   </ul>

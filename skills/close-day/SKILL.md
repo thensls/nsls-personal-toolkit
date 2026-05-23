@@ -46,20 +46,19 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 [ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
 ```
 
-If `"$TC"` resolves and `"$TC" status` reports running:
+If `"$TC"` resolves and `"$TC" status` reports running, parse the address from the status output:
 
 1. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If the file doesn't exist, skip this step — there's nothing to show.
 
-2. Parse the `## Morning Check-in` section and tell the builder what's already been checked off:
-   > Before we close out, here's what the companion shows for today:
-   >
-   > **Top 3:** [list items with ✓/✗ status]
-   > **Bonus:** [list items with ✓/✗ status]
-   > **Habits:** [list habits with done/not-done status from `### Habits` checkboxes]
-   >
-   > Anything else you finished today that isn't reflected here?
+2. **Open the companion in the browser** (`open <url-from-status>` on macOS) and tell the builder to go check off what they completed:
 
-3. Wait for their response, then proceed to Step 1.
+   > I opened the companion at `<url>`. Before we close out, go check off what you completed today — mark your Top 3 and Bonus items as done, and tick any habits you finished.
+   >
+   > Say **done** when you're ready to continue.
+
+3. **Wait for the builder to say "done".** Do NOT proceed until they explicitly respond. Do NOT treat background hook notifications (like "Record skill usage event completed") as user input — those are system messages, not the builder talking. Only a real message from the builder (containing "done", "continue", "go", "ready", or similar intent) should trigger the next step.
+
+4. After they say done, re-read the daily note to pick up any changes they made in the companion, then proceed to Step 1.
 
 If the companion binary isn't found, isn't running, or today's daily note doesn't exist, skip this step silently — proceed to Step 1 as before.
 
@@ -242,63 +241,21 @@ The **"Meeting time (calendar)"** line is an orthogonal metric — it cross-cuts
 
 **1c. Fathom — meeting summaries and action items**
 
-> **IMPORTANT — API URL:** Use ONLY `https://api.fathom.ai/external/v1/meetings`. The domain `api.fathom.video` does NOT exist and will cause a DNS error. Do not try it, do not add it as a first attempt, do not use it as a fallback. One URL. Always.
+Use the Fathom MCP tools (no API key or Python script needed):
 
-Fetch today's meetings from Fathom using a focused Python script:
-
-```bash
-set -a; source ~/.claude/local-plugins/nsls-personal-toolkit/.env 2>/dev/null; set +a
-python3 -c "
-import httpx, json, os, sys
-from pathlib import Path
-
-# Get API key from environment (sourced from .env above)
-key = os.environ.get('FATHOM_API_KEY', '')
-if not key:
-    print('NO_API_KEY'); sys.exit(0)
-
-TARGET_DATE = '$DATE'  # will be replaced by skill
-headers = {'X-Api-Key': key}
-url = f'https://api.fathom.ai/external/v1/meetings?include_summary=true&include_action_items=true&created_after={TARGET_DATE}T00:00:00Z&created_before={TARGET_DATE}T23:59:59Z'
-meetings = []
-cursor = None
-
-while True:
-    page_url = url + (f'&cursor={cursor}' if cursor else '')
-    resp = httpx.get(page_url, headers=headers, timeout=30)
-    if resp.status_code != 200: break
-    data = resp.json()
-    items = data.get('items') or (data if isinstance(data, list) else [])
-    meetings.extend(items)
-    cursor = data.get('next_cursor') if isinstance(data, dict) else None
-    if not cursor: break
-
-todays = meetings  # already date-scoped by API params
-
-for m in sorted(todays, key=lambda x: x.get('scheduled_start_time', '')):
-    title = m.get('title', 'Unknown')
-    start = m.get('scheduled_start_time', '')
-    end = m.get('scheduled_end_time', '')
-    summary = (m.get('default_summary') or {}).get('markdown_formatted', '')
-    actions = [a.get('description', '') for a in (m.get('action_items') or [])]
-    attendees = [inv.get('name', '') for inv in (m.get('calendar_invitees') or []) if inv.get('name')]
-    fathom_url = m.get('url', '')
-
-    print(f'### {title}')
-    print(f'**Time:** {start[11:16]}–{end[11:16] if end else \"?\"}')
-    if attendees: print(f'**With:** {', '.join(attendees)}')
-    if fathom_url: print(f'**Fathom:** {fathom_url}')
-    if summary:
-        # Extract just key takeaways, not full summary
-        for line in summary.split('\n'):
-            if line.strip().startswith('- [**') or line.strip().startswith('- **'):
-                print(line.strip())
-    if actions:
-        print('**Action items:**')
-        for a in actions: print(f'  - {a}')
-    print()
-"
 ```
+mcp__claude_ai_Fathom__list_meetings(
+  created_after="YYYY-MM-DDT00:00:00Z",
+  created_before="YYYY-MM-DDT23:59:59Z",
+  include_summary=true,
+  include_action_items=true,
+  max_pages=3
+)
+```
+
+For each meeting returned, extract: title, time, attendees, summary key points, action items, and fathom URL. If `list_meetings` returns no results, skip this section.
+
+If you need the full transcript for a specific meeting (e.g., to extract decisions or detailed context), use `get_meeting_summary(recording_id=<id>)`. Fetch at most 3 transcripts to keep the context manageable.
 
 **Fathom API is now date-scoped** — uses `created_after` and `created_before` params to fetch only the target day's meetings. This is fast (< 5 seconds) instead of paginating through all meetings since 2023.
 
