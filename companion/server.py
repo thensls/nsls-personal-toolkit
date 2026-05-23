@@ -92,6 +92,34 @@ def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
     return items
 
 
+def _extract_numbered_checkbox_list_raw(section: str, heading: str) -> list[dict]:
+    """Like _extract_numbered_checkbox_list but includes empty items.
+
+    Used by plan-action to find cleared slots in the raw markdown.
+    """
+    items: list[dict] = []
+    in_section = False
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(heading):
+            in_section = True
+            continue
+        if in_section and stripped.startswith("###"):
+            break
+        if in_section and stripped and stripped[0].isdigit():
+            after_num = stripped.split(".", 1)[-1].strip()
+            checked = False
+            if after_num.startswith("[ ]"):
+                text = after_num[3:].strip()
+            elif after_num[:3].lower() == "[x]":
+                checked = True
+                text = after_num[3:].strip()
+            else:
+                text = after_num
+            items.append({"text": text, "checked": checked})
+    return items
+
+
 def _extract_top_3(morning_section: str) -> list[dict]:
     return _extract_numbered_checkbox_list(morning_section, "### My Top 3")
 
@@ -191,6 +219,24 @@ def _extract_carryovers(vault_path: Path, today: str, lookback_days: int = 7) ->
     return []
 
 
+def _extract_dismissed(morning_section: str) -> set[str]:
+    """Pull dismissed item texts from `### Dismissed` in Morning Check-in."""
+    items: set[str] = set()
+    in_section = False
+    for line in morning_section.splitlines():
+        stripped = line.strip()
+        if stripped == "### Dismissed":
+            in_section = True
+            continue
+        if in_section and stripped.startswith("###"):
+            break
+        if in_section and stripped.startswith("- "):
+            text = stripped[2:].strip()
+            if text:
+                items.add(text)
+    return items
+
+
 def _build_plan_context(daily_md: str, vault_path: Path, today: str,
                        priorities: list, bonus: list) -> dict:
     """Build the Plan Your Day screen context: suggestions + carry-overs + taken state.
@@ -199,10 +245,12 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
     `### AI Suggested: …` subsections under `## Morning Check-in`) come first,
     then carry-overs (most recent prior daily note within the lookback window).
     Texts dedupe across sources — AI wins if both name the same item.
+    Dismissed items are filtered out entirely.
     """
     morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
     ai_items = _extract_ai_suggestions(morning)
     carryovers = _extract_carryovers(vault_path, today)
+    dismissed = _extract_dismissed(morning)
 
     seen: set[str] = set()
     suggestions: list[dict] = []
@@ -214,11 +262,10 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
 
     priority_texts = {p["text"] for p in priorities if p.get("text")}
     bonus_texts = {b["text"] for b in bonus if b.get("text")}
-    done_texts = {p["text"] for p in priorities if p.get("text") and p.get("checked")}
 
     for s in suggestions:
-        if s["text"] in done_texts:
-            s["taken"] = "done"
+        if s["text"] in dismissed:
+            s["taken"] = "dismissed"
         elif s["text"] in priority_texts:
             s["taken"] = "pri"
         elif s["text"] in bonus_texts:
@@ -233,6 +280,81 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
         "priorities": priorities_with_text,
         "bonus": bonus_with_text,
     }
+
+
+def _add_dismissed(md: str, text: str) -> str:
+    """Append `text` to the `### Dismissed` section under `## Morning Check-in`.
+
+    Creates the section if it doesn't exist, placing it after the last `###`
+    subsection within Morning Check-in.
+    """
+    lines = md.splitlines()
+    # Find ### Dismissed
+    dismissed_idx = None
+    morning_end = len(lines)
+    in_morning = False
+    last_subsection_end = None
+    for i, line in enumerate(lines):
+        if line.strip() == "## Morning Check-in":
+            in_morning = True
+            continue
+        if in_morning and line.startswith("## ") and not line.startswith("### "):
+            morning_end = i
+            break
+        if in_morning and line.strip() == "### Dismissed":
+            dismissed_idx = i
+        if in_morning and line.startswith("### "):
+            last_subsection_end = i
+
+    if dismissed_idx is not None:
+        # Find the end of the Dismissed section to append
+        insert_at = dismissed_idx + 1
+        for j in range(dismissed_idx + 1, morning_end):
+            if lines[j].startswith("### ") or lines[j].startswith("## "):
+                break
+            insert_at = j + 1
+        lines.insert(insert_at, f"- {text}")
+    else:
+        # Create ### Dismissed before the end of Morning Check-in
+        insert_at = morning_end
+        lines.insert(insert_at, "")
+        lines.insert(insert_at + 1, "### Dismissed")
+        lines.insert(insert_at + 2, f"- {text}")
+        lines.insert(insert_at + 3, "")
+
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _remove_dismissed(md: str, text: str) -> str:
+    """Remove `text` from the `### Dismissed` section (undo a dismissal)."""
+    lines = md.splitlines()
+    target = f"- {text}"
+    in_section = False
+    for i, line in enumerate(lines):
+        if line.strip() == "### Dismissed":
+            in_section = True
+            continue
+        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            break
+        if in_section and line.strip() == target:
+            del lines[i]
+            # Clean up empty section if no items remain
+            remaining_items = False
+            for j in range(i if i < len(lines) else len(lines) - 1, -1, -1):
+                if lines[j].strip() == "### Dismissed":
+                    if not remaining_items:
+                        del lines[j]
+                        # Also remove trailing blank line if present
+                        if j < len(lines) and lines[j].strip() == "":
+                            del lines[j]
+                        # And preceding blank line
+                        if j > 0 and lines[j - 1].strip() == "":
+                            del lines[j - 1]
+                    break
+                if lines[j].strip().startswith("- "):
+                    remaining_items = True
+            break
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
 
 
 _LIST_ITEM_RE = re.compile(r"^(\s*(?:\d+\.|-)\s+)(.*)$")
@@ -725,6 +847,117 @@ def create_app(vault_path: str) -> Flask:
     def set_bonus():
         return _set_morning_item("### Bonus", "bonus", rerender_partial=True)
 
+    @app.route("/delete-bonus", methods=["POST"])
+    def delete_bonus():
+        """Remove a bonus item by index and re-render the plan partial."""
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def remove(existing: str) -> str:
+            lines = existing.splitlines()
+            in_section = False
+            seen = 0
+            for i, line in enumerate(lines):
+                if line.strip() == "### Bonus":
+                    in_section = True
+                    continue
+                if in_section and (line.startswith("### ") or line.startswith("## ")):
+                    break
+                if in_section and _LIST_ITEM_RE.match(line):
+                    if seen == index:
+                        del lines[i]
+                        # Renumber remaining items
+                        remaining_idx = 0
+                        for j in range(i, len(lines)):
+                            if lines[j].startswith("### ") or lines[j].startswith("## "):
+                                break
+                            m = _LIST_ITEM_RE.match(lines[j])
+                            if m:
+                                prefix_m = re.match(r"^(\s*)(\d+\.|-)\s+", lines[j])
+                                if prefix_m and prefix_m.group(2) != "-":
+                                    rest = lines[j][prefix_m.end():]
+                                    lines[j] = f"{remaining_idx + 1}. {rest}"
+                                remaining_idx += 1
+                        break
+                    seen += 1
+            return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
+
+        safe_modify(note_path, remove)
+        broadcast(f"01-daily/{today}.md")
+
+        daily_md = note_path.read_text()
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/plan_your_day.html", plan=plan)
+
+    @app.route("/add-bonus-slot", methods=["POST"])
+    def add_bonus_slot():
+        """Re-render the plan partial — the template always shows one empty
+        slot at the end, so this is effectively a no-op that just re-renders."""
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text() if note_path.exists() else ""
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/plan_your_day.html", plan=plan)
+
+    @app.route("/reset-plan", methods=["POST"])
+    def reset_plan():
+        """Reset Top 3, Bonus, and Dismissed back to empty scaffold."""
+        today = date.today().isoformat()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("no note to reset", 404)
+
+        def reset(existing: str) -> str:
+            # Clear Top 3 items
+            for heading in ("### My Top 3", "### Bonus", "### Dismissed"):
+                lines = existing.splitlines()
+                section_start = None
+                section_end = len(lines)
+                for i, line in enumerate(lines):
+                    if line.strip() == heading:
+                        section_start = i
+                        continue
+                    if section_start is not None and (line.startswith("### ") or line.startswith("## ")):
+                        section_end = i
+                        break
+                if section_start is not None:
+                    if heading == "### My Top 3":
+                        replacement = [heading, "1. [ ]", "2. [ ]", "3. [ ]", ""]
+                    elif heading == "### Bonus":
+                        replacement = [heading, ""]
+                    else:  # Dismissed — remove entirely
+                        replacement = []
+                    existing = "\n".join(lines[:section_start] + replacement + lines[section_end:])
+                    if not existing.endswith("\n"):
+                        existing += "\n"
+            return existing
+
+        safe_modify(note_path, reset)
+        broadcast(f"01-daily/{today}.md")
+
+        daily_md = note_path.read_text()
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/plan_your_day.html", plan=plan)
+
     @app.route("/empty")
     def empty():
         """Return an empty body. Used as the target of Cancel buttons that
@@ -739,7 +972,7 @@ def create_app(vault_path: str) -> Flask:
         """
         action = (request.form.get("action") or "").strip().lower()
         text = (request.form.get("text") or "").strip()
-        if action not in {"pri", "bonus", "done"}:
+        if action not in {"pri", "bonus", "done", "delete"}:
             return ("invalid action", 400)
         if not text or "\n" in text or "\r" in text or len(text) > 256:
             return ("invalid text", 400)
@@ -753,6 +986,15 @@ def create_app(vault_path: str) -> Flask:
             morning = sections.get("Morning Check-in", "")
             top_3 = _extract_top_3(morning)
             bonus_items = _extract_bonus(morning)
+
+            # Done / Delete: toggle in ### Dismissed (reversible)
+            if action in {"done", "delete"}:
+                dismissed_items = _extract_dismissed(
+                    parse_daily_note_sections(existing).get("Morning Check-in", "")
+                )
+                if text in dismissed_items:
+                    return _remove_dismissed(existing, text)
+                return _add_dismissed(existing, text)
 
             # If the suggestion already sits in Top 3 / Bonus and the user
             # clicked the same column again, treat it as "untake" — clear it.
@@ -776,23 +1018,23 @@ def create_app(vault_path: str) -> Flask:
             bonus_items = _extract_bonus(morning)
 
             if action == "pri":
-                for i in range(3):
-                    if i >= len(top_3) or not top_3[i].get("text"):
+                # Use _extract_numbered_checkbox_list with empty items to find
+                # the first empty slot in the raw markdown (not the filtered
+                # list which skips blanks and would miss cleared slots).
+                raw_items = _extract_numbered_checkbox_list_raw(morning, "### My Top 3")
+                for i in range(min(3, len(raw_items))):
+                    if not raw_items[i].get("text"):
                         return _set_nth_item_text(existing, "### My Top 3", i, text)
+                # All 3 slots occupied — try appending if < 3 raw items
+                if len(raw_items) < 3:
+                    return _set_nth_item_text(existing, "### My Top 3", len(raw_items), text)
                 return existing  # Top 3 full; client respects the disabled attr.
             if action == "bonus":
                 for i, b in enumerate(bonus_items):
                     if not b.get("text"):
                         return _set_nth_item_text(existing, "### Bonus", i, text)
                 return _set_nth_item_text(existing, "### Bonus", len(bonus_items), text)
-            # action == "done": land in first empty Top 3 slot with [x]; else Bonus
-            for i in range(3):
-                if i >= len(top_3) or not top_3[i].get("text"):
-                    existing = _set_nth_item_text(existing, "### My Top 3", i, text)
-                    return _toggle_nth_checkbox(existing, "### My Top 3", i)
-            target_idx = len(bonus_items)
-            existing = _set_nth_item_text(existing, "### Bonus", target_idx, text)
-            return _toggle_nth_checkbox(existing, "### Bonus", target_idx)
+            return existing
 
         safe_modify(note_path, update)
         broadcast(f"01-daily/{today}.md")
@@ -839,9 +1081,21 @@ def create_app(vault_path: str) -> Flask:
         plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
         return render_template("_components/plan_your_day.html", plan=plan)
 
+    def _get_active_habits():
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        if habits_path.exists():
+            return parse_habits(habits_path.read_text())["active"]
+        return []
+
     @app.route("/add-habit-form")
     def add_habit_form():
-        return render_template("_components/add_habit_form.html")
+        return render_template("_components/add_habit_form.html",
+                               habits=_get_active_habits())
+
+    @app.route("/manage-habits")
+    def manage_habits():
+        return render_template("_components/add_habit_form.html",
+                               habits=_get_active_habits())
 
     @app.route("/habit", methods=["POST"])
     def add_habit():
@@ -886,13 +1140,11 @@ def create_app(vault_path: str) -> Flask:
         except ValueError as e:
             return (str(e), 400)
         broadcast("30-habits/habits.md")
-        # Return a brief success badge that replaces the form. SSE will then
-        # reload main and show the new habit in its real home.
-        return (
-            f'<div class="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-900">'
-            f'  ✓ Added <strong>{fields["name"]}</strong> to your habits.'
-            f'</div>',
-            200,
+        # Return the manage view with success message + updated habit list.
+        return render_template(
+            "_components/add_habit_form.html",
+            habits=_get_active_habits(),
+            success_message=f'Added "{fields["name"]}" to your habits.',
         )
 
     @app.route("/habit/archive", methods=["POST"])
@@ -921,7 +1173,10 @@ def create_app(vault_path: str) -> Flask:
         if not found[0]:
             return ("habit not found", 404)
         broadcast("30-habits/habits.md")
-        return ("", 204)
+        return render_template(
+            "_components/add_habit_form.html",
+            habits=_get_active_habits(),
+        )
 
     watcher = VaultWatcher(vault_path, on_change=broadcast)
     watcher.start()

@@ -688,8 +688,14 @@ When you don't skip:
    ```bash
    "$TC" status
    ```
-   - Output `Running: pid <pid>, address http://127.0.0.1:<port>` → parse the URL, continue to step 2.
-   - Output `Not running.` → tell the builder once: *"To see your visual companion, run the companion in a separate terminal (`"$TC" serve`), then come back here. Or run `open day visual off` to stay in chat."* Then skip the rest of this step.
+   - Output `Running: pid <pid>, address <addr>` → parse the URL, continue to step 2.
+   - Output contains `Not running` or `stale pidfile` → **start it automatically** in the background:
+     ```bash
+     OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
+     sleep 2
+     "$TC" status
+     ```
+     If it's now running, parse the URL and continue to step 2. If it still fails, tell the builder: *"Companion couldn't start. Run `open day visual off` to stay in chat, or check the error."* Then skip the rest of this step.
 
 2. **Open the URL in the default browser:**
    - macOS: `open <url-from-status>`
@@ -698,7 +704,7 @@ When you don't skip:
 
 3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now:
 
-   > A tab opened at `<url>`. Step through the morning Coach Card there: pick your Top 3, add anything else to the Bonus list, then click **Lock in** at step 5.
+   > A tab opened at `<url>`. Pick your Top 3, add anything else to the Bonus list, then click **Done — show Command Center** when you're ready.
    >
    > When you're done, say **done** here and I'll print a one-line summary. Or just go straight into your day — the daily note is being saved as you type. Type `open day visual off` if you'd rather skip the visual next time.
 

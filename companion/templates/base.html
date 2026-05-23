@@ -31,6 +31,22 @@
       let reconnectDelay = 1000;        // backoff base
       let lastReload = Date.now();
       const RELOAD_DEBOUNCE_MS = 800;
+      let suppressNextReload = 0;       // timestamp until which SSE reloads are suppressed
+
+      // Suppress SSE reload after our own HTMX POSTs — the broadcast those
+      // writes trigger would clobber the view the user just interacted with.
+      document.body.addEventListener("htmx:beforeRequest", function (e) {
+        if (e.detail.requestConfig && e.detail.requestConfig.verb !== "get") {
+          suppressNextReload = Date.now() + 3000;
+        }
+      });
+      document.body.addEventListener("htmx:afterRequest", function (e) {
+        // Extend suppression after the response arrives — the SSE broadcast
+        // from our write may still be in-flight on the EventSource connection.
+        if (e.detail.requestConfig && e.detail.requestConfig.verb !== "get") {
+          suppressNextReload = Date.now() + 1000;
+        }
+      });
 
       function isMainDirty() {
         // Any textarea inside <main> whose current value differs from its initial
@@ -43,6 +59,13 @@
 
       function reloadMain() {
         if (Date.now() - lastReload < RELOAD_DEBOUNCE_MS) return;
+        // Skip SSE reload when in coach-morning mode — HTMX partial swaps
+        // handle the UI updates, and a full main replace would blow away
+        // Alpine's step state, causing the screen to jump.
+        if (document.querySelector("[x-data*='coachMode']")) return;
+        // Skip SSE reload shortly after our own POST — the broadcast it
+        // triggers is from OUR write, not an external change.
+        if (Date.now() < suppressNextReload) return;
         lastReload = Date.now();
         if (isMainDirty()) {
           const ok = confirm(

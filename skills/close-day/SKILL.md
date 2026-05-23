@@ -38,6 +38,31 @@ Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env`:
 
 Default to today (`date +%Y-%m-%d`). User can override: `/close-day 2026-03-21`.
 
+### Step 0.5: Check the visual companion
+
+**Resolving the binary path** (same lookup as open-day Step 8):
+```bash
+TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+```
+
+If `"$TC"` resolves and `"$TC" status` reports running:
+
+1. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If the file doesn't exist, skip this step — there's nothing to show.
+
+2. Parse the `## Morning Check-in` section and tell the builder what's already been checked off:
+   > Before we close out, here's what the companion shows for today:
+   >
+   > **Top 3:** [list items with ✓/✗ status]
+   > **Bonus:** [list items with ✓/✗ status]
+   > **Habits:** [list habits with done/not-done status from `### Habits` checkboxes]
+   >
+   > Anything else you finished today that isn't reflected here?
+
+3. Wait for their response, then proceed to Step 1.
+
+If the companion binary isn't found, isn't running, or today's daily note doesn't exist, skip this step silently — proceed to Step 1 as before.
+
 ### Step 1: Collect data (run in parallel where possible)
 
 **1a. Google Calendar — today's meetings**
@@ -222,19 +247,13 @@ The **"Meeting time (calendar)"** line is an orthogonal metric — it cross-cuts
 Fetch today's meetings from Fathom using a focused Python script:
 
 ```bash
-PYTHONPATH=/tmp/pptx_deps python3.12 -c "
+set -a; source ~/.claude/local-plugins/nsls-personal-toolkit/.env 2>/dev/null; set +a
+python3 -c "
 import httpx, json, os, sys
 from pathlib import Path
 
-# Get API key
+# Get API key from environment (sourced from .env above)
 key = os.environ.get('FATHOM_API_KEY', '')
-if not key:
-    env_file = Path.home() / 'nsls-skills/slt-ops/slt-bot/.env'
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            if line.startswith('FATHOM_API_KEY='):
-                key = line.split('=', 1)[1].strip().strip('\"\'')
-                break
 if not key:
     print('NO_API_KEY'); sys.exit(0)
 
@@ -317,7 +336,7 @@ Review the current conversation for:
 
 Also check if any other Claude Code sessions ran today by scanning:
 ```bash
-ls -la ~/.claude/projects/-Users-k/*.jsonl | grep "$(date +%b\ %d)" 2>/dev/null
+ls -la ~/.claude/projects/-Users-$(whoami)/*.jsonl | grep "$(date +%b\ %d)" 2>/dev/null
 ```
 
 **1g. Asana — pending tasks and what was due**
@@ -561,25 +580,27 @@ Dimensions to check (choose the most non-obvious):
 - Omit the second paragraph if there's no second insight that clears the bar. One sharp insight beats two generic ones.
 - **Never summarize the day.** That's what the rest of the note is for.
 
-### Reconcile to log.md
+### Step 3.5: Reconcile habits to log.md
 
-After producing the `## Habits` summary, append today's results to `30-habits/log.md` in the format:
+**Run this step after the draft is confirmed in Step 4 (not before).** The user may edit habit checkboxes during the review, so reconciliation must use the final state.
+
+Append today's results to `30-habits/log.md` in the format:
 
 `YYYY-MM-DD · habit_id:percent · habit_id:percent`
 
 Reconciliation rules (apply in order):
 
 1. **Read existing log.md row for today** (if any). Call this `log_ticks` (a dict `{habit_id: percent}`).
-2. **Read daily-note checkboxes** under `## Morning Check-in` → `### Habits`. Use the parser semantics: `[x]` = 1.0, `[/]` or `[~]` = 0.5, `[ ]` = 0.0. Call this `note_ticks`.
+2. **Read daily-note checkboxes** under `## Morning Check-in` → `### Habits`. Use the parser semantics: `[x]` = 1.0, `[/]` or `[~]` = 0.5, `[ ]` = 0.0. Call this `note_ticks`. **If `### Habits` doesn't exist in the daily note** (e.g., user skipped `/open-day`), treat `note_ticks` as empty — do not create the section, just use `log_ticks` as-is.
 3. **For each active habit, merge — taking the MAX of the two values.** This gives canonical priority to log.md (companion ticks survive even if the user didn't update the checkbox in the daily note), while still letting users tick checkboxes in Obsidian or the CLI if log.md hasn't been touched for that habit today.
 4. **Write the merged row back to log.md**, idempotent on the date — if a row for today already exists, replace it.
-5. **Update the daily-note `### Habits` checkboxes to reflect the merged result** — checked (`[x]`) for 1.0, partial (`[/]`) for 0.5, unchecked (`[ ]`) for 0.0. This keeps the markdown human-readable in Obsidian, but the log.md value is authoritative.
+5. **Update the daily-note `### Habits` checkboxes to reflect the merged result** — checked (`[x]`) for 1.0, partial (`[/]`) for 0.5, unchecked (`[ ]`) for 0.0. **Only if `### Habits` exists** — don't create it for users who didn't run `/open-day`.
 
 This MAX-merge resolves the two-writer problem without needing mtime comparison: a tap in the companion never gets undone by close-day running afterwards, and a manual checkbox tick never gets undone by close-day if the companion was already at 1.0. Resetting a habit to 0.0 mid-day requires editing log.md directly.
 
 ### Streak rule reference
 
-When describing habit streaks in `## Today's stats` or in Insight Reflection prompts, follow this rule:
+When describing habit streaks in Insight Reflection prompts, follow this rule:
 
 Walk a habit's recent log backwards from yesterday until a 100% day is found (or the log is exhausted). Along the way, partial days (50%) add 0.5 to a "concern counter"; missed days (0%) add 1.0. A 100% day clears the counter back to 0 and stops the walk.
 
@@ -906,7 +927,7 @@ SORT priority ASC
 
 This seeds the next day with the AI-suggested priorities so the user sees them first thing in the morning. He overwrites "My Top 3" with his actual priorities during `/open-day` or manually.
 
-If the file already exists (user or `/open-day` already created it), do NOT overwrite. Instead, check if it has the AI suggestion sections. If not, insert them after `## Morning Check-in`.
+If the file already exists (user or `/open-day` already created it), do NOT overwrite. Instead, check if it has the AI suggestion sections (`### AI Suggested: …`). If not, insert them as `###` subsections **inside** `## Morning Check-in` — specifically, between the `## Morning Check-in` heading and the `### My Top 3` heading (or at the end of the section if `### My Top 3` doesn't exist yet). The companion's parser only reads AI suggestions from within `## Morning Check-in`, so placing them anywhere else makes them invisible.
 
 ### Step 9: Confirm
 

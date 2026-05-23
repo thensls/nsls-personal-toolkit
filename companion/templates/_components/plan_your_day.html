@@ -1,7 +1,7 @@
 <div id="plan-your-day" hx-target="#plan-your-day" hx-swap="outerHTML">
   <h3 class="font-semibold text-lg mb-1">Plan your day</h3>
   <p class="text-sm text-stone-600 mb-3">
-    Pick <strong>three</strong> priorities. Anything else goes on the Bonus list. Already done it? Click <em>Done</em> and it'll be marked complete.
+    Pick <strong>three</strong> priorities. Anything else goes on the Bonus list. Already done? Click <em>Done</em>. Don't want it? Click <em>Delete</em>. Everything is reversible — uncheck to undo.
   </p>
 
   {% if plan.suggestions %}
@@ -15,6 +15,7 @@
           <th class="px-2 py-1 w-12 text-center">Top 3</th>
           <th class="px-2 py-1 w-12 text-center">Bonus</th>
           <th class="px-2 py-1 w-12 text-center">Done</th>
+          <th class="px-2 py-1 w-12 text-center">Delete</th>
           <th class="px-2 py-1 text-left">Item</th>
         </tr>
       </thead>
@@ -35,13 +36,19 @@
                    hx-trigger="change">
           </td>
           <td class="px-2 py-1 text-center">
-            <input type="checkbox" {% if s.taken == 'done' %}checked{% endif %}
+            <input type="checkbox" {% if s.taken == 'dismissed' %}checked{% endif %}
                    hx-post="/plan-action"
                    hx-vals='{"text": {{ s.text|tojson }}, "action": "done"}'
                    hx-trigger="change">
           </td>
+          <td class="px-2 py-1 text-center">
+            <input type="checkbox" {% if s.taken == 'dismissed' %}checked{% endif %}
+                   hx-post="/plan-action"
+                   hx-vals='{"text": {{ s.text|tojson }}, "action": "delete"}'
+                   hx-trigger="change">
+          </td>
           <td class="px-2 py-1">
-            <span {% if s.taken == 'done' %}class="line-through text-stone-400"{% endif %}>{{ s.text }}</span>
+            <span {% if s.taken == 'dismissed' %}class="line-through text-stone-400"{% endif %}>{{ s.text }}</span>
             {% if s.source %}<span class="text-xs text-stone-400 ml-1">({{ s.source }})</span>{% endif %}
           </td>
         </tr>
@@ -54,10 +61,7 @@
   {% endif %}
 
   <div class="mb-4">
-    <div class="flex items-baseline justify-between mb-2">
-      <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500">Your Top 3</h4>
-      <span class="text-xs text-stone-500">{{ plan.priorities|length }} of 3</span>
-    </div>
+    <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-2">Your Top 3</h4>
     <ol class="space-y-2">
       {% for i in range(3) %}
         {% set item = plan.priorities[i] if i < plan.priorities|length else None %}
@@ -69,7 +73,6 @@
                  hx-post="/set-top-3"
                  hx-vals='{"index": "{{ i }}"}'
                  hx-trigger="change delay:300ms"
-                 hx-swap="none"
                  name="text"
                  class="flex-1 border rounded px-3 py-2 text-sm">
         </li>
@@ -77,11 +80,8 @@
     </ol>
   </div>
 
-  <div>
-    <div class="flex items-baseline justify-between mb-2">
-      <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500">Bonus list</h4>
-      <span class="text-xs text-stone-500">{{ plan.bonus|length }} item{{ 's' if plan.bonus|length != 1 else '' }}</span>
-    </div>
+  <div class="mb-4">
+    <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-2">Bonus list</h4>
     <ul class="space-y-2">
       {% for b in plan.bonus %}
         <li class="flex items-center gap-2">
@@ -91,9 +91,11 @@
                  hx-post="/set-bonus"
                  hx-vals='{"index": "{{ loop.index0 }}"}'
                  hx-trigger="change delay:300ms"
-                 hx-swap="none"
                  name="text"
                  class="flex-1 border rounded px-3 py-2 text-sm">
+          <button hx-post="/delete-bonus"
+                  hx-vals='{"index": "{{ loop.index0 }}"}'
+                  class="text-stone-400 hover:text-red-600 px-1" title="Remove">✕</button>
         </li>
       {% endfor %}
       <li class="flex items-center gap-2">
@@ -104,10 +106,14 @@
                hx-post="/set-bonus"
                hx-vals='{"index": "{{ plan.bonus|length }}"}'
                hx-trigger="change"
-               hx-swap="none"
                name="text"
                class="flex-1 border rounded px-3 py-2 text-sm">
       </li>
     </ul>
+  </div>
+
+  <div class="flex justify-end">
+    <button hx-post="/reset-plan"
+            class="text-sm text-stone-500 hover:text-red-600 underline">Reset all</button>
   </div>
 </div>

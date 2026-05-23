@@ -1,18 +1,50 @@
-<form hx-post="/habit"
-      hx-target="#habit-form-slot"
-      hx-swap="innerHTML"
-      hx-on:htmx:after-request="if (event.detail.successful) this.reset()"
-      class="bg-white rounded-lg shadow p-4 mb-4">
-  <label class="block text-sm font-semibold text-stone-700 mb-2">Habit name</label>
-  <input name="name" placeholder="e.g. Walk, Read, Meditate"
-         class="block w-full border rounded px-3 py-2 mb-3" required autofocus>
-  <p class="text-xs text-stone-500 mb-3">Habits are daily by default — check them off in the Day tab. You can edit emoji, target, or frequency later by opening <code>30-habits/habits.md</code>.</p>
-  <div class="flex gap-2">
-    <button type="submit" class="px-4 py-2 bg-blue-900 text-white rounded">Add habit</button>
-    <button type="button"
-            hx-get="/empty"
-            hx-target="#habit-form-slot"
-            hx-swap="innerHTML"
-            class="px-4 py-2 border rounded text-stone-700">Cancel</button>
+<div id="manage-habits-panel" class="bg-white rounded-lg shadow p-4 mb-4">
+  <h3 class="font-semibold text-lg mb-3">Manage habits</h3>
+
+  {% if habits %}
+  <div class="mb-4">
+    <p class="text-xs uppercase tracking-wider text-stone-500 mb-2">Current habits</p>
+    <ul class="space-y-2">
+      {% for h in habits %}
+      <li class="flex items-center justify-between border rounded px-3 py-2">
+        <span class="text-sm">{{ h.name }}</span>
+        <button hx-post="/habit/archive"
+                hx-vals='{"habit_id": "{{ h.id }}"}'
+                hx-target="#habit-form-slot"
+                hx-swap="innerHTML"
+                class="text-stone-400 hover:text-red-600 text-xs px-2" title="Remove habit">✕</button>
+      </li>
+      {% endfor %}
+    </ul>
   </div>
-</form>
+  {% else %}
+  <p class="text-sm text-stone-500 mb-3 italic">No habits yet. Add your first one below.</p>
+  {% endif %}
+
+  {% if success_message %}
+  <div class="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-900 mb-3">
+    ✓ {{ success_message }}
+  </div>
+  {% endif %}
+
+  <form hx-post="/habit"
+        hx-target="#habit-form-slot"
+        hx-swap="innerHTML"
+        class="border-t pt-3">
+    <label class="block text-sm font-semibold text-stone-700 mb-2">Add a habit</label>
+    <div class="flex gap-2">
+      <input name="name" placeholder="e.g. Walk, Read, Meditate"
+             class="flex-1 border rounded px-3 py-2 text-sm" required autofocus>
+      <button type="submit" class="px-4 py-2 bg-blue-900 text-white rounded text-sm">Add</button>
+    </div>
+    <p class="text-xs text-stone-500 mt-2">Habits are daily by default. Edit details in <code>30-habits/habits.md</code>.</p>
+  </form>
+
+  <div class="mt-3 flex justify-end">
+    <button hx-get="/"
+            hx-target="main"
+            hx-select="main"
+            hx-swap="outerHTML"
+            class="px-4 py-2 border rounded text-stone-700 text-sm">Done</button>
+  </div>
+</div>

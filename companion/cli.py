@@ -102,7 +102,12 @@ def stop():
     if not PID_FILE.exists():
         click.echo("No running companion found.")
         return
-    pid = int(PID_FILE.read_text().splitlines()[0])
+    try:
+        pid = int(PID_FILE.read_text().splitlines()[0])
+    except (IndexError, ValueError):
+        click.echo("Malformed pidfile; cleaning up.")
+        PID_FILE.unlink(missing_ok=True)
+        return
     try:
         os.kill(pid, signal.SIGTERM)
         click.echo(f"Sent SIGTERM to {pid}")
@@ -116,6 +121,35 @@ def status():
     """Show companion status."""
     if not PID_FILE.exists():
         click.echo("Not running.")
-        return
+        sys.exit(1)
     lines = PID_FILE.read_text().splitlines()
-    click.echo(f"Running: pid {lines[0]}, address {lines[1]}")
+    try:
+        pid = int(lines[0])
+    except (IndexError, ValueError):
+        click.echo("Not running (malformed pidfile cleaned up).")
+        PID_FILE.unlink(missing_ok=True)
+        sys.exit(1)
+    addr = lines[1] if len(lines) > 1 else "127.0.0.1:7777"
+    # Check if the process is actually alive
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        click.echo("Not running (stale pidfile cleaned up).")
+        PID_FILE.unlink(missing_ok=True)
+        sys.exit(1)
+    except PermissionError:
+        pass  # process exists but owned by another user — treat as alive
+    # Verify the port actually responds
+    host, _, port_str = addr.partition(":")
+    try:
+        with socket.create_connection((host, int(port_str)), timeout=2):
+            pass
+    except (OSError, ValueError):
+        click.echo("Not running (process alive but port not responding; cleaning up).")
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        PID_FILE.unlink(missing_ok=True)
+        sys.exit(1)
+    click.echo(f"Running: pid {pid}, address {addr}")
