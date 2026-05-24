@@ -46,6 +46,8 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 [ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
 ```
 
+**Only run this step if the date from Step 0 is today** (`$(date +%Y-%m-%d)`). The companion always shows today's data — if closing a past date, the companion would show the wrong day. Skip silently for past dates.
+
 If `"$TC"` resolves and `"$TC" status` reports running, parse the address from the status output:
 
 1. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If the file doesn't exist, skip this step — there's nothing to show.
