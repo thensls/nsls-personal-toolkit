@@ -94,32 +94,46 @@ If no builder profile exists, fall back to the **Executive / SLT preset** catego
 **Phase 1: Collect raw data (run in parallel with Fathom)**
 
 ```bash
-# Step 1: Get top-level app counts
-grep -h "^app:" $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+# IMPORTANT: Use bash (not zsh) for these commands, or prefix with
+# setopt +o nomatch 2>/dev/null; to prevent zsh glob errors when
+# no sessions exist for the target date. All globs here use 2>/dev/null
+# but zsh errors BEFORE the command runs if the glob itself has no matches.
+# The safest approach: run these inside bash -c '...' or use ls + xargs
+# instead of shell globbing.
 
-# Step 2: Break down Chrome by window title
-awk '/^app: Google Chrome/{found=1} found && /^window_title_raw:/{print; found=0}' \
-  $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+FDIR="$HOME/familiar/stills-markdown"
+SESSIONS=$(ls -d "$FDIR"/session-YYYY-MM-DDT* 2>/dev/null)
+if [ -z "$SESSIONS" ]; then
+  echo "NO_FAMILIAR_DATA"
+else
+  # Step 1: Get top-level app counts
+  find $FDIR -path "*/session-YYYY-MM-DDT*/*.md" -exec grep -h "^app:" {} + 2>/dev/null \
+    | sort | uniq -c | sort -rn
 
-# Step 3: Break down Slack by window title (channel/DM names)
-awk '/^app: Slack/{found=1} found && /^window_title_raw:/{print; found=0}' \
-  $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+  # Step 2: Break down Chrome by window title
+  find $FDIR -path "*/session-YYYY-MM-DDT*/*.md" -exec awk \
+    '/^app: Google Chrome/{found=1} found && /^window_title_raw:/{print; found=0}' {} + 2>/dev/null \
+    | sort | uniq -c | sort -rn
 
-# Step 4: Break down Warp by window title (Claude Code session names)
-awk '/^app: Warp/{found=1} found && /^window_title_raw:/{print; found=0}' \
-  $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+  # Step 3: Break down Slack by window title
+  find $FDIR -path "*/session-YYYY-MM-DDT*/*.md" -exec awk \
+    '/^app: Slack/{found=1} found && /^window_title_raw:/{print; found=0}' {} + 2>/dev/null \
+    | sort | uniq -c | sort -rn
 
-# Step 5: Session timestamps for time calculation
-for s in $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/; do
-  first=$(ls "$s"*.md 2>/dev/null | head -1 | xargs basename | sed 's/.md//')
-  last=$(ls "$s"*.md 2>/dev/null | tail -1 | xargs basename | sed 's/.md//')
-  count=$(ls "$s"*.md 2>/dev/null | wc -l | tr -d ' ')
-  echo "$first|$last|$count"
-done
+  # Step 4: Break down Warp by window title
+  find $FDIR -path "*/session-YYYY-MM-DDT*/*.md" -exec awk \
+    '/^app: Warp/{found=1} found && /^window_title_raw:/{print; found=0}' {} + 2>/dev/null \
+    | sort | uniq -c | sort -rn
+
+  # Step 5: Session timestamps for time calculation
+  for s in $FDIR/session-YYYY-MM-DDT*/; do
+    [ -d "$s" ] || continue
+    first=$(ls "$s"*.md 2>/dev/null | head -1 | xargs basename | sed 's/.md//')
+    last=$(ls "$s"*.md 2>/dev/null | tail -1 | xargs basename | sed 's/.md//')
+    count=$(ls "$s"*.md 2>/dev/null | wc -l | tr -d ' ')
+    echo "$first|$last|$count"
+  done
+fi
 ```
 
 **Phase 2: Calculate active work time**
