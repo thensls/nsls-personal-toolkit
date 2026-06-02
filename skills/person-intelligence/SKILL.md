@@ -48,6 +48,27 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
 python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/fetch_airtable_people_ops.py "{name}" > /tmp/person-intel-people-ops.json
 ```
 
+**Signal — Quick Notes** (only when `SIGNAL_INGEST=1` AND the person is a **direct report**):
+
+Phase 1 is MCP-in-session — *you* (the orchestrator) call the `signal_*` MCP tools, bundle
+their raw JSON, and pipe it to `fetch_signal.py`, which caches the raw (cache-only, never the
+vault) and emits the normalized, sensitivity-pre-screened signal:
+
+```bash
+# 1. Call MCP tools for the slug (exec/manager scope): signal_person, signal_person_history,
+#    signal_person_goals. Assemble: {"slug":"...","person":<>,"history":<>,"goals":<>}
+echo "$RAW_BUNDLE" | python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/fetch_signal.py \
+  --slug {kebab-name} --weeks 12 > /tmp/person-intel-signal.json
+# List direct-report slugs in scope:
+python3.12 .../scripts/fetch_signal.py --list-reports
+```
+
+Then include the normalized output as the `signal` field in the synthesize payload (Step 5).
+**Scope: direct reports only.** **Raw Quick Notes never enter the vault** — `fetch_signal.py`
+drops HR/health/comp items mechanically, and `synthesize_profile.py` applies the KB
+sensitive-content rubric to what remains. Signal-derived coaching evidence surfaces as
+`<!-- DIGEST -->` comments for biweekly approval, never written into Coaching Goals directly.
+
 **Existing Obsidian profiles** (vault at `$OBSIDIAN_VAULT_PATH`):
 - `30-people/{Name}.md` (display name with spaces)
 - `10-slt/members/{slug}.md` (lowercase hyphenated, e.g., `gary-tuerack.md`)
@@ -207,14 +228,15 @@ Match strategy: by frontmatter `email` first, then by exact filename `{Name}.md`
 
 ## Ingest Sources
 
-The skill pulls signal from three sources per tracked person. Full scoping and
-privacy posture in [`references/ingest-scoping.md`](references/ingest-scoping.md).
+The skill pulls signal from four sources. Full scoping and privacy posture in
+[`references/ingest-scoping.md`](references/ingest-scoping.md).
 
 | Source | What gets pulled | Auth |
 |---|---|---|
 | **Fathom** | 1:1 transcripts since the profile's `last-synthesized` date | `FATHOM_API_KEY` env var |
 | **Slack** | DMs + shared-thread messages from the last 14 days | User-authorized MCP (`/connect slack`) |
 | **Gmail** | Threads where both parties are direct participants, last 14 days | User-authorized MCP (`/connect gmail`) |
+| **Signal** | Quick Notes wins/friction/sentiment/goal-health (**direct reports only**, `SIGNAL_INGEST=1`). Raw narration cached-only; distilled into `## Signal Read`. | `signal_*` MCP (Phase 1) |
 
 Three filters apply before content reaches the synthesizer:
 1. **Third-party name stripping** — names other than you and the target person become role descriptors

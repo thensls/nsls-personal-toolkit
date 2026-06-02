@@ -74,6 +74,7 @@ STANDARD_SECTION_HEADINGS = {
     "Meeting Patterns",
     "Meeting History",
     "Personal",
+    "Signal Read",  # regenerated each run from distilled Quick Notes signal
     # Note: "Coaching Goals" and "Relationship Health" are NOT in this list.
     # They contain user-curated runtime data (active goals, the emoji chart,
     # journal entries) and must be preserved verbatim like human-authored sections.
@@ -235,6 +236,58 @@ def build_user_prompt(data):
             for g in lop:
                 sections.append(f"  - {g.get('name', '')} ({g.get('cascade_level', '')}, {g.get('status', '')}): {g.get('description', '')}")
 
+    # --- Signal (Quick Notes) — distilled, pre-screened for sensitivity ---
+    # Phase 1: only the NORMALIZED signal reaches the prompt. Raw weekly narration
+    # stays cache-only (fetch_signal.py already dropped HR/health/comp items). The
+    # synthesizer must still apply the KB sensitive-content rubric: write only
+    # shareable facts, never paste a quote that names comp/health/personnel status.
+    signal = data.get("signal")
+    if signal:
+        sections.append("\n## Signal — Quick Notes (distilled; apply the sensitive-content rubric)")
+        s = signal.get("sentiment") or {}
+        if s:
+            sections.append(
+                f"- Sentiment: latest score {s.get('score')} (4w avg {s.get('score_4w_avg')}, "
+                f"8w slope {s.get('slope_8w')}); reversal={s.get('has_recent_reversal')}, "
+                f"novel_low={s.get('is_novel_low')}, friction_streak_weeks={s.get('friction_streak_weeks')}, "
+                f"quick_notes_active={s.get('quick_notes_active')}"
+            )
+        wins = signal.get("wins") or []
+        if wins:
+            sections.append("- Recent wins (shareable):")
+            for w in wins[:8]:
+                sections.append(f"  - [{w.get('week','')}] {w.get('text','')}")
+        fr = signal.get("friction") or []
+        if fr:
+            sections.append("- Recurring friction (themes — de-personalize if sensitive):")
+            for f in fr[:8]:
+                sections.append(f"  - [{f.get('week','')}] {f.get('text','')} ({f.get('category','')})")
+        goals = signal.get("goals") or []
+        if goals:
+            sections.append("- Goal health:")
+            for g in goals[:8]:
+                sections.append(f"  - {g.get('name','')}: {g.get('health','')} "
+                                f"(updated {g.get('weeks_since_update','?')}w ago"
+                                f"{', FLAGGED' if g.get('flagged') else ''})")
+        sub = signal.get("submitted_weeks") or []
+        if sub:
+            sections.append(f"- Submission cadence: {len(sub)} weeks submitted; most recent {sub[0]}")
+        dropped = signal.get("sensitive_dropped") or []
+        if dropped:
+            sections.append(f"- ({len(dropped)} item(s) withheld by the sensitivity pre-filter — do not attempt to recover them)")
+        sections.append(
+            "\nUsing ONLY the distilled signal above, produce a `## Signal Read` section with these lines:\n"
+            "- **Sentiment:** trajectory in plain words (e.g. 'steady; dipped wk of X, recovered'). No raw score dump.\n"
+            "- **Recent wins:** 1-3, named + week.\n"
+            "- **Recurring friction (themes):** theme + streak weeks; de-personalize anything sensitive.\n"
+            "- **Goal health:** counts + any flagged.\n"
+            "- **Submission cadence:** weekly, or a gap of N weeks.\n"
+            "Then, if the signal shows evidence relevant to an ACTIVE coaching goal, emit a "
+            "`<!-- DIGEST: Signal evidence for [goal] — [observation] -->` comment so the biweekly "
+            "review can surface it for approval. NEVER write directly into Coaching Goals; it is "
+            "user-curated. NEVER include comp, health, family, or personnel-status content."
+        )
+
     # --- Existing profiles ---
     existing = data.get("existing_profile")
     if existing:
@@ -314,6 +367,7 @@ Relationship type for this person: **{relationship_type}**
 12. **[Conditional coaching sections per relationship_type — see RELATIONSHIP FRAME in system prompt]**
 13. `## Projects Together` — confirmed only: {json.dumps(confirmed_list)}
 14. `## Personal` — family/interests/life events bullets, with Last updated date.
+15. `## Signal Read` — ONLY if a Signal block was provided above. Follow the line structure in that block. Distilled facts only; apply the sensitive-content rubric.
 
 ## Conditional sections (based on relationship_type)
 
@@ -352,6 +406,8 @@ def determine_sources(data):
         sources.append("existing-slt-profile")
     if data.get("projects"):
         sources.append("project-inference")
+    if data.get("signal"):
+        sources.append("signal")
     return sources
 
 
