@@ -451,11 +451,17 @@ SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
 echo "$ATTENDEE_NAMES" | python3.12 \
   ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_management_for_day.py \
   --people-stdin --weeks 4
+
+# Loops to close with people you're seeing today (durable ledger, Phase 4):
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/loop_ledger.py \
+  --for "$ATTENDEE_NAMES"
 ```
 
-Returns `{enabled, buckets:[{person, celebrate, develop, unblock:{text,streak}, cadence_flag,
-sentiment_flag}], top3_candidates}`. Raw Quick Notes never touch the vault — the script returns
-only the already-distilled, sensitivity-screened fields.
+`surface_management_for_day` returns `{enabled, buckets:[{person, celebrate, develop,
+unblock:{text,streak}, cadence_flag, sentiment_flag}], top3_candidates}`. `loop_ledger --for`
+returns `{close_the_loop:[{person,themes}], open:[...]}` filtered to today's people. Raw Quick
+Notes never touch the vault — both return only distilled, sensitivity-screened fields.
 
 **Format in the morning note** (skip the section entirely if `enabled:false` or `buckets` empty):
 
@@ -466,11 +472,15 @@ only the already-distilled, sensitivity-screened fields.
     🎉 Celebrate: [celebrate] — say it in their preferred channel today
     🌱 Develop:   [develop.text] (from "[develop.goal_title]")
     🔧 Unblock:   [unblock.text] (streak [N] wks) — own a fix + close the loop
+    🔁 Close loop: [loop_ledger close_the_loop themes] — resolved; tell them it was heard
     ⚠ [cadence_flag / sentiment_flag, if present]
 ```
 
 **Rules:**
 - One line per bucket; drop any bucket that's null for that person.
+- **🔁 Close loop** fires when `loop_ledger --for` lists this person in `close_the_loop` — a
+  friction of theirs resolved and you haven't told them. You're seeing them today: perfect moment.
+  When the builder confirms they closed it, run `loop_ledger.py --close "<name>" --note "..."`.
 - **Feed the Top 3:** every entry in `top3_candidates` (friction streak ≥3 or a novel sentiment
   low on a direct report) is a candidate for the Morning Top 3 below — a recurring blocker on a
   report is high-leverage, only-you work. Name it in the Top 3 if present.

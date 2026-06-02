@@ -454,9 +454,20 @@ SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
 ```
 
 Returns `{week_label, submitted, team_size, wins_count, celebrate_candidates,
-develop_candidates, unblock_candidates (sorted by streak), cadence_alerts, loop_closure:
-{resolved_check, emerging}, sensitive_dropped}`. Friction quotes are sensitivity-screened;
-raw Quick Notes never reach the vault.
+develop_candidates, unblock_candidates (sorted by streak), cadence_alerts, sensitive_dropped}`.
+Friction quotes are sensitivity-screened; raw Quick Notes never reach the vault.
+
+Then reconcile the **durable loop-closure ledger** (Phase 4) — this persists friction
+episodes across weeks so a resolved-but-never-closed loop keeps rolling forward:
+
+```bash
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/loop_ledger.py --update
+```
+
+Returns `{close_the_loop:[{person,themes,resolved_week}], open:[{person,themes,weeks_open}],
+p1_candidates:[{person,weeks_open}]}`. `close_the_loop` = friction that resolved but you
+haven't told the person yet (the trust gap); `p1_candidates` = loops open ≥3 weeks.
 
 This drives a **Management Cadence** block in the Week Plan (Step 3) and the
 **three weekly management intentions** — the core of the lane:
@@ -469,9 +480,11 @@ This drives a **Management Cadence** block in the Week Plan (Step 3) and the
   🌱 Develop:   [pick from develop_candidates]  — the goal-linked move
   🔧 Unblock:   [pick from unblock_candidates]  — top streak first; own a fix + close the loop
 
-**Loop-closure (last week → this week):**
-  - Resolved? [loop_closure.resolved_check people] — friction streak broke; confirm the fix and tell them it was heard
-  - Emerging: [loop_closure.emerging] — novel low / new streak; address before it compounds
+**🔁 Close the loop (resolved — go tell them):**
+  - [close_the_loop: person — themes] — friction resolved [resolved_week]; confirm the fix and tell them it was heard
+
+**Still open:**
+  - [open: person — themes (N wks)] — [⚠ P1 if in p1_candidates: open ≥3 wks, trust risk]
 
 **Cadence:** [cadence_alerts] — [chronic → is Quick Notes right for them? / lapsed → check in]
 ```
@@ -479,10 +492,11 @@ This drives a **Management Cadence** block in the Week Plan (Step 3) and the
 **Rules:**
 - The three intentions are the point — exactly one per bucket, each on a *different* report
   (recognition + development + unblocking spread across the team, never stacked on one person).
-- **Streak ≥3 in `unblock_candidates` is a trust emergency** — it should usually become the
+- **Streak ≥3 / any `p1_candidates` loop is a trust emergency** — it should usually become the
   unblock intention and may warrant a Top-3 slot this week.
-- **Loop-closure is the highest-leverage habit:** a `resolved_check` person means a friction
-  streak just broke — the move is to *tell them* it was heard and what changed. Don't skip it.
+- **Closing loops is the highest-leverage habit:** for each `close_the_loop` person, the move is
+  to *tell them* it was heard and what changed. When you confirm you've done it, I run
+  `loop_ledger.py --close "<name>" --note "<what you told them>"` so it stops rolling forward.
 - A `chronic` cadence alert (rarely submits) is a different conversation than a `lapsed` one —
   chronic may mean Quick Notes isn't the right instrument for that person; lapsed is a check-in.
 - Skip the whole lane if `enabled:false` or `available:false`.

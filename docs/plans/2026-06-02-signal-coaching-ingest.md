@@ -74,9 +74,14 @@ matter by having managers act on them. The loop is open.
 - [x] open-week SKILL.md Step 2.5 + Week Plan "Management Cadence" block: three-intentions prompt (1 celebrate / 1 develop / 1 unblock on three *different* reports), loop-closure, cadence rules. Tested live: 8/10 submitted, Trina loop-closure flagged, Chelsea health line dropped.
 - [~] Coaching-goal progress review folded into develop_candidates (full per-goal evidence diff stays in the biweekly sweep). Phase 4 (cross-week loop-closure ledger) still open.
 
-### Phase 4 — Loop-closure tracking (R10) — hardest, highest culture payoff
-- [ ] Track surfaced friction → resolution → "told the person" state across weeks.
-- [ ] Unclosed loops roll forward as P1 in open-week.
+### Phase 4 — Loop-closure tracking (R10) — DONE
+- [x] `loop_ledger.py` — durable JSON ledger at `03-meta/loop-closure-ledger.json`. Models friction *episodes* (recurring streak ≥2, keyed by slug + started_week) through open → resolved → closed. `--update` reconciles against the team summary (opens loops on recurring friction, resolves when the streak ends, backfills just-broken streaks); `--close "<name>" --note` closes; `--for "<names>"` filters for open-day; themes sensitivity-screened.
+- [x] Roll-forward: resolved-but-unclosed loops persist in `close_the_loop` until closed; loops open ≥3 weeks → `p1_candidates`.
+- [x] open-week Step 2.5: ledger drives the "🔁 Close the loop" + "Still open / P1" sections; closing is a one-liner (`--close`). open-day Management lane: `--for` adds a "🔁 Close loop" line for today's people.
+- Tested live: opened Chris + Davo (streak 2), backfilled+resolved Trina (streak broke); idempotent; `--close` drops it from the roll-forward.
+
+## Decision: where loop-closure state lives
+Resolved (was an open question): a durable **JSON ledger in `03-meta/`** (not profile, not cache). Persists + iCloud-syncs, machine-readable for the scripts, themes already sensitivity-screened so it honors distilled-in-vault.
 
 ## Verification
 - **Safety gate (blocking):** on a real report with known-sensitive Quick Notes, confirm the raw stays in cache and the vault profile contains only rubric-safe distillation. Manual review by Kevin before Phase 1 ships to all reports.
