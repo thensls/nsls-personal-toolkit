@@ -56,12 +56,12 @@ matter by having managers act on them. The loop is open.
 - [x] `fetch_signal.py` v1 — normalizer + cache writer + mechanical sensitivity pre-filter + `--list-reports` (direct-report scoping). Tested: ER/family line dropped, real wins/friction kept after lexicon precision fix.
 - [x] Extend `synthesize_profile.py` — accepts `signal`; renders the distilled (pre-screened) block; emits `## Signal Read`; coaching evidence as `<!-- DIGEST -->` (not into curated Coaching Goals); `sources += signal`.
 - [x] Gate documented (`SIGNAL_INGEST=1`, direct reports only) in SKILL.md + Ingest Sources table. Flag NOT yet enabled in `.env` (Kevin's call).
-- [~] Acceptance gate: ran on **Brandon Evans** (real LLM) → leak scan clean, `## Signal Read` distilled, 2 DIGEST suggestions, written to `/tmp` not the vault. **Awaiting Kevin's review + 1–2 more reports before enabling on real profiles.**
+- [x] Acceptance gate: ran on Brandon (real LLM, /tmp) → clean; then **enabled `SIGNAL_INGEST=1` and spliced `## Signal Read` into all 10 direct-report profiles. Leak scan across all 10: 0 hits.** Deterministic splice used (no paraphrase drift); LLM prose comes on the next full sweep.
 
-### Phase 1.5 — Headless parity (cron self-sufficiency) (D3)
-- [ ] Investigate the Signal/employee-profiles read surface (REST endpoints the MCP wraps, or scoped Supabase read replica `obsfxvtflbmrfjcbmxoj`).
-- [ ] `fetch_signal.py` v2 — token-direct path so `biweekly_sweep.py` (cron) pulls Signal with no MCP.
-- [ ] `biweekly_sweep.py` — add `signal_available` to the manifest.
+### Phase 1.5 — Headless parity (cron self-sufficiency) (D3) — DONE EARLY
+- [x] Read surface confirmed: `employee-profiles` exposes `GET /api/mcp/person/<slug>[/history|/goals]`, `/wins`, `/friction`, `/team-summary` with `Authorization: Bearer <token>` (token at `~/.config/nsls/signal-token`). No Supabase-direct needed.
+- [x] `fetch_signal.py --fetch` — token-direct path (stdlib urllib, zero deps); the all-10 run used it with zero MCP-in-context. Cron-ready.
+- [ ] `biweekly_sweep.py` — add `signal_available` to the manifest + call `fetch_signal --fetch` per direct report (wire into the scheduled sweep).
 
 ### Phase 2 — `/open-day` Management surfacer (R5)
 - [ ] Add the Management lane section (celebrate / develop / unblock) keyed to today's people.

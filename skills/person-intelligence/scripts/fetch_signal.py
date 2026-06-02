@@ -37,10 +37,63 @@ import pathlib
 import re
 import subprocess
 import sys
+import urllib.parse
+import urllib.request
 
 CACHE_ROOT = pathlib.Path.home() / ".cache" / "person-intelligence" / "signal"
 TTL_DAYS = 30
 SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
+
+# --- Phase 1.5: token-direct Signal API (mirrors employee-profiles mcp-server) ---
+SIGNAL_BASE_URL = os.environ.get(
+    "SIGNAL_API_URL", "https://employee-profiles-production.up.railway.app"
+).rstrip("/")
+
+
+def load_signal_token() -> str:
+    tok = (os.environ.get("SIGNAL_API_TOKEN") or "").strip()
+    if tok:
+        return tok
+    cfg = os.environ.get("XDG_CONFIG_HOME")
+    token_file = (pathlib.Path(cfg) / "nsls" / "signal-token") if cfg \
+        else (pathlib.Path.home() / ".config" / "nsls" / "signal-token")
+    try:
+        tok = token_file.read_text().strip()
+    except FileNotFoundError:
+        raise SystemExit(f"No Signal token. Set SIGNAL_API_TOKEN or create {token_file} (/signal-setup).")
+    if not tok:
+        raise SystemExit(f"Signal token file {token_file} is empty (/signal-setup).")
+    return tok
+
+
+def _signal_get(path: str, params: dict | None = None, token: str | None = None):
+    token = token or load_signal_token()
+    url = SIGNAL_BASE_URL + path
+    if params:
+        url += "?" + urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        return json.loads(r.read().decode())
+
+
+def fetch_bundle(slug: str, weeks: int) -> dict:
+    """Token-direct pull of the three per-person endpoints (no MCP needed)."""
+    token = load_signal_token()
+    enc = urllib.parse.quote(slug)
+    bundle = {"slug": slug}
+    try:
+        bundle["person"] = _signal_get(f"/api/mcp/person/{enc}", token=token)
+    except Exception as e:
+        log(f"{slug}: person fetch failed: {e}"); bundle["person"] = None
+    try:
+        bundle["history"] = _signal_get(f"/api/mcp/person/{enc}/history", {"weeks": weeks}, token=token)
+    except Exception as e:
+        log(f"{slug}: history fetch failed: {e}"); bundle["history"] = None
+    try:
+        bundle["goals"] = _signal_get(f"/api/mcp/person/{enc}/goals", {"weeks": weeks}, token=token)
+    except Exception as e:
+        log(f"{slug}: goals fetch failed: {e}"); bundle["goals"] = None
+    return bundle
 
 # --- Sensitivity pre-filter -------------------------------------------------
 # Mechanical first line of defense. The synthesizer's LLM rubric pass is the
@@ -217,6 +270,8 @@ def main() -> None:
     ap.add_argument("--list-reports", action="store_true")
     ap.add_argument("--slug")
     ap.add_argument("--weeks", type=int, default=12)
+    ap.add_argument("--fetch", action="store_true",
+                    help="Token-direct: pull person/history/goals from the Signal API (no MCP, no stdin).")
     args = ap.parse_args()
 
     if args.list_reports:
@@ -226,10 +281,13 @@ def main() -> None:
     if not args.slug:
         raise SystemExit("--slug required (or use --list-reports)")
 
-    raw = sys.stdin.read()
-    if not raw.strip():
-        raise SystemExit("No raw Signal bundle on stdin. Pipe {person,history,goals} JSON.")
-    bundle = json.loads(raw)
+    if args.fetch:
+        bundle = fetch_bundle(args.slug, args.weeks)
+    else:
+        raw = sys.stdin.read()
+        if not raw.strip():
+            raise SystemExit("No raw Signal bundle on stdin. Pipe {person,history,goals} JSON, or use --fetch.")
+        bundle = json.loads(raw)
     bundle.setdefault("fetched_at", dt.datetime.now(dt.UTC).isoformat())
 
     p = write_raw_cache(args.slug, bundle)
