@@ -63,10 +63,11 @@ matter by having managers act on them. The loop is open.
 - [x] `fetch_signal.py --fetch` — token-direct path (stdlib urllib, zero deps); the all-10 run used it with zero MCP-in-context. Cron-ready.
 - [ ] `biweekly_sweep.py` — add `signal_available` to the manifest + call `fetch_signal --fetch` per direct report (wire into the scheduled sweep).
 
-### Phase 2 — `/open-day` Management surfacer (R5)
-- [ ] Add the Management lane section (celebrate / develop / unblock) keyed to today's people.
-- [ ] Live `signal_wins/friction(weeks=1)` pull filtered to today's direct reports.
-- [ ] Streak-≥3 friction → Top-3 Management candidate; cadence flag at N=2 wks.
+### Phase 2 — `/open-day` Management surfacer (R5) — DONE
+- [x] `surface_management_for_day.py` (new) — celebrate (Signal win) / develop (coaching goal) / unblock (Signal friction) for today's direct-report attendees; resolves person-redirect aliases (Red↔Jana); self-gates on `SIGNAL_INGEST`.
+- [x] Live per-report fetch via `fetch_signal --fetch --weeks 4` (per-attendee, not an org-wide daily sweep — the full-team scan is Phase 3's job).
+- [x] Streak-≥3 / novel-low → `top3_candidates` fed to the Morning Top 3; cadence flag at N=2 wks.
+- [x] open-day SKILL.md: "Management — today's people" section + format + Top-3 feed rules. Tested on today's calendar (Chelsea + Trina surfaced; non-reports excluded).
 
 ### Phase 3 — `/open-week` Management cadence lane (R6)
 - [ ] Pull `signal_team_summary`; render week pulse.

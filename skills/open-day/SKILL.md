@@ -440,6 +440,45 @@ The script returns JSON with `surfaced_actions` (up to 3 actions, distributed ac
   /person-intelligence biweekly sweep`
 - If `surfaced_actions` is empty AND no sweep error, skip this section entirely
 
+### Management — today's people (Signal)
+
+Only runs when `SIGNAL_INGEST=1`. For the **direct reports on today's calendar**, pull
+live Signal (Quick Notes) and surface the three jobs a great manager does each touchpoint:
+celebrate a win, develop toward a goal, remove a friction. Same `$ATTENDEE_NAMES` as above.
+
+```bash
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
+echo "$ATTENDEE_NAMES" | python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_management_for_day.py \
+  --people-stdin --weeks 4
+```
+
+Returns `{enabled, buckets:[{person, celebrate, develop, unblock:{text,streak}, cadence_flag,
+sentiment_flag}], top3_candidates}`. Raw Quick Notes never touch the vault — the script returns
+only the already-distilled, sensitivity-screened fields.
+
+**Format in the morning note** (skip the section entirely if `enabled:false` or `buckets` empty):
+
+```
+🧭 Management — today's people
+
+  [Person]
+    🎉 Celebrate: [celebrate] — say it in their preferred channel today
+    🌱 Develop:   [develop.text] (from "[develop.goal_title]")
+    🔧 Unblock:   [unblock.text] (streak [N] wks) — own a fix + close the loop
+    ⚠ [cadence_flag / sentiment_flag, if present]
+```
+
+**Rules:**
+- One line per bucket; drop any bucket that's null for that person.
+- **Feed the Top 3:** every entry in `top3_candidates` (friction streak ≥3 or a novel sentiment
+  low on a direct report) is a candidate for the Morning Top 3 below — a recurring blocker on a
+  report is high-leverage, only-you work. Name it in the Top 3 if present.
+- A `cadence_flag` ("no Quick Notes in ≥2 wks" / "not submitting") is a check-in prompt — surface
+  it even if the person has no other bucket.
+- This complements Coaching Actions above (which is goal-driven); Management is signal-driven.
+  If a person appears in both, fold into one block under their name.
+
 ### Slack follow-ups
 *Populated only if Step 2i found anything. Outstanding asks and unverified commitments surface here so the day starts with the threads visible.*
 
