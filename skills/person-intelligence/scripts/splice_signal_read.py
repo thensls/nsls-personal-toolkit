@@ -30,6 +30,10 @@ import sys
 SECTION = "## Signal Read"
 
 
+def log(msg: str) -> None:
+    print(f"[splice] {msg}", file=sys.stderr)
+
+
 def sentiment_phrase(s: dict) -> str:
     if not s:
         return "no sentiment data"
@@ -140,12 +144,35 @@ def splice(text: str, section: str) -> str:
     return text.rstrip() + "\n\n" + section
 
 
+def resolve_redirect(profile_path: pathlib.Path) -> pathlib.Path:
+    """If the target is a `type: person-redirect` stub, follow `canonical_profile`
+    to the real profile. Coaching content must never land on a redirect stub —
+    the org chart yields the Rippling name (e.g. Jana Amsellem) but the canonical
+    profile lives under the preferred name (Red Akasha)."""
+    if not profile_path.exists():
+        return profile_path
+    head = profile_path.read_text(encoding="utf-8")[:600]
+    if "type: person-redirect" not in head:
+        return profile_path
+    m = re.search(r'canonical_profile:\s*"?\[\[([^\]]+)\]\]"?', head)
+    if not m:
+        log(f"WARN: {profile_path.name} is a redirect stub but has no canonical_profile; leaving as-is")
+        return profile_path
+    canonical = profile_path.parent / f"{m.group(1).strip()}.md"
+    if not canonical.exists():
+        log(f"WARN: canonical profile {canonical.name} not found; leaving redirect as-is")
+        return profile_path
+    log(f"redirect: {profile_path.name} → {canonical.name}")
+    return canonical
+
+
 def main() -> None:
     payload = json.loads(sys.stdin.read())
     profile_path = pathlib.Path(payload["profile_path"])
     signal = payload["signal"]
     if not profile_path.exists():
         raise SystemExit(f"profile not found: {profile_path}")
+    profile_path = resolve_redirect(profile_path)
 
     today = dt.date.today().isoformat()
     section = build_section(signal, today)
