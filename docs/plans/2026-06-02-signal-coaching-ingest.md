@@ -61,7 +61,7 @@ matter by having managers act on them. The loop is open.
 ### Phase 1.5 — Headless parity (cron self-sufficiency) (D3) — DONE EARLY
 - [x] Read surface confirmed: `employee-profiles` exposes `GET /api/mcp/person/<slug>[/history|/goals]`, `/wins`, `/friction`, `/team-summary` with `Authorization: Bearer <token>` (token at `~/.config/nsls/signal-token`). No Supabase-direct needed.
 - [x] `fetch_signal.py --fetch` — token-direct path (stdlib urllib, zero deps); the all-10 run used it with zero MCP-in-context. Cron-ready.
-- [ ] `biweekly_sweep.py` — add `signal_available` to the manifest + call `fetch_signal --fetch` per direct report (wire into the scheduled sweep).
+- [x] `biweekly_sweep.py` — `ingest_sources_available.signal` + per-direct-report `signal_ingest_planned` + `signal_slug` in the manifest; SKILL.md documents the orchestrator running `fetch_signal --fetch` for those rels (cron-ready, no MCP).
 
 ### Phase 2 — `/open-day` Management surfacer (R5) — DONE
 - [x] `surface_management_for_day.py` (new) — celebrate (Signal win) / develop (coaching goal) / unblock (Signal friction) for today's direct-report attendees; resolves person-redirect aliases (Red↔Jana); self-gates on `SIGNAL_INGEST`.
@@ -69,10 +69,10 @@ matter by having managers act on them. The loop is open.
 - [x] Streak-≥3 / novel-low → `top3_candidates` fed to the Morning Top 3; cadence flag at N=2 wks.
 - [x] open-day SKILL.md: "Management — today's people" section + format + Top-3 feed rules. Tested on today's calendar (Chelsea + Trina surfaced; non-reports excluded).
 
-### Phase 3 — `/open-week` Management cadence lane (R6)
-- [ ] Pull `signal_team_summary`; render week pulse.
-- [ ] Three-intentions prompt (1 celebrate / 1 develop / 1 unblock, distributed across reports).
-- [ ] Cadence audit + coaching-goal progress review.
+### Phase 3 — `/open-week` Management cadence lane (R6) — DONE
+- [x] `fetch_signal.py --team-summary` (token-direct) + `surface_management_for_week.py`: celebrate/develop/unblock candidates, cadence alerts (chronic vs lapsed), and loop-closure (just-broken streaks → "tell them"; novel-lows/just-started → emerging). Friction quotes sensitivity-screened.
+- [x] open-week SKILL.md Step 2.5 + Week Plan "Management Cadence" block: three-intentions prompt (1 celebrate / 1 develop / 1 unblock on three *different* reports), loop-closure, cadence rules. Tested live: 8/10 submitted, Trina loop-closure flagged, Chelsea health line dropped.
+- [~] Coaching-goal progress review folded into develop_candidates (full per-goal evidence diff stays in the biweekly sweep). Phase 4 (cross-week loop-closure ledger) still open.
 
 ### Phase 4 — Loop-closure tracking (R10) — hardest, highest culture payoff
 - [ ] Track surfaced friction → resolution → "told the person" state across weeks.

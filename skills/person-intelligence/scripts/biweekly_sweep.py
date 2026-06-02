@@ -259,6 +259,10 @@ def build_manifest(vault_path, cache_dir):
     fathom_available = bool(os.environ.get("FATHOM_API_KEY"))
     slack_available = not os.environ.get("SKIP_SLACK_INGEST")
     gmail_available = not os.environ.get("SKIP_GMAIL_INGEST")
+    # Signal: direct reports only, and only when opted in. The orchestrator runs
+    # `fetch_signal.py --fetch --slug <signal_slug>` for each rel where
+    # signal_ingest_planned is true and folds the result into the synthesize payload.
+    signal_available = os.environ.get("SIGNAL_INGEST") == "1"
 
     for i, rel in enumerate(rel_set, 1):
         last_synth = read_last_synthesized(vault_path, rel["name"])
@@ -280,6 +284,10 @@ def build_manifest(vault_path, cache_dir):
 
         rel["slack_ingest_planned"] = slack_available and bool(rel.get("slack"))
         rel["gmail_ingest_planned"] = gmail_available and bool(rel.get("email"))
+        is_direct_report = rel.get("tracking_reason") == "direct_report"
+        rel["signal_ingest_planned"] = signal_available and is_direct_report
+        if rel["signal_ingest_planned"]:
+            rel["signal_slug"] = rel["name"].lower().replace("'", "").replace(".", "").replace(" ", "-")
 
     # 4. Assemble manifest
     manifest = {
@@ -295,6 +303,7 @@ def build_manifest(vault_path, cache_dir):
             "fathom": fathom_available,
             "slack": slack_available,
             "gmail": gmail_available,
+            "signal": signal_available,
         },
         "relationship_count": len(rel_set),
         "relationships": rel_set,

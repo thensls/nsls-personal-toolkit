@@ -443,6 +443,50 @@ Before suggesting priorities, surface patterns:
 - **Cross-week insight signal:** If the same theme appeared in the `## Insight Reflection` of 2+ consecutive weekly notes (from Step 1d), escalate it: "This is week [N] of [theme] surfacing in your weekly reflection. That's a structural pattern, not a one-off. What would it take to address it?"
 - **Knowledge graph accretion gap (from Step 1f):** If the knowledge-researcher flagged owned SLT topics as present-but-unpopulated for 2+ weeks running, surface it: "You own [N] SLT topics in the knowledge graph with no recorded Current State, Key Decisions, or Open Questions. The graph has [X] meeting mentions for these topics but zero synthesis. Either close-day 4c isn't firing on topics you own, or the graph is noise. Which?"
 
+### Step 2.5: Management cadence lane (Signal)
+
+Only runs when `SIGNAL_INGEST=1`. One call to the weekly team summary becomes the
+manager's operating rhythm for the week. Pull it:
+
+```bash
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_management_for_week.py
+```
+
+Returns `{week_label, submitted, team_size, wins_count, celebrate_candidates,
+develop_candidates, unblock_candidates (sorted by streak), cadence_alerts, loop_closure:
+{resolved_check, emerging}, sensitive_dropped}`. Friction quotes are sensitivity-screened;
+raw Quick Notes never reach the vault.
+
+This drives a **Management Cadence** block in the Week Plan (Step 3) and the
+**three weekly management intentions** — the core of the lane:
+
+```
+### Management Cadence — week of [week_label]   ([submitted]/[team_size] submitted · [wins_count] wins)
+
+**Set 3 intentions — one each, on three different reports:**
+  🎉 Celebrate: [pick from celebrate_candidates] — say it publicly, in their channel
+  🌱 Develop:   [pick from develop_candidates]  — the goal-linked move
+  🔧 Unblock:   [pick from unblock_candidates]  — top streak first; own a fix + close the loop
+
+**Loop-closure (last week → this week):**
+  - Resolved? [loop_closure.resolved_check people] — friction streak broke; confirm the fix and tell them it was heard
+  - Emerging: [loop_closure.emerging] — novel low / new streak; address before it compounds
+
+**Cadence:** [cadence_alerts] — [chronic → is Quick Notes right for them? / lapsed → check in]
+```
+
+**Rules:**
+- The three intentions are the point — exactly one per bucket, each on a *different* report
+  (recognition + development + unblocking spread across the team, never stacked on one person).
+- **Streak ≥3 in `unblock_candidates` is a trust emergency** — it should usually become the
+  unblock intention and may warrant a Top-3 slot this week.
+- **Loop-closure is the highest-leverage habit:** a `resolved_check` person means a friction
+  streak just broke — the move is to *tell them* it was heard and what changed. Don't skip it.
+- A `chronic` cadence alert (rarely submits) is a different conversation than a `lapsed` one —
+  chronic may mean Quick Notes isn't the right instrument for that person; lapsed is a check-in.
+- Skip the whole lane if `enabled:false` or `available:false`.
+
 ### Step 3: Draft week plan
 
 Present to the builder:
@@ -453,6 +497,9 @@ Present to the builder:
 ### Coaching Notes
 [1-2 pattern observations from Step 2 — be direct, not preachy]
 [If cross-week insight signal detected: "For the [N]th consecutive week, [signal]. [What this suggests structurally, not as a one-off]."]
+
+### Management Cadence
+[The block from Step 2.5: 3 intentions (celebrate/develop/unblock on 3 different reports) + loop-closure + cadence. Skip if SIGNAL_INGEST disabled.]
 
 ### Body & Recovery (last 7 days)
 - **VO2 max:** [latest reading] ml/(kg·min) (as of [date]) — 4-week delta: [+/-N.N]

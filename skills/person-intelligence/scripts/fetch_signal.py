@@ -95,6 +95,11 @@ def fetch_bundle(slug: str, weeks: int) -> dict:
         log(f"{slug}: goals fetch failed: {e}"); bundle["goals"] = None
     return bundle
 
+
+def fetch_team_summary(manager_slug: str | None = None, week: str | None = None) -> dict:
+    """Token-direct weekly team pulse (submissions, friction+streaks, wins, deltas)."""
+    return _signal_get("/api/mcp/team-summary", {"manager": manager_slug, "week": week})
+
 # --- Sensitivity pre-filter -------------------------------------------------
 # Mechanical first line of defense. The synthesizer's LLM rubric pass is the
 # second. Anything matching here is flagged sensitive=True: excluded from the
@@ -272,10 +277,18 @@ def main() -> None:
     ap.add_argument("--weeks", type=int, default=12)
     ap.add_argument("--fetch", action="store_true",
                     help="Token-direct: pull person/history/goals from the Signal API (no MCP, no stdin).")
+    ap.add_argument("--team-summary", action="store_true",
+                    help="Token-direct: pull the weekly team summary (the manager's team pulse).")
+    ap.add_argument("--manager", help="Manager slug for --team-summary (default: token owner).")
+    ap.add_argument("--week", help="Friday YYYY-MM-DD for --team-summary (default: most recent).")
     args = ap.parse_args()
 
     if args.list_reports:
         print(json.dumps(list_reports(), indent=2))
+        return
+
+    if args.team_summary:
+        print(json.dumps(fetch_team_summary(args.manager, args.week), indent=2))
         return
 
     if not args.slug:

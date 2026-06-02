@@ -188,6 +188,8 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
 
 Outputs a manifest at `~/.cache/person-intelligence/biweekly-sweep-YYYY-MM-DD.manifest.json` listing each tracked relationship, last-synthesized date, count of new Fathom meetings since that date, and which ingest sources are available. The Claude orchestrator session reads this manifest and runs per-person synthesis as needed.
 
+**Signal ingest in the sweep:** when `SIGNAL_INGEST=1`, each direct-report relationship carries `signal_ingest_planned: true` + a `signal_slug`. For those, the orchestrator runs `fetch_signal.py --fetch --slug <signal_slug> --weeks 12` (token-direct — no MCP needed, so the headless cron sweep works) and includes the normalized result as the `signal` field in the synthesize payload. Raw Quick Notes stay cache-only; only the distilled `## Signal Read` reaches the profile.
+
 Re-running on the same day is idempotent (`--resume` reads the existing manifest).
 
 ### Step 2: generate the team-pulse digest
