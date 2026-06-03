@@ -1,7 +1,7 @@
 <div id="plan-your-day" hx-target="#plan-your-day" hx-swap="outerHTML">
   <h3 class="font-semibold text-lg mb-1">Plan your day</h3>
   <p class="text-sm text-stone-600 mb-3">
-    Pick <strong>three</strong> priorities. Anything else goes on the Bonus list. Already done? Click <em>Done</em>. Don't want it? Click <em>Delete</em>. Everything is reversible — uncheck to undo.
+    Pick <strong>three</strong> priorities. Anything else goes on the Bonus list. Not today? Click <em>Defer</em>. Already done? Click <em>Done</em>. Don't want it? Click <em>Delete</em>. Everything is reversible — uncheck to undo.
   </p>
 
   {% if plan.suggestions %}
@@ -14,6 +14,7 @@
         <tr class="text-xs text-stone-500">
           <th class="px-2 py-1 w-12 text-center">Top 3</th>
           <th class="px-2 py-1 w-12 text-center">Bonus</th>
+          <th class="px-2 py-1 w-12 text-center">Defer</th>
           <th class="px-2 py-1 w-12 text-center">Done</th>
           <th class="px-2 py-1 w-12 text-center">Delete</th>
           <th class="px-2 py-1 text-left">Item</th>
@@ -36,6 +37,12 @@
                    hx-trigger="change">
           </td>
           <td class="px-2 py-1 text-center">
+            <input type="checkbox" {% if s.taken == 'deferred' %}checked{% endif %}
+                   hx-post="/plan-action"
+                   hx-vals='{"text": {{ s.text|tojson }}, "action": "defer"}'
+                   hx-trigger="change">
+          </td>
+          <td class="px-2 py-1 text-center">
             <input type="checkbox" {% if s.taken == 'dismissed' %}checked{% endif %}
                    hx-post="/plan-action"
                    hx-vals='{"text": {{ s.text|tojson }}, "action": "done"}'
@@ -48,7 +55,7 @@
                    hx-trigger="change">
           </td>
           <td class="px-2 py-1">
-            <span {% if s.taken == 'dismissed' %}class="line-through text-stone-400"{% endif %}>{{ s.text }}</span>
+            <span {% if s.taken in ('dismissed', 'deferred') %}class="line-through text-stone-400"{% endif %}>{{ s.text }}</span>
             {% if s.source %}<span class="text-xs text-stone-400 ml-1">({{ s.source }})</span>{% endif %}
           </td>
         </tr>

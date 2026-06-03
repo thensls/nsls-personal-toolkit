@@ -251,6 +251,24 @@ def _extract_dismissed(morning_section: str) -> set[str]:
     return items
 
 
+def _extract_deferred(morning_section: str) -> set[str]:
+    """Pull deferred item texts from `### Deferred` in Morning Check-in."""
+    items: set[str] = set()
+    in_section = False
+    for line in morning_section.splitlines():
+        stripped = line.strip()
+        if stripped == "### Deferred":
+            in_section = True
+            continue
+        if in_section and stripped.startswith("###"):
+            break
+        if in_section and stripped.startswith("- "):
+            text = stripped[2:].strip()
+            if text:
+                items.add(text)
+    return items
+
+
 def _build_plan_context(daily_md: str, vault_path: Path, today: str,
                        priorities: list, bonus: list) -> dict:
     """Build the Plan Your Day screen context: suggestions + carry-overs + taken state.
@@ -265,6 +283,7 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
     ai_items = _extract_ai_suggestions(morning)
     carryovers = _extract_carryovers(vault_path, today)
     dismissed = _extract_dismissed(morning)
+    deferred = _extract_deferred(morning)
 
     seen: set[str] = set()
     suggestions: list[dict] = []
@@ -280,6 +299,8 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
     for s in suggestions:
         if s["text"] in dismissed:
             s["taken"] = "dismissed"
+        elif s["text"] in deferred:
+            s["taken"] = "deferred"
         elif s["text"] in priority_texts:
             s["taken"] = "pri"
         elif s["text"] in bonus_texts:
@@ -348,6 +369,97 @@ def _remove_dismissed(md: str, text: str) -> str:
     section_end = None
     for i, line in enumerate(lines):
         if line.strip() == "### Dismissed":
+            section_start = i
+        elif section_start is not None and (line.startswith("### ") or line.startswith("## ")):
+            section_end = i
+            break
+    if section_start is None:
+        return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+    if section_end is None:
+        section_end = len(lines)
+
+    # Find and remove the target line within the section.
+    target_idx = None
+    for i in range(section_start + 1, section_end):
+        if lines[i].strip() == target:
+            target_idx = i
+            break
+    if target_idx is None:
+        return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+    del lines[target_idx]
+    section_end -= 1
+
+    # Check if any items remain in the section.
+    remaining = any(
+        lines[j].strip().startswith("- ")
+        for j in range(section_start + 1, section_end)
+    )
+    if not remaining:
+        # Remove the heading and surrounding blank lines.
+        del lines[section_start]
+        # Trailing blank line (now at section_start after heading removal).
+        if section_start < len(lines) and lines[section_start].strip() == "":
+            del lines[section_start]
+        # Preceding blank line.
+        if section_start > 0 and lines[section_start - 1].strip() == "":
+            del lines[section_start - 1]
+
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _add_deferred(md: str, text: str) -> str:
+    """Append `text` to the `### Deferred` section under `## Morning Check-in`.
+
+    Creates the section if it doesn't exist, placing it after the last `###`
+    subsection within Morning Check-in.
+    """
+    lines = md.splitlines()
+    # Find ### Deferred
+    deferred_idx = None
+    morning_end = len(lines)
+    in_morning = False
+    last_subsection_end = None
+    for i, line in enumerate(lines):
+        if line.strip() == "## Morning Check-in":
+            in_morning = True
+            continue
+        if in_morning and line.startswith("## ") and not line.startswith("### "):
+            morning_end = i
+            break
+        if in_morning and line.strip() == "### Deferred":
+            deferred_idx = i
+        if in_morning and line.startswith("### "):
+            last_subsection_end = i
+
+    if deferred_idx is not None:
+        # Find the end of the Deferred section to append
+        insert_at = deferred_idx + 1
+        for j in range(deferred_idx + 1, morning_end):
+            if lines[j].startswith("### ") or lines[j].startswith("## "):
+                break
+            insert_at = j + 1
+        lines.insert(insert_at, f"- {text}")
+    else:
+        # Create ### Deferred before the end of Morning Check-in
+        insert_at = morning_end
+        lines.insert(insert_at, "")
+        lines.insert(insert_at + 1, "### Deferred")
+        lines.insert(insert_at + 2, f"- {text}")
+        lines.insert(insert_at + 3, "")
+
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _remove_deferred(md: str, text: str) -> str:
+    """Remove `text` from the `### Deferred` section (undo a deferral)."""
+    lines = md.splitlines()
+    target = f"- {text}"
+    # First pass: find the Deferred section boundaries.
+    section_start = None
+    section_end = None
+    for i, line in enumerate(lines):
+        if line.strip() == "### Deferred":
             section_start = i
         elif section_start is not None and (line.startswith("### ") or line.startswith("## ")):
             section_end = i
@@ -1054,7 +1166,7 @@ def create_app(vault_path: str) -> Flask:
 
     @app.route("/reset-plan", methods=["POST"])
     def reset_plan():
-        """Reset Top 3, Bonus, and Dismissed back to empty scaffold."""
+        """Reset Top 3, Bonus, Dismissed, and Deferred back to empty scaffold."""
         today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         if not note_path.exists():
@@ -1062,7 +1174,7 @@ def create_app(vault_path: str) -> Flask:
 
         def reset(existing: str) -> str:
             # Clear Top 3 items
-            for heading in ("### My Top 3", "### Bonus", "### Dismissed"):
+            for heading in ("### My Top 3", "### Bonus", "### Dismissed", "### Deferred"):
                 lines = existing.splitlines()
                 section_start = None
                 section_end = len(lines)
@@ -1078,7 +1190,7 @@ def create_app(vault_path: str) -> Flask:
                         replacement = [heading, "1. [ ]", "2. [ ]", "3. [ ]", ""]
                     elif heading == "### Bonus":
                         replacement = [heading, ""]
-                    else:  # Dismissed — remove entirely
+                    else:  # Dismissed / Deferred — remove entirely
                         replacement = []
                     existing = "\n".join(lines[:section_start] + replacement + lines[section_end:])
                     if not existing.endswith("\n"):
@@ -1110,7 +1222,7 @@ def create_app(vault_path: str) -> Flask:
         """
         action = (request.form.get("action") or "").strip().lower()
         text = (request.form.get("text") or "").strip()
-        if action not in {"pri", "bonus", "done", "delete"}:
+        if action not in {"pri", "bonus", "done", "delete", "defer"}:
             return ("invalid action", 400)
         if not text or "\n" in text or "\r" in text or len(text) > 256:
             return ("invalid text", 400)
@@ -1133,6 +1245,15 @@ def create_app(vault_path: str) -> Flask:
                 if text in dismissed_items:
                     return _remove_dismissed(existing, text)
                 return _add_dismissed(existing, text)
+
+            # Defer: toggle in ### Deferred (reversible)
+            if action == "defer":
+                deferred_items = _extract_deferred(
+                    parse_daily_note_sections(existing).get("Morning Check-in", "")
+                )
+                if text in deferred_items:
+                    return _remove_deferred(existing, text)
+                return _add_deferred(existing, text)
 
             # If the suggestion already sits in Top 3 / Bonus and the user
             # clicked the same column again, treat it as "untake" — clear it.
@@ -1308,6 +1429,39 @@ def create_app(vault_path: str) -> Flask:
             return _serialize_habits(habits)
 
         safe_modify(habits_path, archive)
+        if not found[0]:
+            return ("habit not found", 404)
+        broadcast("30-habits/habits.md")
+        return render_template(
+            "_components/add_habit_form.html",
+            habits=_get_active_habits(),
+        )
+
+    @app.route("/habit/rename", methods=["POST"])
+    def habit_rename():
+        """Rename a habit, preserving its ID, streak, and log history."""
+        habit_id = request.form.get("habit_id", "").strip()
+        new_name = request.form.get("new_name", "").strip()
+        if not HABIT_ID_RE.fullmatch(habit_id):
+            return ("invalid habit_id", 400)
+        if not new_name or "\n" in new_name or "\r" in new_name:
+            return ("invalid new_name", 400)
+
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        if not habits_path.exists():
+            return ("", 404)
+        found = [False]
+
+        def rename(existing: str) -> str:
+            habits = parse_habits(existing)
+            target = next((h for h in habits["active"] if h["id"] == habit_id), None)
+            if target is None:
+                return existing
+            found[0] = True
+            target["name"] = new_name
+            return _serialize_habits(habits)
+
+        safe_modify(habits_path, rename)
         if not found[0]:
             return ("habit not found", 404)
         broadcast("30-habits/habits.md")

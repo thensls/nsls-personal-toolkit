@@ -11,12 +11,6 @@
 <h1 class="text-2xl font-bold mb-1">Today — {{ today_pretty }}</h1>
 <p class="text-sm text-stone-500 mb-6">Command Center</p>
 
-<div class="mb-4 flex justify-end">
-  <button hx-get="/manage-habits" hx-target="#habit-form-slot" hx-swap="innerHTML"
-          class="px-3 py-2 border rounded text-sm text-stone-700">Manage habits</button>
-</div>
-<div id="habit-form-slot"></div>
-
 <section class="bg-white rounded-lg shadow p-5 mb-4">
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Top 3</h2>
   {% if top_3 and top_3|selectattr("text")|list %}
@@ -63,16 +57,23 @@
   {% endif %}
 </section>
 
-{% if habits_today %}
 <section class="bg-white rounded-lg shadow p-5 mb-4">
-  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Habits today</h2>
+  <div class="flex justify-between items-center mb-3">
+    <h2 class="text-sm uppercase tracking-wider text-stone-500">Habits today</h2>
+    <button hx-get="/manage-habits" hx-target="#habit-form-slot" hx-swap="innerHTML"
+            class="px-3 py-2 border rounded text-sm text-stone-700">Manage habits</button>
+  </div>
+  <div id="habit-form-slot"></div>
+  {% if habits_today %}
   <ul class="space-y-2">
     {% for h in habits_today %}
       {% include "_components/habit_row.html" %}
     {% endfor %}
   </ul>
+  {% else %}
+  <p class="text-sm text-stone-500">No habits yet. Click Manage habits to add some.</p>
+  {% endif %}
 </section>
-{% endif %}
 
 {% endif %}
 {% endblock %}

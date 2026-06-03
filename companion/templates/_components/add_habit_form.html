@@ -6,8 +6,15 @@
     <p class="text-xs uppercase tracking-wider text-stone-500 mb-2">Current habits</p>
     <ul class="space-y-2">
       {% for h in habits %}
-      <li class="flex items-center justify-between border rounded px-3 py-2">
-        <span class="text-sm">{{ h.name }}</span>
+      <li class="flex items-center justify-between border rounded px-3 py-2 gap-2">
+        <input type="text" value="{{ h.name }}"
+               name="new_name"
+               hx-post="/habit/rename"
+               hx-vals='{"habit_id": "{{ h.id }}"}'
+               hx-target="#habit-form-slot"
+               hx-swap="innerHTML"
+               hx-trigger="change"
+               class="flex-1 text-sm border-0 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-300 rounded px-1 py-0">
         <button hx-post="/habit/archive"
                 hx-vals='{"habit_id": "{{ h.id }}"}'
                 hx-target="#habit-form-slot"
