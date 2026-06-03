@@ -1,0 +1,89 @@
+<!-- Week Command Center — read-only dashboard for a confirmed week -->
+<div class="max-w-2xl mx-auto space-y-4">
+
+{% if mode_badge %}
+<section class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+  <div class="flex items-center gap-2">
+    <span class="inline-block px-2 py-0.5 rounded text-xs font-semibold uppercase tracking-wider
+      {% if week_mode == 'push-to-build' %}bg-emerald-100 text-emerald-800
+      {% elif week_mode == 'push-to-close' %}bg-amber-100 text-amber-800
+      {% elif week_mode == 'protect' %}bg-violet-100 text-violet-800
+      {% else %}bg-stone-100 text-stone-700{% endif %}">{{ mode_badge }}</span>
+    {% if fm.get('mode-rationale') %}
+    <span class="text-sm text-stone-600">{{ fm['mode-rationale'] }}</span>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if stack_rank %}
+<section class="bg-white rounded-lg shadow p-5">
+  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Stack Rank</h2>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-stone-500 border-b">
+          <th class="px-2 py-1 text-left w-8">#</th>
+          <th class="px-2 py-1 text-left">Project</th>
+          <th class="px-2 py-1 text-left">LOP</th>
+          <th class="px-2 py-1 text-left">Role</th>
+          <th class="px-2 py-1 text-center">Impact</th>
+          <th class="px-2 py-1 text-center">Effort</th>
+          <th class="px-2 py-1 text-left">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in stack_rank %}
+        <tr class="border-t">
+          <td class="px-2 py-1.5 text-stone-400 font-mono">{{ row.get('rank', loop.index) }}</td>
+          <td class="px-2 py-1.5 font-medium">{{ row.get('project', '') | replace('[[', '') | replace(']]', '') }}</td>
+          <td class="px-2 py-1.5 text-stone-600">{{ row.get('lop', '') }}</td>
+          <td class="px-2 py-1.5 text-stone-600">{{ row.get('role', '') }}</td>
+          <td class="px-2 py-1.5 text-center">{{ row.get('impact', '') }}</td>
+          <td class="px-2 py-1.5 text-center">{{ row.get('effort', '') }}</td>
+          <td class="px-2 py-1.5">
+            {% set st = row.get('status', '') %}
+            <span class="text-xs px-1.5 py-0.5 rounded
+              {% if 'on-track' in st %}bg-emerald-50 text-emerald-700
+              {% elif 'needs-attention' in st %}bg-amber-50 text-amber-700
+              {% elif 'stalled' in st %}bg-red-50 text-red-700
+              {% else %}text-stone-500{% endif %}">{{ st }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="bg-white rounded-lg shadow p-5">
+  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">This Week's Top 3</h2>
+  {% if top_3 and top_3|selectattr("text")|list %}
+  <ul class="space-y-3">
+    {% for item in top_3 %}
+      {% if item.text %}
+      <li class="flex items-center gap-3">
+        <button class="w-6 h-6 text-xs rounded {{ 'bg-blue-900 text-white' if item.checked else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
+                hx-post="/week/toggle"
+                hx-vals='{"index":{{ loop.index0 }},"week":"{{ week_of }}"}'
+                hx-swap="none"
+                title="{{ 'Done' if item.checked else 'Not done' }}">{{ "●" if item.checked else "○" }}</button>
+        <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span>
+      </li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm text-stone-500">No priorities set yet.</p>
+  {% endif %}
+</section>
+
+{% if sections.get('Learning Plan') %}
+<section class="bg-white rounded-lg shadow p-5">
+  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Learning Plan</h2>
+  <div class="text-sm text-stone-700 whitespace-pre-wrap">{{ sections['Learning Plan'] }}</div>
+</section>
+{% endif %}
+
+</div>

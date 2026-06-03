@@ -11,16 +11,20 @@ def safe_modify(path: Path, transform: Callable[[str], str]) -> None:
     """Read path under exclusive lock, transform, write back atomically.
 
     If path doesn't exist, transform receives "" and the file is created.
+
+    Uses a separate .lock file so the lock survives the atomic rename of
+    the data file (os.replace changes the inode, which would release an
+    flock held on the data file itself).
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    # Open or create — exclusive lock held for the whole read-modify-write.
-    # We use "a+" (not "r+") because it creates the file if missing; we never
-    # actually write through this handle — the tempfile+rename pattern below
-    # is what writes. The handle exists only to hold the fcntl lock.
-    with open(path, "a+") as f:
-        fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-        f.seek(0)
-        existing = f.read()
+    lockfile = path.with_suffix(path.suffix + ".lock")
+    with open(lockfile, "a+") as lf:
+        fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+        # Read current content (may not exist yet).
+        try:
+            existing = path.read_text()
+        except FileNotFoundError:
+            existing = ""
         updated = transform(existing)
         # Atomic write: tempfile in same dir, fsync, rename.
         fd, tmp = tempfile.mkstemp(
@@ -38,4 +42,4 @@ def safe_modify(path: Path, transform: Callable[[str], str]) -> None:
             except FileNotFoundError:
                 pass
             raise
-        # flock released when 'f' closes
+        # flock released when 'lf' closes

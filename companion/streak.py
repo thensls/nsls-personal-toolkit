@@ -51,10 +51,21 @@ def streak_days(log: list[DayResult]) -> int:
     """Count consecutive days from today backwards that haven't reset.
     A day triggers reset when the concern up to and including that day
     is >= 2.0.
+
+    Single-pass O(n): walks backward tracking cumulative concern the
+    same way compute_concern does, but counts streak days inline
+    instead of re-scanning the entire prefix each iteration.
     """
+    concern = 0.0
     days = 0
-    for i in range(len(log) - 1, -1, -1):
-        if compute_concern(log[: i + 1]) >= 2.0:
+    for day in reversed(log):
+        if day.percent >= 1.0:
+            concern = 0.0
+        elif day.percent > 0:
+            concern += 0.5
+        else:
+            concern += 1.0
+        if concern >= 2.0:
             break
         days += 1
     return days

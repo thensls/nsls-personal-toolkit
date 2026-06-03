@@ -1,20 +1,25 @@
 {% extends "base.html" %}
 {% set active_tab = 'week' %}
 {% block content %}
-<h1 class="text-2xl font-bold mb-4">Week — {{ week_of }}</h1>
+<h1 class="text-2xl font-bold mb-1">Week — {{ week_of }}</h1>
+{% if mode_badge %}
+<p class="text-sm text-stone-500 mb-6">{{ mode_badge }}</p>
+{% else %}
+<p class="text-sm text-stone-500 mb-6">&nbsp;</p>
+{% endif %}
 
 {% if not week_md %}
   <div class="bg-white rounded-lg shadow p-6 text-center">
     <p class="text-stone-600">No weekly note yet.</p>
     <p class="text-sm text-stone-500 mt-2">Run <code class="bg-stone-100 px-1 rounded">/open-week</code> in your terminal to create one.</p>
   </div>
+{% elif mode == 'plan-week' %}
+  {% include "_components/week_plan.html" %}
+{% elif mode == 'week-review' %}
+  {% include "_components/week_review.html" %}
+{% elif mode == 'week-results' %}
+  {% include "_components/week_results.html" %}
 {% else %}
-  <div class="bg-white rounded-lg shadow p-6">
-    <details class="mb-4">
-      <summary class="text-sm text-stone-500 cursor-pointer">Phase 1 note — full Week tab is Phase 2</summary>
-      <p class="text-sm text-stone-600 mt-2">For now this view shows the raw weekly-note markdown. Rich rendering of stack rank, push/protect mode, trap check, and meeting check is on the roadmap. The canonical content lives in your Obsidian vault — open it there for full formatting.</p>
-    </details>
-    <pre class="font-mono text-sm whitespace-pre-wrap text-stone-800">{{ week_md }}</pre>
-  </div>
+  {% include "_components/week_command.html" %}
 {% endif %}
 {% endblock %}

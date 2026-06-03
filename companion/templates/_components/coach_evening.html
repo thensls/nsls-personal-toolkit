@@ -1,4 +1,4 @@
-<div x-data="{ step: {{ step or 1 }} }" class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+<div x-data="{ step: {{ step or 1 }} }" data-suppress-sse-reload class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
   <div class="flex gap-1 mb-3">
     {% for i in range(1, 5) %}
       <div class="flex-1 h-1 rounded" :class="step >= {{ i }} ? 'bg-amber-700' : 'bg-stone-200'"></div>

@@ -25,15 +25,11 @@
       {% if item.text %}
       {% set item_idx = loop.index0 %}
       <li class="flex items-center gap-3">
-        <div class="flex gap-1">
-          {% for val, icon in [("", "○"), ("25", "◔"), ("50", "◑"), ("75", "◕"), ("done", "●")] %}
-          <button class="w-6 h-6 text-xs rounded {{ 'bg-blue-900 text-white' if (val == 'done' and item.checked) or (val == '' and not item.checked) else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
-                  hx-post="/toggle"
-                  hx-vals='{"section":"top_3","index":{{ item_idx }}}'
-                  hx-swap="none"
-                  title="{{ val or 'Not started' }}">{{ icon }}</button>
-          {% endfor %}
-        </div>
+        <button class="w-6 h-6 text-xs rounded {{ 'bg-blue-900 text-white' if item.checked else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
+                hx-post="/toggle"
+                hx-vals='{"section":"top_3","index":{{ item_idx }}}'
+                hx-swap="none"
+                title="{{ 'Done' if item.checked else 'Not done' }}">{{ "●" if item.checked else "○" }}</button>
         <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span>
       </li>
       {% endif %}
@@ -52,15 +48,11 @@
       {% if item.text %}
       {% set item_idx = loop.index0 %}
       <li class="flex items-center gap-3">
-        <div class="flex gap-1">
-          {% for val, icon in [("", "○"), ("25", "◔"), ("50", "◑"), ("75", "◕"), ("done", "●")] %}
-          <button class="w-6 h-6 text-xs rounded {{ 'bg-blue-900 text-white' if (val == 'done' and item.checked) or (val == '' and not item.checked) else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
-                  hx-post="/toggle"
-                  hx-vals='{"section":"bonus","index":{{ item_idx }}}'
-                  hx-swap="none"
-                  title="{{ val or 'Not started' }}">{{ icon }}</button>
-          {% endfor %}
-        </div>
+        <button class="w-6 h-6 text-xs rounded {{ 'bg-blue-900 text-white' if item.checked else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
+                hx-post="/toggle"
+                hx-vals='{"section":"bonus","index":{{ item_idx }}}'
+                hx-swap="none"
+                title="{{ 'Done' if item.checked else 'Not done' }}">{{ "●" if item.checked else "○" }}</button>
         <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span>
       </li>
       {% endif %}

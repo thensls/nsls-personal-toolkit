@@ -16,6 +16,20 @@ from companion.parsers import (
 )
 from companion.safe_write import safe_modify
 from companion.streak import DayResult, compute_concern, status_for, streak_days
+from companion.week_parsers import (
+    parse_quick_notes,
+    parse_stack_rank_table,
+    parse_week_top_3,
+    parse_weekly_frontmatter,
+    parse_weekly_note_sections,
+    reorder_stack_rank,
+    set_project_status,
+    set_section_content,
+    set_week_top_3_item,
+    set_week_top_3_status,
+    set_weekly_frontmatter,
+    toggle_week_top_3,
+)
 from companion.validation import (
     HABIT_ID_RE,
     validate_habit_fields,
@@ -329,31 +343,47 @@ def _remove_dismissed(md: str, text: str) -> str:
     """Remove `text` from the `### Dismissed` section (undo a dismissal)."""
     lines = md.splitlines()
     target = f"- {text}"
-    in_section = False
+    # First pass: find the Dismissed section boundaries.
+    section_start = None
+    section_end = None
     for i, line in enumerate(lines):
         if line.strip() == "### Dismissed":
-            in_section = True
-            continue
-        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            section_start = i
+        elif section_start is not None and (line.startswith("### ") or line.startswith("## ")):
+            section_end = i
             break
-        if in_section and line.strip() == target:
-            del lines[i]
-            # Clean up empty section if no items remain
-            remaining_items = False
-            for j in range(i if i < len(lines) else len(lines) - 1, -1, -1):
-                if lines[j].strip() == "### Dismissed":
-                    if not remaining_items:
-                        del lines[j]
-                        # Also remove trailing blank line if present
-                        if j < len(lines) and lines[j].strip() == "":
-                            del lines[j]
-                        # And preceding blank line
-                        if j > 0 and lines[j - 1].strip() == "":
-                            del lines[j - 1]
-                    break
-                if lines[j].strip().startswith("- "):
-                    remaining_items = True
+    if section_start is None:
+        return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+    if section_end is None:
+        section_end = len(lines)
+
+    # Find and remove the target line within the section.
+    target_idx = None
+    for i in range(section_start + 1, section_end):
+        if lines[i].strip() == target:
+            target_idx = i
             break
+    if target_idx is None:
+        return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+    del lines[target_idx]
+    section_end -= 1
+
+    # Check if any items remain in the section.
+    remaining = any(
+        lines[j].strip().startswith("- ")
+        for j in range(section_start + 1, section_end)
+    )
+    if not remaining:
+        # Remove the heading and surrounding blank lines.
+        del lines[section_start]
+        # Trailing blank line (now at section_start after heading removal).
+        if section_start < len(lines) and lines[section_start].strip() == "":
+            del lines[section_start]
+        # Preceding blank line.
+        if section_start > 0 and lines[section_start - 1].strip() == "":
+            del lines[section_start - 1]
+
     return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
 
 
@@ -633,6 +663,23 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     }
 
 
+def _detect_week_state(weekly_md: str) -> str:
+    """Unified mode detection for weekly companion views.
+
+    Uses frontmatter ``status:`` field:
+      - closed    -> week-results (close-week completed)
+      - confirmed -> week-command (open-week completed, locked in)
+      - anything else (draft, editing, or missing) -> plan-week
+    """
+    fm = parse_weekly_frontmatter(weekly_md)
+    status = fm.get("status", "")
+    if status == "closed":
+        return "week-results"
+    if status == "confirmed":
+        return "week-command"
+    return "plan-week"
+
+
 def create_app(vault_path: str) -> Flask:
     app = Flask(__name__)
     app.config["VAULT_PATH"] = Path(vault_path)
@@ -640,9 +687,23 @@ def create_app(vault_path: str) -> Flask:
     subscribers: list[queue.Queue] = []
     last_hashes: dict[str, str] = {}  # relpath -> sha256[:16] of last broadcast
 
+    def _target_date() -> str:
+        """Return the target date from ?date= query param or form field, default today.
+
+        Accepts YYYY-MM-DD format. Invalid values fall back to today.
+        """
+        raw = request.values.get("date", "").strip()
+        if raw:
+            try:
+                date.fromisoformat(raw)
+                return raw
+            except ValueError:
+                pass
+        return date.today().isoformat()
+
     @app.route("/")
     def index():
-        today = date.today().isoformat()
+        today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         daily_md = note_path.read_text() if note_path.exists() else ""
 
@@ -664,12 +725,83 @@ def create_app(vault_path: str) -> Flask:
 
         return render_template("day.html", **ctx)
 
+    def _week_of() -> str:
+        """Return the week identifier from ?week= query param or derive from target date."""
+        week_param = request.values.get("week", "").strip()
+        if week_param:
+            return week_param
+        y, w, _ = date.fromisoformat(_target_date()).isocalendar()
+        return f"{y}-W{w:02d}"
+
     @app.route("/week")
     def week():
-        y, w, _ = date.today().isocalendar()
-        path = app.config["VAULT_PATH"] / "02-weekly" / f"{y}-W{w:02d}.md"
+        week_of = _week_of()
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
         week_md = path.read_text() if path.exists() else ""
-        return render_template("week.html", week_md=week_md, week_of=f"{y}-W{w:02d}")
+
+        mode_override = request.args.get("mode")
+        auto_mode = _detect_week_state(week_md)
+        # week-review override is respected UNLESS status: closed (auto-detect wins)
+        if mode_override == "week-review" and auto_mode != "week-results":
+            mode = "week-review"
+        else:
+            mode = mode_override or auto_mode
+
+        # Parse weekly note content
+        fm = parse_weekly_frontmatter(week_md)
+        sections = parse_weekly_note_sections(week_md)
+        stack_rank = parse_stack_rank_table(week_md)
+        top_3 = parse_week_top_3(week_md)
+
+        # Pad top_3 to 3 slots for the template
+        top_3_slots = list(top_3) + [{"text": "", "checked": False}] * max(0, 3 - len(top_3))
+
+        # Previous week data for plan-week step 1
+        prev_week_md = ""
+        prev_sections: dict = {}
+        prev_top_3: list = []
+        if mode == "plan-week":
+            # Try to find the previous week's note
+            try:
+                y = int(week_of[:4])
+                w = int(week_of.split("W")[1])
+                if w > 1:
+                    prev_key = f"{y}-W{w - 1:02d}"
+                else:
+                    prev_key = f"{y - 1}-W52"
+                prev_path = app.config["VAULT_PATH"] / "02-weekly" / f"{prev_key}.md"
+                if prev_path.exists():
+                    prev_week_md = prev_path.read_text()
+                    prev_sections = parse_weekly_note_sections(prev_week_md)
+                    prev_top_3 = parse_week_top_3(prev_week_md)
+            except (ValueError, IndexError):
+                pass
+
+        # Mode badge text
+        week_mode = fm.get("mode", "")
+        mode_labels = {
+            "push-to-build": "Push-to-build",
+            "push-to-close": "Push-to-close",
+            "protect": "Protect",
+        }
+        mode_badge = mode_labels.get(week_mode, week_mode.replace("-", " ").title() if week_mode else "")
+
+        ctx = {
+            "week_md": week_md,
+            "week_of": week_of,
+            "mode": mode,
+            "fm": fm,
+            "sections": sections,
+            "stack_rank": stack_rank,
+            "top_3": top_3,
+            "top_3_slots": top_3_slots[:3],
+            "week_mode": week_mode,
+            "mode_badge": mode_badge,
+            "prev_week_md": prev_week_md,
+            "prev_sections": prev_sections,
+            "prev_top_3": prev_top_3,
+        }
+        return render_template("week.html", **ctx)
 
     @app.route("/streaks")
     def streaks():
@@ -682,7 +814,7 @@ def create_app(vault_path: str) -> Flask:
         )
         log = parse_log(log_path.read_text()) if log_path.exists() else []
 
-        today = date.today()
+        today = date.fromisoformat(_target_date())
         rows = []
         for h in habits["active"]:
             habit_log = [
@@ -714,7 +846,7 @@ def create_app(vault_path: str) -> Flask:
         phase = request.form.get("phase", "morning")
         target_mode = "command" if phase == "morning" else "results"
 
-        today = date.today().isoformat()
+        today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         daily_md = note_path.read_text() if note_path.exists() else ""
         sections = parse_daily_note_sections(daily_md)
@@ -761,10 +893,16 @@ def create_app(vault_path: str) -> Flask:
         if last_hashes.get(relpath) == digest:
             return
         last_hashes[relpath] = digest
+        dead: list[queue.Queue] = []
         for q in list(subscribers):
             try:
                 q.put_nowait(relpath)
             except queue.Full:
+                dead.append(q)
+        for q in dead:
+            try:
+                subscribers.remove(q)
+            except ValueError:
                 pass
 
     app.config["BROADCAST"] = broadcast
@@ -781,7 +919,7 @@ def create_app(vault_path: str) -> Flask:
         if percent not in (0.0, 0.5, 1.0):
             return ("percent must be 0.0 / 0.5 / 1.0", 400)
 
-        today = date.today().isoformat()
+        today = _target_date()
         log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
 
         def merge(existing: str) -> str:
@@ -806,7 +944,7 @@ def create_app(vault_path: str) -> Flask:
         except ValueError as e:
             return (str(e), 400)
 
-        today = date.today().isoformat()
+        today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         if not note_path.exists():
             return ("today's note not found", 404)
@@ -827,7 +965,7 @@ def create_app(vault_path: str) -> Flask:
         except ValueError as e:
             return (str(e), 400)
 
-        today = date.today().isoformat()
+        today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         if not note_path.exists():
             return ("today's note not found", 404)
@@ -855,7 +993,7 @@ def create_app(vault_path: str) -> Flask:
         except (TypeError, ValueError):
             return ("invalid index", 400)
 
-        today = date.today().isoformat()
+        today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         if not note_path.exists():
             return ("today's note not found", 404)
@@ -904,7 +1042,7 @@ def create_app(vault_path: str) -> Flask:
     def add_bonus_slot():
         """Re-render the plan partial — the template always shows one empty
         slot at the end, so this is effectively a no-op that just re-renders."""
-        today = date.today().isoformat()
+        today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         daily_md = note_path.read_text() if note_path.exists() else ""
         sections = parse_daily_note_sections(daily_md)
@@ -917,7 +1055,7 @@ def create_app(vault_path: str) -> Flask:
     @app.route("/reset-plan", methods=["POST"])
     def reset_plan():
         """Reset Top 3, Bonus, and Dismissed back to empty scaffold."""
-        today = date.today().isoformat()
+        today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         if not note_path.exists():
             return ("no note to reset", 404)
@@ -977,7 +1115,7 @@ def create_app(vault_path: str) -> Flask:
         if not text or "\n" in text or "\r" in text or len(text) > 256:
             return ("invalid text", 400)
 
-        today = date.today().isoformat()
+        today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         _ensure_daily_note_scaffold(note_path)
 
@@ -1059,7 +1197,7 @@ def create_app(vault_path: str) -> Flask:
         if "\n" in text or "\r" in text or len(text) > 256:
             return ("text must be a single line ≤256 chars", 400)
 
-        today = date.today().isoformat()
+        today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         _ensure_daily_note_scaffold(note_path)
 
@@ -1177,6 +1315,196 @@ def create_app(vault_path: str) -> Flask:
             "_components/add_habit_form.html",
             habits=_get_active_habits(),
         )
+
+    # ------------------------------------------------------------------
+    # Week POST routes
+    # ------------------------------------------------------------------
+
+    @app.route("/week/set-rank", methods=["POST"])
+    def week_set_rank():
+        """Reorder the stack rank table. Accepts JSON {"order": [...]} or
+        form field ``order`` as comma-separated project names."""
+        week_of = _week_of()
+        data = request.get_json(silent=True) or {}
+        order = data.get("order") or [
+            s.strip() for s in request.form.get("order", "").split(",") if s.strip()
+        ]
+        if not order:
+            return ("missing order", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return reorder_stack_rank(existing, order)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+
+        # Re-read and return the updated stack rank partial
+        week_md = path.read_text()
+        stack_rank = parse_stack_rank_table(week_md)
+        return render_template("_components/week_stack_rank_partial.html",
+                               stack_rank=stack_rank, week_of=week_of)
+
+    @app.route("/week/set-mode", methods=["POST"])
+    def week_set_mode():
+        """Set the week mode (push-to-build / push-to-close / protect)."""
+        week_of = _week_of()
+        mode_val = request.form.get("mode", "").strip()
+        if mode_val not in ("push-to-build", "push-to-close", "protect"):
+            return ("invalid mode", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_weekly_frontmatter(existing, "mode", mode_val)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/set-top-3", methods=["POST"])
+    def week_set_top_3():
+        """Set a weekly Top 3 item by index."""
+        week_of = _week_of()
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        if index < 0 or index > 9:
+            return ("index out of bounds", 400)
+        text = request.form.get("text", "").rstrip()
+        if "\n" in text or "\r" in text or len(text) > 256:
+            return ("text must be a single line <= 256 chars", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_week_top_3_item(existing, index, text)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/toggle", methods=["POST"])
+    def week_toggle():
+        """Toggle a weekly Top 3 checkbox."""
+        week_of = _week_of()
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return toggle_week_top_3(existing, index)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/lock-in", methods=["POST"])
+    def week_lock_in():
+        """Set status: confirmed and transition to week-command mode."""
+        week_of = _week_of()
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_weekly_frontmatter(existing, "status", "confirmed")
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+
+        # Re-render the full week view in command mode
+        week_md = path.read_text()
+        fm = parse_weekly_frontmatter(week_md)
+        sections = parse_weekly_note_sections(week_md)
+        stack_rank = parse_stack_rank_table(week_md)
+        top_3 = parse_week_top_3(week_md)
+        top_3_slots = list(top_3) + [{"text": "", "checked": False}] * max(0, 3 - len(top_3))
+        week_mode = fm.get("mode", "")
+        mode_labels = {
+            "push-to-build": "Push-to-build",
+            "push-to-close": "Push-to-close",
+            "protect": "Protect",
+        }
+        mode_badge = mode_labels.get(week_mode, "")
+        return render_template("week.html",
+                               week_md=week_md, week_of=week_of,
+                               mode="week-command", fm=fm, sections=sections,
+                               stack_rank=stack_rank, top_3=top_3,
+                               top_3_slots=top_3_slots[:3],
+                               week_mode=week_mode, mode_badge=mode_badge,
+                               prev_week_md="", prev_sections={}, prev_top_3=[])
+
+    @app.route("/week/set-priority-status", methods=["POST"])
+    def week_set_priority_status():
+        """Set a weekly Top 3 item to done/partial/missed (tri-state)."""
+        week_of = _week_of()
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        status_val = request.form.get("status", "").strip()
+        if status_val not in ("done", "partial", "missed"):
+            return ("status must be done/partial/missed", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_week_top_3_status(existing, index, status_val)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/set-project-status", methods=["POST"])
+    def week_set_project_status():
+        """Set a stack rank project status (on-track/needs-attention/stalled)."""
+        week_of = _week_of()
+        project = request.form.get("project", "").strip()
+        status_val = request.form.get("status", "").strip()
+        if not project:
+            return ("missing project", 400)
+        if status_val not in ("on-track", "needs-attention", "stalled"):
+            return ("status must be on-track/needs-attention/stalled", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_project_status(existing, project, status_val)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/save-section", methods=["POST"])
+    def week_save_section():
+        """Save content to a ### section in the weekly note (e.g. Brain Dump)."""
+        week_of = _week_of()
+        section = request.form.get("section", "").strip()
+        content = request.form.get("content", "")
+        if not section or len(section) > 64:
+            return ("invalid section name", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_section_content(existing, section, content)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
 
     watcher = VaultWatcher(vault_path, on_change=broadcast)
     watcher.start()

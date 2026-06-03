@@ -59,10 +59,11 @@
 
       function reloadMain() {
         if (Date.now() - lastReload < RELOAD_DEBOUNCE_MS) return;
-        // Skip SSE reload when in coach-morning mode — HTMX partial swaps
-        // handle the UI updates, and a full main replace would blow away
-        // Alpine's step state, causing the screen to jump.
-        if (document.querySelector("[x-data*='coachMode']")) return;
+        // Skip SSE reload when any interactive wizard is active — HTMX
+        // partial swaps handle the UI updates, and a full main replace
+        // would blow away Alpine's step state, causing the screen to jump.
+        if (document.querySelector("[x-data*='coachMode']") ||
+            document.querySelector("[data-suppress-sse-reload]")) return;
         // Skip SSE reload shortly after our own POST — the broadcast it
         // triggers is from OUR write, not an external change.
         if (Date.now() < suppressNextReload) return;
@@ -90,7 +91,7 @@
         es.onopen = () => { reconnectDelay = 1000; };
         es.onmessage = (e) => {
           const path = e.data;
-          if (path.startsWith("01-daily/") || path.startsWith("30-habits/")) {
+          if (path.startsWith("01-daily/") || path.startsWith("30-habits/") || path.startsWith("02-weekly/")) {
             reloadMain();
           }
         };

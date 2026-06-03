@@ -28,6 +28,39 @@ Calculate:
 - Friday date = today (or target Friday)
 - Date range string for display: "Mar 15 - Mar 21, 2026"
 
+### Step 0.5: Check the visual companion
+
+**Resolving the binary path** (same lookup as open-day Step 8):
+```bash
+TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+```
+
+**Only run this step if the target Friday is this Friday** (i.e., closing the current week). The companion shows data based on the current weekly note — if closing a past week, skip silently.
+
+**Skip entirely if any of these is true:**
+- `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
+- The companion binary cannot be found or isn't running
+- The weekly note at `02-weekly/YYYY-WNN.md` doesn't exist or has no open-week content (no Top 3 or stack rank to check off)
+- This is a backfill run (closing a past week)
+
+**When visual_mode is on and the companion is running:**
+
+1. **Open the companion** at `<url>/week?mode=week-review&week=YYYY-WNN`:
+   - macOS: `open "<url>/week?mode=week-review&week=YYYY-WNN"`
+
+2. **Tell the builder:**
+
+   > I opened the companion at `<url>/week`. Before we roll up the week, go mark your Top 3 as done/partial/missed and update your stack rank status.
+   >
+   > Say **done** when you're ready.
+
+3. **Wait for "done".** Do NOT proceed until the builder explicitly responds. Do NOT treat background hook notifications as user input.
+
+4. **After "done":** Re-read the weekly note to pick up the builder's check-off changes (priority statuses, project statuses). Proceed to Step 1.
+
+**When visual_mode is off or the companion is unavailable:** Proceed to Step 1 as before — the builder confirms priorities via chat during synthesis.
+
 ### Step 1: Collect data (run in parallel)
 
 **1a. Read all daily notes for the week**
@@ -372,6 +405,13 @@ Show both outputs. Ask:
 ### Step 5: Write weekly note
 
 Write Output A to `02-weekly/YYYY-[W]WW.md`. Include the AI-Suggested Next Week sections at the end — these are picked up by `/open-week` as a starting point for next week's planning.
+
+**Also write Output B (Quick Notes) into the weekly note** as a `### Quick Notes` section at the end, after the AI-Suggested sections. This allows the visual companion to display a copy-to-clipboard block so the builder can paste directly into their Coach journal without scrolling through chat. Format the section as plain text (no markdown formatting inside it).
+
+Set `status: closed` in the weekly note frontmatter. This signals the companion to switch to `week-results` mode, which shows the read-only results dashboard with the Quick Notes copy button.
+
+If the companion is running, tell the builder:
+> Weekly note written. The companion has your quick notes ready to copy at `<url>/week`.
 
 ### Step 6: Asana sync
 
