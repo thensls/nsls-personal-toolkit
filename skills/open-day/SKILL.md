@@ -29,7 +29,7 @@ Before doing anything else, parse the builder's invocation phrase to choose a mo
 | `open day visual on` | Set `visual_mode: on` in builder-profile.md, then run with the visual companion |
 
 When `visual_mode` is **on**:
-- Run Steps 1-6 in chat as normal — full output, no condensing. The companion is an add-on for managing priorities in the browser, not a replacement for the chat flow.
+- Run Steps 1-6 in chat as normal, **but condense the chat output** — don't print the long suggestion narrative; the builder is going to make those decisions in the browser. A one-line summary per data source is enough ("3 meetings today · 6 open Asana · 1 PR waiting").
 - Run Step 8 (open the visual companion) and stop active chat work there.
 - Tell the builder: *"Continue in the browser at <url>. When you've locked in (clicked Lock in at step 5), come back here and say 'done' (or just run /close-day later) and I'll summarize."*
 - When the builder returns and confirms, read today's daily note, extract Top 3 + Bonus + any habits, and print a brief summary (the same shape `/close-day` would).
