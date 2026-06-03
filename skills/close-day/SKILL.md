@@ -32,6 +32,15 @@ Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env`:
 
 ---
 
+## Output Discipline
+
+**Never show raw Bash command output to the user** unless they passed `-v` (verbose). When running Bash commands to collect data (Familiar, Fathom, Slack, email, etc.):
+- Run commands silently (use `run_in_background` or suppress output)
+- Present a **one-line summary** of what was found: "Familiar: 12.3h active, top apps: Chrome (40%), Code (25%)"
+- Never dump file contents, session timestamps, app counts, or multi-line command output into chat
+
+If the user invokes with `-v` (e.g., `/close-day -v`), show full verbose output for debugging.
+
 ## Step-by-step Execution
 
 ### Step 0: Determine the date

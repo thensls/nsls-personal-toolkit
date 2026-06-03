@@ -29,13 +29,16 @@ Before doing anything else, parse the builder's invocation phrase to choose a mo
 | `open day visual on` | Set `visual_mode: on` in builder-profile.md, then run with the visual companion |
 
 When `visual_mode` is **on**:
-- Run Steps 1-6 in chat as normal, **but condense the chat output** — don't print the long suggestion narrative; the builder is going to make those decisions in the browser. A one-line summary per data source is enough ("3 meetings today · 6 open Asana · 1 PR waiting").
-- Run Step 8 (open the visual companion) and stop active chat work there.
-- Tell the builder: *"Continue in the browser at <url>. When you've locked in (clicked Lock in at step 5), come back here and say 'done' (or just run /close-day later) and I'll summarize."*
-- When the builder returns and confirms, read today's daily note, extract Top 3 + Bonus + any habits, and print a brief summary (the same shape `/close-day` would).
+- **Step 1.5 only**: Auto-run yesterday's close-day if needed (same as CLI mode).
+- **Step 2**: Collect ALL data (calendar, Asana, carry-overs, AI suggestions, stack rank, free time, habits, learning, PRs, SLT). Run Bash commands in the background or silently — **do not show raw Bash output to the user**. Present ONE condensed summary line per data source (e.g., "3 meetings today · 6 open Asana · 2 carry-overs · AI suggestions seeded").
+- **Step 6**: Write the daily note with **empty Top 3 and Bonus slots** (`1. [ ]`, `2. [ ]`, `3. [ ]`). Preserve any AI suggestions from close-day. Include habits, calendar, and the standard template. **Do NOT draft priorities, make suggestions, or fill in Top 3 — that's the companion's job.**
+- **Skip Steps 3, 4, 4a, 5** — the companion handles priority selection, not chat.
+- **Step 8**: Open the visual companion and stop. Print exactly: *"Continue in the browser at <url>. Pick your Top 3, review suggestions, then click Done. Say 'done' here when you're ready."* **Then stop. Do not print coaching, suggestions, or commentary.**
+- **On "done"**: Re-read the daily note, extract Top 3 + Bonus + habits, print a brief summary (under 12 lines). No coaching unless asked.
 
 When `visual_mode` is **off**:
 - Run the full chat flow (Steps 1-7), present suggestions in chat, accept the builder's edits in chat, and write the daily note from chat. **Skip Step 8.**
+- Show full verbose output for all steps.
 
 Builder-profile read/write: `visual_mode` is a top-level frontmatter field. Add it on first write if missing. Treat any value other than the literal string `off` as `on`.
 
@@ -62,6 +65,15 @@ Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env` or `$OBSIDI
 ## Timezone
 
 Read timezone from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (the `timezone` field). Default to `America/Denver` if not set.
+
+## Output Discipline
+
+**Never show raw Bash command output to the user** unless they passed `-v` (verbose). When running Bash commands to collect data (Familiar, Asana, calendar, habits, etc.):
+- Run commands silently (use `run_in_background` or suppress output)
+- Present a **one-line summary** of what was found: "Collecting Familiar data... 820 Chrome captures, 434 Code sessions"
+- Never dump file contents, session timestamps, app counts, or multi-line command output into chat
+
+If the user invokes with `-v` (e.g., `/open-day -v`), show full verbose output for debugging.
 
 ## Step-by-step Execution
 
