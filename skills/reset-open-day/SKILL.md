@@ -25,6 +25,19 @@ Undo what `/open-day` wrote so you can test it again from a clean state.
 
 2. Delete `$OBSIDIAN_VAULT_PATH/01-daily/<date>.md`.
 
-3. Report: "Deleted daily note for <date>. Run `/open-day` to recreate it."
+3. **Ensure yesterday appears closed** so `/open-day` doesn't auto-run close-day. Check if yesterday's note exists at `$OBSIDIAN_VAULT_PATH/01-daily/<yesterday>.md`:
+   - If it exists and already has `## Insight Reflection` with content: no action needed.
+   - If it exists but has no `## Insight Reflection`: append `## Insight Reflection\n\n(reset-open-day stub — close-day was skipped for testing)\n` to the end.
+   - If it doesn't exist: create a minimal stub at `$OBSIDIAN_VAULT_PATH/01-daily/<yesterday>.md`:
+     ```
+     # <yesterday> — <Day of Week>
 
-4. If the companion is running, note: "The companion will show Plan Your Day mode on next refresh."
+     ## Insight Reflection
+
+     (reset-open-day stub — close-day was skipped for testing)
+     ```
+   This prevents `/open-day` from triggering a full close-day run during testing.
+
+4. Report: "Deleted daily note for <date>. Yesterday appears closed. Run `/open-day` to recreate it."
+
+5. If the companion is running, note: "The companion will show Plan Your Day mode on next refresh."

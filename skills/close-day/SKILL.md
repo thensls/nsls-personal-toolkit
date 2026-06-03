@@ -34,12 +34,19 @@ Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env`:
 
 ## Output Discipline
 
-**Never show raw Bash command output to the user** unless they passed `-v` (verbose). When running Bash commands to collect data (Familiar, Fathom, Slack, email, etc.):
-- Run commands silently (use `run_in_background` or suppress output)
-- Present a **one-line summary** of what was found: "Familiar: 12.3h active, top apps: Chrome (40%), Code (25%)"
-- Never dump file contents, session timestamps, app counts, or multi-line command output into chat
+**The user must never see raw Bash command output.** The CLI renders Bash tool calls and their output directly — you cannot hide them after the fact. So the rule is: **do not run Bash commands that produce multi-line output.** Instead:
 
-If the user invokes with `-v` (e.g., `/close-day -v`), show full verbose output for debugging.
+- **Read files with the Read tool**, not `cat` or `grep` in Bash. Read tool output is collapsible; Bash output is not.
+- **Use MCP tools** (Google Calendar, Asana, Fathom, Slack) instead of Bash for API calls.
+- **If you must use Bash** (e.g., for Familiar data, file existence checks), write a single command that computes the summary internally and `echo`s only the one-line result:
+  ```bash
+  echo "Familiar: $(find $DIR -name '*.md' | wc -l | tr -d ' ') captures across $(ls -d $DIR/session-* 2>/dev/null | wc -l | tr -d ' ') sessions"
+  ```
+  NOT a command that dumps 50+ lines of app counts, timestamps, or file contents.
+- **Never `cat` a file in Bash.** Use the Read tool.
+- **Never run a Bash command whose output exceeds 3 lines** without `-v` mode.
+
+If the user invokes with `-v` (e.g., `/close-day -v`), full verbose output is fine — show everything.
 
 ## Step-by-step Execution
 
