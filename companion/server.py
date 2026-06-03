@@ -142,6 +142,30 @@ def _extract_bonus(morning_section: str) -> list[dict]:
     return _extract_numbered_checkbox_list(morning_section, "### Bonus")
 
 
+def _extract_unplanned(morning_section: str) -> list[dict]:
+    return _extract_numbered_checkbox_list(morning_section, "### Unplanned")
+
+
+_ENERGY_RE = re.compile(r"^-\s*Energy:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+
+
+def _extract_energy(daily_md: str) -> str:
+    """Extract energy level from any ``- Energy: <value>`` line in the daily note.
+
+    Checks End of Day first, then Morning Check-in. Returns the lowercase
+    value ('low', 'medium', 'high') or '' if not found.
+    """
+    sections = parse_daily_note_sections(daily_md)
+    for section_name in ("End of Day", "Morning Check-in"):
+        body = sections.get(section_name, "")
+        m = _ENERGY_RE.search(body)
+        if m:
+            val = m.group(1).strip().lower()
+            if val in ("low", "medium", "high"):
+                return val
+    return ""
+
+
 _AI_SUGGEST_HEADING_RE = re.compile(
     r"^###\s*AI Suggested:\s*(.*?)\s*$", re.IGNORECASE
 )
@@ -757,6 +781,14 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
 
     plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus)
 
+    # Unplanned items live under ### Unplanned in Morning Check-in
+    sections = parse_daily_note_sections(daily_md)
+    morning = sections.get("Morning Check-in", "")
+    unplanned = _extract_unplanned(morning)
+
+    # Energy level
+    energy = _extract_energy(daily_md)
+
     return {
         "today": today,
         "today_pretty": today_pretty,
@@ -766,6 +798,8 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
         "bonus": bonus,
         "bonus_slots": bonus_slots[:3],
         "bonus_text": "\n".join(b["text"] for b in bonus),
+        "unplanned": unplanned,
+        "energy": energy,
         "habits_today": habits_today,
         "active_habits": habits["active"],
         "focus_blocks": [],  # Phase 2
@@ -1149,6 +1183,123 @@ def create_app(vault_path: str) -> Flask:
         bonus_items = _extract_bonus(morning)
         plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
         return render_template("_components/plan_your_day.html", plan=plan)
+
+    @app.route("/set-unplanned", methods=["POST"])
+    def set_unplanned():
+        return _set_morning_item("### Unplanned", "unplanned", rerender_partial=False)
+
+    @app.route("/delete-unplanned", methods=["POST"])
+    def delete_unplanned():
+        """Remove an unplanned item by index."""
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def remove(existing: str) -> str:
+            lines = existing.splitlines()
+            in_section = False
+            seen = 0
+            for i, line in enumerate(lines):
+                if line.strip() == "### Unplanned":
+                    in_section = True
+                    continue
+                if in_section and (line.startswith("### ") or line.startswith("## ")):
+                    break
+                if in_section and _LIST_ITEM_RE.match(line):
+                    if seen == index:
+                        del lines[i]
+                        # Renumber remaining items
+                        remaining_idx = 0
+                        for j in range(i, len(lines)):
+                            if lines[j].startswith("### ") or lines[j].startswith("## "):
+                                break
+                            m = _LIST_ITEM_RE.match(lines[j])
+                            if m:
+                                prefix_m = re.match(r"^(\s*)(\d+\.|-)\s+", lines[j])
+                                if prefix_m and prefix_m.group(2) != "-":
+                                    rest = lines[j][prefix_m.end():]
+                                    lines[j] = f"{remaining_idx + 1}. {rest}"
+                                remaining_idx += 1
+                        break
+                    seen += 1
+            return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
+
+        safe_modify(note_path, remove)
+        broadcast(f"01-daily/{today}.md")
+        return ("", 204)
+
+    @app.route("/set-energy", methods=["POST"])
+    def set_energy():
+        """Set the energy level in the End of Day section."""
+        level = request.form.get("level", "").strip().lower()
+        if level not in ("low", "medium", "high"):
+            return ("level must be low/medium/high", 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def update(existing: str) -> str:
+            lines = existing.splitlines()
+            # Try to find and update existing Energy line in End of Day
+            sections = parse_daily_note_sections(existing)
+            in_eod = False
+            eod_start = None
+            eod_end = len(lines)
+            for i, line in enumerate(lines):
+                if line.strip() == "## End of Day":
+                    in_eod = True
+                    eod_start = i
+                    continue
+                if in_eod and line.startswith("## ") and not line.startswith("### "):
+                    eod_end = i
+                    break
+
+            energy_line = f"- Energy: {level}"
+
+            if eod_start is not None:
+                # Look for existing Energy line within End of Day
+                for i in range(eod_start + 1, eod_end):
+                    if _ENERGY_RE.match(lines[i]):
+                        lines[i] = energy_line
+                        return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
+                # No existing Energy line — insert after the heading
+                lines.insert(eod_start + 1, energy_line)
+                return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
+
+            # No End of Day section — also check Morning Check-in
+            in_morning = False
+            morning_start = None
+            morning_end = len(lines)
+            for i, line in enumerate(lines):
+                if line.strip() == "## Morning Check-in":
+                    in_morning = True
+                    morning_start = i
+                    continue
+                if in_morning and line.startswith("## ") and not line.startswith("### "):
+                    morning_end = i
+                    break
+
+            if morning_start is not None:
+                for i in range(morning_start + 1, morning_end):
+                    if _ENERGY_RE.match(lines[i]):
+                        lines[i] = energy_line
+                        return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
+
+            # Append an End of Day section with the energy line
+            result = existing.rstrip("\n") + "\n\n## End of Day\n" + energy_line + "\n"
+            return result
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+        return ("", 204)
 
     @app.route("/add-bonus-slot", methods=["POST"])
     def add_bonus_slot():
