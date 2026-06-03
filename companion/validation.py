@@ -8,6 +8,9 @@ SAFE_LONG_RE = re.compile(r"^[\s\S]{0,4096}$")  # arbitrary text up to 4KB
 
 ALLOWED_SAVE_SECTIONS = {
     "Insight Reflection", "Gratitude", "Brain Dump", "Carrying Over",
+    # Command Center quick-capture insight. Kept distinct from the day-close
+    # "Insight Reflection" so saving it doesn't flip the view to results mode.
+    "Daily Insight",
 }
 ALLOWED_TOGGLE_SECTIONS = {"top_3", "bonus"}
 

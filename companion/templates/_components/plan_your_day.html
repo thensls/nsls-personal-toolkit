@@ -43,19 +43,19 @@
                    hx-trigger="change">
           </td>
           <td class="px-2 py-1 text-center">
-            <input type="checkbox" {% if s.taken == 'dismissed' %}checked{% endif %}
+            <input type="checkbox" {% if s.taken == 'done' %}checked{% endif %}
                    hx-post="/plan-action"
                    hx-vals='{"text": {{ s.text|tojson }}, "action": "done"}'
                    hx-trigger="change">
           </td>
           <td class="px-2 py-1 text-center">
-            <input type="checkbox" {% if s.taken == 'dismissed' %}checked{% endif %}
+            <input type="checkbox" {% if s.taken == 'deleted' %}checked{% endif %}
                    hx-post="/plan-action"
                    hx-vals='{"text": {{ s.text|tojson }}, "action": "delete"}'
                    hx-trigger="change">
           </td>
           <td class="px-2 py-1">
-            <span {% if s.taken in ('dismissed', 'deferred') %}class="line-through text-stone-400"{% endif %}>{{ s.text }}</span>
+            <span {% if s.taken in ('done', 'deleted', 'deferred') %}class="line-through text-stone-400"{% endif %}>{{ s.text }}</span>
             {% if s.source %}<span class="text-xs text-stone-400 ml-1">({{ s.source }})</span>{% endif %}
           </td>
         </tr>

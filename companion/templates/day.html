@@ -71,26 +71,7 @@
 <section class="bg-white rounded-lg shadow p-5 mb-4">
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Unplanned wins</h2>
   <p class="text-xs text-stone-400 mb-2">Add anything you did that wasn't on the plan.</p>
-  <ul class="space-y-2">
-    {% for item in unplanned %}
-      <li class="flex items-center gap-2">
-        <span class="text-stone-400 text-sm w-4">+</span>
-        <input type="text" value="{{ item.text }}"
-               hx-post="/set-unplanned" hx-vals='{"index":"{{ loop.index0 }}"}'
-               hx-trigger="change delay:300ms" name="text"
-               class="flex-1 border rounded px-3 py-2 text-sm">
-        <button hx-post="/delete-unplanned" hx-vals='{"index":"{{ loop.index0 }}"}'
-                hx-swap="none" class="text-stone-400 hover:text-red-600 px-1" title="Remove">&#x2715;</button>
-      </li>
-    {% endfor %}
-    <li class="flex items-center gap-2">
-      <span class="text-stone-400 text-sm w-4">+</span>
-      <input type="text" value="" placeholder="What else did you get done?"
-             hx-post="/set-unplanned" hx-vals='{"index":"{{ unplanned|length }}"}'
-             hx-trigger="change" name="text"
-             class="flex-1 border rounded px-3 py-2 text-sm">
-    </li>
-  </ul>
+  {% include "_components/unplanned_section.html" %}
 </section>
 
 <section class="bg-white rounded-lg shadow p-5 mb-4">
@@ -124,9 +105,9 @@
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-2">Insight <span class="normal-case text-stone-400">(optional)</span></h2>
   <textarea rows="2" class="block w-full border rounded px-3 py-2 text-sm"
             hx-post="/save" hx-trigger="input changed delay:1500ms"
-            hx-vals='{"section":"Insight Reflection"}' name="content"
+            hx-vals='{"section":"Daily Insight"}' name="content"
             hx-swap="none"
-            placeholder="What did you notice about yourself today?">{{ insight_reflection_text }}</textarea>
+            placeholder="What did you notice about yourself today?">{{ daily_insight_text }}</textarea>
 </section>
 
 {% endif %}

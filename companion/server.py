@@ -257,31 +257,17 @@ def _extract_carryovers(vault_path: Path, today: str, lookback_days: int = 7) ->
     return []
 
 
-def _extract_dismissed(morning_section: str) -> set[str]:
-    """Pull dismissed item texts from `### Dismissed` in Morning Check-in."""
+def _extract_subsection_items(morning_section: str, heading: str) -> set[str]:
+    """Pull item texts from a `### <heading>` subsection in Morning Check-in.
+
+    `heading` is the bare title (e.g. "Done", "Deleted", "Deferred").
+    """
+    full = f"### {heading}"
     items: set[str] = set()
     in_section = False
     for line in morning_section.splitlines():
         stripped = line.strip()
-        if stripped == "### Dismissed":
-            in_section = True
-            continue
-        if in_section and stripped.startswith("###"):
-            break
-        if in_section and stripped.startswith("- "):
-            text = stripped[2:].strip()
-            if text:
-                items.add(text)
-    return items
-
-
-def _extract_deferred(morning_section: str) -> set[str]:
-    """Pull deferred item texts from `### Deferred` in Morning Check-in."""
-    items: set[str] = set()
-    in_section = False
-    for line in morning_section.splitlines():
-        stripped = line.strip()
-        if stripped == "### Deferred":
+        if stripped == full:
             in_section = True
             continue
         if in_section and stripped.startswith("###"):
@@ -306,8 +292,12 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
     morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
     ai_items = _extract_ai_suggestions(morning)
     carryovers = _extract_carryovers(vault_path, today)
-    dismissed = _extract_dismissed(morning)
-    deferred = _extract_deferred(morning)
+    done = _extract_subsection_items(morning, "Done")
+    deleted = _extract_subsection_items(morning, "Deleted")
+    deferred = _extract_subsection_items(morning, "Deferred")
+    # Legacy notes used a single `### Dismissed` section for done+delete;
+    # treat those as Done so old items still render.
+    done |= _extract_subsection_items(morning, "Dismissed")
 
     seen: set[str] = set()
     suggestions: list[dict] = []
@@ -321,8 +311,10 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
     bonus_texts = {b["text"] for b in bonus if b.get("text")}
 
     for s in suggestions:
-        if s["text"] in dismissed:
-            s["taken"] = "dismissed"
+        if s["text"] in done:
+            s["taken"] = "done"
+        elif s["text"] in deleted:
+            s["taken"] = "deleted"
         elif s["text"] in deferred:
             s["taken"] = "deferred"
         elif s["text"] in priority_texts:
@@ -341,18 +333,17 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
     }
 
 
-def _add_dismissed(md: str, text: str) -> str:
-    """Append `text` to the `### Dismissed` section under `## Morning Check-in`.
+def _add_to_subsection(md: str, heading: str, text: str) -> str:
+    """Append `text` as a `- ` item to `### <heading>` under `## Morning Check-in`.
 
-    Creates the section if it doesn't exist, placing it after the last `###`
-    subsection within Morning Check-in.
+    Creates the subsection if it doesn't exist, placing it at the end of
+    Morning Check-in. `heading` is the bare title (e.g. "Done", "Deferred").
     """
+    full = f"### {heading}"
     lines = md.splitlines()
-    # Find ### Dismissed
-    dismissed_idx = None
+    section_idx = None
     morning_end = len(lines)
     in_morning = False
-    last_subsection_end = None
     for i, line in enumerate(lines):
         if line.strip() == "## Morning Check-in":
             in_morning = True
@@ -360,39 +351,35 @@ def _add_dismissed(md: str, text: str) -> str:
         if in_morning and line.startswith("## ") and not line.startswith("### "):
             morning_end = i
             break
-        if in_morning and line.strip() == "### Dismissed":
-            dismissed_idx = i
-        if in_morning and line.startswith("### "):
-            last_subsection_end = i
+        if in_morning and line.strip() == full:
+            section_idx = i
 
-    if dismissed_idx is not None:
-        # Find the end of the Dismissed section to append
-        insert_at = dismissed_idx + 1
-        for j in range(dismissed_idx + 1, morning_end):
+    if section_idx is not None:
+        insert_at = section_idx + 1
+        for j in range(section_idx + 1, morning_end):
             if lines[j].startswith("### ") or lines[j].startswith("## "):
                 break
             insert_at = j + 1
         lines.insert(insert_at, f"- {text}")
     else:
-        # Create ### Dismissed before the end of Morning Check-in
         insert_at = morning_end
         lines.insert(insert_at, "")
-        lines.insert(insert_at + 1, "### Dismissed")
+        lines.insert(insert_at + 1, full)
         lines.insert(insert_at + 2, f"- {text}")
         lines.insert(insert_at + 3, "")
 
     return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
 
 
-def _remove_dismissed(md: str, text: str) -> str:
-    """Remove `text` from the `### Dismissed` section (undo a dismissal)."""
+def _remove_from_subsection(md: str, heading: str, text: str) -> str:
+    """Remove `text` from the `### <heading>` subsection; drop the heading if empty."""
+    full = f"### {heading}"
     lines = md.splitlines()
     target = f"- {text}"
-    # First pass: find the Dismissed section boundaries.
     section_start = None
     section_end = None
     for i, line in enumerate(lines):
-        if line.strip() == "### Dismissed":
+        if line.strip() == full:
             section_start = i
         elif section_start is not None and (line.startswith("### ") or line.startswith("## ")):
             section_end = i
@@ -402,7 +389,6 @@ def _remove_dismissed(md: str, text: str) -> str:
     if section_end is None:
         section_end = len(lines)
 
-    # Find and remove the target line within the section.
     target_idx = None
     for i in range(section_start + 1, section_end):
         if lines[i].strip() == target:
@@ -414,109 +400,14 @@ def _remove_dismissed(md: str, text: str) -> str:
     del lines[target_idx]
     section_end -= 1
 
-    # Check if any items remain in the section.
     remaining = any(
         lines[j].strip().startswith("- ")
         for j in range(section_start + 1, section_end)
     )
     if not remaining:
-        # Remove the heading and surrounding blank lines.
         del lines[section_start]
-        # Trailing blank line (now at section_start after heading removal).
         if section_start < len(lines) and lines[section_start].strip() == "":
             del lines[section_start]
-        # Preceding blank line.
-        if section_start > 0 and lines[section_start - 1].strip() == "":
-            del lines[section_start - 1]
-
-    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
-
-
-def _add_deferred(md: str, text: str) -> str:
-    """Append `text` to the `### Deferred` section under `## Morning Check-in`.
-
-    Creates the section if it doesn't exist, placing it after the last `###`
-    subsection within Morning Check-in.
-    """
-    lines = md.splitlines()
-    # Find ### Deferred
-    deferred_idx = None
-    morning_end = len(lines)
-    in_morning = False
-    last_subsection_end = None
-    for i, line in enumerate(lines):
-        if line.strip() == "## Morning Check-in":
-            in_morning = True
-            continue
-        if in_morning and line.startswith("## ") and not line.startswith("### "):
-            morning_end = i
-            break
-        if in_morning and line.strip() == "### Deferred":
-            deferred_idx = i
-        if in_morning and line.startswith("### "):
-            last_subsection_end = i
-
-    if deferred_idx is not None:
-        # Find the end of the Deferred section to append
-        insert_at = deferred_idx + 1
-        for j in range(deferred_idx + 1, morning_end):
-            if lines[j].startswith("### ") or lines[j].startswith("## "):
-                break
-            insert_at = j + 1
-        lines.insert(insert_at, f"- {text}")
-    else:
-        # Create ### Deferred before the end of Morning Check-in
-        insert_at = morning_end
-        lines.insert(insert_at, "")
-        lines.insert(insert_at + 1, "### Deferred")
-        lines.insert(insert_at + 2, f"- {text}")
-        lines.insert(insert_at + 3, "")
-
-    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
-
-
-def _remove_deferred(md: str, text: str) -> str:
-    """Remove `text` from the `### Deferred` section (undo a deferral)."""
-    lines = md.splitlines()
-    target = f"- {text}"
-    # First pass: find the Deferred section boundaries.
-    section_start = None
-    section_end = None
-    for i, line in enumerate(lines):
-        if line.strip() == "### Deferred":
-            section_start = i
-        elif section_start is not None and (line.startswith("### ") or line.startswith("## ")):
-            section_end = i
-            break
-    if section_start is None:
-        return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
-    if section_end is None:
-        section_end = len(lines)
-
-    # Find and remove the target line within the section.
-    target_idx = None
-    for i in range(section_start + 1, section_end):
-        if lines[i].strip() == target:
-            target_idx = i
-            break
-    if target_idx is None:
-        return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
-
-    del lines[target_idx]
-    section_end -= 1
-
-    # Check if any items remain in the section.
-    remaining = any(
-        lines[j].strip().startswith("- ")
-        for j in range(section_start + 1, section_end)
-    )
-    if not remaining:
-        # Remove the heading and surrounding blank lines.
-        del lines[section_start]
-        # Trailing blank line (now at section_start after heading removal).
-        if section_start < len(lines) and lines[section_start].strip() == "":
-            del lines[section_start]
-        # Preceding blank line.
         if section_start > 0 and lines[section_start - 1].strip() == "":
             del lines[section_start - 1]
 
@@ -860,6 +751,7 @@ def create_app(vault_path: str) -> Flask:
         bonus = _extract_bonus(morning)
         insight_reflection_text = sections.get("Insight Reflection", "").strip()
         gratitude_text = sections.get("Gratitude", "").strip()
+        daily_insight_text = sections.get("Daily Insight", "").strip()
 
         # User override → respected; otherwise auto-detect
         mode = request.args.get("mode") or _detect_day_state(daily_md, top_3)
@@ -867,6 +759,7 @@ def create_app(vault_path: str) -> Flask:
         ctx = _build_day_context(app, daily_md, top_3, bonus, today)
         ctx["insight_reflection_text"] = insight_reflection_text
         ctx["gratitude_text"] = gratitude_text
+        ctx["daily_insight_text"] = daily_insight_text
         ctx["mode"] = mode
 
         return render_template("day.html", **ctx)
@@ -1003,6 +896,7 @@ def create_app(vault_path: str) -> Flask:
         ctx = _build_day_context(app, daily_md, top_3, bonus, today)
         ctx["insight_reflection_text"] = sections.get("Insight Reflection", "").strip()
         ctx["gratitude_text"] = sections.get("Gratitude", "").strip()
+        ctx["daily_insight_text"] = sections.get("Daily Insight", "").strip()
         ctx["mode"] = target_mode
         return render_template("day.html", **ctx)
 
@@ -1184,9 +1078,34 @@ def create_app(vault_path: str) -> Flask:
         plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
         return render_template("_components/plan_your_day.html", plan=plan)
 
+    def _render_unplanned(today: str):
+        """Render the unplanned-section partial with fresh indices."""
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text() if note_path.exists() else ""
+        morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
+        unplanned = _extract_unplanned(morning)
+        return render_template("_components/unplanned_section.html", unplanned=unplanned)
+
     @app.route("/set-unplanned", methods=["POST"])
     def set_unplanned():
-        return _set_morning_item("### Unplanned", "unplanned", rerender_partial=False)
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        if index < 0 or index > 99:
+            return ("index out of bounds", 400)
+        text = request.form.get("text", "").rstrip()
+        if "\n" in text or "\r" in text or len(text) > 256:
+            return ("text must be a single line ≤256 chars", 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+        safe_modify(note_path, lambda md: _set_nth_item_text(md, "### Unplanned", index, text))
+        broadcast(f"01-daily/{today}.md")
+        # Return the refreshed partial so the blank input's index advances and
+        # a new empty slot appears — prevents the stale-index overwrite bug.
+        return _render_unplanned(today)
 
     @app.route("/delete-unplanned", methods=["POST"])
     def delete_unplanned():
@@ -1232,7 +1151,7 @@ def create_app(vault_path: str) -> Flask:
 
         safe_modify(note_path, remove)
         broadcast(f"01-daily/{today}.md")
-        return ("", 204)
+        return _render_unplanned(today)
 
     @app.route("/set-energy", methods=["POST"])
     def set_energy():
@@ -1325,7 +1244,8 @@ def create_app(vault_path: str) -> Flask:
 
         def reset(existing: str) -> str:
             # Clear Top 3 items
-            for heading in ("### My Top 3", "### Bonus", "### Dismissed", "### Deferred"):
+            for heading in ("### My Top 3", "### Bonus", "### Done", "### Deleted",
+                            "### Deferred", "### Dismissed", "### Unplanned"):
                 lines = existing.splitlines()
                 section_start = None
                 section_end = len(lines)
@@ -1388,23 +1308,36 @@ def create_app(vault_path: str) -> Flask:
             top_3 = _extract_top_3(morning)
             bonus_items = _extract_bonus(morning)
 
-            # Done / Delete: toggle in ### Dismissed (reversible)
-            if action in {"done", "delete"}:
-                dismissed_items = _extract_dismissed(
-                    parse_daily_note_sections(existing).get("Morning Check-in", "")
-                )
-                if text in dismissed_items:
-                    return _remove_dismissed(existing, text)
-                return _add_dismissed(existing, text)
-
-            # Defer: toggle in ### Deferred (reversible)
-            if action == "defer":
-                deferred_items = _extract_deferred(
-                    parse_daily_note_sections(existing).get("Morning Check-in", "")
-                )
-                if text in deferred_items:
-                    return _remove_deferred(existing, text)
-                return _add_deferred(existing, text)
+            # Done / Delete / Defer are mutually-exclusive dispositions, each in
+            # its own subsection. Clicking the active one untoggles it; clicking
+            # a different one moves the item (clears the others first).
+            DISPOSITIONS = {"done": "Done", "delete": "Deleted", "defer": "Deferred"}
+            if action in DISPOSITIONS:
+                m = parse_daily_note_sections(existing).get("Morning Check-in", "")
+                current = {
+                    act: text in _extract_subsection_items(m, head)
+                    for act, head in DISPOSITIONS.items()
+                }
+                # Legacy: items in `### Dismissed` count as Done.
+                if text in _extract_subsection_items(m, "Dismissed"):
+                    existing = _remove_from_subsection(existing, "Dismissed", text)
+                    current["done"] = True
+                if current[action]:
+                    # Untoggle: remove from its section.
+                    return _remove_from_subsection(existing, DISPOSITIONS[action], text)
+                # Clear any other disposition, then set this one.
+                for act, head in DISPOSITIONS.items():
+                    if current[act]:
+                        existing = _remove_from_subsection(existing, head, text)
+                # A dispositioned item is no longer a live priority — vacate any
+                # Top 3 / Bonus slot it occupies so it doesn't show in both.
+                for i, t in enumerate(top_3):
+                    if t.get("text") == text:
+                        existing = _set_nth_item_text(existing, "### My Top 3", i, "")
+                for i, b in enumerate(bonus_items):
+                    if b.get("text") == text:
+                        existing = _set_nth_item_text(existing, "### Bonus", i, "")
+                return _add_to_subsection(existing, DISPOSITIONS[action], text)
 
             # If the suggestion already sits in Top 3 / Bonus and the user
             # clicked the same column again, treat it as "untake" — clear it.

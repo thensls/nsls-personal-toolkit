@@ -1,0 +1,25 @@
+<div id="unplanned-section">
+  <ul class="space-y-2">
+    {% for item in unplanned %}
+      <li class="flex items-center gap-2">
+        <span class="text-stone-400 text-sm w-4">+</span>
+        <input type="text" value="{{ item.text }}"
+               hx-post="/set-unplanned" hx-vals='{"index":"{{ loop.index0 }}"}'
+               hx-trigger="change delay:300ms" name="text"
+               hx-swap="none"
+               class="flex-1 border rounded px-3 py-2 text-sm">
+        <button hx-post="/delete-unplanned" hx-vals='{"index":"{{ loop.index0 }}"}'
+                hx-target="#unplanned-section" hx-swap="outerHTML"
+                class="text-stone-400 hover:text-red-600 px-1" title="Remove">&#x2715;</button>
+      </li>
+    {% endfor %}
+    <li class="flex items-center gap-2">
+      <span class="text-stone-400 text-sm w-4">+</span>
+      <input type="text" value="" placeholder="What else did you get done?"
+             hx-post="/set-unplanned" hx-vals='{"index":"{{ unplanned|length }}"}'
+             hx-trigger="change" name="text"
+             hx-target="#unplanned-section" hx-swap="outerHTML"
+             class="flex-1 border rounded px-3 py-2 text-sm">
+    </li>
+  </ul>
+</div>
