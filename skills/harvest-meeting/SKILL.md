@@ -1,11 +1,11 @@
 ---
 name: harvest-meeting
-description: Harvest decisions, project definitions, and state changes from SLT meetings into the NSLS Knowledge Base (60-nsls-knowledge). Gated to SLT writers. Use when you've just finished a strategic meeting, want to backfill a specific Fathom URL, or as part of close-day Step 4c / close-week Step 2b.
+description: Harvest decisions, project definitions, and state changes from meetings into a knowledge base. SLT members write to the shared company KB (thensls/nsls-knowledge); everyone else builds a local, private KB (never pushed). Use when you've just finished a strategic meeting, want to backfill a specific Fathom URL, or as part of close-day Step 4c / close-week Step 2b.
 ---
 
 # Harvest Meeting — NSLS Knowledge Base Pipeline
 
-Pulls decisions, project definitions, and state changes from SLT-recorded meetings, gates them through the employee-facing sensitive-content rubric, and proposes precise edits to topic files in `60-nsls-knowledge`. Approved edits are committed to `main` and pushed.
+Pulls decisions, project definitions, and state changes from recorded meetings, gates them through the employee-facing sensitive-content rubric, and proposes precise edits to topic files. Routing is automatic: SLT members (on `kb_authors.txt`) write to the shared company KB (`60-nsls-knowledge`) and push to `main`; everyone else writes to a local, private KB (`60-nsls-knowledge-local`) that is committed locally and never pushed.
 
 ## First-Time Setup (read before you clone)
 
@@ -14,6 +14,9 @@ Pulls decisions, project definitions, and state changes from SLT-recorded meetin
 > Cloning `60-nsls-knowledge` fails with "Repository not found" — and on a private repo,
 > "not found" also means *you don't have access yet*. If the clone command below 404s,
 > ping Kevin to be added as a collaborator on `thensls/nsls-knowledge`.
+
+> **This setup applies only to SLT members writing to the company KB.** Non-SLT users need
+> no setup — the local KB is scaffolded automatically on first run.
 
 One-time setup for a new SLT writer:
 
