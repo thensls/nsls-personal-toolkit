@@ -706,22 +706,26 @@ if edited_files:
         # Company KB: push with rebase-retry.
         try:
             subprocess.run(['git', '-C', str(kb_dir), 'push', 'origin', 'main'], check=True)
-            print(f"Step 8: pushed {len(edited_files)} file change(s), {len(approved)} edit(s)")
+            print(f"Step 8: committed {head} — {len(approved)} edit(s) to {len(edited_files)} file(s) "
+                  f"in {kb_dir.name}, pushed to origin/main")
         except subprocess.CalledProcessError:
             rebase = subprocess.run(['git', '-C', str(kb_dir), 'pull', '--rebase'], capture_output=True, text=True)
             if 'CONFLICT' in (rebase.stdout + rebase.stderr):
                 print("Step 8: FATAL — rebase conflict on topic file. Aborting. Resolve manually.")
                 subprocess.run(['git', '-C', str(kb_dir), 'rebase', '--abort'])
                 raise SystemExit(1)
+            # After rebase, HEAD sha may have changed; recompute for an accurate heartbeat.
+            head = subprocess.check_output(['git', '-C', str(kb_dir), 'rev-parse', '--short', 'HEAD'], text=True).strip()
             subprocess.run(['git', '-C', str(kb_dir), 'push', 'origin', 'main'], check=True)
-            print(f"Step 8: pushed after rebase ({len(edited_files)} file change(s), {len(approved)} edit(s))")
+            print(f"Step 8: committed {head} — {len(approved)} edit(s) to {len(edited_files)} file(s) "
+                  f"in {kb_dir.name}, pushed to origin/main after rebase")
 else:
     print("Step 8: no approved candidates, nothing to commit.")
 PYEOF
 ```
 
 **Heartbeat at end:**
-- *Company KB:* `Step 8: committed <sha> — <N> edits to <M> file(s) in 60-nsls-knowledge` then `pushed to origin/main`.
+- *Company KB:* `Step 8: committed <sha> — <N> edit(s) to <M> file(s) in 60-nsls-knowledge, pushed to origin/main`.
 - *Local KB:* `Step 8: committed <sha> locally — <N> edits to <M> file(s) in 60-nsls-knowledge-local (not pushed — local KB)`.
 
 This is the last step in `--date` and `--fathom-url` modes.
