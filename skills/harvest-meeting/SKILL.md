@@ -219,16 +219,49 @@ For `--week-audit` mode, load KB local clone + git log for the week (Task 11 fil
 ### 1a. Ensure KB local clone is fresh
 
 ```bash
-KB_DIR="$OBSIDIAN_VAULT_PATH/60-nsls-knowledge"
-if [ ! -d "$KB_DIR/.git" ]; then
-    echo "Step 1a: FATAL — KB not cloned to $KB_DIR."
-    echo "  The repo is 'nsls-knowledge' (NOT '60-nsls-knowledge' — that's just the local folder)."
-    echo "  Run: git clone https://github.com/thensls/nsls-knowledge.git \"$KB_DIR\""
-    echo "  If that 404s, you need collaborator access — ask Kevin. See First-Time Setup in this skill."
-    exit 1
+source /tmp/harvest-meeting-ctx/env.sh   # sets KB_TARGET, KB_DIR, KB_PUSH (from Step 0)
+
+if [ "$KB_TARGET" = "company" ]; then
+    if [ ! -d "$KB_DIR/.git" ]; then
+        echo "Step 1a: FATAL — company KB not cloned to $KB_DIR."
+        echo "  The repo is 'nsls-knowledge' (NOT '60-nsls-knowledge' — that's just the local folder)."
+        echo "  Run: git clone https://github.com/thensls/nsls-knowledge.git \"$KB_DIR\""
+        echo "  If that 404s, you need collaborator access — ask Kevin. See First-Time Setup."
+        exit 1
+    fi
+    git -C "$KB_DIR" pull --ff-only --quiet
+    echo "Step 1a: company KB synced to $(git -C "$KB_DIR" rev-parse --short HEAD)"
+else
+    # Local KB: scaffold on first run, never add a remote (push is impossible by design).
+    SEED_CANDIDATES=(
+        "$HOME/nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/references/local-kb-seed"
+        "$HOME/.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/references/local-kb-seed"
+    )
+    SEED_DIR=""
+    for c in "${SEED_CANDIDATES[@]}"; do [ -d "$c" ] && SEED_DIR="$c" && break; done
+    if [ -z "$SEED_DIR" ]; then
+        echo "Step 1a: FATAL — local-kb-seed not found in any known path."; exit 1
+    fi
+    if [ ! -d "$KB_DIR/.git" ]; then
+        mkdir -p "$KB_DIR"
+        git -C "$KB_DIR" init --quiet
+        # Local-only identity; prefer a detected nsls email if present, else a generic fallback.
+        WHO="$(git config --global user.email 2>/dev/null)"
+        case "$WHO" in *@nsls.org) : ;; *) WHO="harvest-local@nsls.org" ;; esac
+        git -C "$KB_DIR" config user.email "$WHO"
+        git -C "$KB_DIR" config user.name "NSLS KB (local)"
+        cp -R "$SEED_DIR"/. "$KB_DIR"/
+        git -C "$KB_DIR" add -A
+        git -C "$KB_DIR" commit -q -m "local KB: initial scaffold"
+        echo "Step 1a: local KB created at $KB_DIR (seeded $(ls "$SEED_DIR"/*.md | wc -l | tr -d ' ') files)"
+    else
+        echo "Step 1a: local KB ready at $KB_DIR ($(git -C "$KB_DIR" rev-parse --short HEAD))"
+    fi
+    # Guard: a local KB must never have a remote.
+    if git -C "$KB_DIR" remote | grep -q .; then
+        echo "Step 1a: ⚠ local KB unexpectedly has a remote — refusing to proceed."; exit 1
+    fi
 fi
-git -C "$KB_DIR" pull --ff-only --quiet
-echo "Step 1a: KB synced to $(git -C "$KB_DIR" rev-parse --short HEAD)"
 ```
 
 ### 1b. Load topic index and rubric
