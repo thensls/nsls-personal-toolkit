@@ -79,7 +79,7 @@ candidates_paths = [
 ]
 # HARVEST_AUTHORS_FILE lets verification runs point at a temp allowlist.
 override = os.environ.get('HARVEST_AUTHORS_FILE')
-authors_file = pathlib.Path(override) if override else next((p for p in candidates_paths if p.exists()), None)
+authors_file = pathlib.Path(override) if override and pathlib.Path(override).exists() else next((p for p in candidates_paths if p.exists()), None)
 if not authors_file:
     print('FATAL: kb_authors.txt not found in any known path')
     sys.exit(2)
