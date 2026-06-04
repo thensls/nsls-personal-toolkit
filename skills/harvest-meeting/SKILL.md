@@ -740,7 +740,8 @@ Invoked by `close-week` Step 2b. Reads git log for the week + topic file frontma
 PYTHONPATH=/tmp/pptx_deps python3.12 << 'PYEOF'
 import os, pathlib, subprocess, datetime, json, re
 
-kb_dir = pathlib.Path(os.environ['OBSIDIAN_VAULT_PATH']) / '60-nsls-knowledge'
+_t = json.loads(pathlib.Path('/tmp/harvest-meeting-ctx/target.json').read_text())
+kb_dir = pathlib.Path(_t['kb_dir'])
 week = os.environ['HARVEST_WEEK']  # YYYY-Www format
 year, w = week.split('-W')
 year = int(year); w = int(w)
@@ -833,9 +834,10 @@ Open Questions older than 30 days:
   (or "No old open questions ✓")
 ```
 
-### 9d. Promotion offers (SLT-only)
+### 9d. Promotion offers
 
-Skip if `WRITE_AUTHORIZED=false`.
+Available whenever a KB target is set (always, post-routing). Commits respect `kb_push`:
+the company KB pushes; a local KB commits only. (Step 8's logic is reused, so this is automatic.)
 
 For each old open question, ask Claude:
 
@@ -868,7 +870,7 @@ Approve? all / drop 1 / edit 1: <text> / cancel
 
 On approval, edit the topic file (remove from Open Questions section, append to Key Decisions), commit, push (Step 8 reused).
 
-### 9e. Stale-flag offers (SLT-only)
+### 9e. Stale-flag offers
 
 For each stale topic, prompt user:
 
@@ -884,13 +886,13 @@ Topic <slug>.md last updated YYYY-MM-DD ({N} days ago).
 
 Per-topic Y/N. Commit the frontmatter changes as a single batch at end.
 
-### 9f. Non-SLT path
+### 9f. Target note
 
-If `WRITE_AUTHORIZED=false`, after 9c:
+After 9c, print which KB the audit ran against so the report is unambiguous:
 
 ```
-Step 9: audit-only (not in KB_AUTHORS). To propose changes, edit a topic file
-in your local clone and open a PR against thensls/nsls-knowledge.
+Step 9: audit ran against your <company|local> KB (<kb_dir>).
 ```
 
-Exit cleanly.
+There is no audit-only dead-end anymore. Whether company or local, 9d/9e write actions are
+available; a local KB commits without pushing.
