@@ -270,8 +270,7 @@ fi
 PYTHONPATH=/tmp/pptx_deps python3.12 << 'PYEOF'
 import os, pathlib, re, json
 
-import json as _json
-_t = _json.loads(pathlib.Path('/tmp/harvest-meeting-ctx/target.json').read_text())
+_t = json.loads(pathlib.Path('/tmp/harvest-meeting-ctx/target.json').read_text())
 kb_dir = pathlib.Path(_t['kb_dir'])
 
 # Parse frontmatter + body for every topic file
