@@ -290,10 +290,10 @@ The Insight Reflection is the **first section** in the weekly note (Output A), b
 
 ### Step 2b. NSLS Knowledge Base week audit
 
-Always runs (audit visible to all users; write actions gated to KB_AUTHORS).
+Always runs. Everyone gets the audit; write actions (promotions, stale-flags) apply to your KB — pushed if you're on SLT (company KB), committed locally otherwise.
 
 ```bash
-echo "Step 2b: auditing 60-nsls-knowledge for week $WEEK..."
+echo "Step 2b: auditing your knowledge base for week $WEEK..."
 ```
 
 Invoke the harvest skill in audit mode:
@@ -308,7 +308,7 @@ The skill displays:
 - Stale topics (last-updated > 60 days)
 - Open Questions older than 30 days
 
-If the user is in `kb_authors.txt`, the skill additionally:
+The skill additionally (for everyone, against your own KB):
 - Offers promotions for resolved Open Questions → Key Decisions
 - Offers stale-flag updates on old topic frontmatter
 

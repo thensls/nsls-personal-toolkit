@@ -778,22 +778,12 @@ Show the full daily note draft. Ask:
 Heartbeat sequence:
 
 ```bash
-user_email=$(git config user.email)
-authors_file="$HOME/nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt"
-if [ ! -f "$authors_file" ]; then
-    authors_file="$HOME/.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt"
-fi
-
-if ! grep -qE "^${user_email}\$" "$authors_file" 2>/dev/null; then
-    echo "Step 4c: skipped (not in KB_AUTHORS: $user_email)."
-else
-    # Check if there are any meetings today before invoking
-    # (the skill itself will also no-op cleanly if 0 meetings, but heartbeat clarity matters)
-    echo "Step 4c: KB author confirmed, invoking /harvest-meeting --date $TODAY..."
-fi
+# Everyone harvests: /harvest-meeting self-routes (SLT → company KB, others → local KB)
+# and resolves identity cwd-independently in its own Step 0 — no pre-gate here.
+echo "Step 4c: invoking /harvest-meeting --date $TODAY (routes to company or local KB)..."
 ```
 
-If the author check passed, invoke the harvest skill:
+Invoke the harvest skill:
 
 ```
 /harvest-meeting --date $TODAY
@@ -805,14 +795,13 @@ The skill will:
 3. Pull Fathom meetings for today
 4. Extract → map → dedup → rubric
 5. Present numbered approval list to the user
-6. Apply edits → commit → push (or exit cleanly if cancelled)
+6. Apply edits → commit (push if company KB) → or exit cleanly if cancelled
 
 **After the skill returns:** Append a `## Knowledge Base` section to today's daily note with one of:
 - `- Harvested {N} edits to 60-nsls-knowledge ({sha}, {commit_url})`
 - `- Harvested {N} edits to local KB`
 - `- 0 candidates from today's meetings`
 - `- Harvest cancelled (no changes)`
-- `- Not a KB author, harvest skipped`
 
 ### Step 5: Write daily note
 
