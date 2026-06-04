@@ -773,7 +773,7 @@ Show the full daily note draft. Ask:
 - "Anything to add or correct?"
 - "Ready to write?"
 
-### Step 4c. NSLS Knowledge Base harvest (SLT only)
+### Step 4c. NSLS Knowledge Base harvest
 
 Heartbeat sequence:
 
@@ -789,18 +789,18 @@ if ! grep -qE "^${user_email}\$" "$authors_file" 2>/dev/null; then
 else
     # Check if there are any meetings today before invoking
     # (the skill itself will also no-op cleanly if 0 meetings, but heartbeat clarity matters)
-    echo "Step 4c: SLT writer confirmed, invoking /harvest-meeting --date $TODAY..."
+    echo "Step 4c: KB author confirmed, invoking /harvest-meeting --date $TODAY..."
 fi
 ```
 
-If the SLT check passed, invoke the harvest skill:
+If the author check passed, invoke the harvest skill:
 
 ```
 /harvest-meeting --date $TODAY
 ```
 
 The skill will:
-1. Confirm SLT membership (re-check; defense in depth)
+1. Route to the company KB if you're on SLT, otherwise to your local KB
 2. Load KB topic index + rubric
 3. Pull Fathom meetings for today
 4. Extract → map → dedup → rubric
@@ -809,9 +809,10 @@ The skill will:
 
 **After the skill returns:** Append a `## Knowledge Base` section to today's daily note with one of:
 - `- Harvested {N} edits to 60-nsls-knowledge ({sha}, {commit_url})`
+- `- Harvested {N} edits to local KB`
 - `- 0 candidates from today's meetings`
 - `- Harvest cancelled (no changes)`
-- `- Not an SLT KB author, harvest skipped`
+- `- Not a KB author, harvest skipped`
 
 ### Step 5: Write daily note
 
