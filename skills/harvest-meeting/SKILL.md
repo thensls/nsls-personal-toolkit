@@ -53,7 +53,7 @@ whether you can write — it decides **where** writes go:
 Identity is resolved cwd-independently in Step 0 (same logic as before). Everyone gets a
 working harvest; SLT membership only changes the destination.
 
-## Step 0: Mode dispatch + SLT allowlist gate
+## Step 0: Mode dispatch + allowlist routing
 
 Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`).
 
@@ -735,7 +735,7 @@ This is the last step in `--date` and `--fathom-url` modes.
 
 ## Step 9: Week-audit mode (--week-audit)
 
-Invoked by `close-week` Step 2b. Reads git log for the week + topic file frontmatter to produce an audit report. SLT users additionally get promotion + stale-flag write actions.
+Invoked by `close-week` Step 2b. Reads git log for the week + topic file frontmatter to produce an audit report. Everyone additionally gets promotion + stale-flag write actions against their own KB — company-KB edits push, local-KB edits commit only.
 
 ### 9a. Load week context
 
