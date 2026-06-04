@@ -38,9 +38,17 @@ Prerequisites (both are quick adds — ask Kevin):
 | `--fathom-url <url>` | Manual after important meeting | Single meeting |
 | `--week-audit --week YYYY-Www` | close-week Step 2b | Git log + topic files for the week |
 
-## SLT Allowlist
+## Allowlist → routing (not a write gate)
 
-Writes require the current git user.email to be present in `kb_authors.txt` (same directory as this SKILL.md). Non-SLT users running `--week-audit` get the audit report; write actions are silently skipped.
+`kb_authors.txt` (same directory as this SKILL.md) lists SLT members. It no longer gates
+whether you can write — it decides **where** writes go:
+
+- **On the allowlist** → company KB (`thensls/nsls-knowledge`), committed and pushed to `main`.
+- **Not on the allowlist** → a self-contained **local KB** (`60-nsls-knowledge-local` in your
+  vault), committed locally and never pushed. First run scaffolds it from an org-level seed.
+
+Identity is resolved cwd-independently in Step 0 (same logic as before). Everyone gets a
+working harvest; SLT membership only changes the destination.
 
 ## Step 0: Mode dispatch + SLT allowlist gate
 
@@ -66,7 +74,9 @@ candidates_paths = [
     pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
     pathlib.Path.home() / '.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
 ]
-authors_file = next((p for p in candidates_paths if p.exists()), None)
+# HARVEST_AUTHORS_FILE lets verification runs point at a temp allowlist.
+override = os.environ.get('HARVEST_AUTHORS_FILE')
+authors_file = pathlib.Path(override) if override else next((p for p in candidates_paths if p.exists()), None)
 if not authors_file:
     print('FATAL: kb_authors.txt not found in any known path')
     sys.exit(2)
@@ -127,58 +137,76 @@ looks_misconfigured = (not is_slt) and bool(nsls_emails)
 print(f'looks_misconfigured: {looks_misconfigured}')
 if nsls_emails:
     print(f'nsls_emails_detected: {\", \".join(nsls_emails)}')
+
+# --- Routing: allowlist match -> company; otherwise -> local (never skip) ---
+vault = pathlib.Path(os.environ.get('OBSIDIAN_VAULT_PATH', ''))
+if is_slt:
+    kb_target, kb_push = 'company', True
+    kb_dir = vault / '60-nsls-knowledge'
+else:
+    kb_target, kb_push = 'local', False
+    kb_dir = vault / '60-nsls-knowledge-local'
+
+# write_authorized is now TRUE for everyone: writes always go SOMEWHERE.
+ctx_dir = pathlib.Path('/tmp/harvest-meeting-ctx')
+ctx_dir.mkdir(exist_ok=True)
+import json as _json
+(ctx_dir / 'target.json').write_text(_json.dumps({
+    'kb_target': kb_target, 'kb_dir': str(kb_dir),
+    'kb_push': kb_push, 'write_authorized': True,
+}, indent=2))
+(ctx_dir / 'env.sh').write_text(
+    f'export KB_TARGET={kb_target}\n'
+    f'export KB_DIR={_json.dumps(str(kb_dir))}\n'
+    f'export KB_PUSH={\"true\" if kb_push else \"false\"}\n'
+)
+print(f'kb_target: {kb_target}')
+print(f'kb_dir: {kb_dir}')
+print(f'kb_push: {kb_push}')
 "
 ```
 
-**Heartbeat the result** (per the skill-heartbeats rule — always print the scopes checked so a
-future silent skip is debuggable):
+**Heartbeat the result** (per the skill-heartbeats rule — always print the scopes checked and
+the resolved target so a future silent misroute is debuggable):
 
-- **If `slt_writer: True`** → "Step 0: SLT writer confirmed ({matched_email} via {scope}), proceeding."
+- **If `kb_target: company`** (SLT writer confirmed) →
+  "Step 0: SLT writer ({matched_email} via {scope}) → company KB, pushing to thensls/nsls-knowledge."
 
-- **If `slt_writer: False` AND `looks_misconfigured: True`** (some `@nsls.org` email detected but
-  none matched the allowlist) → print the **loud allowlist-gap** message and skip:
+- **If `kb_target: local` AND `looks_misconfigured: True`** (an `@nsls.org` email was detected
+  but none matched the allowlist) → route to local, AND print the allowlist-gap note so a
+  genuinely-SLT-but-unlisted person is never silently demoted:
 
   ```
-  Step 0: ⚠ NSLS email detected but NOT in KB_AUTHORS allowlist
+  Step 0: ⚠ NSLS email detected but NOT in KB_AUTHORS — writing to your LOCAL KB
     checked: <emails_checked>
     NSLS emails detected: <nsls_emails_detected>
+    local KB: <kb_dir>
 
-    If your @nsls.org email is correct but missing from the allowlist, ping Kevin to
-    add you to skills/harvest-meeting/kb_authors.txt and tick Members.is_slt = true.
-    If you have an @nsls.org typo (e.g., name@nsl.org), fix it in the appropriate
-    git scope or in your toolkit .env and re-run.
+    If you ARE on SLT and should be writing to the company KB, ping Kevin to add you to
+    skills/harvest-meeting/kb_authors.txt and tick Members.is_slt = true, then re-run.
+    If you have an @nsls.org typo, fix it in the appropriate git scope or your toolkit .env.
+    Otherwise this is expected — your harvest goes to your local KB.
   ```
 
-- **If `slt_writer: False` AND `looks_misconfigured: False`** AND mode is `--date` / `--fathom-url`
-  → print the **actionable setup-fix** message and skip cleanly:
+- **If `kb_target: local` AND `looks_misconfigured: False`** (genuinely non-SLT) →
+  "Step 0: not on the SLT allowlist → writing to your local KB at <kb_dir> (not pushed)."
+  This is the normal, expected path for most of the org — no setup fix needed.
 
-  ```
-  Step 0: not in KB_AUTHORS, skipping harvest
-    checked: <emails_checked>
+In every case the pipeline continues. There is no longer a skip/abort path based on membership.
 
-    If you ARE on SLT, your git identity isn't your @nsls.org email yet. Quick fix:
+> **KB commit attribution:**
+> - *Company KB:* harvest commits are authored by whatever `git -C "$KB_DIR" config user.email`
+>   resolves to. Set the company clone's local identity to your NSLS email so commits are
+>   attributed to you AND the allowlist matches via the `kb-repo` scope regardless of cwd:
+>   `git -C "$OBSIDIAN_VAULT_PATH/60-nsls-knowledge" config user.email <you>@nsls.org`.
+> - *Local KB:* the local repo's identity is set automatically on first run (Step 1a). No
+>   remote is ever configured, so a push is impossible — your local KB cannot reach the
+>   company repo.
 
-      KB_DIR="$OBSIDIAN_VAULT_PATH/60-nsls-knowledge"
-      git -C "$KB_DIR" config user.email <you>@nsls.org
-
-    Or set BUILDER_EMAIL in your toolkit .env so the gate matches via toolkit-.env:
-      ~/.claude/local-plugins/nsls-personal-toolkit/.env  →  BUILDER_EMAIL=<you>@nsls.org
-
-    Then re-run /close-day or /harvest-meeting.
-
-    If you're NOT on SLT, this skip is expected — /close-day continues normally.
-  ```
-  Exit cleanly with `WRITE_AUTHORIZED=false`.
-
-- **If `slt_writer: False` AND mode is `--week-audit`** → "Step 0: not in KB_AUTHORS (checked: {emails_checked}), running audit-only (no write actions)." Continue with `WRITE_AUTHORIZED=false`. (The audit is read-only; the same setup-fix hint applies only if the user wants write actions.)
-
-> **KB commit attribution:** harvest commits are authored by whatever `git -C "$KB_DIR" config
-> user.email` resolves to. For the org KB (`thensls/nsls-knowledge`), set the KB clone's local
-> identity to your NSLS email so commits are correctly attributed:
-> `git -C "$OBSIDIAN_VAULT_PATH/60-nsls-knowledge" config user.email <you>@nsls.org`. This also
-> makes the gate match via the `kb-repo` scope regardless of cwd.
-
-Pass `WRITE_AUTHORIZED` (True/False) through to subsequent steps; they consult it to decide whether to execute write actions.
+`Step 0` has stashed `/tmp/harvest-meeting-ctx/target.json` (`kb_target`, `kb_dir`, `kb_push`,
+`write_authorized`) and `/tmp/harvest-meeting-ctx/env.sh`. Every later step reads these: python
+blocks `json.load` the file; bash blocks `source` the `env.sh`. Do NOT re-derive the company
+path anywhere downstream.
 
 ## Step 1: Load context
 
