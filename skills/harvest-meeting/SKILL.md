@@ -570,13 +570,16 @@ For each approved candidate, perform the edit, then commit and push as one batch
 PYTHONPATH=/tmp/pptx_deps python3.12 << 'PYEOF'
 import os, pathlib, json, re, datetime, subprocess
 
-kb_dir = pathlib.Path(os.environ['OBSIDIAN_VAULT_PATH']) / '60-nsls-knowledge'
 ctx_dir = pathlib.Path('/tmp/harvest-meeting-ctx')
+_t = json.loads((ctx_dir / 'target.json').read_text())
+kb_dir = pathlib.Path(_t['kb_dir'])
+kb_push = bool(_t.get('kb_push'))
 approved = json.loads((ctx_dir / 'approved.json').read_text())
 today = datetime.date.today().isoformat()
 
-# Ensure clean tree before write
-subprocess.run(['git', '-C', str(kb_dir), 'pull', '--ff-only', '--quiet'], check=True)
+# Company KB: ensure clean tree before write (rebase on remote). Local KB: no remote, skip.
+if kb_push:
+    subprocess.run(['git', '-C', str(kb_dir), 'pull', '--ff-only', '--quiet'], check=True)
 
 edited_files = set()
 
@@ -693,30 +696,33 @@ if edited_files:
 
     msg = f"harvest: {today} {title_str} ({len(approved)} edits)"
     subprocess.run(['git', '-C', str(kb_dir), 'commit', '-m', msg], check=True)
+    head = subprocess.check_output(['git', '-C', str(kb_dir), 'rev-parse', '--short', 'HEAD'], text=True).strip()
 
-    # Push with rebase-retry
-    try:
-        subprocess.run(['git', '-C', str(kb_dir), 'push', 'origin', 'main'], check=True)
-        print(f"Step 8: pushed {len(edited_files)} file change(s), {len(approved)} edit(s)")
-    except subprocess.CalledProcessError:
-        # Rebase + retry once
-        rebase = subprocess.run(['git', '-C', str(kb_dir), 'pull', '--rebase'], capture_output=True, text=True)
-        if 'CONFLICT' in (rebase.stdout + rebase.stderr):
-            print("Step 8: FATAL — rebase conflict on topic file. Aborting. Resolve manually.")
-            subprocess.run(['git', '-C', str(kb_dir), 'rebase', '--abort'])
-            raise SystemExit(1)
-        subprocess.run(['git', '-C', str(kb_dir), 'push', 'origin', 'main'], check=True)
-        print(f"Step 8: pushed after rebase ({len(edited_files)} file change(s), {len(approved)} edit(s))")
+    if not kb_push:
+        # Local KB: commit only, never push (no remote exists by design).
+        print(f"Step 8: committed {head} locally — {len(edited_files)} file change(s), "
+              f"{len(approved)} edit(s) in {kb_dir.name} (not pushed — local KB)")
+    else:
+        # Company KB: push with rebase-retry.
+        try:
+            subprocess.run(['git', '-C', str(kb_dir), 'push', 'origin', 'main'], check=True)
+            print(f"Step 8: pushed {len(edited_files)} file change(s), {len(approved)} edit(s)")
+        except subprocess.CalledProcessError:
+            rebase = subprocess.run(['git', '-C', str(kb_dir), 'pull', '--rebase'], capture_output=True, text=True)
+            if 'CONFLICT' in (rebase.stdout + rebase.stderr):
+                print("Step 8: FATAL — rebase conflict on topic file. Aborting. Resolve manually.")
+                subprocess.run(['git', '-C', str(kb_dir), 'rebase', '--abort'])
+                raise SystemExit(1)
+            subprocess.run(['git', '-C', str(kb_dir), 'push', 'origin', 'main'], check=True)
+            print(f"Step 8: pushed after rebase ({len(edited_files)} file change(s), {len(approved)} edit(s))")
 else:
     print("Step 8: no approved candidates, nothing to commit.")
 PYEOF
 ```
 
 **Heartbeat at end:**
-```
-Step 8: committed <sha> — <N> edits to <M> file(s) in 60-nsls-knowledge
-       pushed to origin/main
-```
+- *Company KB:* `Step 8: committed <sha> — <N> edits to <M> file(s) in 60-nsls-knowledge` then `pushed to origin/main`.
+- *Local KB:* `Step 8: committed <sha> locally — <N> edits to <M> file(s) in 60-nsls-knowledge-local (not pushed — local KB)`.
 
 This is the last step in `--date` and `--fathom-url` modes.
 
