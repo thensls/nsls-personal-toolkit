@@ -270,7 +270,9 @@ fi
 PYTHONPATH=/tmp/pptx_deps python3.12 << 'PYEOF'
 import os, pathlib, re, json
 
-kb_dir = pathlib.Path(os.environ['OBSIDIAN_VAULT_PATH']) / '60-nsls-knowledge'
+import json as _json
+_t = _json.loads(pathlib.Path('/tmp/harvest-meeting-ctx/target.json').read_text())
+kb_dir = pathlib.Path(_t['kb_dir'])
 
 # Parse frontmatter + body for every topic file
 topics = {}
@@ -322,7 +324,9 @@ print(f"Step 1b: cached context at {ctx_dir}")
 PYEOF
 ```
 
-**Heartbeat expected:** `Step 1b: loaded 60 topic files, rubric is ~5000 chars`. If fewer than 40 topic files, something is wrong with the KB clone.
+**Heartbeat expected:** `Step 1b: loaded N topic files, rubric is ~5000 chars`.
+- *Company KB:* expect ~60. Fewer than 40 means something is wrong with the clone — stop and check.
+- *Local KB:* a freshly seeded KB legitimately has ~5 files. The count grows as you harvest, so there is no low-count alarm for local.
 
 ## Step 2: Load Fathom meetings
 
