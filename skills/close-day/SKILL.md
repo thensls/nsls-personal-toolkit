@@ -442,6 +442,8 @@ Cross-reference against the morning note's `Top 3` and `Goal cues today` (read t
 
 Distinguish "didn't do it" from "did it but didn't log it on the Watch." An unlogged walk that hit the distance/HR/time threshold is a logging gap, not a discipline gap — say so explicitly in the Insight Reflection and the Personal Goals Activity section.
 
+**Goal-hit booleans:** As part of this step, decide for each active personal goal whether it moved today. This drives the `goal_<slug>_moved` frontmatter key written in Step 5a ("Goal tracking frontmatter") for the exact mapping. The boolean follows the same ✅/🔶/❌/⚪ classification used in the Personal Goals Activity section (Step 3).
+
 **1g. Asana — pending tasks and what was due**
 
 Run in parallel with other data collection. Two calls:
@@ -629,6 +631,21 @@ Use the project mappings from `~/.claude/skills/log/SKILL.md` as the source of t
 Generate in this format (matching Kevin's existing `01-daily/` structure):
 
 ```markdown
+---
+# Sleep + hrv keys are owned by the morning write (open-day, or close-day-next-day
+# writing the following note). PRESERVE them if already present — do not clobber.
+sleep_total_hrs: [preserve if present, else from 1f-bis if available]
+sleep_restorative_pct: [preserve / compute]
+sleep_deep_hrs: [preserve]
+sleep_rem_hrs: [preserve]
+hrv_ms: [preserve, else target-date heart.hrv_ms]
+# Activity + VO2 + goal keys are close-day's to own for the TARGET DATE (see Step 5a).
+exercise_min: [target-date activity.exercise_min]
+steps: [target-date activity.steps]
+active_energy_kcal: [target-date activity.active_energy_kcal]
+vo2_max: [target-date body.vo2_max, or null]
+goal_<slug>_moved: [true | false]   # one line per active personal goal — see Step 5a
+---
 # YYYY-MM-DD — [Day of Week]
 
 ## Insight Reflection
@@ -818,6 +835,34 @@ The skill will:
 Write to: `${OBSIDIAN_VAULT_PATH}/01-daily/YYYY-MM-DD.md`
 
 **If the file already exists** (Kevin started it in the morning with priorities), **merge** — keep the existing Morning Check-in section and append/update the generated sections below it.
+
+**5a. Health + goal frontmatter (write/merge) — Goal tracking frontmatter**
+
+This is the authoritative end-of-day write of the note's YAML frontmatter. It is what keeps the Obsidian Tracker charts (exercise minutes, VO2 trajectory, goal hit-rate) fed. Do it every run — never skip silently.
+
+**Always ensure a frontmatter block exists.** If the note has no `---` block at the top (open-day didn't run, or ran without Apple Health), **create one**. If a block exists, **merge** — update the keys below, preserve every other key (especially `sleep_*` and `hrv_ms`).
+
+Write these keys from the **target-date** Apple Health pulled in Step 1f-bis (`apple_health_daily(target)`):
+
+| Key | Source | Notes |
+|---|---|---|
+| `exercise_min` | `activity.exercise_min` | target date — overwrite any provisional value open-day wrote |
+| `steps` | `activity.steps` | target date |
+| `active_energy_kcal` | `activity.active_energy_kcal` | target date |
+| `vo2_max` | `body.vo2_max` | target date; write `null` if absent that day |
+| `goal_<slug>_moved` | Step 1f-bis hit decision | one line per active personal goal (see below) |
+
+**Do NOT write or overwrite `sleep_*` / `hrv_ms` here** — sleep is keyed to wake-up date and is owned by the morning write (per the Sleep semantics in 1f-bis). Preserve whatever is already there; only fill `hrv_ms` from `heart.hrv_ms` if the key is entirely absent.
+
+**Goal key mapping.** For each active personal goal (the same set Step 1f-bis evaluated — `10-strategy/goals/*.md` with `status: active` AND `category: personal`):
+- Key name = `goal_` + the goal file's **`slug:` frontmatter field** + `_moved`. Example: goal file with `slug: vo2_max` → `goal_vo2_max_moved`. Use the `slug` field verbatim (it may contain underscores); do not re-derive it from the filename.
+- Value from the Step 1f-bis classification:
+  - ✅ Executed and logged → `true`
+  - 🔶 Executed but unlogged (activity happened, Watch tag missing) → `true` *(logging gap ≠ discipline gap — the behavior counts; the Watch VO2 number not moving is captured separately by `vo2_max`)*
+  - ❌ No signal (activity doesn't support the goal cue — e.g. cue wanted an outdoor session and only indoor/none happened) → `false`
+  - ⚪ Not goal-relevant today → omit the key for that goal
+
+If Apple Health returned an error for the target date (no data synced yet), still ensure the frontmatter block exists, write the goal keys from whatever evidence exists (workouts, morning cue), and leave the numeric health keys you couldn't source as `null` rather than dropping the block.
 
 ### Step 6: Update project session logs
 
