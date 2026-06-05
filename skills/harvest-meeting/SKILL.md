@@ -254,6 +254,18 @@ else
         git -C "$KB_DIR" config user.email "$WHO"
         git -C "$KB_DIR" config user.name "NSLS KB (local)"
         cp -R "$SEED_DIR"/. "$KB_DIR"/
+        # Stamp the scaffold date into the seed stubs (they ship with the 1970-01-01
+        # sentinel) so a brand-new KB isn't instantly flagged "stale" on the first
+        # week-audit. Stubs then go stale legitimately only after 60 untouched days.
+        python3.12 - "$KB_DIR" <<'PYEOF'
+import sys, pathlib, datetime, re
+kb = pathlib.Path(sys.argv[1]); today = datetime.date.today().isoformat()
+for p in kb.glob('*.md'):
+    t = p.read_text()
+    t2 = re.sub(r'^last-updated: 1970-01-01$', f'last-updated: {today}', t, flags=re.MULTILINE)
+    if t2 != t:
+        p.write_text(t2)
+PYEOF
         git -C "$KB_DIR" add -A
         git -C "$KB_DIR" commit -q -m "local KB: initial scaffold"
         echo "Step 1a: local KB created at $KB_DIR (seeded $(ls "$SEED_DIR"/*.md | wc -l | tr -d ' ') files)"
