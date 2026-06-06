@@ -659,8 +659,8 @@ goal_<slug>_moved: [true | false]   # one line per active personal goal — see 
 Read the morning note's `Goal cues today` and `Top 3` for personal-goal anchors. Compare against Apple Health data from Step 1f-bis. For each personal goal cue, report:
 - ✅ **Executed and logged** — formal Watch workout present, goal met
 - 🔶 **Executed but unlogged** — exercise_min / distance / hr_max indicate the activity happened without a Watch workout tag (logging gap, not discipline gap)
-- ❌ **No signal** — activity metrics do not support the goal cue
-- ⚪ **Not goal-relevant today** — only used when no personal goal was set
+- ❌ **No signal** — the goal's cue fired today (an expected/scheduled day) but activity metrics don't support it — a genuine miss
+- ⚪ **Not goal-relevant today** — no cue fired: a scheduled rest/off day per the goal's `weekly_schedule`/`anchor`, or no personal goal set. Not a miss — Step 5a omits the key for this day.
 
 Include the raw numbers: steps, distance_mi, exercise_min, hr_max, sleep total, VO2 max. Compare against the morning note's "Yesterday" baseline when available. If the goal required a logging step (e.g., "Log on watch as Outdoor Walk for VO2 trigger") and the activity happened but no workout was logged, flag as a workflow fix for tomorrow.
 
