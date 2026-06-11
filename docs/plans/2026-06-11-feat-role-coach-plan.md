@@ -203,6 +203,13 @@ Every caller: heartbeat echo first, fenced slash invocation, "after the skill re
 - T4 Hex integration: business-metric evidence (e.g., the five-numbers card) via Hex MCP threads, cited like any other source
 - Deep mode wired into `open-quarter`/`close-quarter` when those skills are built (separate plan)
 
+### Phase 5 — Society coaching + goals into Signal context (tracked 2026-06-11)
+Connect Society's member-platform coaching conversations and goals into Signal's context layer, exposed through the same scope-enforced MCP token (self/manager/exec tiers, employee-profiles #73 enforcement). Two consumers:
+1. **Signal Slack bot coaching** — `nsls-coach` team-state/coaching payloads gain Society goal/coaching awareness
+2. **role-coach** — evidence sweep gains a Society source row (own data at T1, team at T2+), same citation + redaction rules
+
+Open design questions: employee↔member identity join (auth.nsls.org `sub`?); Society data is customer data — what crosses into the internal stack needs its own rubric pass; server-side stripping decisions (sentiment precedent) before any client sees it. Vault tracking: `20-projects/signal-app/signal-app.md` → Next Step.
+
 ## Acceptance Criteria
 
 - [ ] Phase 1 loop works end-to-end for Kevin with zero new scripts: role → scoped evidence → coaching → approval → ledger
