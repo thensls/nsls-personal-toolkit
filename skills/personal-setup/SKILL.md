@@ -117,6 +117,29 @@ Skip? (y/n)
 
 If they want it, walk them through creating a personal access token at airtable.com/create/tokens with scopes: `data.records:read`, `data.records:write`, `schema.bases:read`.
 
+### Role Coach (optional, recommended)
+
+```
+Want coaching from your seat? /role-coach reads your role (title,
+accountabilities, optionally the role you're working toward), looks at
+what you actually did each week, and coaches the gap — with a memory,
+so the same advice doesn't repeat forever.
+
+Everyone can use it:
+  - It works from your role docs + notes alone.
+  - If you connect Signal (any employee can mint a token at the Signal
+    dashboard → it can read YOUR OWN Quick Notes history and goals —
+    nobody else's, and your sentiment data is never included), the
+    coaching gets evidence-grounded.
+  - Managers additionally see their team's signal, execs org-wide —
+    scope is enforced by the server, not by this skill.
+
+Set it up now? (y/n) — you can always run /role-coach later; the first
+run is a 5-minute interview about your seat.
+```
+
+If yes: tell them the first `/role-coach --week` run starts the interview (role-profile.md + optional role-trajectory.md). If they want Signal evidence, point them at `/signal-setup`. Nothing to write to .env — role-coach activates on the presence of `10-strategy/role-coaching/role-profile.md`.
+
 ## Step 4: Write Config and Confirm
 
 Write `~/.claude/local-plugins/nsls-personal-toolkit/.env`:

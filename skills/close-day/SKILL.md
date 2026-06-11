@@ -820,6 +820,28 @@ The skill will:
 - `- 0 candidates from today's meetings`
 - `- Harvest cancelled (no changes)`
 
+### Step 4d. Role lens (role-coach daily cue)
+
+Runs when `$OBSIDIAN_VAULT_PATH/10-strategy/role-coaching/role-profile.md` exists; otherwise heartbeat the skip.
+
+```bash
+echo "Step 4d: invoking /role-coach --date $TODAY (daily role cue)..."
+# or: echo "Step 4d: no role-profile.md — /role-coach not set up, skipping"
+```
+
+Invoke:
+
+```
+/role-coach --date $TODAY
+```
+
+The skill scans today's evidence against open ledger patterns and renders **at most one** `🪑 Role:` line — or a zero-dose heartbeat (no new evidence = no cue; that is the correct output, not a failure). No ledger ticks, no proposals.
+
+**After the skill returns:** add the cue (if any) as one line in the End of Day suggestions, and append to the daily note:
+- `- 🪑 Role cue: [text] [ledger: P00N]` or
+- `- Role lens: no pattern instance today (zero dose)` or
+- `- Role lens skipped — not set up`
+
 ### Step 5: Write daily note
 
 Write to: `${OBSIDIAN_VAULT_PATH}/01-daily/YYYY-MM-DD.md`

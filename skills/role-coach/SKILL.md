@@ -23,12 +23,20 @@ Read `OBSIDIAN_VAULT_PATH` from `~/.claude/local-plugins/nsls-personal-toolkit/.
 
 | Flag | Window | Output | Caller |
 |------|--------|--------|--------|
+| `--date [YYYY-MM-DD]` | that day | ≤1 daily cue (🪑 line) — or a heartbeat skip | manual; close-day Step 4d |
 | `--week [YYYY-Www]` | the named week (default: current) | Role Coaching block (said/did/gap + ledger deltas + horizon) + one cue to cues.json | manual; close-week Step 2c |
 | `--deep` | since last deep memo (or 90 days) | full memo, section-by-section approval | manual; close-quarter (future) |
 
-Open-week reads the ledger directly (Step 2.6) and picks up the weekly cue through the
-person-intelligence surfacer (Step 4.6, `role_cue` field). Daily mode (close-day 4d /
-open-day Role lens) is deferred until two clean weekly cycles.
+Open-week reads the ledger directly (Step 2.6); open-day and open-week pick up the queued cue
+through the person-intelligence surfacer (`role_cue` field — at most 1, inside the 3/5 caps).
+
+**Daily mode is deliberately thin.** It does NOT run the full engine: it scans the day's evidence
+(today's daily note, today's Quick Note if any) against `open`/`progressing` patterns only, and
+renders at most ONE `🪑 Role:` line (UX rules: cite, name a forcing function, carry the `[state: week N]`
+tag, never name the trajectory's target role). **Zero is a valid dose** — no new evidence today →
+`Step 3: no pattern instance today — no cue (zero dose)`. No `cycles-open` ticks, no proposals,
+no escalation changes, no memo. If today's evidence sharpened the queued cue, update `cues.json`
+(replace); otherwise leave the weekly cue in place.
 
 ## Design rules (apply to every step)
 
@@ -54,7 +62,7 @@ Probe in order, heartbeat each source as available/unavailable:
 | Source | How | Tier |
 |--------|-----|------|
 | Vault (daily/weekly notes, stack-rank, goals, lops-summary) | direct reads | all |
-| Signal | `signal_*` MCP tools (load via ToolSearch if deferred); absent/403 → skip | T2+ |
+| Signal | `signal_*` MCP tools (load via ToolSearch if deferred); absent/403 → skip | T1+ (self scope: own slug only — person/history/goals; sentiment is server-stripped) |
 | LOP goals | Airtable MCP, base `appAcnl4o8AQVZR1j`; absent → skip | T3+ |
 | SLT meeting intelligence | Airtable MCP, base `appHDEHQA4bvlWwQq`; absent → skip | T4 |
 | Hex business metrics | Phase 4 — heartbeat "not yet wired" | T4 |
@@ -151,6 +159,22 @@ state: open | lens: floor | first-named: 2026-06-11 | last-evidence: 2026-06-11 
 
 States: `proposed | open | progressing | contested | lapsed | closed | archived`.
 Key transitions (full machine in the plan): user-only → `contested`; zero evidence either way for 6 weekly cycles → `lapsed` (quarterly forces triage); 3 consecutive counter-evidence cycles → skill *proposes* `closed`; contested re-opens only on a **new evidence class**, by proposal. Hand-edits to the file are legal — validate on read, heartbeat (never silently skip) malformed blocks.
+
+## Tier rules (org-wide rollout)
+
+**T1 — individual contributor (self scope):**
+- Evidence = own Signal history + own goals (self-scope endpoints) + own vault/notes if present. A 403 elsewhere is normal, not an error.
+- If Signal isn't connected at all, coach from ScoreCard accountabilities + vault with an explicit banner: `No Signal evidence this run — coaching from your role docs and notes only.`
+- **Never quote or characterize teammates.** A teammate appears only as a role descriptor when the user's own evidence mentions them ("a teammate's review unblocked X").
+- Sentiment is never part of T1 coaching — the server strips it, and the skill never infers it back ("you sound overloaded" is forbidden output).
+
+**T2 — manager:**
+- Named-person observations are allowed only for people in the caller's reporting subtree, and only as coaching input for the *user's* management behavior — never as a verdict on the report.
+- **Memos containing named-report observations get frontmatter `confidential: true`** and are excluded from any sharing surface (announce-update, examples, screenshots).
+- **Brand-new team rule:** if most reports have <4 weeks of history, render "insufficient evidence" for team-pattern claims — never infer a pattern from one or two weeks of someone's Quick Notes.
+- **Departed-employee filter:** skip anyone no longer active in org-chart.json/Signal; never generate coaching about a departed person.
+
+**T3/T4 — exec/CEO:** as Phase 1 (org-wide evidence, aggregate below-scope, rubric on render).
 
 ## Privacy boundaries (hard rules)
 

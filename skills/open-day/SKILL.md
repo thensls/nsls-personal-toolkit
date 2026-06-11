@@ -422,7 +422,7 @@ echo "$ATTENDEE_NAMES" | python3.12 \
   --people-stdin
 ```
 
-The script returns JSON with `surfaced_actions` (up to 3 actions, distributed across scheduled people) and `sweep_status` (last biweekly sweep result).
+The script returns JSON with `surfaced_actions` (people-coaching actions), `role_cue` (the at-most-one role-coach cue from `~/.cache/role-coach/cues.json` — null when none), and `sweep_status` (last biweekly sweep result).
 
 **Format in the morning note:**
 
@@ -434,17 +434,20 @@ The script returns JSON with `surfaced_actions` (up to 3 actions, distributed ac
 
   🎯 [Person] ([dimension]): [action text]
      (from "[goal title]")
+
+  🪑 Role: [role_cue.text]   [ledger: P00N]
 ```
 
 **Rules:**
-- Hard cap: 3 actions across all today's people-meetings
+- Hard cap: 3 across today — `🎯` actions + the `🪑` role cue combined (the script enforces this: when `role_cue` is non-null, `surfaced_actions` holds at most 2)
+- The `🪑` line is seat-coaching (from /role-coach's ledger), not person-coaching — render it last, omit when `role_cue` is null
 - Distribute across people first (one per scheduled person before stacking)
 - Two-way coaching: if your manager is in today's calendar (e.g., Gary 1:1),
   their managing-up actions surface here too
 - If `sweep_status.exit_code != 0` or last sweep was >18 days ago, show a
   one-line alert: `⚠️ Last person-intelligence sweep failed/stale — run
   /person-intelligence biweekly sweep`
-- If `surfaced_actions` is empty AND no sweep error, skip this section entirely
+- If `surfaced_actions` is empty AND `role_cue` is null AND no sweep error, skip this section entirely
 
 ### Management — today's people (Signal)
 
