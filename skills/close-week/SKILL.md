@@ -316,6 +316,32 @@ The user approves changes via the same numbered-list UX as `/harvest-meeting --d
 
 **After the skill returns:** Append a `## Knowledge Base` section to the weekly close note with the audit summary (and any commits made).
 
+### Step 2c. Role coaching (role-coach weekly block)
+
+Runs when `$OBSIDIAN_VAULT_PATH/10-strategy/role-coaching/role-profile.md` exists; otherwise heartbeat the skip.
+
+```bash
+echo "Step 2c: invoking /role-coach --week $WEEK (role coaching from your seat)..."
+# or: echo "Step 2c: no role-profile.md — /role-coach not set up, skipping"
+```
+
+Invoke the role-coach skill:
+
+```
+/role-coach --week $WEEK
+```
+
+The skill will:
+- Sweep the week's evidence (vault + whatever sources its scope probe finds), every claim cited
+- Render the ≤10-line Role Coaching block: Said / Did / Gap + pattern-ledger deltas + Horizon (if a trajectory exists)
+- Propose ledger bookkeeping (ok-class) and any moves/proposals (explicit-yes class)
+- Write one cue candidate to `~/.cache/role-coach/cues.json` for next week's /open-week pool (after the move is restated)
+
+**After the skill returns:** Append the approved Role Coaching block to the weekly close note as a `## Role Coaching` section. Outcome lines (exactly one):
+- `## Role Coaching` section appended — [N] patterns updated, cue queued for open-week
+- Role coaching skipped — no role-profile.md (run /role-coach to set up)
+- Role coaching declined this week — noted, ledger untouched
+
 ### Step 3: Generate two outputs
 
 **Output A: Weekly Review note** (for Obsidian)

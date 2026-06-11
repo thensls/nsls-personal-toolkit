@@ -508,6 +508,27 @@ This drives a **Management Cadence** block in the Week Plan (Step 3) and the
   chronic may mean Quick Notes isn't the right instrument for that person; lapsed is a check-in.
 - Skip the whole lane if `enabled:false` or `available:false`.
 
+### Step 2.6: Role lens (role-coach ledger)
+
+Read-only — no fresh evidence sweep, no skill invocation. Read
+`$OBSIDIAN_VAULT_PATH/10-strategy/role-coaching/coaching-log.md` if it exists.
+
+```bash
+echo "Step 2.6: role-coach ledger — found N patterns (X open, Y progressing, Z contested)"
+# or: echo "Step 2.6: no role-coaching ledger — /role-coach not set up, skipping"
+```
+
+Feed the open/progressing patterns into this week's planning:
+- **Coaching insights (Step 2 output):** an `open` pattern at escalation rung ≥1 belongs in the
+  Coaching Notes — phrased per its ledger entry (artifact-vs-artifact, name the cost), never
+  re-litigated from scratch. Cite it as "ledger P00N, week N".
+- **Trap check (Step 1.8):** if a stack-ranked project feeds a known pattern (e.g., a build
+  project while "written closes lag" is open at rung 1+), flag the collision in one line.
+- **Top-3 candidates:** a rung-2 pattern's forcing function is a standing Top-3 candidate —
+  surface it as a suggestion, never auto-insert.
+- `contested` and `lapsed` patterns are NOT raised here (quarterly-only per the role-coach
+  escalation rules). Mastery mode / no trajectory file changes nothing in this step.
+
 ### Step 3: Draft week plan
 
 Present to the builder:
@@ -638,17 +659,25 @@ echo "$WEEK_ATTENDEES" | python3.12 \
   [Person] ([dimension]): [action text]
     (from "[goal title]")
   ...
+🪑 Role cue (1 of the 5)
+  [role_cue.text]   [ledger: P00N]
 ```
+
+The surfacer arbitrates the role-coach pool itself: `role_cue` in its JSON output is the
+at-most-one role-coach cue (written by `/role-coach --week` to `~/.cache/role-coach/cues.json`)
+and it consumes one slot of the weekly cap — `surfaced_actions` holds at most 4 when a role cue
+is present. Render it with the `🪑` glyph after the `🎯` actions; omit the line when `role_cue`
+is null.
 
 **Also check the most recent team-pulse digest** at `$OBSIDIAN_VAULT_PATH/30-people/_pulse/YYYY-MM-DD-team-pulse.md`:
 - If a "Manager Mode Review" prompt exists, surface it under the week plan as a question for Kevin to consider
 - If "Proposed Coaching Updates" exist, surface them for review
 
 **Rules:**
-- Hard cap: 5 actions across the week
+- Hard cap: 5 across the week — `🎯` actions + the `🪑` role cue combined (the script enforces this)
 - Round-robin distribution: one action per person before stacking
 - If `sweep_status.exit_code != 0` or last sweep was >18 days ago, alert
-- If no actions surface AND no sweep error, skip this section
+- If no actions surface AND no role cue AND no sweep error, skip this section
 
 This gives Kevin a birds-eye view of which relationship moves to make this week, prioritized by who's actually on the calendar and what the data says is most important.
 

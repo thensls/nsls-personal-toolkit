@@ -23,10 +23,12 @@ Read `OBSIDIAN_VAULT_PATH` from `~/.claude/local-plugins/nsls-personal-toolkit/.
 
 | Flag | Window | Output | Caller |
 |------|--------|--------|--------|
-| `--week [YYYY-Www]` | the named week (default: current) | Role Coaching block (said/did/gap + ledger deltas + horizon) | manual; close-week Step 2c (future) |
+| `--week [YYYY-Www]` | the named week (default: current) | Role Coaching block (said/did/gap + ledger deltas + horizon) + one cue to cues.json | manual; close-week Step 2c |
 | `--deep` | since last deep memo (or 90 days) | full memo, section-by-section approval | manual; close-quarter (future) |
 
-Daily mode and cadence callers are Phase 2 — not yet wired.
+Open-week reads the ledger directly (Step 2.6) and picks up the weekly cue through the
+person-intelligence surfacer (Step 4.6, `role_cue` field). Daily mode (close-day 4d /
+open-day Role lens) is deferred until two clean weekly cycles.
 
 ## Design rules (apply to every step)
 
@@ -115,6 +117,15 @@ Edge rules:
   - Decline → section discarded; one-line ledger note; no ghost copies.
   - Then write `memos/YYYY-MM-DD-deep.md` and apply approved ledger changes.
 - Trajectory writes (milestone check-offs, readiness-evidence lines) are always proposals — the Why and the milestones are the user's to author.
+- **Cue emission** (`--week`, after the move is restated/approved): write exactly ONE cue to `~/.cache/role-coach/cues.json`, **replacing** any prior pending cues (one live cue at a time). The cue is the week's single highest-leverage if-then — the milestone move when a trajectory exists, else the highest-rung open pattern's move. Cue text obeys H1b: reference the gate/artifact, never the target role by name. Format:
+
+  ```json
+  {"cues": [{"id": "P001-2026-06-12", "pattern_id": "P001", "text": "🪑 Role: <if-then, cited>",
+             "lens": "floor", "created": "2026-06-12", "expires": "2026-06-19",
+             "status": "pending", "times_surfaced": 0, "last_surfaced": null}]}
+  ```
+
+  `expires` = 7 days out (the cue dies when the next weekly run replaces it anyway). The person-intelligence surfacer (`surface_actions_for_day.py --weekly`) arbitrates: at most one role cue, inside the 3/5 caps, same decay model (3 surfacings → stale). Heartbeat the write: `Step 5: cue queued for open-week (P001, expires 6/19)` or `Step 5: no cue this week (move declined / zero dose)`.
 - Close with the write summary: `Writing memos/2026-06-11-deep.md (5 accepted, 1 declined, 2 contested). Log: 3 seeded, 1 closed.`
 
 ## Step 6: Teardown + retention

@@ -32,9 +32,10 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 DEFAULT_CACHE_DIR = Path.home() / ".cache" / "person-intelligence"
+DEFAULT_ROLE_CACHE_DIR = Path.home() / ".cache" / "role-coach"
 HARD_CAP_DAILY = 3
 HARD_CAP_WEEKLY = 5
-DECAY_THRESHOLD = 3  # times_surfaced before auto-stale
+DECAY_THRESHOLD = 3  # times_surfaced before auto-stale (actions AND role cues)
 
 
 def utc_today_iso():
@@ -141,6 +142,60 @@ def write_cache(cache_data, cache_path):
     cache_path.write_text(json.dumps(cache_data, indent=2))
 
 
+def select_role_cue(role_cache_dir, today_iso):
+    """Pick at most ONE pending role-coach cue from <role-cache>/cues.json.
+
+    Arbitration rule (role-coach plan, Phase 2): role-coach gets at most one
+    slot inside the existing hard caps; person-intelligence fills the rest.
+    Decay mirrors the action model: times_surfaced >= DECAY_THRESHOLD -> stale.
+    Mutates and persists cues.json (surfaced count, stale marks).
+    """
+    cues_path = role_cache_dir / "cues.json"
+    if not cues_path.exists():
+        return None
+    try:
+        data = json.loads(cues_path.read_text())
+    except json.JSONDecodeError:
+        return None
+
+    cues = data.get("cues", [])
+    dirty = False
+    candidates = []
+    for c in cues:
+        if c.get("status") != "pending":
+            continue
+        if c.get("times_surfaced", 0) >= DECAY_THRESHOLD:
+            c["status"] = "stale"
+            dirty = True
+            continue
+        expires = c.get("expires")
+        if expires and expires < today_iso:
+            continue
+        candidates.append(c)
+
+    selected = None
+    if candidates:
+        # Newest first; ties broken by least-surfaced
+        candidates.sort(key=lambda c: (c.get("created", ""), -c.get("times_surfaced", 0)), reverse=True)
+        selected = candidates[0]
+        selected["times_surfaced"] = selected.get("times_surfaced", 0) + 1
+        selected["last_surfaced"] = today_iso
+        dirty = True
+
+    if dirty:
+        cues_path.write_text(json.dumps(data, indent=2))
+
+    if selected is None:
+        return None
+    return {
+        "id": selected.get("id"),
+        "pattern_id": selected.get("pattern_id"),
+        "text": selected.get("text"),
+        "lens": selected.get("lens"),
+        "created": selected.get("created"),
+    }
+
+
 def read_sweep_status(cache_dir):
     """Return last sweep status for failure alerting."""
     status_path = cache_dir / "last-sweep-status.json"
@@ -170,13 +225,22 @@ def main():
         help="Use weekly cap (5) instead of daily (3)",
     )
     parser.add_argument("--cache-dir", type=Path, default=DEFAULT_CACHE_DIR)
+    parser.add_argument("--role-cache-dir", type=Path, default=DEFAULT_ROLE_CACHE_DIR)
     args = parser.parse_args()
+
+    today_iso = utc_today_iso()
+    cap = HARD_CAP_WEEKLY if args.weekly else HARD_CAP_DAILY
+
+    # Role-coach pool: at most one cue, consuming one slot of the cap.
+    role_cue = select_role_cue(args.role_cache_dir, today_iso)
+    actions_cap = cap - 1 if role_cue else cap
 
     cache_path = args.cache_dir / "coaching_actions.json"
     if not cache_path.exists():
-        # No coaching actions yet — return empty list and surface a hint
+        # No coaching actions yet — role cue (if any) still surfaces.
         result = {
             "surfaced_actions": [],
+            "role_cue": role_cue,
             "sweep_status": read_sweep_status(args.cache_dir),
             "hint": "no_cache",
         }
@@ -191,11 +255,8 @@ def main():
     else:
         people = [p.strip() for p in args.people.split(",") if p.strip()]
 
-    today_iso = utc_today_iso()
-    cap = HARD_CAP_WEEKLY if args.weekly else HARD_CAP_DAILY
-
     candidates = candidate_actions(cache_data, people, today_iso)
-    selected = select_and_surface(candidates, cap, today_iso)
+    selected = select_and_surface(candidates, actions_cap, today_iso)
     write_cache(cache_data, cache_path)
 
     result = {
@@ -210,6 +271,7 @@ def main():
             }
             for s in selected
         ],
+        "role_cue": role_cue,
         "candidates_total": len(candidates),
         "cap": cap,
         "today_people": people,
