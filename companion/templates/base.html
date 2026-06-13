@@ -5,11 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NSLS Toolkit Companion</title>
   <link rel="stylesheet" href="/static/tailwind.css">
-  <!-- CDN script tags; SRI removed for v1.0 because we're localhost-only and the
-       CDN versions are pinned. Add integrity hashes in a future hardening pass
-       if/when we ship a non-localhost mode. -->
-  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-  <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+  <!-- htmx + Alpine are vendored locally (companion/static/) so the companion
+       works fully offline / behind firewalls that block unpkg. A blocked CDN
+       was silently leaving htmx undefined, so every button did nothing. The
+       onerror fallbacks only fire if the local file fails to load. -->
+  <script src="/static/htmx.min.js"
+          onerror="this.onerror=null;var s=document.createElement('script');s.src='https://unpkg.com/htmx.org@1.9.10';document.head.appendChild(s);"></script>
+  <script defer src="/static/alpine.min.js"
+          onerror="this.onerror=null;var s=document.createElement('script');s.defer=true;s.src='https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js';document.head.appendChild(s);"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
   </style>
