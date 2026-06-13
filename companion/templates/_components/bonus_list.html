@@ -1,0 +1,31 @@
+<ul id="bonus-list" class="space-y-2">
+  {% for b in plan.bonus %}
+  <li class="flex items-center gap-2">
+    <span class="text-stone-400 text-sm w-4">•</span>
+    <input type="text"
+           value="{{ b.text }}"
+           hx-post="/set-bonus"
+           hx-vals='{"index": "{{ loop.index0 }}"}'
+           hx-trigger="change, keyup changed delay:600ms"
+           hx-swap="none"
+           name="text"
+           class="flex-1 border rounded px-3 py-2 text-sm">
+    <button hx-post="/delete-bonus"
+            hx-vals='{"index": "{{ loop.index0 }}"}'
+            hx-target="#bonus-list" hx-swap="outerHTML"
+            class="text-stone-400 hover:text-red-600 px-1" title="Remove">✕</button>
+  </li>
+  {% endfor %}
+  <li class="flex items-center gap-2">
+    <span class="text-stone-400 text-sm w-4">+</span>
+    <input type="text"
+           value=""
+           placeholder="Add a bonus item..."
+           hx-post="/set-bonus"
+           hx-vals='{"index": "{{ plan.bonus|length }}"}'
+           hx-trigger="change"
+           hx-target="#bonus-list" hx-swap="outerHTML"
+           name="text"
+           class="flex-1 border rounded px-3 py-2 text-sm">
+  </li>
+</ul>

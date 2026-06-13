@@ -136,15 +136,14 @@ def test_save_rejects_disallowed_section(client_with_today):
 
 def test_set_top_3_creates_note_on_empty_vault(client_with_today):
     """First /set-top-3 call against a vault with no daily note creates the
-    scaffold and writes the user's text. Response is the re-rendered
-    plan_your_day partial (200) so the input indices stay in sync."""
+    scaffold and writes the user's text. Saves silently (204, no DOM swap) —
+    re-rendering the form mid-typing wiped the field the user tabbed into."""
     client, vault = client_with_today
     today = date.today().isoformat()
     note = vault / "01-daily" / f"{today}.md"
     note.unlink(missing_ok=True)  # ensure no note exists
     resp = client.post("/set-top-3", data={"index": "0", "text": "Ship companion v1.1"})
-    assert resp.status_code == 200
-    assert b"plan-your-day" in resp.data
+    assert resp.status_code == 204
     assert note.exists()
     body = note.read_text()
     assert "### My Top 3" in body
@@ -160,11 +159,34 @@ def test_set_top_3_updates_existing_item_preserves_checkbox(client_with_today):
         "1. [x] Old text\n2. [ ] Second\n3. [ ] Third\n"
     )
     resp = client.post("/set-top-3", data={"index": "0", "text": "New text"})
-    assert resp.status_code == 200  # rerendered partial, not 204
+    assert resp.status_code == 204  # saves silently, no re-render
     body = note.read_text()
     # Checked state preserved; only text replaced
     assert "1. [x] New text" in body
     assert "2. [ ] Second" in body
+
+
+def test_set_top_3_index_2_does_not_shift_to_earlier_slot(client_with_today):
+    """Regression: typing in slot 3 with slots 1-2 empty must stay in slot 3.
+    The old form compacted priorities, so slot-3 text re-rendered into slot 1.
+    Positional storage + a positional `top3_slots` context keep slot i ↔ index i.
+    """
+    from companion.server import _build_plan_context
+    from companion.parsers import parse_daily_note_sections
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    note.write_text(
+        "## Morning Check-in\n### My Top 3\n1. [ ]\n2. [ ]\n3. [ ]\n\n### Bonus\n"
+    )
+    assert client.post("/set-top-3", data={"index": "2", "text": "third only"}).status_code == 204
+    body = note.read_text()
+    assert "3. [ ] third only" in body
+    # And the plan context renders it positionally in slot 3, not slot 1.
+    morning = parse_daily_note_sections(body).get("Morning Check-in", "")
+    from companion.server import _extract_top_3, _extract_bonus
+    plan = _build_plan_context(body, vault, today, _extract_top_3(morning), _extract_bonus(morning))
+    assert plan["top3_slots"] == ["", "", "third only"]
 
 
 def test_set_bonus_updates_nth_item(client_with_today):

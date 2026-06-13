@@ -71,16 +71,17 @@
     <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-2">Your Top 3</h4>
     <ol class="space-y-2">
       {% for i in range(3) %}
-        {% set item = plan.priorities[i] if i < plan.priorities|length else None %}
         <li class="flex items-center gap-2">
           <span class="text-stone-400 text-sm w-4">{{ i + 1 }}.</span>
           <input type="text"
-                 value="{{ item.text if item else '' }}"
+                 value="{{ plan.top3_slots[i] }}"
                  placeholder="Priority {{ i + 1 }}"
                  hx-post="/set-top-3"
                  hx-vals='{"index": "{{ i }}"}'
-                 hx-trigger="change delay:300ms"
+                 hx-trigger="change, keyup changed delay:600ms"
+                 hx-swap="none"
                  name="text"
+                 autocomplete="off"
                  class="flex-1 border rounded px-3 py-2 text-sm">
         </li>
       {% endfor %}
@@ -89,34 +90,7 @@
 
   <div class="mb-4">
     <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-2">Bonus list</h4>
-    <ul class="space-y-2">
-      {% for b in plan.bonus %}
-        <li class="flex items-center gap-2">
-          <span class="text-stone-400 text-sm w-4">•</span>
-          <input type="text"
-                 value="{{ b.text }}"
-                 hx-post="/set-bonus"
-                 hx-vals='{"index": "{{ loop.index0 }}"}'
-                 hx-trigger="change delay:300ms"
-                 name="text"
-                 class="flex-1 border rounded px-3 py-2 text-sm">
-          <button hx-post="/delete-bonus"
-                  hx-vals='{"index": "{{ loop.index0 }}"}'
-                  class="text-stone-400 hover:text-red-600 px-1" title="Remove">✕</button>
-        </li>
-      {% endfor %}
-      <li class="flex items-center gap-2">
-        <span class="text-stone-400 text-sm w-4">+</span>
-        <input type="text"
-               value=""
-               placeholder="Add a bonus item..."
-               hx-post="/set-bonus"
-               hx-vals='{"index": "{{ plan.bonus|length }}"}'
-               hx-trigger="change"
-               name="text"
-               class="flex-1 border rounded px-3 py-2 text-sm">
-      </li>
-    </ul>
+    {% include "_components/bonus_list.html" %}
   </div>
 
   <div class="flex justify-end">

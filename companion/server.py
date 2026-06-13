@@ -382,9 +382,15 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
 
     priorities_with_text = [p for p in priorities if p.get("text")]
     bonus_with_text = [b for b in bonus if b.get("text")]
+    # Positional Top 3 slots (length 3, empties preserved) so the form renders
+    # slot i ↔ index i. Compacting (priorities_with_text) is what made a value
+    # typed in slot 3 reappear in slot 1 after a re-render.
+    raw_top3 = _extract_numbered_checkbox_list_raw(morning, "### My Top 3")
+    top3_slots = [(raw_top3[i]["text"] if i < len(raw_top3) else "") for i in range(3)]
     return {
         "suggestions": suggestions,
         "priorities": priorities_with_text,
+        "top3_slots": top3_slots,
         "bonus": bonus_with_text,
     }
 
@@ -1217,13 +1223,32 @@ def create_app(vault_path: str) -> Flask:
         broadcast(f"01-daily/{today}.md")
         return ("", 204)
 
+    def _render_bonus_list(today: str):
+        """Re-render just the bonus list partial (id=bonus-list) for the
+        add/delete flows, leaving the Top 3 inputs untouched."""
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text() if note_path.exists() else ""
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/bonus_list.html", plan=plan)
+
     @app.route("/set-top-3", methods=["POST"])
     def set_top_3():
-        return _set_morning_item("### My Top 3", "top_3", rerender_partial=True)
+        # Save silently (204, no DOM swap) — re-rendering the form mid-typing
+        # destroyed focus and wiped the field the user had tabbed into.
+        return _set_morning_item("### My Top 3", "top_3", rerender_partial=False)
 
     @app.route("/set-bonus", methods=["POST"])
     def set_bonus():
-        return _set_morning_item("### Bonus", "bonus", rerender_partial=True)
+        # Existing bonus inputs save with hx-swap="none" and ignore this body;
+        # the trailing "add" input targets #bonus-list to surface a fresh slot.
+        resp = _set_morning_item("### Bonus", "bonus", rerender_partial=False)
+        if isinstance(resp, tuple) and resp[1] != 204:
+            return resp  # validation error — pass through
+        return _render_bonus_list(_target_date())
 
     @app.route("/delete-bonus", methods=["POST"])
     def delete_bonus():
@@ -1269,14 +1294,7 @@ def create_app(vault_path: str) -> Flask:
 
         safe_modify(note_path, remove)
         broadcast(f"01-daily/{today}.md")
-
-        daily_md = note_path.read_text()
-        sections = parse_daily_note_sections(daily_md)
-        morning = sections.get("Morning Check-in", "")
-        top_3 = _extract_top_3(morning)
-        bonus_items = _extract_bonus(morning)
-        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
-        return render_template("_components/plan_your_day.html", plan=plan)
+        return _render_bonus_list(today)
 
     def _render_unplanned(today: str):
         """Render the unplanned-section partial with fresh indices."""
