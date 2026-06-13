@@ -23,6 +23,7 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 | `/log` | Log session progress to project notes |
 | `/familiar` | Recall past screen activity and work context |
 | `/person-intelligence` | Build relationship profiles, track 1:1 context |
+| `/reset-day` | Start today over — clears today's note so `/open-day` rebuilds it from your real data (`--close-only` keeps the morning plan) |
 | `obsidian-setup` | Set up an Obsidian knowledge base |
 
 ## Web Companion
