@@ -62,9 +62,11 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 [ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
 ```
 
+**Skip this step entirely if `visual_mode: off`** in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (treat any value other than the literal string `off` as on; default on if absent). When visual_mode is off, close-day runs as a pure CLI ritual — do not resolve, start, or open the companion. Proceed straight to Step 1.
+
 **Only run this step if the date from Step 0 is today** (`$(date +%Y-%m-%d)`). The companion always shows today's data — if closing a past date, the companion would show the wrong day. Skip silently for past dates.
 
-If `"$TC"` resolves and `"$TC" status` reports running, parse the address from the status output:
+If `visual_mode` is on AND `"$TC"` resolves AND `"$TC" status` reports running, parse the address from the status output:
 
 1. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If the file doesn't exist, skip this step — there's nothing to show.
 
@@ -79,6 +81,21 @@ If `"$TC"` resolves and `"$TC" status` reports running, parse the address from t
 4. After they say done, re-read the daily note to pick up any changes they made in the companion, then proceed to Step 1.
 
 If the companion binary isn't found, isn't running, or today's daily note doesn't exist, skip this step silently — proceed to Step 1 as before.
+
+### Step 0.6: Read the morning plan's completion state
+
+Read `## Morning Check-in` → `### My Top 3` and `### Bonus` from today's daily note and interpret each item's completion. The companion writes richer markers; in CLI-only use, items are just `[x]`/`[ ]` and this degrades to plain done/not-done with no behavior change:
+
+- `[x]`, or a trailing `<!--p:100-->` → **done (100%)**
+- a trailing `<!--p:NN-->` marker where NN is 25/50/70 → **partial, NN%** (the item line still shows `[ ]`; the marker is an HTML comment, invisible in rendered Obsidian)
+- `[ ]` with no marker → **not started**
+- the item's text also listed under `## Carrying Over` → the builder explicitly chose to **carry it forward**
+
+Use this to:
+1. **Report a brief "Priorities vs. Reality" read** in the Step 4 summary — each Top 3 item with its outcome (done / NN% / not started / carried).
+2. **Seed Carrying Over** — any Top 3 item that is <100% and not already under `## Carrying Over` is a carry-over candidate; add it so it resurfaces in tomorrow's `/open-day` (skip items the builder deleted).
+
+This step is read-only synthesis; the `<!--p:NN-->` markers and disposition sections are companion-written — never author them from the skill. In CLI-only mode they simply won't be present.
 
 ### Step 1: Collect data (run in parallel where possible)
 
