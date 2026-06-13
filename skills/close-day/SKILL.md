@@ -62,7 +62,7 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 [ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
 ```
 
-**Skip this step entirely if `visual_mode: off`** in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (treat any value other than the literal string `off` as on; default on if absent). When visual_mode is off, close-day runs as a pure CLI ritual — do not resolve, start, or open the companion. Proceed straight to Step 1.
+**The companion is OFF by default.** Run this step only if EITHER the builder passed `-v` (or "visual on") this invocation, OR `visual_mode: on` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If the field is absent, missing, or anything other than the literal string `on`, skip this step entirely — close-day runs as a pure CLI ritual (do not resolve, start, or open the companion). Proceed straight to Step 0.6. This keeps the companion opt-in during rollout.
 
 **Only run this step if the date from Step 0 is today** (`$(date +%Y-%m-%d)`). The companion always shows today's data — if closing a past date, the companion would show the wrong day. Skip silently for past dates.
 
@@ -82,20 +82,26 @@ If `visual_mode` is on AND `"$TC"` resolves AND `"$TC" status` reports running, 
 
 If the companion binary isn't found, isn't running, or today's daily note doesn't exist, skip this step silently — proceed to Step 1 as before.
 
-### Step 0.6: Read the morning plan's completion state
+### Step 0.6: Read the day's captured signal
 
-Read `## Morning Check-in` → `### My Top 3` and `### Bonus` from today's daily note and interpret each item's completion. The companion writes richer markers; in CLI-only use, items are just `[x]`/`[ ]` and this degrades to plain done/not-done with no behavior change:
+Read today's daily note and pull in everything the builder recorded during the day — whether they used the companion or filled the note by hand. **This is a read; the skill never authors the companion-written sections.** In CLI-only use these sections are simply absent, and this step degrades with no behavior change.
 
+**(a) Top 3 / Bonus completion** — from `## Morning Check-in` → `### My Top 3` and `### Bonus`:
 - `[x]`, or a trailing `<!--p:100-->` → **done (100%)**
-- a trailing `<!--p:NN-->` marker where NN is 25/50/70 → **partial, NN%** (the item line still shows `[ ]`; the marker is an HTML comment, invisible in rendered Obsidian)
+- a trailing `<!--p:NN-->` marker where NN is 25/50/70 → **partial, NN%** (line still shows `[ ]`; the marker is an HTML comment, invisible in rendered Obsidian)
 - `[ ]` with no marker → **not started**
-- the item's text also listed under `## Carrying Over` → the builder explicitly chose to **carry it forward**
+- text also listed under `## Carrying Over` → the builder chose to **carry it forward**
 
-Use this to:
-1. **Report a brief "Priorities vs. Reality" read** in the Step 4 summary — each Top 3 item with its outcome (done / NN% / not started / carried).
+**(b) Unplanned wins** — from `### Unplanned` under Morning Check-in. These are things the builder did that weren't on the plan and **wants credit for**. Fold them into the synthesized `## Work Log` and consider them for Achievements — they are real outputs, not noise.
+
+**(c) Builder's own insight** — from `## Daily Insight` (the in-the-moment note the builder jotted, distinct from the close-day-authored `## Insight Reflection`). Use it as a **primary input** when writing the Insight Reflection in Step 3 — don't ignore or overwrite the builder's own read of the day; build on it.
+
+Use all of the above to:
+1. **Report a brief "Priorities vs. Reality" read** in the Step 4 summary — each Top 3 item with its outcome (done / NN% / not started / carried), plus any Unplanned wins.
 2. **Seed Carrying Over** — any Top 3 item that is <100% and not already under `## Carrying Over` is a carry-over candidate; add it so it resurfaces in tomorrow's `/open-day` (skip items the builder deleted).
+3. **Feed the Work Log and Insight Reflection** (b) and (c) above.
 
-This step is read-only synthesis; the `<!--p:NN-->` markers and disposition sections are companion-written — never author them from the skill. In CLI-only mode they simply won't be present.
+`<!--p:NN-->` markers and the `### Unplanned` / `### Done` / `### Deleted` / `### Deferred` / `## Daily Insight` sections are companion-written — read them, never author them from the skill. In CLI-only mode they simply won't be present.
 
 ### Step 1: Collect data (run in parallel where possible)
 

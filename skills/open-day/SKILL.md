@@ -23,10 +23,11 @@ Before doing anything else, parse the builder's invocation phrase to choose a mo
 
 | Phrase | Action |
 |---|---|
-| `open day` (or any trigger above without "visual …") | Use `visual_mode` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (default `on` if absent) |
-| `open day visual off` | Run CLI-only **this time** — do not open the browser companion |
-| `open day visual off forever` | Set `visual_mode: off` in builder-profile.md, then run CLI-only |
-| `open day visual on` | Set `visual_mode: on` in builder-profile.md, then run with the visual companion |
+| `open day` (or any trigger above with no flag) | Use `visual_mode` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. **Default `off` if absent — CLI-only.** |
+| `open day -v` (or `open day visual on`) | Run **with** the visual companion **this time** only — does not change the profile |
+| `open day visual off` | Run CLI-only **this time** |
+| `open day visual on forever` | Set `visual_mode: on` in builder-profile.md (persistent), then run with the companion |
+| `open day visual off forever` | Set `visual_mode: off` in builder-profile.md (persistent), then run CLI-only |
 
 When `visual_mode` is **on**:
 - **Step 1.5 only**: Auto-run yesterday's close-day if needed (same as CLI mode).
@@ -40,7 +41,7 @@ When `visual_mode` is **off**:
 - Run the full chat flow (Steps 1-7), present suggestions in chat, accept the builder's edits in chat, and write the daily note from chat. **Skip Step 8.**
 - Show full verbose output for all steps.
 
-Builder-profile read/write: `visual_mode` is a top-level frontmatter field. Add it on first write if missing. Treat any value other than the literal string `off` as `on`.
+Builder-profile read/write: `visual_mode` is a top-level frontmatter field. **The default is OFF** — if the field is absent, missing, or anything other than the literal string `on`, run CLI-only. The companion runs only when `visual_mode: on` is set in the profile, OR the builder passes `-v` (or "visual on") this run. This keeps the companion opt-in during rollout: it stays off for everyone until a builder explicitly turns it on.
 
 ## Philosophy
 
