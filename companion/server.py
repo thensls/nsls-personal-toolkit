@@ -73,13 +73,30 @@ def _serialize_habits(habits: dict) -> str:
     return "\n".join(out)
 
 
+# Per-task progress is stored as a trailing HTML comment (`<!--p:50-->`) so it
+# is invisible in rendered Obsidian but round-trips cleanly. 100% is also
+# represented by `[x]`; partials (25/50/70) keep `[ ]` plus the marker.
+_PROGRESS_RE = re.compile(r"\s*<!--\s*p:(\d{1,3})\s*-->\s*$")
+_VALID_PROGRESS = (0, 25, 50, 70, 100)
+
+
+def _strip_progress(text: str) -> tuple[str, int]:
+    """Split a trailing ``<!--p:NN-->`` marker off item text.
+
+    Returns (clean_text, progress). progress is 0 if no marker.
+    """
+    m = _PROGRESS_RE.search(text)
+    if m:
+        return text[: m.start()].rstrip(), int(m.group(1))
+    return text, 0
+
+
 def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
     """Extract `1. [x] Foo` / `1. [ ] Foo` / `1. Foo` items under a `### heading`.
 
-    Returns a list of dicts shaped like ``{"text": str, "checked": bool}``.
-    Tolerates both lowercase `[x]` and uppercase `[X]`. Items without a
-    checkbox at all are treated as unchecked (backward compat for daily notes
-    that omit the box).
+    Returns dicts shaped like ``{"text": str, "checked": bool, "progress": int}``.
+    `progress` is 0/25/50/70/100 (100 implied by `[x]`). Tolerates `[X]`.
+    Items without a checkbox are treated as unchecked.
     """
     items: list[dict] = []
     in_section = False
@@ -101,8 +118,13 @@ def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
                 text = after_num[3:].strip()
             else:
                 text = after_num
+            text, prog = _strip_progress(text)
             if text:
-                items.append({"text": text, "checked": checked})
+                items.append({
+                    "text": text,
+                    "checked": checked,
+                    "progress": 100 if checked else prog,
+                })
     return items
 
 
@@ -130,6 +152,7 @@ def _extract_numbered_checkbox_list_raw(section: str, heading: str) -> list[dict
                 text = after_num[3:].strip()
             else:
                 text = after_num
+            text, _ = _strip_progress(text)
             items.append({"text": text, "checked": checked})
     return items
 
@@ -490,6 +513,130 @@ def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
     return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
 
 
+def _set_nth_progress(md: str, heading: str, index: int, level: int) -> str:
+    """Set progress (0/25/50/70/100) on the Nth list item under `heading`.
+
+    100 → `[x]` and no marker; 25/50/70 → `[ ]` + `<!--p:NN-->`; 0 → `[ ]`,
+    marker removed. Preserves the item's text.
+    """
+    lines = md.splitlines()
+    in_section = False
+    seen = 0
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            in_section = True
+            continue
+        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            break
+        if not in_section:
+            continue
+        m = _LIST_ITEM_RE.match(line)
+        if not m:
+            continue
+        if seen == index:
+            prefix, rest = m.group(1), m.group(2)
+            if rest.startswith("[ ]") or rest[:3].lower() == "[x]":
+                rest = rest[3:].lstrip()
+            rest, _ = _strip_progress(rest)
+            box = "[x]" if level == 100 else "[ ]"
+            marker = f" <!--p:{level}-->" if 0 < level < 100 else ""
+            lines[i] = f"{prefix}{box} {rest}{marker}".rstrip()
+            break
+        seen += 1
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _remove_nth_item(md: str, heading: str, index: int) -> str:
+    """Remove the Nth list item under `heading`, renumbering numbered rows."""
+    lines = md.splitlines()
+    in_section = False
+    seen = 0
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            in_section = True
+            continue
+        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            break
+        if not in_section:
+            continue
+        if _LIST_ITEM_RE.match(line):
+            if seen == index:
+                del lines[i]
+                ren = 0
+                for j in range(i, len(lines)):
+                    if lines[j].startswith("### ") or lines[j].startswith("## "):
+                        break
+                    pm = re.match(r"^(\s*)(\d+\.|-)\s+", lines[j])
+                    if pm:
+                        if pm.group(2) != "-":
+                            lines[j] = f"{ren + 1}. {lines[j][pm.end():]}"
+                        ren += 1
+                break
+            seen += 1
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _extract_carryover_texts(daily_md: str) -> set[str]:
+    """Texts of `- ` items in the top-level `## Carrying Over` section."""
+    out: set[str] = set()
+    in_section = False
+    for line in daily_md.splitlines():
+        if line.strip() == "## Carrying Over":
+            in_section = True
+            continue
+        if in_section and line.startswith("## ") and not line.startswith("### "):
+            break
+        if in_section and line.strip().startswith("- "):
+            t = line.strip()[2:].strip()
+            if t:
+                out.add(t)
+    return out
+
+
+def _add_carryover(md: str, text: str) -> str:
+    """Add `- text` to `## Carrying Over` (create the section if missing; no dup)."""
+    heading = "## Carrying Over"
+    item = f"- {text}"
+    lines = md.splitlines()
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            start = i
+            continue
+        if start is not None and line.startswith("## ") and not line.startswith("### "):
+            end = i
+            break
+    if start is None:
+        return md.rstrip("\n") + f"\n\n{heading}\n{item}\n"
+    for i in range(start + 1, end):
+        if lines[i].strip() == item:
+            return md  # already present
+    last = start
+    for i in range(start + 1, end):
+        if lines[i].strip():
+            last = i
+    lines.insert(last + 1, item)
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _remove_carryover(md: str, text: str) -> str:
+    """Remove `- text` from `## Carrying Over`."""
+    item = f"- {text}"
+    lines = md.splitlines()
+    in_section = False
+    for i, line in enumerate(lines):
+        if line.strip() == "## Carrying Over":
+            in_section = True
+            continue
+        if in_section and line.startswith("## ") and not line.startswith("### "):
+            break
+        if in_section and line.strip() == item:
+            del lines[i]
+            break
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
 _DAILY_NOTE_SCAFFOLD = """# Daily Note
 
 ## Morning Check-in
@@ -709,6 +856,16 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     sections = parse_daily_note_sections(daily_md)
     morning = sections.get("Morning Check-in", "")
     unplanned = _extract_unplanned(morning)
+
+    # Annotate Top 3 / Bonus items with their index + carried-forward state so
+    # the task_list partial can render progress / carry / delete controls.
+    carried_texts = _extract_carryover_texts(daily_md)
+    for idx, it in enumerate(top_3):
+        it["index"] = idx
+        it["carried"] = it["text"] in carried_texts
+    for idx, it in enumerate(bonus):
+        it["index"] = idx
+        it["carried"] = it["text"] in carried_texts
 
     # Energy is captured twice: morning (Morning Check-in) and evening (End of Day).
     morning_energy = _extract_energy_for(daily_md, "Morning Check-in")
@@ -1208,6 +1365,107 @@ def create_app(vault_path: str) -> Flask:
         safe_modify(note_path, lambda md: _set_energy_in_section(md, section_name, level))
         broadcast(f"01-daily/{today}.md")
         return ("", 204)
+
+    _TASK_HEADINGS = {"top_3": "### My Top 3", "bonus": "### Bonus"}
+
+    def _render_task_list(today: str, section: str):
+        """Re-render one task section (Top 3 or Bonus) with fresh state."""
+        heading = _TASK_HEADINGS[section]
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text() if note_path.exists() else ""
+        morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
+        items = (_extract_top_3(morning) if section == "top_3"
+                 else _extract_bonus(morning))
+        carried = _extract_carryover_texts(daily_md)
+        for idx, it in enumerate(items):
+            it["index"] = idx
+            it["carried"] = it["text"] in carried
+        return render_template(
+            "_components/task_list.html", section=section, items=items
+        )
+
+    @app.route("/set-progress", methods=["POST"])
+    def set_progress():
+        section = request.form.get("section", "").strip()
+        heading = _TASK_HEADINGS.get(section)
+        if heading is None:
+            return ("invalid section", 400)
+        try:
+            index = int(request.form.get("index", ""))
+            level = int(request.form.get("level", ""))
+        except (TypeError, ValueError):
+            return ("invalid index/level", 400)
+        if level not in _VALID_PROGRESS:
+            return (f"level must be one of {_VALID_PROGRESS}", 400)
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+        safe_modify(note_path, lambda md: _set_nth_progress(md, heading, index, level))
+        broadcast(f"01-daily/{today}.md")
+        return _render_task_list(today, section)
+
+    @app.route("/carry-task", methods=["POST"])
+    def carry_task():
+        """Toggle the Nth task into/out of `## Carrying Over` (feeds tomorrow's open-day)."""
+        section = request.form.get("section", "").strip()
+        heading = _TASK_HEADINGS.get(section)
+        if heading is None:
+            return ("invalid section", 400)
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def update(md: str) -> str:
+            morning = parse_daily_note_sections(md).get("Morning Check-in", "")
+            items = (_extract_top_3(morning) if section == "top_3"
+                     else _extract_bonus(morning))
+            if index >= len(items):
+                return md
+            text = items[index]["text"]
+            if text in _extract_carryover_texts(md):
+                return _remove_carryover(md, text)
+            return _add_carryover(md, text)
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+        return _render_task_list(today, section)
+
+    @app.route("/delete-task", methods=["POST"])
+    def delete_task():
+        """Delete the Nth task. Top 3 slots are fixed (cleared); Bonus rows are removed."""
+        section = request.form.get("section", "").strip()
+        heading = _TASK_HEADINGS.get(section)
+        if heading is None:
+            return ("invalid section", 400)
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def update(md: str) -> str:
+            # Also drop it from Carrying Over if it was carried.
+            morning = parse_daily_note_sections(md).get("Morning Check-in", "")
+            items = (_extract_top_3(morning) if section == "top_3"
+                     else _extract_bonus(morning))
+            if index < len(items):
+                md = _remove_carryover(md, items[index]["text"])
+            if section == "top_3":
+                return _set_nth_item_text(md, heading, index, "")  # keep the slot
+            return _remove_nth_item(md, heading, index)  # drop the bonus row
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+        return _render_task_list(today, section)
 
     @app.route("/add-bonus-slot", methods=["POST"])
     def add_bonus_slot():

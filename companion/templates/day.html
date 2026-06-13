@@ -23,49 +23,16 @@
 </div>
 
 <section class="bg-white rounded-lg shadow p-5 mb-4">
-  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Top 3</h2>
-  {% if top_3 and top_3|selectattr("text")|list %}
-  <ul class="space-y-3">
-    {% for item in top_3 %}
-      {% if item.text %}
-      {% set item_idx = loop.index0 %}
-      <li class="flex items-center gap-3">
-        <button class="w-6 h-6 text-xs rounded {{ 'bg-blue-900 text-white' if item.checked else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
-                hx-post="/toggle"
-                hx-vals='{"section":"top_3","index":{{ item_idx }}}'
-                hx-swap="none"
-                title="{{ 'Done' if item.checked else 'Not done' }}">{{ "●" if item.checked else "○" }}</button>
-        <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span>
-      </li>
-      {% endif %}
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="text-sm text-stone-500">No priorities set yet. <a href="/?mode=coach-morning" class="text-blue-700 underline">Plan your day →</a></p>
-  {% endif %}
+  <div class="flex items-baseline justify-between mb-3">
+    <h2 class="text-sm uppercase tracking-wider text-stone-500">Top 3</h2>
+    <span class="text-xs text-stone-400">progress · carry · delete</span>
+  </div>
+  {% with section='top_3', items=top_3 %}{% include "_components/task_list.html" %}{% endwith %}
 </section>
 
 <section class="bg-white rounded-lg shadow p-5 mb-4">
   <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Bonus</h2>
-  {% if bonus and bonus|selectattr("text")|list %}
-  <ul class="space-y-3 opacity-90">
-    {% for item in bonus %}
-      {% if item.text %}
-      {% set item_idx = loop.index0 %}
-      <li class="flex items-center gap-3">
-        <button class="w-6 h-6 text-xs rounded {{ 'bg-blue-900 text-white' if item.checked else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
-                hx-post="/toggle"
-                hx-vals='{"section":"bonus","index":{{ item_idx }}}'
-                hx-swap="none"
-                title="{{ 'Done' if item.checked else 'Not done' }}">{{ "●" if item.checked else "○" }}</button>
-        <span {% if item.checked %}class="line-through text-stone-400"{% endif %}>{{ item.text }}</span>
-      </li>
-      {% endif %}
-    {% endfor %}
-  </ul>
-  {% else %}
-  <p class="text-sm text-stone-500">No bonus items.</p>
-  {% endif %}
+  {% with section='bonus', items=bonus %}{% include "_components/task_list.html" %}{% endwith %}
 </section>
 
 <section class="bg-white rounded-lg shadow p-5 mb-4">
@@ -109,6 +76,10 @@
             hx-swap="none"
             placeholder="What did you notice about yourself today?">{{ daily_insight_text }}</textarea>
 </section>
+
+<div class="text-center text-sm text-stone-500 mt-6 mb-2">
+  <span class="font-medium text-stone-700">Good job!</span> Return to the terminal and type <code class="px-1 bg-stone-100 rounded">done</code> to complete.
+</div>
 
 {% endif %}
 {% endblock %}

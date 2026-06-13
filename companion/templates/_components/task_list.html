@@ -1,0 +1,33 @@
+<div id="tasklist-{{ section }}">
+  {% set rows = items | selectattr("text") | list %}
+  {% if rows %}
+  <ul class="space-y-3">
+    {% for item in rows %}
+    <li class="flex items-center justify-between gap-3">
+      <span class="flex-1 {% if item.progress == 100 %}line-through text-stone-400{% endif %}">{{ item.text }}</span>
+      <div class="flex items-center gap-1 shrink-0">
+        {% for lvl, label in [(25, "25"), (50, "50"), (70, "70"), (100, "100")] %}
+        <button class="w-9 h-7 text-xs rounded {{ 'bg-blue-900 text-white' if item.progress == lvl else 'bg-stone-100 text-stone-500 hover:bg-stone-200' }}"
+                hx-post="/set-progress"
+                hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
+                hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
+                title="{{ label }}% done">{{ label }}</button>
+        {% endfor %}
+        <button class="px-2 h-7 text-xs rounded {{ 'bg-amber-600 text-white' if item.carried else 'bg-stone-100 text-stone-500 hover:bg-stone-200' }}"
+                hx-post="/carry-task"
+                hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
+                hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
+                title="Carry forward to tomorrow">Carry</button>
+        <button class="px-2 h-7 text-xs rounded bg-stone-100 text-stone-400 hover:bg-red-600 hover:text-white"
+                hx-post="/delete-task"
+                hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
+                hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
+                title="Delete this item">✕</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm text-stone-500">{% if section == 'top_3' %}No priorities set yet. <a href="/?mode=coach-morning" class="text-blue-700 underline">Plan your day →</a>{% else %}No bonus items.{% endif %}</p>
+  {% endif %}
+</div>
