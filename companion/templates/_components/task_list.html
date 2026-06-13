@@ -1,32 +1,29 @@
 <div id="tasklist-{{ section }}">
   {% set rows = items | selectattr("text") | list %}
   {% if rows %}
-  <ul class="space-y-4 list-none">
+  <ul class="divide-y divide-stone-100 list-none">
     {% for item in rows %}
-    <li>
-      <div class="text-sm break-words {% if item.progress == 100 %}line-through text-stone-400{% endif %} {% if item.deleted %}text-stone-400{% endif %}">{{ item.text }}</div>
-      <div class="flex items-center gap-3 mt-1.5">
-        <div class="shrink-0">
-          <div class="flex gap-1">
-            {% for lvl in [0, 25, 50, 75, 100] %}
-            <button class="w-9 h-7 text-xs rounded {{ 'bg-blue-900 text-white' if item.progress == lvl else 'bg-stone-100 text-stone-500 hover:bg-stone-200' }}"
-                    hx-post="/set-progress"
-                    hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
-                    hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
-                    title="{{ lvl }}%{% if lvl == 0 %} — didn't get to it{% elif lvl == 100 %} — done{% endif %}">{{ lvl }}</button>
-            {% endfor %}
-          </div>
-          <!-- progress meter spanning the buttons -->
-          <div class="h-1.5 mt-1 rounded bg-stone-200 overflow-hidden">
-            <div class="h-full bg-blue-600 rounded transition-all" style="width: {{ item.progress }}%"></div>
-          </div>
-        </div>
-        <button class="shrink-0 w-7 h-7 text-xs rounded {{ 'bg-red-600 text-white' if item.deleted else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
-                hx-post="/delete-task"
-                hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
+    <li class="flex items-center gap-3 py-2">
+      <span class="text-sm break-words flex-1 min-w-0 {% if item.progress == 100 %}line-through text-stone-400{% elif item.deleted %}text-stone-400{% endif %}">{{ item.text }}</span>
+
+      <!-- Segmented progress bar: the buttons ARE the bar. Levels at or below
+           the selected one fill blue; the selected one is darkest. -->
+      <div class="flex shrink-0 rounded overflow-hidden border border-stone-200">
+        {% for lvl in [0, 25, 50, 75, 100] %}
+        <button class="w-9 h-7 text-xs border-stone-200 {% if not loop.first %}border-l{% endif %}
+                       {% if item.progress == lvl %}bg-blue-700 text-white font-medium{% elif lvl != 0 and lvl < item.progress %}bg-blue-100 text-blue-700{% else %}bg-white text-stone-400 hover:bg-stone-50{% endif %}"
+                hx-post="/set-progress"
+                hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
                 hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
-                title="{{ 'Marked for deletion — click to undo' if item.deleted else 'Mark for deletion' }}">✕</button>
+                title="{{ lvl }}%{% if lvl == 0 %} — didn't get to it{% elif lvl == 100 %} — done{% endif %}">{{ lvl }}</button>
+        {% endfor %}
       </div>
+
+      <button class="shrink-0 w-7 h-7 text-sm rounded {{ 'bg-red-600 text-white' if item.deleted else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
+              hx-post="/delete-task"
+              hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
+              hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
+              title="{{ 'Marked for deletion — click to undo' if item.deleted else 'Mark for deletion' }}">✕</button>
     </li>
     {% endfor %}
   </ul>
