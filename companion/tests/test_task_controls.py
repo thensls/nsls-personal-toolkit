@@ -167,4 +167,17 @@ def test_command_center_renders_task_controls(client_with_today):
     assert "/set-progress" in html and "/delete-task" in html
     assert "/carry-task" not in html          # carry column removed
     assert "Return to the terminal" in html
-    assert "energy-morning" in html and "energy-evening" in html   # both energy rows
+    # Morning energy always shows; evening energy is a close-day capture and
+    # stays hidden on the Command Center until it's been set.
+    assert "energy-morning" in html
+    assert "energy-evening" not in html
+
+
+def test_evening_energy_appears_once_set(client_with_today):
+    """End-of-day energy stays hidden on the Command Center until a value is
+    captured (by close-day), then it surfaces so it can be reviewed/edited."""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text(note.read_text() + "\n## End of Day\n- Energy: high\n")
+    html = client.get("/?mode=command").get_data(as_text=True)
+    assert "energy-evening" in html
