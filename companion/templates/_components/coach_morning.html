@@ -1,4 +1,15 @@
 <div x-data="{ coachMode: true }" class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+  <div class="flex items-center gap-3 mb-5 pb-4 border-b">
+    <span class="text-sm text-stone-500">How's your energy this morning?</span>
+    <div class="flex gap-1">
+      {% for level, label in [("low", "Low"), ("medium", "Med"), ("high", "High")] %}
+      <button class="px-3 py-1 text-xs rounded {{ 'bg-blue-900 text-white' if morning_energy == level else 'bg-stone-100 text-stone-500 hover:bg-stone-200' }}"
+              hx-post="/set-energy" hx-vals='{"level":"{{ level }}","when":"morning"}'
+              hx-swap="none">{{ label }}</button>
+      {% endfor %}
+    </div>
+  </div>
+
   {% include "_components/plan_your_day.html" %}
 
   <div class="mt-6 flex justify-end">

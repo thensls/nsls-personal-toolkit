@@ -15,8 +15,8 @@
   <span class="text-sm text-stone-500">Energy:</span>
   <div class="flex gap-1">
     {% for level, label in [("low", "Low"), ("medium", "Med"), ("high", "High")] %}
-    <button class="px-3 py-1 text-xs rounded {{ 'bg-blue-900 text-white' if energy == level else 'bg-stone-100 text-stone-500 hover:bg-stone-200' }}"
-            hx-post="/set-energy" hx-vals='{"level":"{{ level }}"}'
+    <button class="px-3 py-1 text-xs rounded {{ 'bg-blue-900 text-white' if morning_energy == level else 'bg-stone-100 text-stone-500 hover:bg-stone-200' }}"
+            hx-post="/set-energy" hx-vals='{"level":"{{ level }}","when":"morning"}'
             hx-swap="none">{{ label }}</button>
     {% endfor %}
   </div>

@@ -147,23 +147,56 @@ def _extract_unplanned(morning_section: str) -> list[dict]:
 
 
 _ENERGY_RE = re.compile(r"^-\s*Energy:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+# Matches an Energy bullet whether or not it has a value (so we can replace
+# the empty `- Energy:` the daily-note template seeds, instead of duplicating).
+_ENERGY_LINE_RE = re.compile(r"^\s*-\s*Energy:", re.IGNORECASE)
+
+# The toolkit captures energy twice: morning in Morning Check-in (open-day),
+# evening in End of Day (close-day). Keep them distinct — never conflate.
+_ENERGY_SECTIONS = {"morning": "Morning Check-in", "evening": "End of Day"}
 
 
-def _extract_energy(daily_md: str) -> str:
-    """Extract energy level from any ``- Energy: <value>`` line in the daily note.
+def _extract_energy_for(daily_md: str, section_name: str) -> str:
+    """Read the ``- Energy: <value>`` value from a specific section.
 
-    Checks End of Day first, then Morning Check-in. Returns the lowercase
-    value ('low', 'medium', 'high') or '' if not found.
+    Returns 'low' / 'medium' / 'high', or '' if absent or empty.
     """
-    sections = parse_daily_note_sections(daily_md)
-    for section_name in ("End of Day", "Morning Check-in"):
-        body = sections.get(section_name, "")
-        m = _ENERGY_RE.search(body)
-        if m:
-            val = m.group(1).strip().lower()
-            if val in ("low", "medium", "high"):
-                return val
+    body = parse_daily_note_sections(daily_md).get(section_name, "")
+    m = _ENERGY_RE.search(body)
+    if m:
+        val = m.group(1).strip().lower()
+        if val in ("low", "medium", "high"):
+            return val
     return ""
+
+
+def _set_energy_in_section(md: str, section_name: str, level: str) -> str:
+    """Set ``- Energy: <level>`` inside ``## <section_name>``.
+
+    Replaces an existing Energy bullet (empty or filled) within the section;
+    inserts one right after the heading if none exists; appends the section
+    if it's missing. Never creates a duplicate Energy line.
+    """
+    heading = f"## {section_name}"
+    lines = md.splitlines()
+    energy_line = f"- Energy: {level}"
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            start = i
+            continue
+        if start is not None and line.startswith("## ") and not line.startswith("### "):
+            end = i
+            break
+    if start is None:
+        return md.rstrip("\n") + f"\n\n{heading}\n{energy_line}\n"
+    for i in range(start + 1, end):
+        if _ENERGY_LINE_RE.match(lines[i]):
+            lines[i] = energy_line
+            return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+    lines.insert(start + 1, energy_line)
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
 
 
 _AI_SUGGEST_HEADING_RE = re.compile(
@@ -677,8 +710,9 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     morning = sections.get("Morning Check-in", "")
     unplanned = _extract_unplanned(morning)
 
-    # Energy level
-    energy = _extract_energy(daily_md)
+    # Energy is captured twice: morning (Morning Check-in) and evening (End of Day).
+    morning_energy = _extract_energy_for(daily_md, "Morning Check-in")
+    evening_energy = _extract_energy_for(daily_md, "End of Day")
 
     return {
         "today": today,
@@ -690,7 +724,8 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
         "bonus_slots": bonus_slots[:3],
         "bonus_text": "\n".join(b["text"] for b in bonus),
         "unplanned": unplanned,
-        "energy": energy,
+        "morning_energy": morning_energy,
+        "evening_energy": evening_energy,
         "habits_today": habits_today,
         "active_habits": habits["active"],
         "focus_blocks": [],  # Phase 2
@@ -1155,68 +1190,22 @@ def create_app(vault_path: str) -> Flask:
 
     @app.route("/set-energy", methods=["POST"])
     def set_energy():
-        """Set the energy level in the End of Day section."""
+        """Set the energy level. ``when`` picks the section:
+        morning -> Morning Check-in, evening -> End of Day. Default morning
+        (the Command Center captures the day's energy)."""
         level = request.form.get("level", "").strip().lower()
         if level not in ("low", "medium", "high"):
             return ("level must be low/medium/high", 400)
+        when = request.form.get("when", "morning").strip().lower()
+        section_name = _ENERGY_SECTIONS.get(when)
+        if section_name is None:
+            return ("when must be morning/evening", 400)
 
         today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
-        if not note_path.exists():
-            return ("today's note not found", 404)
+        _ensure_daily_note_scaffold(note_path)
 
-        def update(existing: str) -> str:
-            lines = existing.splitlines()
-            # Try to find and update existing Energy line in End of Day
-            sections = parse_daily_note_sections(existing)
-            in_eod = False
-            eod_start = None
-            eod_end = len(lines)
-            for i, line in enumerate(lines):
-                if line.strip() == "## End of Day":
-                    in_eod = True
-                    eod_start = i
-                    continue
-                if in_eod and line.startswith("## ") and not line.startswith("### "):
-                    eod_end = i
-                    break
-
-            energy_line = f"- Energy: {level}"
-
-            if eod_start is not None:
-                # Look for existing Energy line within End of Day
-                for i in range(eod_start + 1, eod_end):
-                    if _ENERGY_RE.match(lines[i]):
-                        lines[i] = energy_line
-                        return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
-                # No existing Energy line — insert after the heading
-                lines.insert(eod_start + 1, energy_line)
-                return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
-
-            # No End of Day section — also check Morning Check-in
-            in_morning = False
-            morning_start = None
-            morning_end = len(lines)
-            for i, line in enumerate(lines):
-                if line.strip() == "## Morning Check-in":
-                    in_morning = True
-                    morning_start = i
-                    continue
-                if in_morning and line.startswith("## ") and not line.startswith("### "):
-                    morning_end = i
-                    break
-
-            if morning_start is not None:
-                for i in range(morning_start + 1, morning_end):
-                    if _ENERGY_RE.match(lines[i]):
-                        lines[i] = energy_line
-                        return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
-
-            # Append an End of Day section with the energy line
-            result = existing.rstrip("\n") + "\n\n## End of Day\n" + energy_line + "\n"
-            return result
-
-        safe_modify(note_path, update)
+        safe_modify(note_path, lambda md: _set_energy_in_section(md, section_name, level))
         broadcast(f"01-daily/{today}.md")
         return ("", 204)
 

@@ -45,6 +45,16 @@
   <template x-if="step === 4">
     <div>
       <h3 class="font-semibold text-lg mb-3">Done for today</h3>
+      <div class="flex items-center gap-3 mb-4">
+        <span class="text-sm text-stone-500">Energy at day's end?</span>
+        <div class="flex gap-1">
+          {% for level, label in [("low", "Low"), ("medium", "Med"), ("high", "High")] %}
+          <button type="button" class="px-3 py-1 text-xs rounded {{ 'bg-amber-700 text-white' if evening_energy == level else 'bg-stone-100 text-stone-500 hover:bg-stone-200' }}"
+                  hx-post="/set-energy" hx-vals='{"level":"{{ level }}","when":"evening"}'
+                  hx-swap="none">{{ label }}</button>
+          {% endfor %}
+        </div>
+      </div>
       <p class="text-stone-700 mb-2">Insight and Gratitude saved to today's daily note.</p>
       <p class="text-sm text-stone-500">Tap Done to switch to the read-only Results view.</p>
     </div>

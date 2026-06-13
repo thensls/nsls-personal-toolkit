@@ -160,6 +160,33 @@ def test_set_energy_writes_and_reads_back(client_with_today):
     assert "Energy: high" in note
 
 
+def test_morning_and_evening_energy_are_separate(client_with_today):
+    """Morning energy → Morning Check-in; evening energy → End of Day."""
+    client, vault = client_with_today
+    client.post("/set-energy", data={"level": "high", "when": "morning"})
+    client.post("/set-energy", data={"level": "low", "when": "evening"})
+    note = _note(vault)
+    morning_block = note.split("## Morning Check-in")[1].split("\n## ")[0]
+    eod_block = note.split("## End of Day")[1]
+    assert "Energy: high" in morning_block
+    assert "Energy: low" in eod_block
+
+
+def test_set_energy_replaces_empty_line_no_duplicate(client_with_today):
+    """The reported bug: an empty `- Energy:` template line must be replaced,
+    not duplicated."""
+    client, vault = client_with_today
+    note_path = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    # Seed an End of Day section with an empty Energy bullet (the template shape).
+    note_path.write_text(note_path.read_text() + "\n## End of Day\n- Energy:\n")
+    client.post("/set-energy", data={"level": "medium", "when": "evening"})
+    note = _note(vault)
+    # Exactly one Energy line in End of Day — no duplicate.
+    eod_block = note.split("## End of Day")[1]
+    assert eod_block.count("- Energy:") == 1
+    assert "Energy: medium" in eod_block
+
+
 # --- Daily Insight must NOT flip the view to results mode ---
 
 def test_daily_insight_does_not_trigger_results_mode(client_with_today):
