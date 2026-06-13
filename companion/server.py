@@ -912,6 +912,14 @@ def _detect_week_state(weekly_md: str) -> str:
 def create_app(vault_path: str) -> Flask:
     app = Flask(__name__)
     app.config["VAULT_PATH"] = Path(vault_path)
+    # Pick up template edits on the next request without a server restart. The
+    # server runs with debug=off (no auto-reloader), so without this a template
+    # change is invisible until the process is restarted — the recurring "stale
+    # server" gotcha. The per-request stat cost is negligible for a localhost,
+    # single-user tool. Static files (CSS/JS) are always re-read from disk;
+    # hard-refresh (Cmd+Shift+R) if the browser cached an old stylesheet.
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.jinja_env.auto_reload = True
 
     subscribers: list[queue.Queue] = []
     last_hashes: dict[str, str] = {}  # relpath -> sha256[:16] of last broadcast
