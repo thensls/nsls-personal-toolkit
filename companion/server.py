@@ -77,7 +77,7 @@ def _serialize_habits(habits: dict) -> str:
 # is invisible in rendered Obsidian but round-trips cleanly. 100% is also
 # represented by `[x]`; partials (25/50/70) keep `[ ]` plus the marker.
 _PROGRESS_RE = re.compile(r"\s*<!--\s*p:(\d{1,3})\s*-->\s*$")
-_VALID_PROGRESS = (0, 25, 50, 70, 100)
+_VALID_PROGRESS = (0, 25, 50, 75, 100)
 
 
 def _strip_progress(text: str) -> tuple[str, int]:
@@ -857,15 +857,15 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     morning = sections.get("Morning Check-in", "")
     unplanned = _extract_unplanned(morning)
 
-    # Annotate Top 3 / Bonus items with their index + carried-forward state so
-    # the task_list partial can render progress / carry / delete controls.
-    carried_texts = _extract_carryover_texts(daily_md)
+    # Annotate Top 3 / Bonus items with their index + marked-for-deletion state
+    # so the task_list partial can render progress + delete controls.
+    deleted_texts = _extract_subsection_items(morning, "Deleted")
     for idx, it in enumerate(top_3):
         it["index"] = idx
-        it["carried"] = it["text"] in carried_texts
+        it["deleted"] = it["text"] in deleted_texts
     for idx, it in enumerate(bonus):
         it["index"] = idx
-        it["carried"] = it["text"] in carried_texts
+        it["deleted"] = it["text"] in deleted_texts
 
     # Energy is captured twice: morning (Morning Check-in) and evening (End of Day).
     morning_energy = _extract_energy_for(daily_md, "Morning Check-in")
@@ -1364,7 +1364,12 @@ def create_app(vault_path: str) -> Flask:
 
         safe_modify(note_path, lambda md: _set_energy_in_section(md, section_name, level))
         broadcast(f"01-daily/{today}.md")
-        return ("", 204)
+        # Re-render just this energy row so the selected level highlights instantly.
+        label = ("Energy — beginning of day" if when == "morning"
+                 else "Energy — end of day")
+        return render_template(
+            "_components/energy_row.html", when=when, label=label, value=level
+        )
 
     _TASK_HEADINGS = {"top_3": "### My Top 3", "bonus": "### Bonus"}
 
@@ -1376,10 +1381,10 @@ def create_app(vault_path: str) -> Flask:
         morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
         items = (_extract_top_3(morning) if section == "top_3"
                  else _extract_bonus(morning))
-        carried = _extract_carryover_texts(daily_md)
+        deleted = _extract_subsection_items(morning, "Deleted")
         for idx, it in enumerate(items):
             it["index"] = idx
-            it["carried"] = it["text"] in carried
+            it["deleted"] = it["text"] in deleted
         return render_template(
             "_components/task_list.html", section=section, items=items
         )
@@ -1401,13 +1406,29 @@ def create_app(vault_path: str) -> Flask:
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         if not note_path.exists():
             return ("today's note not found", 404)
-        safe_modify(note_path, lambda md: _set_nth_progress(md, heading, index, level))
+
+        def update(md: str) -> str:
+            morning = parse_daily_note_sections(md).get("Morning Check-in", "")
+            items = (_extract_top_3(morning) if section == "top_3"
+                     else _extract_bonus(morning))
+            # Clicking the already-active level toggles it back to 0 (so 100% is
+            # un-clickable-off — fixes "I can't unclick 100").
+            target = 0 if (index < len(items) and items[index]["progress"] == level) else level
+            return _set_nth_progress(md, heading, index, target)
+
+        safe_modify(note_path, update)
         broadcast(f"01-daily/{today}.md")
         return _render_task_list(today, section)
 
-    @app.route("/carry-task", methods=["POST"])
-    def carry_task():
-        """Toggle the Nth task into/out of `## Carrying Over` (feeds tomorrow's open-day)."""
+    @app.route("/delete-task", methods=["POST"])
+    def delete_task():
+        """Toggle a reversible 'marked for deletion' flag on the Nth task.
+
+        Does NOT remove the row — clicking ✕ turns it red (marked); clicking
+        again un-marks it. The item stays visible so a mis-click is recoverable.
+        close-day skips items left in `### Deleted`. Progress and deletion are
+        independent — an item can carry a % AND be marked for deletion.
+        """
         section = request.form.get("section", "").strip()
         heading = _TASK_HEADINGS.get(section)
         if heading is None:
@@ -1428,40 +1449,9 @@ def create_app(vault_path: str) -> Flask:
             if index >= len(items):
                 return md
             text = items[index]["text"]
-            if text in _extract_carryover_texts(md):
-                return _remove_carryover(md, text)
-            return _add_carryover(md, text)
-
-        safe_modify(note_path, update)
-        broadcast(f"01-daily/{today}.md")
-        return _render_task_list(today, section)
-
-    @app.route("/delete-task", methods=["POST"])
-    def delete_task():
-        """Delete the Nth task. Top 3 slots are fixed (cleared); Bonus rows are removed."""
-        section = request.form.get("section", "").strip()
-        heading = _TASK_HEADINGS.get(section)
-        if heading is None:
-            return ("invalid section", 400)
-        try:
-            index = int(request.form.get("index", ""))
-        except (TypeError, ValueError):
-            return ("invalid index", 400)
-        today = _target_date()
-        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
-        if not note_path.exists():
-            return ("today's note not found", 404)
-
-        def update(md: str) -> str:
-            # Also drop it from Carrying Over if it was carried.
-            morning = parse_daily_note_sections(md).get("Morning Check-in", "")
-            items = (_extract_top_3(morning) if section == "top_3"
-                     else _extract_bonus(morning))
-            if index < len(items):
-                md = _remove_carryover(md, items[index]["text"])
-            if section == "top_3":
-                return _set_nth_item_text(md, heading, index, "")  # keep the slot
-            return _remove_nth_item(md, heading, index)  # drop the bonus row
+            if text in _extract_subsection_items(morning, "Deleted"):
+                return _remove_from_subsection(md, "Deleted", text)
+            return _add_to_subsection(md, "Deleted", text)
 
         safe_modify(note_path, update)
         broadcast(f"01-daily/{today}.md")

@@ -11,21 +11,15 @@
 <h1 class="text-2xl font-bold mb-1">Today — {{ today_pretty }}</h1>
 <p class="text-sm text-stone-500 mb-6">Command Center</p>
 
-<div class="flex items-center gap-3 mb-6">
-  <span class="text-sm text-stone-500">Energy:</span>
-  <div class="flex gap-1">
-    {% for level, label in [("low", "Low"), ("medium", "Med"), ("high", "High")] %}
-    <button class="px-3 py-1 text-xs rounded {{ 'bg-blue-900 text-white' if morning_energy == level else 'bg-stone-100 text-stone-500 hover:bg-stone-200' }}"
-            hx-post="/set-energy" hx-vals='{"level":"{{ level }}","when":"morning"}'
-            hx-swap="none">{{ label }}</button>
-    {% endfor %}
-  </div>
+<div class="space-y-2 mb-6">
+  {% with when='morning', label='Energy — beginning of day', value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
+  {% with when='evening', label='Energy — end of day', value=evening_energy %}{% include "_components/energy_row.html" %}{% endwith %}
 </div>
 
 <section class="bg-white rounded-lg shadow p-5 mb-4">
   <div class="flex items-baseline justify-between mb-3">
     <h2 class="text-sm uppercase tracking-wider text-stone-500">Top 3</h2>
-    <span class="text-xs text-stone-400">progress · carry · delete</span>
+    <span class="text-xs text-stone-400">progress · delete</span>
   </div>
   {% with section='top_3', items=top_3 %}{% include "_components/task_list.html" %}{% endwith %}
 </section>

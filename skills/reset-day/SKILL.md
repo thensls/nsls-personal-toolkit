@@ -3,10 +3,10 @@ name: reset-day
 description: >-
   Start today over. Clears today's daily note so a fresh /open-day rebuilds it
   from your real data (real carry-overs and any real AI suggestions a prior
-  close-day wrote — never fabricated). Works whether or not close-day has run.
-  Use when you opened the day and want to redo it, or opened and closed it and
-  want to reset both. Trigger phrases: reset day, redo day, reset my day, redo
-  today, start the day over, reset today.
+  close-day wrote). Works whether or not close-day has run. Use when you opened
+  the day and want to redo it, or opened and closed it and want to reset both.
+  Trigger phrases: reset day, redo day, reset my day, redo today, start the day
+  over, reset today.
 ---
 
 # Reset Day
@@ -14,10 +14,12 @@ description: >-
 Clear today so you can run `/open-day` again from a clean slate. Useful any time
 you want to redo your day — not just for testing.
 
-**Principle: never fabricate.** This skill deletes/strips today's note; it does
-NOT invent priorities, AI suggestions, or carry-overs. The next `/open-day`
-re-derives all of that from your real history (prior daily notes, real
-close-day seeds). If there's nothing real to seed from, you simply start empty.
+**This skill never fabricates anything itself** — it only deletes/strips today's
+note. The next `/open-day` re-derives suggestions: real carry-overs and real
+close-day seeds first; and **only if there's no prior data at all** (fresh vault,
+no prior close), open-day offers a few reasonable suggestions drawn from your
+role/projects so the planning screen isn't empty (see open-day Step 6). reset-day
+itself injects nothing.
 
 ## Modes
 

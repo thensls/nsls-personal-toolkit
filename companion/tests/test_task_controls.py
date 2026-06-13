@@ -1,9 +1,17 @@
-"""Tests for per-task progress / carry-forward / delete controls on the
-Command Center Top 3 + Bonus lists (added 2026-06-13)."""
+"""Tests for per-task progress (0/25/50/75/100) and reversible delete-mark on
+the Command Center Top 3 + Bonus lists. Redesigned 2026-06-13:
+- progress levels 0/25/50/75/100; clicking the active level toggles to 0
+- carry button removed (anything <100% auto-carries at close-day)
+- delete is a reversible mark (adds/removes from ### Deleted), keeps the row
+- progress and delete are independent
+"""
 
 from datetime import date
 import pytest
-from companion.server import create_app, _extract_top_3, _strip_progress
+from companion.server import (
+    create_app, _extract_top_3, _extract_bonus, _strip_progress,
+    _extract_subsection_items,
+)
 from companion.parsers import parse_daily_note_sections
 
 
@@ -47,120 +55,116 @@ def _note(vault):
     return (vault / "01-daily" / f"{date.today().isoformat()}.md").read_text()
 
 
+def _morning(vault):
+    return parse_daily_note_sections(_note(vault)).get("Morning Check-in", "")
+
+
 def _top3(vault):
-    morning = parse_daily_note_sections(_note(vault)).get("Morning Check-in", "")
-    return _extract_top_3(morning)
+    return _extract_top_3(_morning(vault))
 
 
-# --- progress ---
+# --- progress: 0 / 25 / 50 / 75 / 100 ---
 
 def test_set_progress_partial_writes_marker(client_with_today):
     client, vault = client_with_today
     resp = client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "50"})
     assert resp.status_code == 200
     items = _top3(vault)
-    assert items[0]["text"] == "Ship the week view"  # text stays clean
+    assert items[0]["text"] == "Ship the week view"   # text stays clean
     assert items[0]["progress"] == 50
-    assert items[0]["checked"] is False  # partial is not checked
+    assert items[0]["checked"] is False
 
 
-def test_set_progress_100_checks_box(client_with_today):
+def test_75_is_valid_70_is_not(client_with_today):
+    client, vault = client_with_today
+    assert client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "75"}).status_code == 200
+    assert _top3(vault)[0]["progress"] == 75
+    assert client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "70"}).status_code == 400
+
+
+def test_set_progress_100_checks_box_no_marker(client_with_today):
     client, vault = client_with_today
     client.post("/set-progress", data={"section": "top_3", "index": "1", "level": "100"})
     items = _top3(vault)
-    assert items[1]["checked"] is True
-    assert items[1]["progress"] == 100
-    assert "<!--p:" not in _note(vault)  # 100 uses [x], no marker
+    assert items[1]["checked"] is True and items[1]["progress"] == 100
+    assert "<!--p:" not in _note(vault)
+
+
+def test_clicking_active_level_toggles_to_zero(client_with_today):
+    """Clicking the already-selected level unsets it — including 100%."""
+    client, vault = client_with_today
+    client.post("/set-progress", data={"section": "top_3", "index": "2", "level": "100"})
+    assert _top3(vault)[2]["progress"] == 100
+    # click 100 again → back to 0
+    client.post("/set-progress", data={"section": "top_3", "index": "2", "level": "100"})
+    assert _top3(vault)[2]["progress"] == 0
+    assert _top3(vault)[2]["checked"] is False
+
+
+def test_zero_is_a_real_level(client_with_today):
+    client, vault = client_with_today
+    client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "50"})
+    client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "0"})
+    assert _top3(vault)[0]["progress"] == 0
+    assert "<!--p:" not in _note(vault)
 
 
 def test_progress_marker_invisible_in_text(client_with_today):
-    """The marker must never leak into the parsed task text."""
     client, vault = client_with_today
-    client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "70"})
-    clean, prog = _strip_progress("Ship it <!--p:70-->")
-    assert clean == "Ship it" and prog == 70
+    clean, prog = _strip_progress("Ship it <!--p:75-->")
+    assert clean == "Ship it" and prog == 75
+    client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "75"})
     assert _top3(vault)[0]["text"] == "Ship the week view"
 
 
 def test_set_progress_rejects_bad_level(client_with_today):
     client, _ = client_with_today
-    resp = client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "33"})
-    assert resp.status_code == 400
+    assert client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "33"}).status_code == 400
 
 
-def test_progress_can_reset_to_zero(client_with_today):
+# --- delete is a reversible mark, not a removal ---
+
+def test_delete_marks_keeps_row(client_with_today):
     client, vault = client_with_today
-    client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "50"})
-    client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "0"})
-    items = _top3(vault)
-    assert items[0]["progress"] == 0
-    assert "<!--p:" not in _note(vault)
-
-
-# --- carry forward ---
-
-def test_carry_task_adds_to_carrying_over(client_with_today):
-    client, vault = client_with_today
-    resp = client.post("/carry-task", data={"section": "top_3", "index": "2"})
+    resp = client.post("/delete-task", data={"section": "top_3", "index": "1"})
     assert resp.status_code == 200
-    note = _note(vault)
-    assert "## Carrying Over" in note
-    assert "- Happy path docs" in note.split("## Carrying Over")[1]
+    # row still present in Top 3
+    assert any(i["text"] == "Draft cowork" for i in _top3(vault))
+    # and marked in ### Deleted
+    assert "Draft cowork" in _extract_subsection_items(_morning(vault), "Deleted")
 
 
-def test_carry_task_toggles_off(client_with_today):
-    client, vault = client_with_today
-    client.post("/carry-task", data={"section": "top_3", "index": "2"})
-    client.post("/carry-task", data={"section": "top_3", "index": "2"})
-    note = _note(vault)
-    assert "- Happy path docs" not in note
-
-
-def test_carry_survives_progress(client_with_today):
-    """Carry-forward is independent of progress — you can do 50% and carry the rest."""
-    client, vault = client_with_today
-    client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "50"})
-    client.post("/carry-task", data={"section": "top_3", "index": "0"})
-    note = _note(vault)
-    assert "- Ship the week view" in note.split("## Carrying Over")[1]
-    assert _top3(vault)[0]["progress"] == 50
-
-
-# --- delete ---
-
-def test_delete_top3_clears_slot_keeps_three(client_with_today):
+def test_delete_toggles_off(client_with_today):
     client, vault = client_with_today
     client.post("/delete-task", data={"section": "top_3", "index": "1"})
-    note = _note(vault)
-    top3_block = note.split("### My Top 3")[1].split("###")[0]
-    # Still three numbered slots, middle one cleared.
-    assert "Draft cowork" not in top3_block
-    assert top3_block.count("\n1.") + top3_block.count("\n2.") + top3_block.count("\n3.") >= 1
+    client.post("/delete-task", data={"section": "top_3", "index": "1"})
+    assert "Draft cowork" not in _extract_subsection_items(_morning(vault), "Deleted")
+    assert any(i["text"] == "Draft cowork" for i in _top3(vault))  # still there
 
 
-def test_delete_bonus_removes_row(client_with_today):
+def test_progress_and_delete_coexist(client_with_today):
+    client, vault = client_with_today
+    client.post("/set-progress", data={"section": "top_3", "index": "0", "level": "50"})
+    client.post("/delete-task", data={"section": "top_3", "index": "0"})
+    items = _top3(vault)
+    assert items[0]["progress"] == 50
+    assert "Ship the week view" in _extract_subsection_items(_morning(vault), "Deleted")
+
+
+def test_delete_works_on_bonus(client_with_today):
     client, vault = client_with_today
     client.post("/delete-task", data={"section": "bonus", "index": "0"})
-    morning = parse_daily_note_sections(_note(vault)).get("Morning Check-in", "")
-    from companion.server import _extract_bonus
-    bonus = _extract_bonus(morning)
-    assert all(b["text"] != "brainstorm marketing" for b in bonus)
+    assert "brainstorm marketing" in _extract_subsection_items(_morning(vault), "Deleted")
+    assert any(b["text"] == "brainstorm marketing" for b in _extract_bonus(_morning(vault)))
 
 
-def test_delete_also_clears_carryover(client_with_today):
-    client, vault = client_with_today
-    client.post("/carry-task", data={"section": "top_3", "index": "2"})
-    client.post("/delete-task", data={"section": "top_3", "index": "2"})
-    assert "- Happy path docs" not in _note(vault)
-
-
-# --- smoke: the Command Center renders the controls without error ---
+# --- smoke: Command Center renders the redesigned controls ---
 
 def test_command_center_renders_task_controls(client_with_today):
     client, _ = client_with_today
     html = client.get("/").get_data(as_text=True)
-    assert "tasklist-top_3" in html
-    assert "tasklist-bonus" in html
-    assert "/set-progress" in html
-    assert "/carry-task" in html
+    assert "tasklist-top_3" in html and "tasklist-bonus" in html
+    assert "/set-progress" in html and "/delete-task" in html
+    assert "/carry-task" not in html          # carry column removed
     assert "Return to the terminal" in html
+    assert "energy-morning" in html and "energy-evening" in html   # both energy rows
