@@ -62,3 +62,26 @@ Week rituals in the artifact; onboarding wizard; `/schedule` pre-fetch; `/log` /
 - **Surface detection reliability.** If we can't find a clean signal, fall back to explicit `open day cowork`. Acceptable for v1.
 - **Two companions, one vault, drift.** Mitigation: the identical contract + the cross-surface test (4.2). The `status` frontmatter must be respected by both.
 - **Streak rule triple-source.** Mitigation: Python canonical, JS display-only, parity test in CI.
+
+## Recent learnings (2026-06-14) — fold these into the build
+
+Hard-won from dogfeeding the CLI/web companion after this plan was first written. Several **validate** the artifact model; a few add **new requirements**.
+
+1. **Form state must never re-render mid-edit (validates principle #2).** The CLI plan form re-rendered the entire form on every field `change` (htmx `hx-swap=outerHTML`). Result: tabbing into a field and typing destroyed its DOM node ("text disappeared"), and a value typed in Top-3 slot 3 jumped to an earlier slot because the priorities list was **compacted** (empty slots dropped). Fixes that the artifact gets for free if it holds state: (a) **positional slots** — index *i* always maps to slot *i*, never compact empties; (b) save **without** re-rendering the inputs. The artifact must keep all three Top-3 slots and the bonus rows as controlled, positional inputs. Do NOT rebuild the input list from a filtered/compacted array.
+
+2. **Continuous entry for list fields (new requirement).** When adding bonus items, Enter/Tab must keep focus on the *next/empty* field so the user types item after item — never dump focus onto a "Reset/Done" button. Trivial with controlled React inputs; just don't lose it on re-render.
+
+3. **Orient the user at the TOP, and make the closing pass distinct (new requirement).** Users don't scroll to find "what next." The Command Center now shows a **top banner** on the morning/midday entry: *"Good job — type done to complete; come back any time to mark progress."* When **close-day** sends the user in for the end-of-day pass, that banner is replaced by a **bottom line**: *"Good job — type done to close your day."* The CLI signals this with `?closing=1`; cowork should carry an equivalent **entry-context flag** (e.g. `phase: 'planning' | 'active' | 'closing'`) into the artifact so it knows whether this is the plan-confirm, mark-progress, or close pass. Don't bury the call-to-action.
+
+4. **Two-energy model, asymmetric visibility (refines 2.3).** Morning energy shows on the active Command Center (editable). **Evening energy is hidden** there until it's been captured — it belongs to the closing pass. Mirror this: morning energy on the active view, evening energy only in the closing/evening cards + results.
+
+5. **`status` frontmatter still not shipped on the CLI side.** The CLI still infers mode via `_detect_day_state` + a `?mode=` override + the new `?closing=` flag. Plan item 1.3 (add explicit `status: planning|active|closed`) is **still the right move and still pending** — doing it as part of cowork benefits both surfaces and is the clean signal cowork needs anyway. Treat it as a prerequisite, not an afterthought.
+
+6. **Dependency/runtime gotchas that bit the CLI (mostly moot for the artifact, noted so they're not re-learned):**
+   - The web companion loaded htmx/Alpine from a CDN; a blocked CDN left every button dead and was invisible in testing because the dev sandbox *could* reach the CDN. Lesson for cowork: **verify in a real Claude Desktop session**, not a simulated/headless proxy — "works in my environment" ≠ "works in the user's." The artifact runtime bundles React/Tailwind, so the CDN class of bug is gone, but the *verification discipline* carries over (see 4.1).
+   - The CLI's `tailwind.css` was a hand-written minimal subset, so undefined utility classes silently no-op'd. The artifact runtime ships full Tailwind — this gotcha disappears; don't port the minimal stylesheet.
+   - Server ran with template caching → "stale server" confusion on every edit. The artifact has no server; this whole class of pain is gone (validates principle #2). 
+
+7. **Reset-first path (new requirement).** The CLI added `open day -r` → run `/reset-day` (full clear of today's note) before opening, combinable as `open day -v -r`. Cowork's open-day branch should support the same reset-first flag so a botched plan can be redone cleanly.
+
+8. **Disposition + progress are independent and reversible (confirms 2.6, adds detail).** Per-task progress is 0/25/50/75/100 stored as hidden `<!--p:NN-->` markers; delete is a *reversible mark* (moves text to `### Deleted`, keeps the row), and an item can carry a % AND be marked for deletion. Anything <100% auto-carries at close-day (no explicit "carry" control). Port these exact semantics.
