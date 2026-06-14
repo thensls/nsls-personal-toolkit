@@ -1265,8 +1265,9 @@ def create_app(vault_path: str) -> Flask:
 
         def remove(existing: str) -> str:
             lines = existing.splitlines()
+            # Locate the bonus section's list-item line numbers in order.
             in_section = False
-            seen = 0
+            item_lines: list[int] = []
             for i, line in enumerate(lines):
                 if line.strip() == "### Bonus":
                     in_section = True
@@ -1274,22 +1275,27 @@ def create_app(vault_path: str) -> Flask:
                 if in_section and (line.startswith("### ") or line.startswith("## ")):
                     break
                 if in_section and _LIST_ITEM_RE.match(line):
-                    if seen == index:
-                        del lines[i]
-                        # Renumber remaining items
-                        remaining_idx = 0
-                        for j in range(i, len(lines)):
-                            if lines[j].startswith("### ") or lines[j].startswith("## "):
-                                break
-                            m = _LIST_ITEM_RE.match(lines[j])
-                            if m:
-                                prefix_m = re.match(r"^(\s*)(\d+\.|-)\s+", lines[j])
-                                if prefix_m and prefix_m.group(2) != "-":
-                                    rest = lines[j][prefix_m.end():]
-                                    lines[j] = f"{remaining_idx + 1}. {rest}"
-                                remaining_idx += 1
-                        break
-                    seen += 1
+                    item_lines.append(i)
+            if index < 0 or index >= len(item_lines):
+                return existing  # nothing to delete
+            del lines[item_lines[index]]
+            # Renumber ALL surviving numbered items in the section from 1 (the
+            # old loop started at the deletion point, leaving duplicate ordinals
+            # like "1. A / 1. C" when deleting anything but the first item).
+            in_section = False
+            n = 0
+            for j, line in enumerate(lines):
+                if line.strip() == "### Bonus":
+                    in_section = True
+                    continue
+                if in_section and (line.startswith("### ") or line.startswith("## ")):
+                    break
+                if in_section and _LIST_ITEM_RE.match(line):
+                    prefix_m = re.match(r"^(\s*)(\d+\.|-)\s+", line)
+                    if prefix_m and prefix_m.group(2) != "-":
+                        rest = line[prefix_m.end():]
+                        lines[j] = f"{n + 1}. {rest}"
+                    n += 1
             return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
 
         safe_modify(note_path, remove)

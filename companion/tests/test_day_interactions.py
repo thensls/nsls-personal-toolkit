@@ -198,10 +198,37 @@ def test_set_bonus_updates_nth_item(client_with_today):
         "1. [ ] First bonus\n2. [ ] Second\n"
     )
     resp = client.post("/set-bonus", data={"index": "1", "text": "Updated second"})
-    assert resp.status_code == 200  # rerendered partial, not 204
+    assert resp.status_code == 200  # re-renders #bonus-list partial
+    assert b"bonus-list" in resp.data
     body = note.read_text()
     assert "2. [ ] Updated second" in body
     assert "1. [ ] First bonus" in body
+
+
+def test_delete_bonus_renumbers_whole_section(client_with_today):
+    """Regression: deleting a middle item must renumber the ENTIRE section from
+    1, not just from the deletion point. The old loop produced duplicate
+    ordinals like '1. A / 1. C' when deleting anything but the first item."""
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    note.write_text(
+        "## Morning Check-in\n### Bonus\n"
+        "1. [ ] Bonus A\n2. [ ] Bonus B\n3. [ ] Bonus C\n4. [ ] Bonus D\n"
+    )
+    # delete the middle item (index 1 = "Bonus B")
+    resp = client.post("/delete-bonus", data={"index": "1"})
+    assert resp.status_code == 200
+    body = note.read_text()
+    assert "Bonus B" not in body
+    # survivors renumbered 1..3 with no duplicates / gaps
+    assert "1. [ ] Bonus A" in body
+    assert "2. [ ] Bonus C" in body
+    assert "3. [ ] Bonus D" in body
+    # exactly one of each ordinal
+    import re as _re
+    nums = _re.findall(r"^(\d+)\. ", body, _re.MULTILINE)
+    assert nums == ["1", "2", "3"]
 
 
 def test_ai_suggestions_surface_in_plan_your_day(client_with_today):
