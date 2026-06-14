@@ -70,9 +70,9 @@ If `visual_mode` is on AND `"$TC"` resolves AND `"$TC" status` reports running, 
 
 1. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If the file doesn't exist, skip this step — there's nothing to show.
 
-2. **Open the companion in the browser** (`open <url-from-status>` on macOS) and tell the builder to go check off what they completed:
+2. **Open the companion's Command Center in closing mode** (`open "<url-from-status>/?closing=1"` on macOS). The `?closing=1` flag tells the Command Center this is the end-of-day pass: it swaps the usual "come back any time" banner for a bottom line that reads *"Good job! Return to the terminal and type `done` to close your day."* Tell the builder to go mark their progress:
 
-   > I opened the companion at `<url>`. Before we close out, go check off what you completed today — mark your Top 3 and Bonus items as done, and tick any habits you finished.
+   > I opened the Command Center at `<url>/?closing=1`. Before we close out, go mark off what you did today — set progress on your Top 3 and Bonus items, add any unplanned wins, tick habits, and jot gratitude/insight if you like.
    >
    > Say **done** when you're ready to continue.
 

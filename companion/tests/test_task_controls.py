@@ -166,11 +166,24 @@ def test_command_center_renders_task_controls(client_with_today):
     assert "tasklist-top_3" in html and "tasklist-bonus" in html
     assert "/set-progress" in html and "/delete-task" in html
     assert "/carry-task" not in html          # carry column removed
-    assert "Return to the terminal" in html
+    # Default (non-closing) Command Center shows the top "come back any time"
+    # banner, not the closing "close your day" line.
+    assert "back here any time" in html
+    assert "close your day" not in html
+    assert "return to the terminal" in html.lower()
     # Morning energy always shows; evening energy is a close-day capture and
     # stays hidden on the Command Center until it's been set.
     assert "energy-morning" in html
     assert "energy-evening" not in html
+
+
+def test_command_center_closing_mode_shows_close_line(client_with_today):
+    """?closing=1 (set by close-day) swaps the top banner for the bottom
+    'type done to close your day' line."""
+    client, _ = client_with_today
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "close your day" in html
+    assert "back here any time" not in html
 
 
 def test_evening_energy_appears_once_set(client_with_today):

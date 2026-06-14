@@ -967,6 +967,10 @@ def create_app(vault_path: str) -> Flask:
         ctx["gratitude_text"] = gratitude_text
         ctx["daily_insight_text"] = daily_insight_text
         ctx["mode"] = mode
+        # `?closing=1` (set by /close-day when it sends the user here to mark
+        # progress) swaps the Command Center's top "come back any time" banner
+        # for a bottom "type done to close your day" line.
+        ctx["closing"] = request.args.get("closing") == "1"
 
         return render_template("day.html", **ctx)
 
@@ -1223,9 +1227,12 @@ def create_app(vault_path: str) -> Flask:
         broadcast(f"01-daily/{today}.md")
         return ("", 204)
 
-    def _render_bonus_list(today: str):
+    def _render_bonus_list(today: str, focus_add: bool = False):
         """Re-render just the bonus list partial (id=bonus-list) for the
-        add/delete flows, leaving the Top 3 inputs untouched."""
+        add/delete flows, leaving the Top 3 inputs untouched. When focus_add
+        is set, the partial includes a one-shot script that focuses the empty
+        'add' input after the swap, so the user can keep typing items without
+        Tab/Enter dumping focus onto the Reset button."""
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         daily_md = note_path.read_text() if note_path.exists() else ""
         sections = parse_daily_note_sections(daily_md)
@@ -1233,7 +1240,7 @@ def create_app(vault_path: str) -> Flask:
         top_3 = _extract_top_3(morning)
         bonus_items = _extract_bonus(morning)
         plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
-        return render_template("_components/bonus_list.html", plan=plan)
+        return render_template("_components/bonus_list.html", plan=plan, focus_add=focus_add)
 
     @app.route("/set-top-3", methods=["POST"])
     def set_top_3():
@@ -1248,7 +1255,21 @@ def create_app(vault_path: str) -> Flask:
         resp = _set_morning_item("### Bonus", "bonus", rerender_partial=False)
         if isinstance(resp, tuple) and resp[1] != 204:
             return resp  # validation error — pass through
-        return _render_bonus_list(_target_date())
+        # Focus the fresh add slot only when the user added a brand-new item
+        # (the trailing add input, index == current count) so Tab/Enter keeps
+        # them typing instead of jumping to Reset. Editing an existing item
+        # (lower index) saves silently and shouldn't steal focus.
+        try:
+            idx = int(request.form.get("index", "-1"))
+        except (TypeError, ValueError):
+            idx = -1
+        bonus_count = len(_extract_bonus(
+            parse_daily_note_sections(
+                (app.config["VAULT_PATH"] / "01-daily" / f"{_target_date()}.md").read_text()
+            ).get("Morning Check-in", "")
+        ))
+        # After the add, the item count is idx+1; focus if this was the add slot.
+        return _render_bonus_list(_target_date(), focus_add=(idx + 1 == bonus_count))
 
     @app.route("/delete-bonus", methods=["POST"])
     def delete_bonus():

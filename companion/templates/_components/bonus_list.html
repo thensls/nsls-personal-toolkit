@@ -23,9 +23,20 @@
            placeholder="Add a bonus item..."
            hx-post="/set-bonus"
            hx-vals='{"index": "{{ plan.bonus|length }}"}'
-           hx-trigger="change"
+           hx-trigger="change, keyup[key=='Enter']"
            hx-target="#bonus-list" hx-swap="outerHTML"
            name="text"
+           autocomplete="off"
            class="flex-1 border rounded px-3 py-2 text-sm">
   </li>
 </ul>
+{% if focus_add %}
+<script>
+  // One-shot: after this partial is swapped in, focus the fresh add slot so
+  // the user keeps typing bonus items instead of Tab/Enter landing on Reset.
+  (function () {
+    var el = document.querySelector('#bonus-list input[placeholder="Add a bonus item..."]');
+    if (el) el.focus();
+  })();
+</script>
+{% endif %}

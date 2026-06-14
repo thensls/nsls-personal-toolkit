@@ -9,8 +9,9 @@ description: >-
   "what's on my plate", "what do I have today", "daily planning", or opens a
   new session in the morning. Also handles "open day visual off" (one-shot
   skip of the browser companion this run), "open day visual off forever"
-  (persistently disable the browser companion), and "open day visual on"
-  (persistently enable). Requires Google Calendar and Asana access.
+  (persistently disable the browser companion), "open day visual on"
+  (persistently enable), and "open day -r" (run /reset-day first, then open —
+  combine as "open day -v -r"). Requires Google Calendar and Asana access.
 ---
 
 # Open Day
@@ -28,6 +29,8 @@ Before doing anything else, parse the builder's invocation phrase to choose a mo
 | `open day visual off` | Run CLI-only **this time** |
 | `open day visual on forever` | Set `visual_mode: on` in builder-profile.md (persistent), then run with the companion |
 | `open day visual off forever` | Set `visual_mode: off` in builder-profile.md (persistent), then run CLI-only |
+
+**Reset-first flag (`-r`):** if the invocation includes `-r` (e.g. `open day -r`, `open day -v -r`), **run `/reset-day` (full reset) FIRST**, before Step 1 — clear today's note so open-day rebuilds it from scratch (real carry-overs / close-day seeds, or generated suggestions if there's nothing real). `-r` is independent of `-v`: `-v -r` means "reset, then open with the companion"; `-r` alone means "reset, then open CLI-only". Do the reset silently (one-line confirmation at most), then continue with open-day as normal. This is the fast "redo my day cleanly" path used in testing and when a morning plan went sideways.
 
 When `visual_mode` is **on**:
 - **Step 1.5 only**: Auto-run yesterday's close-day if needed (same as CLI mode).
