@@ -33,6 +33,7 @@ Calculate:
 **Resolving the binary path** (same lookup as open-day Step 8):
 ```bash
 TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+[ -x "$TC" ] || TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/Scripts/toolkit-companion.exe"  # Windows
 [ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
 ```
 

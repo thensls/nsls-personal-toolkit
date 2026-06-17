@@ -698,15 +698,17 @@ Count the totals: e.g., `2 adopted, 0 modified, 1 replaced`
 
 When you skip, finish the morning ritual entirely in chat (Steps 3 and 4 in this skill already cover the chat-based draft + review of Top 3 / Bonus / etc.).
 
-**Resolving the binary path.** `install.sh` runs `pip3 install -e .` inside a venv at `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/`, so on most installs the `toolkit-companion` binary is **not on PATH** in a fresh shell. Always resolve it via this two-step lookup before invoking — never assume PATH:
+**Resolving the binary path.** The install runs an editable pip install inside a venv at `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/`, so on most installs the `toolkit-companion` binary is **not on PATH** in a fresh shell. The venv binary dir differs by OS — `bin/` on macOS/Linux, `Scripts/` (with a `.exe`) on Windows. Resolve it with this platform-aware lookup before invoking — never assume PATH:
 
 ```bash
-TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+VENV="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv"
+TC="$VENV/bin/toolkit-companion"                      # macOS / Linux
+[ -x "$TC" ] || TC="$VENV/Scripts/toolkit-companion.exe"   # Windows (Git Bash)
 [ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
 [ -n "$TC" ] || { echo "companion not installed"; }
 ```
 
-Use the resolved `"$TC"` in every command below. If both lookups fail, skip the rest of this step.
+Use the resolved `"$TC"` in every command below. If all lookups fail, skip the rest of this step.
 
 When you don't skip:
 

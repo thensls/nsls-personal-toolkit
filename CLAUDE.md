@@ -30,7 +30,7 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 
 The companion runs at `http://localhost:7777`. It is optional — install with `install.sh` or `cd companion && pip install -e .`.
 
-The binary is installed into a venv at `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion` and is **not on PATH** in a fresh shell. To run it: invoke that full path, activate the venv first, or symlink it to a PATH location yourself (e.g., `ln -s ~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion ~/.local/bin/`). Skills resolve this path automatically — see open-day Step 8 for the lookup pattern.
+The binary is installed into a venv and is **not on PATH** in a fresh shell. The venv binary dir is OS-specific: `companion/.venv/bin/toolkit-companion` on macOS/Linux, `companion/.venv/Scripts/toolkit-companion.exe` on Windows. To run it: invoke that full path, activate the venv first, or (Unix) symlink it to `~/.local/bin/`. Skills resolve the correct path automatically — see open-day Step 8 for the platform-aware lookup. Windows users: see `docs/windows-setup.md`.
 
 Habits live in `30-habits/habits.md`; daily ticks accumulate in `30-habits/log.md` (append-only). The streak rule is documented in `skills/close-day/SKILL.md` and implemented in `companion/streak.py`. Both must stay in sync.
 

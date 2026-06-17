@@ -302,7 +302,7 @@ def _extract_carryovers(vault_path: Path, today: str, lookback_days: int = 7) ->
         note_path = vault_path / "01-daily" / f"{candidate}.md"
         if not note_path.exists():
             continue
-        sections = parse_daily_note_sections(note_path.read_text())
+        sections = parse_daily_note_sections(note_path.read_text(encoding="utf-8"))
         morning = sections.get("Morning Check-in", "")
         items = []
         for it in _extract_top_3(morning) + _extract_bonus(morning):
@@ -668,7 +668,7 @@ def _ensure_daily_note_scaffold(path: Path) -> None:
     if path.exists():
         return
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_DAILY_NOTE_SCAFFOLD)
+    path.write_text(_DAILY_NOTE_SCAFFOLD, encoding="utf-8", newline="")
 
 
 def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
@@ -754,11 +754,11 @@ def _habit_state_for(app, habit_id: str, today: str, percent: float) -> dict:
     habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
     log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
     habits = (
-        parse_habits(habits_path.read_text())
+        parse_habits(habits_path.read_text(encoding="utf-8"))
         if habits_path.exists()
         else {"active": [], "archived": []}
     )
-    log = parse_log(log_path.read_text()) if log_path.exists() else []
+    log = parse_log(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
 
     habit = next((h for h in habits["active"] if h["id"] == habit_id), None)
     if habit is None:
@@ -811,11 +811,11 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
     log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
     habits = (
-        parse_habits(habits_path.read_text())
+        parse_habits(habits_path.read_text(encoding="utf-8"))
         if habits_path.exists()
         else {"active": [], "archived": []}
     )
-    log = parse_log(log_path.read_text()) if log_path.exists() else []
+    log = parse_log(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
     today_log = next((r["ticks"] for r in log if r["date"] == today), {})
 
     habits_today = []
@@ -948,7 +948,7 @@ def create_app(vault_path: str) -> Flask:
     def index():
         today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
-        daily_md = note_path.read_text() if note_path.exists() else ""
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
 
         # Extract sections from the Morning Check-in block
         sections = parse_daily_note_sections(daily_md)
@@ -986,7 +986,7 @@ def create_app(vault_path: str) -> Flask:
     def week():
         week_of = _week_of()
         path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
-        week_md = path.read_text() if path.exists() else ""
+        week_md = path.read_text(encoding="utf-8") if path.exists() else ""
 
         mode_override = request.args.get("mode")
         auto_mode = _detect_week_state(week_md)
@@ -1020,7 +1020,7 @@ def create_app(vault_path: str) -> Flask:
                     prev_key = f"{y - 1}-W52"
                 prev_path = app.config["VAULT_PATH"] / "02-weekly" / f"{prev_key}.md"
                 if prev_path.exists():
-                    prev_week_md = prev_path.read_text()
+                    prev_week_md = prev_path.read_text(encoding="utf-8")
                     prev_sections = parse_weekly_note_sections(prev_week_md)
                     prev_top_3 = parse_week_top_3(prev_week_md)
             except (ValueError, IndexError):
@@ -1057,11 +1057,11 @@ def create_app(vault_path: str) -> Flask:
         habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
         log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
         habits = (
-            parse_habits(habits_path.read_text())
+            parse_habits(habits_path.read_text(encoding="utf-8"))
             if habits_path.exists()
             else {"active": [], "archived": []}
         )
-        log = parse_log(log_path.read_text()) if log_path.exists() else []
+        log = parse_log(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
 
         today = date.fromisoformat(_target_date())
         rows = []
@@ -1097,7 +1097,7 @@ def create_app(vault_path: str) -> Flask:
 
         today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
-        daily_md = note_path.read_text() if note_path.exists() else ""
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
         sections = parse_daily_note_sections(daily_md)
         morning = sections.get("Morning Check-in", "")
         top_3 = _extract_top_3(morning)
@@ -1234,7 +1234,7 @@ def create_app(vault_path: str) -> Flask:
         'add' input after the swap, so the user can keep typing items without
         Tab/Enter dumping focus onto the Reset button."""
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
-        daily_md = note_path.read_text() if note_path.exists() else ""
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
         sections = parse_daily_note_sections(daily_md)
         morning = sections.get("Morning Check-in", "")
         top_3 = _extract_top_3(morning)
@@ -1265,7 +1265,7 @@ def create_app(vault_path: str) -> Flask:
             idx = -1
         bonus_count = len(_extract_bonus(
             parse_daily_note_sections(
-                (app.config["VAULT_PATH"] / "01-daily" / f"{_target_date()}.md").read_text()
+                (app.config["VAULT_PATH"] / "01-daily" / f"{_target_date()}.md").read_text(encoding="utf-8")
             ).get("Morning Check-in", "")
         ))
         # After the add, the item count is idx+1; focus if this was the add slot.
@@ -1326,7 +1326,7 @@ def create_app(vault_path: str) -> Flask:
     def _render_unplanned(today: str):
         """Render the unplanned-section partial with fresh indices."""
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
-        daily_md = note_path.read_text() if note_path.exists() else ""
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
         morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
         unplanned = _extract_unplanned(morning)
         return render_template("_components/unplanned_section.html", unplanned=unplanned)
@@ -1430,7 +1430,7 @@ def create_app(vault_path: str) -> Flask:
         """Re-render one task section (Top 3 or Bonus) with fresh state."""
         heading = _TASK_HEADINGS[section]
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
-        daily_md = note_path.read_text() if note_path.exists() else ""
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
         morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
         items = (_extract_top_3(morning) if section == "top_3"
                  else _extract_bonus(morning))
@@ -1516,7 +1516,7 @@ def create_app(vault_path: str) -> Flask:
         slot at the end, so this is effectively a no-op that just re-renders."""
         today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
-        daily_md = note_path.read_text() if note_path.exists() else ""
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
         sections = parse_daily_note_sections(daily_md)
         morning = sections.get("Morning Check-in", "")
         top_3 = _extract_top_3(morning)
@@ -1561,7 +1561,7 @@ def create_app(vault_path: str) -> Flask:
         safe_modify(note_path, reset)
         broadcast(f"01-daily/{today}.md")
 
-        daily_md = note_path.read_text()
+        daily_md = note_path.read_text(encoding="utf-8")
         sections = parse_daily_note_sections(daily_md)
         morning = sections.get("Morning Check-in", "")
         top_3 = _extract_top_3(morning)
@@ -1673,7 +1673,7 @@ def create_app(vault_path: str) -> Flask:
         broadcast(f"01-daily/{today}.md")
 
         # Re-render the partial with fresh state for HTMX swap.
-        daily_md = note_path.read_text()
+        daily_md = note_path.read_text(encoding="utf-8")
         sections = parse_daily_note_sections(daily_md)
         morning = sections.get("Morning Check-in", "")
         top_3 = _extract_top_3(morning)
@@ -1706,7 +1706,7 @@ def create_app(vault_path: str) -> Flask:
 
         # Return the freshly-rendered plan_your_day partial so the input
         # indices advance and a new empty Bonus slot appears as items pile up.
-        daily_md = note_path.read_text()
+        daily_md = note_path.read_text(encoding="utf-8")
         sections = parse_daily_note_sections(daily_md)
         morning = sections.get("Morning Check-in", "")
         top_3 = _extract_top_3(morning)
@@ -1717,7 +1717,7 @@ def create_app(vault_path: str) -> Flask:
     def _get_active_habits():
         habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
         if habits_path.exists():
-            return parse_habits(habits_path.read_text())["active"]
+            return parse_habits(habits_path.read_text(encoding="utf-8"))["active"]
         return []
 
     @app.route("/add-habit-form")
@@ -1733,7 +1733,7 @@ def create_app(vault_path: str) -> Flask:
     @app.route("/habit", methods=["POST"])
     def add_habit():
         habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
-        existing_md = habits_path.read_text() if habits_path.exists() else ""
+        existing_md = habits_path.read_text(encoding="utf-8") if habits_path.exists() else ""
         existing_ids: set[str] = set()
         if existing_md:
             parsed = parse_habits(existing_md)
@@ -1870,7 +1870,7 @@ def create_app(vault_path: str) -> Flask:
         broadcast(f"02-weekly/{week_of}.md")
 
         # Re-read and return the updated stack rank partial
-        week_md = path.read_text()
+        week_md = path.read_text(encoding="utf-8")
         stack_rank = parse_stack_rank_table(week_md)
         return render_template("_components/week_stack_rank_partial.html",
                                stack_rank=stack_rank, week_of=week_of)
@@ -1951,7 +1951,7 @@ def create_app(vault_path: str) -> Flask:
         broadcast(f"02-weekly/{week_of}.md")
 
         # Re-render the full week view in command mode
-        week_md = path.read_text()
+        week_md = path.read_text(encoding="utf-8")
         fm = parse_weekly_frontmatter(week_md)
         sections = parse_weekly_note_sections(week_md)
         stack_rank = parse_stack_rank_table(week_md)
