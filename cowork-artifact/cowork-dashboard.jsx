@@ -33,9 +33,20 @@ function streakLabel(habit) {
   if (!habit || !habit.streakDays || habit.status === "reset") return "";
   return "🔥" + habit.streakDays;
 }
+
+function cycleProgress(p) {
+  const steps = [0, 25, 50, 75, 100];
+  const i = steps.indexOf(p);
+  return steps[(i + 1) % steps.length];  // -1 (unknown) -> steps[0] == 0
+}
+
+function toggleDisposition(item, target) {
+  const next = item.disposition === target ? "active" : target;
+  return Object.assign({}, item, { disposition: next });
+}
 // === COWORK-LOGIC:END ===
 
-const coworkLogic = { serializeForSave, streakLabel };
+const coworkLogic = { serializeForSave, streakLabel, cycleProgress, toggleDisposition };
 
 // Hardcoded realistic state for 2.1 (Phase 3 wires Claude's Python parse to produce this).
 const SAMPLE = {
