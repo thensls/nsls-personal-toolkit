@@ -128,3 +128,20 @@ def test_status_lifecycle_through_companion(client_with_today):
     assert parse_frontmatter(_note_text(vault, today))["status"] == "active"
     client.post("/lock-in", data={"phase": "evening"})
     assert parse_frontmatter(_note_text(vault, today))["status"] == "closed"
+
+
+# ---------------------------------------------------------------------------
+# Server-side auto-scaffold (the empty note the companion creates when a user
+# opens the Command Center without having run open-day) -> status: planning
+# ---------------------------------------------------------------------------
+
+def test_auto_scaffold_note_has_status_planning(tmp_path):
+    # _ensure_daily_note_scaffold creates a fresh planning note; it must carry
+    # status: planning so _detect_day_state routes it to coach-morning instead
+    # of falling back to legacy section inference.
+    from companion.server import _ensure_daily_note_scaffold
+
+    note = tmp_path / "01-daily" / "2026-06-21.md"
+    _ensure_daily_note_scaffold(note)
+    fm = parse_frontmatter(note.read_text(encoding="utf-8"))
+    assert fm["status"] == "planning"

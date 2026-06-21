@@ -59,10 +59,13 @@ Default to today (`date +%Y-%m-%d`). User can override: `/close-day 2026-03-21`.
 **Resolving the binary path** (same lookup as open-day Step 8):
 ```bash
 TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+[ -x "$TC" ] || TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/Scripts/toolkit-companion.exe"  # Windows
 [ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
 ```
 
-**The companion is OFF by default.** Run this step only if EITHER the builder passed `-v` (or "visual on") this invocation, OR `visual_mode: on` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If the field is absent, missing, or anything other than the literal string `on`, skip this step entirely — close-day runs as a pure CLI ritual (do not resolve, start, or open the companion). Proceed straight to Step 0.6. This keeps the companion opt-in during rollout.
+**The companion is ON by default.** Run this step unless the builder opted out — i.e. skip it (and run close-day as a pure CLI ritual, proceeding straight to Step 0.6) when EITHER the builder passed `-v` (or "visual off") this invocation, OR `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If the field is absent, missing, or anything other than the literal string `off`, the companion is on.
+
+**Graceful fallback (default-on safety).** Default-on only does something on a CLI surface where the local companion is installed and running. If `"$TC"` doesn't resolve, or `"$TC" status` doesn't report running, or you're on a surface that can't run a local server (e.g. Claude Desktop / cowork, which can't run arbitrary Bash), **skip this step silently** and close in chat. Never announce a companion that isn't there. (Unlike open-day, close-day does not start the companion — it uses it only if it's already running, which it usually is if the morning open-day started it.)
 
 **Only run this step if the date from Step 0 is today** (`$(date +%Y-%m-%d)`). The companion always shows today's data — if closing a past date, the companion would show the wrong day. Skip silently for past dates.
 

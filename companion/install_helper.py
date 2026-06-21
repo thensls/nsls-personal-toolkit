@@ -19,7 +19,7 @@ def resolve_vault() -> str:
         return env
     # 2) builder-profile (simple YAML-in-markdown — find data_sources.familiar.paths)
     if PROFILE_PATH.exists():
-        text = PROFILE_PATH.read_text()
+        text = PROFILE_PATH.read_text(encoding="utf-8")
         host = socket.gethostname()
         in_paths = False
         current: dict = {}

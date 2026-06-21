@@ -79,7 +79,7 @@ def serve(vault, port, no_open):
     app = create_app(vault_path=str(vault_path))
 
     PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PID_FILE.write_text(f"{os.getpid()}\n{host}:{port}\n")
+    PID_FILE.write_text(f"{os.getpid()}\n{host}:{port}\n", encoding="utf-8", newline="")
     PID_FILE.chmod(0o600)
 
     url = f"http://{host}:{port}"
@@ -88,7 +88,11 @@ def serve(vault, port, no_open):
         webbrowser.open(url)
 
     try:
-        app.run(host=host, port=port, debug=False, use_reloader=False)
+        # threaded=True is required, not optional: the SSE /events endpoint holds
+        # a connection open indefinitely, so a single-threaded server would block
+        # all other requests behind it. Concurrency is therefore real, which is
+        # why every vault write goes through safe_modify's exclusive lock.
+        app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
     finally:
         try:
             PID_FILE.unlink()
@@ -103,7 +107,7 @@ def stop():
         click.echo("No running companion found.")
         return
     try:
-        pid = int(PID_FILE.read_text().splitlines()[0])
+        pid = int(PID_FILE.read_text(encoding="utf-8").splitlines()[0])
     except (IndexError, ValueError):
         click.echo("Malformed pidfile; cleaning up.")
         PID_FILE.unlink(missing_ok=True)
@@ -122,7 +126,7 @@ def status():
     if not PID_FILE.exists():
         click.echo("Not running.")
         sys.exit(1)
-    lines = PID_FILE.read_text().splitlines()
+    lines = PID_FILE.read_text(encoding="utf-8").splitlines()
     try:
         pid = int(lines[0])
     except (IndexError, ValueError):

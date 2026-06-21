@@ -7,11 +7,12 @@ description: >-
   Check-in in today's Obsidian daily note. Use when the user says "open day",
   "plan day", "plan my day", "start my day", "morning", "good morning",
   "what's on my plate", "what do I have today", "daily planning", or opens a
-  new session in the morning. Also handles "open day visual off" (one-shot
-  skip of the browser companion this run), "open day visual off forever"
-  (persistently disable the browser companion), "open day visual on"
-  (persistently enable), and "open day -r" (run /reset-day first, then open —
-  combine as "open day -v -r"). Requires Google Calendar and Asana access.
+  new session in the morning. The visual browser companion is ON by default;
+  also handles "open day -v" / "open day visual off" (one-shot skip of the
+  companion this run), "open day -v forever" / "open day visual off forever"
+  (persistently disable it), "open day visual on" (force/persist on), and
+  "open day -r" (run /reset-day first, then open). Requires Google Calendar and
+  Asana access.
 ---
 
 # Open Day
@@ -24,15 +25,16 @@ Before doing anything else, parse the builder's invocation phrase to choose a mo
 
 | Phrase | Action |
 |---|---|
-| `open day` (or any trigger above with no flag) | Use `visual_mode` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. **Default `off` if absent — CLI-only.** |
-| `open day -v` (or `open day visual on`) | Run **with** the visual companion **this time** only — does not change the profile |
-| `open day visual off` | Run CLI-only **this time** |
-| `open day visual on forever` | Set `visual_mode: on` in builder-profile.md (persistent), then run with the companion |
-| `open day visual off forever` | Set `visual_mode: off` in builder-profile.md (persistent), then run CLI-only |
+| `open day` (or any trigger above with no flag) | **Visual companion ON by default.** Read `visual_mode` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`; treat absent / missing / anything-but-`off` as **on**. Only `visual_mode: off` opts out. (If the companion can't actually start, fall back to chat — see graceful fallback below.) |
+| `open day -v` (or `open day visual off`) | **Negate the companion this run** — run CLI/chat only this time. Does not change the profile. (`-v` = "no visual this run".) |
+| `open day -v forever` (or `open day visual off forever`) | Set `visual_mode: off` in builder-profile.md (persistent), then run CLI/chat only |
+| `open day visual on` | Force the companion this time (e.g. if you've persisted it off) |
+| `open day visual on forever` | Set `visual_mode: on` in builder-profile.md (persistent) — same as the default, but explicit |
 
-**Reset-first flag (`-r`):** if the invocation includes `-r` (e.g. `open day -r`, `open day -v -r`), **run `/reset-day` (full reset) FIRST**, before Step 1 — clear today's note so open-day rebuilds it from scratch (real carry-overs / close-day seeds, or generated suggestions if there's nothing real). `-r` is independent of `-v`: `-v -r` means "reset, then open with the companion"; `-r` alone means "reset, then open CLI-only". Do the reset silently (one-line confirmation at most), then continue with open-day as normal. This is the fast "redo my day cleanly" path used in testing and when a morning plan went sideways.
+**Reset-first flag (`-r`):** if the invocation includes `-r` (e.g. `open day -r`, `open day -v -r`), **run `/reset-day` (full reset) FIRST**, before Step 1 — clear today's note so open-day rebuilds it from scratch (real carry-overs / close-day seeds, or generated suggestions if there's nothing real). `-r` is independent of `-v`: `-r` alone means "reset, then open with the companion" (the default); `-v -r` means "reset, then open CLI/chat only". Do the reset silently (one-line confirmation at most), then continue with open-day as normal. This is the fast "redo my day cleanly" path used in testing and when a morning plan went sideways.
 
-When `visual_mode` is **on**:
+When `visual_mode` is **on** (the default):
+- **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary** (not installed, or you're not on a surface that can run a local server — e.g. Claude Desktop / cowork, which can't run arbitrary Bash), **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
 - **Step 1.5 only**: Auto-run yesterday's close-day if needed (same as CLI mode).
 - **Step 2**: Collect ALL data (calendar, Asana, carry-overs, AI suggestions, stack rank, free time, habits, learning, PRs, SLT). Run Bash commands in the background or silently — **do not show raw Bash output to the user**. Present ONE condensed summary line per data source (e.g., "3 meetings today · 6 open Asana · 2 carry-overs · AI suggestions seeded").
 - **Step 6**: Write the daily note with **empty Top 3 and Bonus slots** (`1. [ ]`, `2. [ ]`, `3. [ ]`). Include habits, calendar, and the standard template. **Do NOT fill in Top 3 — that's the companion's job.** BUT the companion needs suggestions to show, so **always write an `### AI Suggested: Top 3` section** (3 items) and `### AI Suggested: Delegate These`, in priority order:
@@ -47,7 +49,7 @@ When `visual_mode` is **off**:
 - Run the full chat flow (Steps 1-7), present suggestions in chat, accept the builder's edits in chat, and write the daily note from chat. **Skip Step 8.**
 - Show full verbose output for all steps.
 
-Builder-profile read/write: `visual_mode` is a top-level frontmatter field. **The default is OFF** — if the field is absent, missing, or anything other than the literal string `on`, run CLI-only. The companion runs only when `visual_mode: on` is set in the profile, OR the builder passes `-v` (or "visual on") this run. This keeps the companion opt-in during rollout: it stays off for everyone until a builder explicitly turns it on.
+Builder-profile read/write: `visual_mode` is a top-level frontmatter field. **The default is ON** — if the field is absent, missing, or anything other than the literal string `off`, run with the companion (subject to the graceful fallback above). The companion is skipped only when `visual_mode: off` is set in the profile, OR the builder passes `-v` (or "visual off") this run. To opt out persistently, set `visual_mode: off`. Note: default-on only has an effect on a CLI surface where the local companion can start; on surfaces that can't run it, the graceful fallback finishes the ritual in chat.
 
 ## Philosophy
 
@@ -701,21 +703,23 @@ Count the totals: e.g., `2 adopted, 0 modified, 1 replaced`
 ### Step 8: Open the visual companion (browser sidekick for the rest of the day)
 
 **Skip this entire step** if any of these is true:
-- The builder said `open day visual off` (one-shot CLI mode) or `open day visual off forever`
+- The builder said `open day -v` / `open day visual off` (one-shot CLI mode) or `open day -v forever` / `open day visual off forever`
 - `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
-- The companion binary cannot be found at either of the locations below (the companion is optional; see `CLAUDE.md`)
+- The companion binary cannot be found at either of the locations below, or you're on a surface that can't run a local server (e.g. cowork) — the companion is optional; see `CLAUDE.md`
 
 When you skip, finish the morning ritual entirely in chat (Steps 3 and 4 in this skill already cover the chat-based draft + review of Top 3 / Bonus / etc.).
 
-**Resolving the binary path.** `install.sh` runs `pip3 install -e .` inside a venv at `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/`, so on most installs the `toolkit-companion` binary is **not on PATH** in a fresh shell. Always resolve it via this two-step lookup before invoking — never assume PATH:
+**Resolving the binary path.** The install runs an editable pip install inside a venv at `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/`, so on most installs the `toolkit-companion` binary is **not on PATH** in a fresh shell. The venv binary dir differs by OS — `bin/` on macOS/Linux, `Scripts/` (with a `.exe`) on Windows. Resolve it with this platform-aware lookup before invoking — never assume PATH:
 
 ```bash
-TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+VENV="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv"
+TC="$VENV/bin/toolkit-companion"                      # macOS / Linux
+[ -x "$TC" ] || TC="$VENV/Scripts/toolkit-companion.exe"   # Windows (Git Bash)
 [ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
 [ -n "$TC" ] || { echo "companion not installed"; }
 ```
 
-Use the resolved `"$TC"` in every command below. If both lookups fail, skip the rest of this step.
+Use the resolved `"$TC"` in every command below. If all lookups fail, skip the rest of this step.
 
 When you don't skip:
 
