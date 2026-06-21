@@ -100,3 +100,13 @@ def test_close_day_transitions_via_logic():
     src = JSX.read_text()
     assert "onCloseDay" in src
     assert "transition" in src and "close-day" in src
+
+
+def test_morning_has_done_button_and_energy():
+    src = JSX.read_text()
+    assert "MorningCoachCards" in src
+    assert "onLockIn" in src
+    assert "Done" in src               # plain "Done" CTA (Davo: prefer "Done")
+    assert "energy" in src.lower()
+    assert "Morning Coach Cards — stub" not in src   # no longer a stub
+    assert "EnergyPicker" in src                     # real energy control

@@ -195,7 +195,62 @@ function ActionBar({ dirty, onSave, onCloseDay }) {
   );
 }
 
-function MorningCoachCards({ state }) { return <div data-mode="coach-morning">Morning Coach Cards — stub</div>; }
+function EnergyPicker({ value, onPick }) {
+  const opts = ["Low", "Medium", "High"];
+  return (
+    <div style={{ display: "flex", gap: 8 }}>
+      {opts.map((o) => (
+        <button key={o} onClick={() => onPick(o)} style={{ flex: 1, padding: "9px 0",
+          borderRadius: 10, fontFamily: T.font, fontSize: 13, cursor: "pointer",
+          border: "1px solid " + (value === o ? T.teal : "#D7DEE8"),
+          background: value === o ? T.lightblue : "#fff",
+          color: value === o ? T.navy : T.darkblue, fontWeight: value === o ? 600 : 400 }}>
+          {o}</button>
+      ))}
+    </div>
+  );
+}
+
+function CoachShell({ title, subtitle, children }) {
+  return (
+    <div style={{ background: T.navy, borderRadius: 20, padding: 18, maxWidth: 420,
+      margin: "0 auto", fontFamily: T.font }}>
+      <div style={{ color: "#fff", padding: "4px 6px 14px" }}>
+        <div style={{ fontSize: 20, fontWeight: 600 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 12, color: "#9DB2CE", marginTop: 4 }}>{subtitle}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CoachButton({ label, onClick }) {
+  return (
+    <button onClick={onClick} style={{ background: T.gold, color: T.navy, border: "none",
+      borderRadius: 11, padding: 13, fontWeight: 700, fontSize: 14, width: "100%",
+      fontFamily: T.font, cursor: "pointer" }}>{label}</button>
+  );
+}
+
+function MorningCoachCards({ state, onUpdate, onLockIn }) {
+  function setEnergy(v) {
+    onUpdate(Object.assign({}, state, { energy: Object.assign({}, state.energy, { morning: v }) }));
+  }
+  return (
+    <div data-mode="coach-morning">
+      <CoachShell title="Good morning" subtitle={(state.todayPretty || state.date) + " · plan your day"}>
+        <Panel title="How's your energy this morning?">
+          <EnergyPicker value={state.energy && state.energy.morning} onPick={setEnergy} />
+        </Panel>
+        <Panel title="Your Top 3" hint="confirm or edit">
+          {state.top3.map((it) => <TaskRow key={it.slot} item={it} />)}
+        </Panel>
+        <CoachButton label="Done — open my day →" onClick={onLockIn} />
+      </CoachShell>
+    </div>
+  );
+}
+
 function EveningCoachCards({ state }) { return <div data-mode="coach-evening">Evening Coach Cards — stub</div>; }
 function Results({ state }) { return <div data-mode="results">Results — stub</div>; }
 
