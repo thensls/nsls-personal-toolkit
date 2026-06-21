@@ -58,7 +58,8 @@ def test_font_stack_has_no_cdn_import():
 
 def test_primitives_defined():
     src = JSX.read_text()
-    for comp in ("Disc", "TaskRow", "Panel", "HabitChip", "Header", "SaveBar"):
+    # ActionBar replaced the 2.1 SaveBar (Save progress + Close Day).
+    for comp in ("Disc", "TaskRow", "Panel", "HabitChip", "Header", "ActionBar"):
         assert comp in src, f"primitive {comp} not defined"
 
 
@@ -79,3 +80,23 @@ def test_draft_persistence_with_fallback():
 def test_dirty_indicator_wired():
     src = JSX.read_text()
     assert "dirty" in src
+
+
+def test_command_center_has_both_action_buttons():
+    src = JSX.read_text()
+    assert "Save progress" in src
+    assert "Close Day" in src
+
+
+def test_active_command_center_has_no_closing_copy():
+    # The "type done to close" instruction must not appear in the active banner.
+    src = JSX.read_text()
+    assert "mark progress any time" in src
+    before = src.split("mark progress any time")[0][-200:]
+    assert "Type" not in before and "type done" not in before.lower()
+
+
+def test_close_day_transitions_via_logic():
+    src = JSX.read_text()
+    assert "onCloseDay" in src
+    assert "transition" in src and "close-day" in src

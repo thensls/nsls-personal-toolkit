@@ -176,13 +176,19 @@ function Header({ state }) {
   );
 }
 
-function SaveBar({ dirty, onSave }) {
+function ActionBar({ dirty, onSave, onCloseDay }) {
   return (
     <>
-      <button onClick={onSave} style={{ background: T.gold, color: T.navy, border: "none",
-        borderRadius: 11, padding: 13, fontWeight: 700, fontSize: 14, width: "100%",
-        fontFamily: T.font, cursor: "pointer", opacity: dirty ? 1 : 0.7 }}>
-        Save progress{dirty ? "" : " ✓"}</button>
+      <div style={{ display: "flex", gap: 10 }}>
+        <button onClick={onSave} style={{ background: T.gold, color: T.navy, border: "none",
+          borderRadius: 11, padding: 13, fontWeight: 700, fontSize: 14, flex: 2,
+          fontFamily: T.font, cursor: "pointer", opacity: dirty ? 1 : 0.7 }}>
+          Save progress{dirty ? "" : " ✓"}</button>
+        <button onClick={onCloseDay} style={{ background: "transparent", color: "#C9D8EE",
+          border: "1px solid #34507e", borderRadius: 11, padding: 13, fontWeight: 600,
+          fontSize: 14, flex: 1, fontFamily: T.font, cursor: "pointer" }}>
+          Close Day</button>
+      </div>
       <div style={{ textAlign: "center", fontSize: 11, color: "#9DB2CE", marginTop: 10 }}>
         {dirty ? "Unsaved changes — saves once, to your vault" : "Saved · no autosave"}</div>
     </>
@@ -193,32 +199,39 @@ function MorningCoachCards({ state }) { return <div data-mode="coach-morning">Mo
 function EveningCoachCards({ state }) { return <div data-mode="coach-evening">Evening Coach Cards — stub</div>; }
 function Results({ state }) { return <div data-mode="results">Results — stub</div>; }
 
-function CommandCenter({ state, dirty, onSave }) {
-  const closing = state.phase === "closing";
+function CommandCenter({ state, dirty, onSave, onCloseDay, onItemChange }) {
+  // Active-only view. The closing instruction lives in the Evening Coach Cards,
+  // NOT here — the only closing affordance here is the Close Day button.
   return (
     <div data-mode="command" style={{ background: T.navy, borderRadius: 20, padding: 18,
       maxWidth: 420, margin: "0 auto", fontFamily: T.font }}>
       <Header state={state} />
       <div style={{ background: "#22406E", borderRadius: 12, padding: "11px 13px",
         color: "#C9D8EE", fontSize: 12, lineHeight: 1.45, marginBottom: 14 }}>
-        {closing ? (
-          <><b style={{ color: "#fff" }}>Closing the day —</b> finish marking progress, then type <code>done</code>.</>
-        ) : (
-          <><b style={{ color: "#fff" }}>Good job —</b> mark progress any time. Type <code>done</code> when closing the day.</>
-        )}
+        <b style={{ color: "#fff" }}>Good job —</b> mark progress any time. Click <b>Close Day</b> when you're ready to wrap up.
       </div>
       <Panel title="Top 3" hint="tap a disc to set 0–100%">
-        {state.top3.map((it) => <TaskRow key={it.slot} item={it} />)}
+        {state.top3.map((it, i) => (
+          <TaskRow key={it.slot} item={it}
+            onItemChange={onItemChange ? (next) => onItemChange("top3", i, next) : undefined} />
+        ))}
       </Panel>
       <Panel title="Bonus & unplanned">
-        {[...state.bonus, ...state.unplanned].map((it, i) => <TaskRow key={i} item={it} />)}
+        {state.bonus.map((it, i) => (
+          <TaskRow key={"b" + i} item={it}
+            onItemChange={onItemChange ? (next) => onItemChange("bonus", i, next) : undefined} />
+        ))}
+        {state.unplanned.map((it, i) => (
+          <TaskRow key={"u" + i} item={it}
+            onItemChange={onItemChange ? (next) => onItemChange("unplanned", i, next) : undefined} />
+        ))}
       </Panel>
       <Panel title="Habits today">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {state.habits.map((h) => <HabitChip key={h.id} habit={h} />)}
         </div>
       </Panel>
-      <SaveBar dirty={dirty} onSave={onSave} />
+      <ActionBar dirty={dirty} onSave={onSave} onCloseDay={onCloseDay} />
     </div>
   );
 }
@@ -252,9 +265,13 @@ export default function CoworkDashboard({ state = SAMPLE }) {
     } catch (e) { /* in-memory only; draft still survives re-render via React state */ }
   }
 
-  function save() {
+  // save() takes the state to persist EXPLICITLY (defaults to current draft) so
+  // transition handlers can save the post-transition state without waiting for
+  // React's async setDraft — avoids a stale-snapshot write.
+  function save(stateToSave) {
+    const s = stateToSave || draft;
     // Deterministic saveId without Date.now()/Math.random(): date + a counter.
-    const envelope = coworkLogic.serializeForSave(draft, { saveId: `${draft.date}-${saveCount + 1}` });
+    const envelope = coworkLogic.serializeForSave(s, { saveId: `${s.date}-${saveCount + 1}` });
     setSaveCount(saveCount + 1);
     if (typeof sendPrompt === "function") {
       sendPrompt("SAVE_DAY " + JSON.stringify(envelope));
@@ -265,8 +282,23 @@ export default function CoworkDashboard({ state = SAMPLE }) {
     } catch (e) { /* nothing to clear */ }
   }
 
+  // Replace item at index `i` in list `which` ("top3" | "bonus" | "unplanned").
+  function changeItem(which, i, next) {
+    const list = (draft[which] || []).slice();
+    list[i] = next;
+    update(Object.assign({}, draft, { [which]: list }));
+  }
+
+  function lockIn() { const next = coworkLogic.transition(draft, "lock-in"); setDraft(next); save(next); }
+  function closeDay() { update(coworkLogic.transition(draft, "close-day")); }
+  function finishClose() { const next = coworkLogic.transition(draft, "finish-close"); setDraft(next); save(next); }
+
   const mode = draft.mode; // resolved by Python; the artifact never re-derives it
-  const common = { state: draft, dirty, onSave: save, onUpdate: update };
+  const common = {
+    state: draft, dirty, onSave: () => save(), onUpdate: update,
+    onCloseDay: closeDay, onLockIn: lockIn, onFinishClose: finishClose,
+    onItemChange: changeItem,
+  };
   if (mode === "coach-morning") return <MorningCoachCards {...common} />;
   if (mode === "coach-evening") return <EveningCoachCards {...common} />;
   if (mode === "results") return <Results {...common} />;
