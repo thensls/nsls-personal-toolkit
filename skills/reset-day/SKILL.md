@@ -44,8 +44,12 @@ itself injects nothing.
 
 2. **Read today's note** at `$OBSIDIAN_VAULT_PATH/01-daily/<date>.md`. Detect state:
    - No file → nothing to clear; skip to step 5 (still handle the empty-vault guard).
-   - File present, no `## Insight Reflection` → open-day ran, close-day didn't.
-   - File present, has `## Insight Reflection` → both ran.
+   - **Prefer the `status:` frontmatter** when present (it's the mode contract both
+     companions read): `closed` → both ran; `active`/`planning` → open-day ran,
+     close-day didn't.
+   - **Fall back** to section presence only when there's no `status` frontmatter
+     (older notes): no `## Insight Reflection` → open-day ran, close-day didn't;
+     has `## Insight Reflection` → both ran.
 
 3. **Reset:**
    - **Full reset (default):** delete `01-daily/<date>.md` entirely. The next
@@ -61,6 +65,9 @@ itself injects nothing.
      ## End of Day
      - Energy:
      ```
+     Also **set `status: planning` in the frontmatter** (re-opening the day for a
+     fresh close means it's no longer closed). If the note carries `status:`, set
+     it to `planning`; add a frontmatter block if absent.
 
 4. **Clean up close-day's side effects:**
    - Delete the **next-day note** `01-daily/<date+1>.md` ONLY if it was seeded by
@@ -73,12 +80,17 @@ itself injects nothing.
    vault), write a minimal closed stub for yesterday so `/open-day`'s Step 1.5
    doesn't try to auto-close a day that never existed:
    ```
+   ---
+   status: closed
+   ---
    # <yesterday> — <Day of Week>
 
    ## Insight Reflection
 
    (reset-day stub — no prior data in this vault)
    ```
+   (`status: closed` — the stub represents an already-closed yesterday, so both
+   companions render it read-only.)
    If any real prior note exists, do nothing here — keep yesterday real.
 
 6. **Report** what was reset, in one or two lines. Remind the user:

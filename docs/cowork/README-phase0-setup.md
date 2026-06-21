@@ -25,14 +25,20 @@ The companion's *job* is to read/write the **vault**. The **repo** is where the 
 ## Step 1 — Create the cowork project
 
 1. New project in Claude Desktop (cowork). Name it something like **"Daily Companion (vault)"**.
-2. **Folder(s) to give it:**
-   - **If cowork lets you add more than one folder:** add the **vault** (`/Users/claw/Obsidian/DW`) as primary, and the **repo** (`/Users/claw/.claude/local-plugins/nsls-personal-toolkit`) as secondary.
-   - **If it only allows one folder:** open it on the **vault** (`/Users/claw/Obsidian/DW`). I'll deliver the skill + artifact as pasteable instructions, so the repo doesn't need to be live-mounted.
-3. Paste the contents of [`project-instructions.md`](project-instructions.md) into the project's custom instructions.
+2. **Folder:** cowork allows **one** folder — mount the **vault** (`/Users/claw/Obsidian/DW`). The repo doesn't need to be mounted for Phase 0; the probes are self-contained pasteable prompts.
+3. **No custom instructions.** The shipped product never relies on custom instructions — the rules live in the installed `open-day`/`close-day` skill (Builder Toolkit install). For Phase 0 you just paste the probe prompts into chat. See [`project-instructions.md`](project-instructions.md) for the probe prompts and where the contract actually lives.
 
 > If cowork asks you to configure an MCP filesystem server instead of mounting a folder directly, that's fine — point it at `/Users/claw/Obsidian/DW`. The diagnostic below works the same either way; it's testing the *capability*, not the mechanism.
 
 ---
+
+## Step 1.5 — Skill availability (decides the delivery model)
+
+Before the plumbing probes, learn whether cowork loads the installed toolkit skills. Paste:
+
+> Without running it: is there an `open-day` (or `/open-day`) skill available to you right now? If so, where is it loaded from — quote the path (is it under `~/.claude/`?). I want to confirm you load the installed Personal Productivity Toolkit skills.
+
+**Answered 2026-06-21:** Cowork does NOT read `~/.claude/` or our worktree. It loads skills from its own read-only snapshot store (separate registry from Claude Code), populated by installed marketplace **plugins** or **ZIP uploads** (Customize → Skills). Our `open-day`/`close-day` are absent from Cowork until packaged in. Shipped model = publish a Cowork marketplace plugin (org plugins surfaced first). Dev loop = iterate in Claude Code → ZIP the skill folder → upload → fresh Cowork session. **None of this blocks Phase 0** (plumbing only; the counter is pasted into chat).
 
 ## Step 2 — Run the file-access diagnostic (Phase 0.3)
 
@@ -65,12 +71,16 @@ Report what it says. Until we have a clean signal, the skills fall back to the e
 
 ---
 
-## What I'm doing in parallel (no Desktop needed)
+## Shared core — DONE (built in parallel, on branch `pp-cowork-companion`)
 
-While you set this up, I'm building the **shared core** in the repo — all testable here, benefits both surfaces:
+The shared core is complete and tested (180 passing). None of it touches the artifact UI, so the Phase 0 gate is respected:
 
-- **Phase 1.3:** add `status: planning | active | closed` frontmatter to the daily-note contract; teach the CLI's `_detect_day_state` to prefer it (backward-compatible). This is the clean mode signal cowork needs and it's still unshipped on the CLI side.
-- **Phase 1.2:** `streak.js` (display copy of `streak.py`) + a JS↔Python parity test over the six canonical sequences.
-- **Phase 1.1:** lock the data flow — Claude parses the note in Python, seeds the artifact with clean JSON; the artifact renders JSON and emits JSON on save. No second markdown parser in JS.
+- **Phase 1.3 ✅:** `status: planning | active | closed` frontmatter shipped — `parse_frontmatter`/`set_frontmatter`, `_detect_day_state` prefers it (backward-compatible), companion write paths + skills set it.
+- **Phase 1.2 ✅:** `cowork-artifact/streak.js` (display copy of `streak.py`) + a JS↔Python parity test over the six canonical sequences.
+- **Phase 1.1 ✅ (decision):** "Claude parses, artifact renders." Claude parses the note in Python, seeds the artifact with clean JSON; the artifact renders JSON and emits JSON on save. No second markdown parser in JS — only the streak math is shared (1.2).
 
-None of that touches the artifact UI, so the Phase 0 gate is respected.
+**Caveat:** this lives on `pp-cowork-companion`, NOT anywhere Cowork loads. Cowork only ingests a skill via a marketplace plugin or a ZIP upload (Customize → Skills) — there's no live bridge from the worktree. Doesn't matter for Phase 0 (plumbing only; counter is pasted into chat). At Phase 3 (wiring the real cowork skill) we'll package + upload (dev) or publish a plugin (ship).
+
+## After Phase 0 passes — what unblocks
+
+Once Probe C (the counter round-trip) works, we know the artifact→Claude→vault save mechanism and can build the real `cowork-dashboard` artifact (Phase 2). The skill-availability answer (Step 1.5) confirms the delivery model: rely on the installed skill, no custom instructions.

@@ -598,6 +598,9 @@ $OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md
 The daily note should include:
 
 ```markdown
+---
+status: planning
+---
 # YYYY-MM-DD — [Day of Week]
 
 ## Morning Check-in
@@ -660,6 +663,12 @@ SORT priority ASC
 ```
 
 The `## Work Log`, `## Projects Touched`, `## Carrying Over`, and `## End of Day` sections are left empty — `/close-day` fills those in.
+
+**`status` frontmatter (the mode contract):** The note carries `status: planning | active | closed` in YAML frontmatter. This is the single signal both the web companion and the cowork artifact read to pick a mode — never infer the mode from which sections exist. On open-day:
+- **Creating from template:** write `status: planning` (the builder hasn't locked in a plan yet).
+- **Note already exists** with a later status (`active`/`closed`) — e.g. the builder re-runs open-day mid-day: **preserve the existing status**, don't reset it to `planning` (that would silently re-open a locked-in or closed day). Only `/reset-day` (or `open day -r`) clears the note back to `planning`.
+
+The companion advances the status from there: "Lock in →" sets `status: active`; `/close-day`'s evening "Done" sets `status: closed`.
 
 **Habits section:** Read habits from `$OBSIDIAN_VAULT_PATH/30-habits/habits.md`, parsing the Active list. Use each habit's `name` field for the bolded text in the `### Habits` section (one checkbox per active habit). If the file does not exist, ask the builder once whether to create it (offer the template), then write `30-habits/habits.md` and `30-habits/log.md` from the templates. The bolded habit names must match verbatim — `/close-day` and the CLI companion both match on that string.
 

@@ -11,8 +11,10 @@ from flask import Flask, Response, render_template, request, stream_with_context
 from companion.parsers import (
     append_day_to_log,
     parse_daily_note_sections,
+    parse_frontmatter,
     parse_habits,
     parse_log,
+    set_frontmatter,
 )
 from companion.safe_write import safe_modify
 from companion.streak import DayResult, compute_concern, status_for, streak_days
@@ -784,13 +786,39 @@ def _habit_state_for(app, habit_id: str, today: str, percent: float) -> dict:
 def _detect_day_state(daily_md: str, top_3: list) -> str:
     """Return one of 'coach-morning', 'command', 'coach-evening', 'results'.
 
-    Detection rules:
-      - If `## Insight Reflection` body has content → 'results' (day is closed).
-      - Else if `## Insight Reflection` heading exists but body is empty → 'coach-evening'.
-      - Else if Top 3 has items and all have text → 'command' (Command Center).
+    Prefers the explicit ``status:`` frontmatter (planning|active|closed) when
+    present — that is the contract shared with the cowork artifact and it kills
+    the section-presence fragility that flipped Command Center → results
+    mid-day. Falls back to the legacy inference when ``status`` is absent or
+    unrecognised, so notes written before this change still open correctly.
+
+    Status mapping:
+      - closed   → 'results'
+      - active   → 'command', unless close-day has begun (an `## Insight
+                   Reflection` heading is present) → 'coach-evening'
+      - planning → 'coach-morning'
+
+    Legacy inference (no/unknown status):
+      - `## Insight Reflection` body has content → 'results' (day is closed).
+      - `## Insight Reflection` heading exists but body is empty → 'coach-evening'.
+      - Top 3 has items and all have text → 'command' (Command Center).
       - Else → 'coach-morning' (no note yet, or Top 3 missing/empty).
     """
     sections = parse_daily_note_sections(daily_md)
+    status = parse_frontmatter(daily_md).get("status", "")
+
+    if status == "closed":
+        return "results"
+    if status == "active":
+        # Command Center — unless the close pass has started (close-day injects
+        # an `## Insight Reflection` heading before the day is committed closed).
+        if "Insight Reflection" in sections:
+            return "coach-evening"
+        return "command"
+    if status == "planning":
+        return "coach-morning"
+
+    # No (or unrecognised) status → legacy section/Top-3 inference.
     insight = sections.get("Insight Reflection", "").strip()
     if insight:
         return "results"
@@ -1091,12 +1119,23 @@ def create_app(vault_path: str) -> Flask:
 
     @app.route("/lock-in", methods=["POST"])
     def lock_in():
-        """Transition the view from Coach Cards to the next state. No vault writes."""
+        """Transition the view from Coach Cards to the next state.
+
+        This is the explicit save moment for the day's lifecycle status:
+        the morning "Lock in →" commits ``status: active`` and the evening
+        "Done" commits ``status: closed``. The status is the contract both the
+        web companion and the cowork artifact read to pick a mode, so we write
+        it once here rather than inferring it from section presence.
+        """
         phase = request.form.get("phase", "morning")
         target_mode = "command" if phase == "morning" else "results"
+        target_status = "active" if phase == "morning" else "closed"
 
         today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if note_path.exists():
+            safe_modify(note_path, lambda md: set_frontmatter(md, "status", target_status))
+            broadcast(f"01-daily/{today}.md")
         daily_md = note_path.read_text() if note_path.exists() else ""
         sections = parse_daily_note_sections(daily_md)
         morning = sections.get("Morning Check-in", "")
@@ -1556,6 +1595,8 @@ def create_app(vault_path: str) -> Flask:
                     existing = "\n".join(lines[:section_start] + replacement + lines[section_end:])
                     if not existing.endswith("\n"):
                         existing += "\n"
+            # Resetting the plan returns the day to the morning planning state.
+            existing = set_frontmatter(existing, "status", "planning")
             return existing
 
         safe_modify(note_path, reset)

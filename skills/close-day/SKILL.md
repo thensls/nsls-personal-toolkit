@@ -691,6 +691,8 @@ Write to: `$OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md`
 
 **If the file already exists** (user started it in the morning with priorities), **merge** — keep the existing Morning Check-in section and append/update the generated sections below it.
 
+**Set `status: closed` in the note's YAML frontmatter** as part of this write. `status` (`planning | active | closed`) is the single signal both the web companion and the cowork artifact read to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
+
 ### Step 6: Update project session logs
 
 For each project touched, check if a session log exists for today:

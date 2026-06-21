@@ -84,6 +84,57 @@ def append_day_to_log(md: str, date: str, ticks: dict[str, float]) -> str:
     return trimmed + "\n" + new_line + "\n"
 
 
+def parse_frontmatter(md: str) -> dict[str, str]:
+    """Extract YAML frontmatter from a daily note.
+
+    Returns a flat dict of key-value pairs. Values are always strings.
+    If no frontmatter block is present, returns {}.
+
+    Daily-note analogue of week_parsers.parse_weekly_frontmatter — behavior
+    must stay identical so the CLI/web companion and the cowork artifact never
+    disagree on the `status:` contract.
+    """
+    if not md.startswith("---"):
+        return {}
+    end = md.find("\n---", 3)
+    if end == -1:
+        return {}
+    block = md[3:end].strip()
+    result: dict[str, str] = {}
+    for line in block.splitlines():
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            result[key] = value
+    return result
+
+
+def set_frontmatter(md: str, key: str, value: str) -> str:
+    """Set a single frontmatter key. Creates the frontmatter block if missing.
+
+    Daily-note analogue of week_parsers.set_weekly_frontmatter.
+    """
+    if not md.startswith("---"):
+        # No frontmatter — prepend one.
+        return f"---\n{key}: {value}\n---\n\n{md}"
+    end = md.find("\n---", 3)
+    if end == -1:
+        return f"---\n{key}: {value}\n---\n\n{md}"
+    block = md[3:end]
+    after = md[end + 4:]  # skip \n---
+    # Check if key already exists in block
+    pattern = re.compile(rf"^(\s*{re.escape(key)}\s*:\s*)(.*)$", re.MULTILINE)
+    m = pattern.search(block)
+    if m:
+        block = block[:m.start()] + f"{key}: {value}" + block[m.end():]
+    else:
+        block = block.rstrip("\n") + f"\n{key}: {value}\n"
+    return f"---{block}\n---{after}"
+
+
 def parse_daily_note_sections(md: str) -> dict[str, str]:
     """Parse a daily note into a dict of {section_name: section_body}.
 
