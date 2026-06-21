@@ -1,0 +1,138 @@
+<title>Cowork Command Center — cockpit (portrait)</title>
+<style>
+  :root{
+    --navy:#18315A; --bluegray:#33475B; --darkblue:#425B76;
+    --teal:#0091AE; --gold:#EEB117; --lightblue:#E5F5F8; --nearblack:#191919;
+    --panelborder:#EDF1F6;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:#EEF2F7;
+    font-family:"Lexend Deca",-apple-system,system-ui,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased; color:var(--bluegray);
+    padding:24px 16px 60px;
+  }
+  .note{max-width:420px;margin:0 auto 18px;font-size:13px;color:var(--darkblue);line-height:1.5;text-align:center;}
+  .note b{color:var(--navy);}
+
+  /* The artifact column — emulating cowork's narrow right panel */
+  .col{
+    max-width:420px; margin:0 auto;
+    background:var(--navy); border-radius:20px; padding:18px;
+    box-shadow:0 8px 30px rgba(24,49,90,.18);
+  }
+
+  /* header */
+  .hdr{color:#fff;padding:4px 6px 16px;}
+  .hdr .date{font-size:19px;font-weight:600;line-height:1.15;}
+  .hdr .meta{display:flex;align-items:center;gap:10px;margin-top:7px;}
+  .hdr .pill{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#9DB2CE;border:1px solid #34507e;border-radius:999px;padding:3px 9px;}
+  .hdr .energy{font-size:12px;color:#9DB2CE;margin-left:auto;}
+  .hdr .energy b{color:var(--gold);font-weight:600;}
+
+  .banner{background:#22406E;border-radius:12px;padding:11px 13px;color:#C9D8EE;font-size:12px;line-height:1.45;margin:0 0 14px;}
+  .banner b{color:#fff;}
+  .banner code{background:rgba(255,255,255,.12);padding:1px 5px;border-radius:5px;color:#fff;}
+
+  .panel{background:#fff;border-radius:14px;padding:16px;margin-bottom:12px;}
+  .phead{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  h2.sec{font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--darkblue);font-weight:600;margin:0;}
+  .hint{font-size:10px;color:#9aa7b6;}
+
+  /* task rows with progress rings */
+  .trow{display:flex;align-items:flex-start;gap:12px;padding:11px 0;border-top:1px solid var(--panelborder);}
+  .trow:first-of-type{border-top:none;}
+  .ring{
+    width:24px;height:24px;border-radius:50%;flex:none;margin-top:1px;position:relative;
+    background:var(--ringbg,#E5EAF1);
+  }
+  .ring::after{content:"";position:absolute;inset:5px;border-radius:50%;background:#fff;}
+  .ring.full{background:var(--teal);}
+  .ring.full::after{display:none;}
+  .ring.done{background:var(--gold);}
+  .ring.done::after{display:none;}
+  /* partial uses conic-gradient set inline */
+  .t{flex:1;}
+  .t .title{font-size:14px;color:var(--nearblack);line-height:1.3;}
+  .t .title.struck{color:var(--darkblue);text-decoration:line-through;}
+  .t .sub{font-size:11px;color:var(--darkblue);margin-top:3px;}
+  .pctnum{font-size:11px;color:var(--teal);font-weight:600;margin-top:2px;}
+  .winflag{font-size:10px;color:var(--gold);font-weight:600;}
+
+  /* habits as compact row of chips */
+  .habits{display:flex;gap:8px;flex-wrap:wrap;}
+  .habit{display:flex;align-items:center;gap:6px;border:1px solid var(--panelborder);border-radius:10px;padding:8px 11px;font-size:12px;color:var(--bluegray);}
+  .habit .streak{color:var(--gold);font-weight:600;}
+  .habit.hit{border-color:#F2DFA6;background:#FEFaf0;}
+  .habit.miss{color:#9aa7b6;}
+
+  .save{background:var(--gold);color:var(--navy);border:none;border-radius:11px;padding:13px;font-weight:700;font-size:14px;font-family:inherit;width:100%;cursor:pointer;}
+  .saveline{text-align:center;font-size:11px;color:#9DB2CE;margin-top:10px;}
+</style>
+
+<div class="note">
+  <b>Cockpit, portrait.</b> Single column sized for cowork's right-side panel (~420px). Progress rings kept; energy shrunk to a tiny header stat; habits as compact chips. Static mockup.
+</div>
+
+<div class="col">
+  <div class="hdr">
+    <div class="date">Wednesday, June 17</div>
+    <div class="meta">
+      <span class="pill">Command Center</span>
+      <span class="energy">Energy <b>High</b></span>
+    </div>
+  </div>
+
+  <div class="banner">
+    <b>Good job —</b> mark progress any time. Type <code>done</code> when you're closing the day.
+  </div>
+
+  <!-- Top 3 -->
+  <div class="panel">
+    <div class="phead"><h2 class="sec">Top 3</h2><span class="hint">tap a ring to set 0–100%</span></div>
+
+    <div class="trow">
+      <span class="ring" style="background:conic-gradient(var(--teal) 75%, #E5EAF1 0)"></span>
+      <div class="t"><div class="title">Finish the toolkit spec</div><div class="sub">Toolkit · week rank 1</div></div>
+      <div class="pctnum">75%</div>
+    </div>
+
+    <div class="trow">
+      <span class="ring" style="background:conic-gradient(var(--teal) 25%, #E5EAF1 0)"></span>
+      <div class="t"><div class="title">Q3 LOP draft</div><div class="sub">Growth · week rank 2</div></div>
+      <div class="pctnum">25%</div>
+    </div>
+
+    <div class="trow">
+      <span class="ring done"></span>
+      <div class="t"><div class="title struck">Reply to vendor</div><div class="sub">done</div></div>
+      <div class="pctnum" style="color:var(--gold)">100%</div>
+    </div>
+  </div>
+
+  <!-- Bonus + unplanned -->
+  <div class="panel">
+    <div class="phead"><h2 class="sec">Bonus &amp; unplanned</h2></div>
+    <div class="trow">
+      <span class="ring"></span>
+      <div class="t"><div class="title">Review Red's PR</div></div>
+    </div>
+    <div class="trow">
+      <span class="ring done"></span>
+      <div class="t"><div class="title struck">Unblocked the cowork build</div><div class="winflag">★ unplanned win</div></div>
+    </div>
+  </div>
+
+  <!-- Habits -->
+  <div class="panel">
+    <div class="phead"><h2 class="sec">Habits today</h2></div>
+    <div class="habits">
+      <div class="habit hit">🚶 Walk <span class="streak">🔥12</span></div>
+      <div class="habit hit">📖 Read 15m <span class="streak">🔥5</span></div>
+      <div class="habit miss">💪 Workout</div>
+    </div>
+  </div>
+
+  <button class="save">Save progress</button>
+  <div class="saveline">Saves once, to your vault — no autosave</div>
+</div>

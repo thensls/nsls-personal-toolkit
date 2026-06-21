@@ -25,6 +25,7 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 | `/person-intelligence` | Build relationship profiles, track 1:1 context |
 | `/reset-day` | Start today over — clears today's note so `/open-day` rebuilds it from your real data (`--close-only` keeps the morning plan) |
 | `/unblock` | Fix the VS Code "permission prompt on every edit" trap when editing the toolkit's own files under `~/.claude/` — sets up a git worktree (or clone + symlink) outside `~/.claude/` |
+| `/codex-review` | Get an independent review from OpenAI Codex on code, a design/spec, a plan, or the branch's changes — runs Codex headless + read-only and relays its findings |
 | `obsidian-setup` | Set up an Obsidian knowledge base |
 
 ## Web Companion

@@ -1,0 +1,230 @@
+<title>Cowork Command Center — design directions</title>
+<style>
+  :root{
+    --navy:#18315A; --bluegray:#33475B; --darkblue:#425B76;
+    --teal:#0091AE; --gold:#EEB117; --lightblue:#E5F5F8; --nearblack:#191919;
+    --canvas:#F7F9FC;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--canvas); color:var(--bluegray);
+    font-family:"Lexend Deca",-apple-system,system-ui,"Segoe UI",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:1100px;margin:0 auto;padding:32px 20px 80px;}
+  .pagehead{margin:8px 0 28px;}
+  .pagehead h1{font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--darkblue);margin:0 0 6px;font-weight:600;}
+  .pagehead p{margin:0;font-size:14px;color:var(--darkblue);max-width:60ch;line-height:1.5;}
+  .dir{margin-bottom:64px;}
+  .dirtag{
+    display:inline-flex;align-items:center;gap:8px;font-size:12px;letter-spacing:.12em;
+    text-transform:uppercase;color:#fff;background:var(--navy);padding:7px 14px;border-radius:999px;
+    font-weight:600;margin-bottom:6px;
+  }
+  .dirdesc{font-size:13px;color:var(--darkblue);margin:8px 2px 18px;max-width:70ch;line-height:1.5;}
+  .frame{border:1px solid #E3E8EF;border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 1px 3px rgba(24,49,90,.05);}
+
+  /* shared bits */
+  .meter{height:6px;border-radius:999px;background:#E8EDF3;overflow:hidden;}
+  .meter > span{display:block;height:100%;background:var(--teal);}
+  .flame{color:var(--gold);}
+  .muted{color:var(--darkblue);}
+  h2.sec{font-size:12px;letter-spacing:.13em;text-transform:uppercase;color:var(--darkblue);font-weight:600;margin:0;}
+
+  /* ============== DIRECTION A — Editorial / cardless ============== */
+  .A{padding:36px 40px;}
+  .A .top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid var(--navy);padding-bottom:18px;margin-bottom:8px;}
+  .A .date{font-size:30px;color:var(--navy);font-weight:600;line-height:1.05;}
+  .A .sub{font-size:13px;color:var(--darkblue);margin-top:4px;}
+  .A .energy{text-align:right;font-size:13px;color:var(--darkblue);}
+  .A .energy b{display:block;font-size:22px;color:var(--teal);font-weight:600;}
+  .A .block{padding:26px 0;border-bottom:1px solid #EDF1F6;}
+  .A .block:last-child{border-bottom:none;}
+  .A .row{display:flex;align-items:center;gap:16px;padding:11px 0;}
+  .A .num{font-size:13px;color:var(--gold);font-weight:700;width:18px;}
+  .A .task{flex:1;}
+  .A .task .t{font-size:16px;color:var(--nearblack);}
+  .A .task .m{font-size:12px;color:var(--darkblue);margin-top:3px;}
+  .A .pct{width:120px;}
+  .A .pct .meter{margin-bottom:4px;}
+  .A .pct small{font-size:11px;color:var(--darkblue);}
+  .A .done .t{color:var(--darkblue);text-decoration:line-through;}
+  .A .habits{display:flex;gap:10px;flex-wrap:wrap;}
+  .A .chip{border:1px solid #E3E8EF;border-radius:12px;padding:10px 14px;font-size:13px;color:var(--bluegray);display:flex;align-items:center;gap:8px;}
+  .A .chip.hit{border-color:var(--gold);background:#FEF9EC;}
+  .A .cta{display:flex;justify-content:flex-end;margin-top:22px;}
+  .A .btn{background:var(--teal);color:#fff;border:none;border-radius:10px;padding:11px 20px;font-size:14px;font-weight:600;font-family:inherit;}
+
+  /* ============== DIRECTION B — Cockpit / structured panels ============== */
+  .B{background:var(--navy);padding:28px;}
+  .B .grid{display:grid;grid-template-columns:1.6fr 1fr;gap:16px;}
+  .B .head{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;color:#fff;margin-bottom:4px;}
+  .B .head .date{font-size:22px;font-weight:600;}
+  .B .head .sub{font-size:12px;color:#9DB2CE;letter-spacing:.1em;text-transform:uppercase;}
+  .B .panel{background:#fff;border-radius:14px;padding:20px;}
+  .B .panel.dark{background:#22406E;color:#cfe0f5;}
+  .B .phead{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;}
+  .B .trow{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #EDF1F6;}
+  .B .trow:first-of-type{border-top:none;}
+  .B .dot{width:22px;height:22px;border-radius:50%;border:2px solid var(--teal);flex:none;}
+  .B .dot.full{background:var(--teal);}
+  .B .dot.part{background:conic-gradient(var(--teal) 50%, #fff 50%);}
+  .B .trow .t{flex:1;font-size:14px;color:var(--nearblack);}
+  .B .trow .t small{display:block;color:var(--darkblue);font-size:11px;margin-top:2px;}
+  .B .energy-num{font-size:34px;color:var(--gold);font-weight:600;line-height:1;}
+  .B .habit{display:flex;justify-content:space-between;align-items:center;padding:9px 0;font-size:13px;border-top:1px solid #EDF1F6;}
+  .B .habit:first-of-type{border-top:none;}
+  .B .streak{color:var(--gold);font-weight:600;font-size:12px;}
+  .B .btn{background:var(--gold);color:var(--navy);border:none;border-radius:10px;padding:11px 18px;font-weight:700;font-family:inherit;font-size:14px;width:100%;margin-top:8px;}
+
+  /* ============== DIRECTION C — Warm / soft ritual ============== */
+  .C{background:#FBF8F1;padding:36px 40px;}
+  .C .hello{font-size:26px;color:var(--navy);font-weight:600;}
+  .C .hello span{color:var(--teal);}
+  .C .ribbon{font-size:13px;color:var(--darkblue);margin:6px 0 24px;}
+  .C .soft{background:#fff;border-radius:20px;padding:22px 24px;margin-bottom:16px;box-shadow:0 2px 10px rgba(24,49,90,.04);}
+  .C .soft h2{margin-bottom:16px;}
+  .C .trow{display:flex;align-items:center;gap:14px;padding:12px 0;}
+  .C .ring{width:30px;height:30px;border-radius:50%;border:3px solid #EADFBE;flex:none;position:relative;}
+  .C .ring.full{border-color:var(--gold);background:var(--gold);}
+  .C .ring.part{border-color:var(--gold);background:conic-gradient(var(--gold) 70%, #fff 0);}
+  .C .trow .t{flex:1;font-size:15px;color:var(--nearblack);}
+  .C .trow .t small{display:block;color:var(--darkblue);font-size:12px;margin-top:2px;}
+  .C .habits{display:flex;gap:12px;flex-wrap:wrap;}
+  .C .pill{background:#FBF4E1;color:#7a5a12;border-radius:999px;padding:9px 15px;font-size:13px;display:flex;gap:7px;align-items:center;}
+  .C .energy-bar{display:flex;align-items:center;gap:14px;}
+  .C .energy-bar b{font-size:15px;color:var(--navy);}
+  .C .dots{display:flex;gap:6px;}
+  .C .dots i{width:13px;height:13px;border-radius:50%;background:#E7DFC9;}
+  .C .dots i.on{background:var(--gold);}
+  .C .btn{background:var(--navy);color:#fff;border:none;border-radius:999px;padding:12px 24px;font-size:14px;font-weight:600;font-family:inherit;}
+  .C .cta{display:flex;justify-content:center;margin-top:8px;}
+</style>
+
+<div class="page">
+  <div class="pagehead">
+    <h1>Cowork Companion · Command Center — 3 design directions</h1>
+    <p>Same data, same NSLS brand colors (navy #18315A · teal #0091AE · gold #EEB117), three different feels. Scroll through all three. Tell me which direction to build — or which bits to mix. This is a static mockup, nothing here is wired up yet.</p>
+  </div>
+
+  <!-- ============ A ============ -->
+  <section class="dir">
+    <span class="dirtag">Direction A · Editorial</span>
+    <p class="dirdesc">Cardless and typographic. Whitespace and a single navy hairline do the structuring; gold numerals + teal progress are the only color. Calmest, most "premium notebook." Reads top-to-bottom like a page.</p>
+    <div class="frame">
+      <div class="A">
+        <div class="top">
+          <div><div class="date">Wednesday, June 17</div><div class="sub">Command Center · active</div></div>
+          <div class="energy">Morning energy<b>High</b></div>
+        </div>
+
+        <div class="block">
+          <h2 class="sec">Top 3</h2>
+          <div class="row"><span class="num">1</span><div class="task"><div class="t">Finish the toolkit spec</div><div class="m">Toolkit · week rank 1</div></div><div class="pct"><div class="meter"><span style="width:75%"></span></div><small>75%</small></div></div>
+          <div class="row"><span class="num">2</span><div class="task"><div class="t">Q3 LOP draft</div><div class="m">Growth · week rank 2</div></div><div class="pct"><div class="meter"><span style="width:25%"></span></div><small>25%</small></div></div>
+          <div class="row done"><span class="num">3</span><div class="task"><div class="t">Reply to vendor</div><div class="m">done</div></div><div class="pct"><div class="meter"><span style="width:100%;background:var(--gold)"></span></div><small>100%</small></div></div>
+        </div>
+
+        <div class="block">
+          <h2 class="sec">Bonus · Unplanned wins</h2>
+          <div class="row"><span class="num">+</span><div class="task"><div class="t">Review Red's PR</div></div></div>
+          <div class="row"><span class="num">★</span><div class="task"><div class="t">Unblocked the cowork build <span class="muted">(unplanned)</span></div></div></div>
+        </div>
+
+        <div class="block">
+          <h2 class="sec" style="margin-bottom:14px">Habits</h2>
+          <div class="habits">
+            <div class="chip hit"><span class="flame">🔥 12</span> Walk</div>
+            <div class="chip hit"><span class="flame">🔥 5</span> Read 15m</div>
+            <div class="chip">○ Workout</div>
+          </div>
+        </div>
+
+        <div class="cta"><button class="btn">Save progress</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ B ============ -->
+  <section class="dir">
+    <span class="dirtag">Direction B · Cockpit</span>
+    <p class="dirdesc">Navy "control deck" frame with white panels floating on it. Two-column: priorities on the left, energy + habits as a stat sidebar. Densest and most dashboard-like — everything visible at a glance. Gold is the primary action here.</p>
+    <div class="frame">
+      <div class="B">
+        <div class="grid">
+          <div class="head">
+            <div><div class="date">Wednesday, June 17</div></div>
+            <div class="sub">Command Center · active</div>
+          </div>
+
+          <div class="panel">
+            <div class="phead"><h2 class="sec">Top 3</h2><span class="muted" style="font-size:11px">tap to set progress</span></div>
+            <div class="trow"><span class="dot part"></span><span class="t">Finish the toolkit spec<small>Toolkit · week rank 1 · 75%</small></span></div>
+            <div class="trow"><span class="dot part" style="background:conic-gradient(var(--teal) 25%,#fff 25%)"></span><span class="t">Q3 LOP draft<small>Growth · week rank 2 · 25%</small></span></div>
+            <div class="trow"><span class="dot full"></span><span class="t">Reply to vendor<small>done</small></span></div>
+            <div class="phead" style="margin-top:18px"><h2 class="sec">Bonus · Unplanned</h2></div>
+            <div class="trow"><span class="dot"></span><span class="t">Review Red's PR</span></div>
+            <div class="trow"><span class="dot full"></span><span class="t">Unblocked the cowork build <small>unplanned win</small></span></div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div class="panel dark">
+              <h2 class="sec" style="color:#9DB2CE">Morning energy</h2>
+              <div style="display:flex;align-items:baseline;gap:8px;margin-top:8px;"><span class="energy-num">High</span></div>
+              <div style="font-size:11px;color:#9DB2CE;margin-top:10px;">Evening energy — captured at close</div>
+            </div>
+            <div class="panel">
+              <h2 class="sec">Habits today</h2>
+              <div class="habit"><span>🚶 Walk</span><span class="streak">🔥 12</span></div>
+              <div class="habit"><span>📖 Read 15m</span><span class="streak">🔥 5</span></div>
+              <div class="habit"><span>💪 Workout</span><span class="muted">—</span></div>
+              <button class="btn">Save progress</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ C ============ -->
+  <section class="dir">
+    <span class="dirtag">Direction C · Warm ritual</span>
+    <p class="dirdesc">Softer and more personal — cream canvas, rounded "soft" cards, gold completion rings, a coach-ish greeting. Leans into the daily-ritual / vitality tone rather than corporate dashboard. Navy is the anchor; gold carries accomplishment.</p>
+    <div class="frame">
+      <div class="C">
+        <div class="hello">Good afternoon — <span>3 of 5</span> done</div>
+        <div class="ribbon">Wednesday, June 17 · come back any time to mark progress; type <b>done</b> when you're closing the day.</div>
+
+        <div class="soft">
+          <h2 class="sec">Today's Top 3</h2>
+          <div class="trow"><span class="ring part"></span><span class="t">Finish the toolkit spec<small>Toolkit · week rank 1 · 75%</small></span></div>
+          <div class="trow"><span class="ring part" style="background:conic-gradient(var(--gold) 25%,#fff 0)"></span><span class="t">Q3 LOP draft<small>Growth · week rank 2 · 25%</small></span></div>
+          <div class="trow"><span class="ring full"></span><span class="t" style="color:var(--darkblue);text-decoration:line-through">Reply to vendor</span></div>
+        </div>
+
+        <div class="soft">
+          <h2 class="sec">Bonus &amp; unplanned wins</h2>
+          <div class="trow"><span class="ring"></span><span class="t">Review Red's PR</span></div>
+          <div class="trow"><span class="ring full"></span><span class="t">Unblocked the cowork build <small>unplanned</small></span></div>
+        </div>
+
+        <div class="soft">
+          <h2 class="sec">Habits</h2>
+          <div class="habits" style="margin-top:14px">
+            <div class="pill">🔥 Walk · 12</div>
+            <div class="pill">🔥 Read 15m · 5</div>
+            <div class="pill" style="background:#F0EEE6;color:#8a8270">Workout</div>
+          </div>
+          <div class="energy-bar" style="margin-top:20px">
+            <b>Morning energy</b>
+            <div class="dots"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></div>
+            <span class="muted" style="font-size:12px">High</span>
+          </div>
+        </div>
+
+        <div class="cta"><button class="btn">Save progress</button></div>
+      </div>
+    </div>
+  </section>
+
+</div>
