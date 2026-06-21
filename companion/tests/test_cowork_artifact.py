@@ -60,3 +60,22 @@ def test_primitives_defined():
     src = JSX.read_text()
     for comp in ("Disc", "TaskRow", "Panel", "HabitChip", "Header", "SaveBar"):
         assert comp in src, f"primitive {comp} not defined"
+
+
+def test_save_uses_sendprompt_envelope():
+    src = JSX.read_text()
+    assert "serializeForSave" in src
+    assert "sendPrompt(" in src
+    assert "SAVE_DAY " in src  # the chat-message prefix Claude parses
+
+
+def test_draft_persistence_with_fallback():
+    src = JSX.read_text()
+    assert "localStorage" in src              # local draft (no chat turn)
+    # graceful fallback when localStorage is unavailable in the runtime
+    assert "typeof localStorage" in src or "try" in src
+
+
+def test_dirty_indicator_wired():
+    src = JSX.read_text()
+    assert "dirty" in src

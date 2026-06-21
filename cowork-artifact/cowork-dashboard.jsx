@@ -192,10 +192,51 @@ function CommandCenter({ state, dirty, onSave }) {
 }
 
 export default function CoworkDashboard({ state = SAMPLE }) {
-  const [draft] = useState(state);
+  // Local draft is keyed by date + baseHash so a stale draft can't be restored
+  // onto a note that changed underneath us. Persisted to localStorage when the
+  // runtime allows it (local-only — NOT the forbidden chat/vault autosave);
+  // otherwise it survives re-render via React state alone.
+  const draftKey = `cowork-draft:${state.date}:${state.baseHash}`;
+
+  function loadDraft() {
+    try {
+      if (typeof localStorage !== "undefined") {
+        const raw = localStorage.getItem(draftKey);
+        if (raw) return JSON.parse(raw);
+      }
+    } catch (e) { /* localStorage blocked — fall through to seeded state */ }
+    return state;
+  }
+
+  const [draft, setDraft] = useState(loadDraft);
+  const [dirty, setDirty] = useState(false);
+  const [saveCount, setSaveCount] = useState(0);
+
+  function update(next) {
+    setDraft(next);
+    setDirty(true);
+    try {
+      if (typeof localStorage !== "undefined") localStorage.setItem(draftKey, JSON.stringify(next));
+    } catch (e) { /* in-memory only; draft still survives re-render via React state */ }
+  }
+
+  function save() {
+    // Deterministic saveId without Date.now()/Math.random(): date + a counter.
+    const envelope = coworkLogic.serializeForSave(draft, { saveId: `${draft.date}-${saveCount + 1}` });
+    setSaveCount(saveCount + 1);
+    if (typeof sendPrompt === "function") {
+      sendPrompt("SAVE_DAY " + JSON.stringify(envelope));
+    }
+    setDirty(false);
+    try {
+      if (typeof localStorage !== "undefined") localStorage.removeItem(draftKey);
+    } catch (e) { /* nothing to clear */ }
+  }
+
   const mode = draft.mode; // resolved by Python; the artifact never re-derives it
-  if (mode === "coach-morning") return <MorningCoachCards state={draft} />;
-  if (mode === "coach-evening") return <EveningCoachCards state={draft} />;
-  if (mode === "results") return <Results state={draft} />;
-  return <CommandCenter state={draft} dirty={false} onSave={() => {}} />; // 'command' default
+  const common = { state: draft, dirty, onSave: save, onUpdate: update };
+  if (mode === "coach-morning") return <MorningCoachCards {...common} />;
+  if (mode === "coach-evening") return <EveningCoachCards {...common} />;
+  if (mode === "results") return <Results {...common} />;
+  return <CommandCenter {...common} />; // 'command' default
 }
