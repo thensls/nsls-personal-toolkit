@@ -287,6 +287,9 @@ function EveningTextarea({ value, onChange }) {
 }
 
 function EveningCoachCards({ state, onUpdate, onFinishClose }) {
+  // Reached after the closing review (Command Center). Progress/unplanned were
+  // marked there; this is the reflective capture: Insight + Gratitude (both
+  // optional) + evening energy, then Done closes the day.
   const stats = coworkLogic.dayStats(state);
   function setField(k, v) { onUpdate(Object.assign({}, state, { [k]: v })); }
   function setEvening(v) {
@@ -295,8 +298,8 @@ function EveningCoachCards({ state, onUpdate, onFinishClose }) {
   return (
     <div data-mode="coach-evening">
       <CoachShell title="Closing the day"
-        subtitle={`${stats.top3Done}/${stats.top3Total} Top 3 · ${stats.habitsDone}/${stats.habitsTotal} habits`}>
-        <Panel title="Reflection">
+        subtitle={`${stats.top3Done}/${stats.top3Total} Top 3 done · ${stats.habitsDone}/${stats.habitsTotal} habits`}>
+        <Panel title="Insight (optional)" hint="What did you learn about yourself today?">
           <EveningTextarea value={state.insightReflection} onChange={(v) => setField("insightReflection", v)} />
         </Panel>
         <Panel title="Gratitude (optional)">

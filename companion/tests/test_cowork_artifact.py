@@ -129,11 +129,13 @@ def test_evening_has_close_flow():
     assert "EveningCoachCards" in src
     assert "Evening Coach Cards — stub" not in src   # no longer a stub
     assert "onFinishClose" in src
-    assert "dayStats" in src                          # stats recap
     assert "gratitude" in src.lower()
-    assert "reflection" in src.lower()
-    # the closing instruction lives HERE (evening), not in the active CC
-    assert "Closing the day" in src
+    # Insight (not "reflection" prompt copy), framed as self-learning, optional.
+    assert "Insight" in src
+    assert "What did you learn about yourself today" in src
+    assert "did the data reveal" not in src          # old prompt copy gone
+    # both Insight and Gratitude marked optional in the evening
+    assert src.lower().count("(optional)") >= 2
 
 
 def test_results_is_readonly_summary():
