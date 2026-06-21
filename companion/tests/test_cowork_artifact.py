@@ -42,3 +42,21 @@ def test_sample_state_has_contract_fields():
     src = JSX.read_text()
     for field in ("schemaVersion", "mode", "status", "phase", "top3", "habits", "baseHash"):
         assert field in src, f"SAMPLE missing {field}"
+
+
+def test_brand_tokens_present():
+    src = JSX.read_text()
+    for hexv in ("#18315A", "#0091AE", "#EEB117"):  # navy, teal, gold
+        assert hexv in src, f"brand color {hexv} missing"
+
+
+def test_font_stack_has_no_cdn_import():
+    src = JSX.read_text()
+    assert "Lexend Deca" in src
+    assert "fonts.googleapis" not in src and "@import" not in src
+
+
+def test_primitives_defined():
+    src = JSX.read_text()
+    for comp in ("Disc", "TaskRow", "Panel", "HabitChip", "Header", "SaveBar"):
+        assert comp in src, f"primitive {comp} not defined"
