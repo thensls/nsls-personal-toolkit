@@ -112,12 +112,18 @@ function Disc({ progress = 0, disposition = "active" }) {
   );
 }
 
-function TaskRow({ item }) {
+function TaskRow({ item, onItemChange }) {
   const struck = item.disposition === "done" || item.disposition === "deleted";
+  const editable = typeof onItemChange === "function";
+  const tapDisc = editable
+    ? () => onItemChange(Object.assign({}, item, { progress: coworkLogic.cycleProgress(item.progress) }))
+    : undefined;
   return (
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "11px 0",
       borderTop: "1px solid #EDF1F6" }}>
-      <Disc progress={item.progress} disposition={item.disposition} />
+      <span onClick={tapDisc} style={{ cursor: editable ? "pointer" : "default", flex: "none" }}>
+        <Disc progress={item.progress} disposition={item.disposition} />
+      </span>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 14, color: T.nearblack, lineHeight: 1.3,
           textDecoration: struck ? "line-through" : "none",
@@ -126,10 +132,19 @@ function TaskRow({ item }) {
           <div style={{ fontSize: 11, color: T.darkblue, marginTop: 3 }}>
             {item.project}{item.weekRank ? ` · week rank ${item.weekRank}` : ""}</div>)}
       </div>
-      {item.progress > 0 && (
+      {editable ? (
+        <div style={{ display: "flex", gap: 8, marginTop: 1 }}>
+          <button title="Mark done" onClick={() => onItemChange(coworkLogic.toggleDisposition(item, "done"))}
+            style={{ border: "none", background: "none", cursor: "pointer", fontSize: 14, padding: 0,
+              color: item.disposition === "done" ? T.gold : "#C5CDD8" }}>✓</button>
+          <button title="Delete (reversible)" onClick={() => onItemChange(coworkLogic.toggleDisposition(item, "deleted"))}
+            style={{ border: "none", background: "none", cursor: "pointer", fontSize: 13, padding: 0,
+              color: item.disposition === "deleted" ? "#C2433B" : "#C5CDD8" }}>✕</button>
+        </div>
+      ) : (item.progress > 0 && (
         <div style={{ fontSize: 11, fontWeight: 600, marginTop: 2,
           color: item.disposition === "done" || item.progress >= 100 ? T.gold : T.teal }}>
-          {item.progress}%</div>)}
+          {item.progress}%</div>))}
     </div>
   );
 }
@@ -284,7 +299,33 @@ function EveningCoachCards({ state, onUpdate, onFinishClose }) {
   );
 }
 
-function Results({ state }) { return <div data-mode="results">Results — stub</div>; }
+function Results({ state }) {
+  const stats = coworkLogic.dayStats(state);
+  const e = state.energy || {};
+  return (
+    <div data-mode="results">
+      <CoachShell title={state.todayPretty || state.date} subtitle="Day closed · read-only">
+        <Panel title="The day">
+          <div style={{ fontSize: 13, color: T.bluegray }}>
+            {stats.top3Done}/{stats.top3Total} Top 3 done · {stats.habitsDone}/{stats.habitsTotal} habits</div>
+          <div style={{ fontSize: 12, color: T.darkblue, marginTop: 8 }}>
+            Energy — morning <b>{e.morning || "—"}</b> · evening <b>{e.evening || "—"}</b></div>
+        </Panel>
+        {state.insightReflection && (
+          <Panel title="Reflection">
+            <div style={{ fontSize: 13, color: T.bluegray, whiteSpace: "pre-wrap" }}>{state.insightReflection}</div>
+          </Panel>)}
+        {state.gratitude && (
+          <Panel title="Gratitude">
+            <div style={{ fontSize: 13, color: T.bluegray, whiteSpace: "pre-wrap" }}>{state.gratitude}</div>
+          </Panel>)}
+        <Panel title="Top 3">
+          {state.top3.map((it) => <TaskRow key={it.slot} item={it} />)}
+        </Panel>
+      </CoachShell>
+    </div>
+  );
+}
 
 function CommandCenter({ state, dirty, onSave, onCloseDay, onItemChange }) {
   // Active-only view. The closing instruction lives in the Evening Coach Cards,

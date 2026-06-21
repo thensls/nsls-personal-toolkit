@@ -122,3 +122,17 @@ def test_evening_has_close_flow():
     assert "reflection" in src.lower()
     # the closing instruction lives HERE (evening), not in the active CC
     assert "Closing the day" in src
+
+
+def test_results_is_readonly_summary():
+    src = JSX.read_text()
+    assert 'data-mode="results"' in src
+    assert "Results — stub" not in src   # no longer a stub
+    # both energies surfaced in results
+    assert "evening" in src and "morning" in src
+
+
+def test_taskrow_has_disposition_controls():
+    src = JSX.read_text()
+    assert "toggleDisposition" in src
+    assert "onItemChange" in src
