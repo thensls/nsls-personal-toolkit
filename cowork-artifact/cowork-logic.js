@@ -26,8 +26,13 @@ function serializeForSave(state, opts) {
     },
   };
 }
+
+function streakLabel(habit) {
+  if (!habit || !habit.streakDays || habit.status === "reset") return "";
+  return "🔥" + habit.streakDays;
+}
 // === COWORK-LOGIC:END ===
 
-const coworkLogic = { serializeForSave };
+const coworkLogic = { serializeForSave, streakLabel };
 if (typeof module !== "undefined" && module.exports) { module.exports = { coworkLogic }; }
 if (typeof window !== "undefined") { window.coworkLogic = coworkLogic; }

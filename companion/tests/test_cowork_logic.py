@@ -70,3 +70,23 @@ def test_serialize_preserves_positional_empty_slots():
 def test_serialize_reduces_habits():
     env = _run("m.coworkLogic.serializeForSave(input, {saveId:'sid-1'})", SAMPLE_STATE)
     assert env["changes"]["habits"] == [{"id": "walk", "percent": 1.0}]
+
+
+def test_streak_label_active():
+    out = _run("m.coworkLogic.streakLabel(input)", {"streakDays": 12, "status": "ok"})
+    assert out == "🔥12"
+
+
+def test_streak_label_zero_is_blank():
+    out = _run("m.coworkLogic.streakLabel(input)", {"streakDays": 0, "status": "ok"})
+    assert out == ""
+
+
+def test_streak_label_reset_is_blank():
+    out = _run("m.coworkLogic.streakLabel(input)", {"streakDays": 4, "status": "reset"})
+    assert out == ""
+
+
+def test_serialize_carries_status_transition():
+    env = _run("m.coworkLogic.serializeForSave(input, {saveId:'s', statusTransition:'active'})", SAMPLE_STATE)
+    assert env["changes"]["statusTransition"] == "active"
