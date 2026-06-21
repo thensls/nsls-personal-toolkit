@@ -32,11 +32,11 @@
   .readonly{font-size:13px;color:var(--bluegray);} .readonly .e{font-size:12px;color:var(--darkblue);margin-top:8px;}
 </style>
 
-<div class="intro"><b>Cowork Dashboard — all four modes (2.2–2.6).</b> Faithful static render of <code>cowork-dashboard.jsx</code>. The corrected flow: Morning <b>Done</b> → Command Center (<b>Save progress</b> + <b>Close Day</b>, no "type done") → <b>Close Day</b> opens Evening Coach Cards → <b>Done</b> closes → Results. Closing instructions appear only in the evening.</div>
+<div class="intro"><b>Cowork Dashboard — full flow.</b> Faithful static render of <code>cowork-dashboard.jsx</code>. Flow: Morning → <b>Complete 'Open Day'</b> → Command Center (active: <b>Save progress</b> + <b>Close Day</b>) → <b>Close Day</b> puts the Command Center into a <b>closing review</b> (mark each task's progress, add unplanned wins) → <b>Continue to close</b> → Evening cards (Insight + Gratitude, both optional, + energy) → <b>Done</b> → Results.</div>
 
 <!-- MORNING -->
 <div class="lane"><span class="tag">1 · Morning Coach Cards · planning</span></div>
-<div class="flow">greet · set energy · confirm Top 3 · <b>Done</b> → opens the day</div>
+<div class="flow">greet · set energy · confirm Top 3 · <b>Complete 'Open Day'</b> → opens the day</div>
 <div class="col" style="margin-bottom:40px">
   <div class="chead"><div class="h">Good morning</div><div class="s">Wednesday, June 17 · plan your day</div></div>
   <div class="panel"><div class="phead"><span class="sec">How's your energy this morning?</span></div>
@@ -45,7 +45,7 @@
     <div class="trow"><span class="disc" style="background:#E5EAF1"></span><div class="t"><div class="title">Finish the toolkit spec</div><div class="sub">Toolkit · week rank 1</div></div></div>
     <div class="trow"><span class="disc" style="background:#E5EAF1"></span><div class="t"><div class="title">Q3 LOP draft</div><div class="sub">Growth · week rank 2</div></div></div>
     <div class="trow"><span class="disc" style="background:#E5EAF1"></span><div class="t"><div class="title">Reply to vendor</div></div></div></div>
-  <button class="gold-btn">Done — open my day →</button>
+  <button class="gold-btn">Complete 'Open Day' →</button>
 </div>
 
 <!-- COMMAND CENTER -->
@@ -67,12 +67,28 @@
   <div class="saveline">Saved · no autosave</div>
 </div>
 
-<!-- EVENING -->
-<div class="lane"><span class="tag">3 · Evening Coach Cards · closing</span></div>
-<div class="flow">stats · reflection · gratitude · evening energy · <b>Done</b> → closes the day</div>
+<!-- CLOSING REVIEW (Command Center, closing mode) -->
+<div class="lane"><span class="tag">3 · Command Center · closing review</span></div>
+<div class="flow">Close Day lands here first: mark each task's progress, add unplanned wins · <b>Continue to close →</b></div>
 <div class="col" style="margin-bottom:40px">
-  <div class="chead"><div class="h">Closing the day</div><div class="s">2/3 Top 3 · 2/3 habits</div></div>
-  <div class="panel"><div class="phead"><span class="sec">Reflection</span></div><textarea rows="3" placeholder="What did the data reveal today…"></textarea></div>
+  <div class="hdr"><div class="date">Wednesday, June 17</div><div class="meta"><span class="pill">command</span><span class="energy">Energy <b>High</b></span></div></div>
+  <div class="banner"><b>Closing the day —</b> review what happened: set each item's progress, add anything unplanned, then continue.</div>
+  <div class="panel"><div class="phead"><span class="sec">Top 3</span><span class="hint">tap a disc to set 0–100%</span></div>
+    <div class="trow"><span class="disc" style="background:conic-gradient(var(--teal) 100%,#E5EAF1 0)"></span><div class="t"><div class="title">Finish the toolkit spec</div><div class="sub">Toolkit · week rank 1</div></div><div class="ctrls"><button style="color:#C5CDD8">✓</button><button style="color:#C5CDD8">✕</button></div></div>
+    <div class="trow"><span class="disc" style="background:conic-gradient(var(--teal) 50%,#E5EAF1 0)"></span><div class="t"><div class="title">Q3 LOP draft</div><div class="sub">Growth · week rank 2</div></div><div class="ctrls"><button style="color:#C5CDD8">✓</button><button style="color:#C5CDD8">✕</button></div></div>
+    <div class="trow"><span class="disc" style="background:var(--gold)"></span><div class="t"><div class="title struck">Reply to vendor</div></div><div class="ctrls"><button style="color:var(--gold)">✓</button><button style="color:#C5CDD8">✕</button></div></div></div>
+  <div class="panel"><div class="phead"><span class="sec">Bonus &amp; unplanned</span></div>
+    <div class="trow"><span class="disc" style="background:var(--gold)"></span><div class="t"><div class="title struck">Unblocked the cowork build</div></div><div class="ctrls"><button style="color:var(--gold)">✓</button><button style="color:#C5CDD8">✕</button></div></div>
+    <div style="display:flex;gap:8px;margin-top:10px"><input placeholder="Add an unplanned win…" style="flex:1;border:1px solid #D7DEE8;border-radius:8px;padding:8px 10px;font:inherit;font-size:13px;box-sizing:border-box"><button style="border:1px solid var(--teal);color:var(--teal);background:#fff;border-radius:8px;padding:8px 14px;font:inherit;font-size:13px;font-weight:600">Add</button></div></div>
+  <button class="gold-btn">Continue to close →</button>
+</div>
+
+<!-- EVENING -->
+<div class="lane"><span class="tag">4 · Evening Coach Cards · closing</span></div>
+<div class="flow">Insight (optional) · Gratitude (optional) · evening energy · <b>Done</b> → closes the day</div>
+<div class="col" style="margin-bottom:40px">
+  <div class="chead"><div class="h">Closing the day</div><div class="s">2/3 Top 3 done · 2/3 habits</div></div>
+  <div class="panel"><div class="phead"><span class="sec">Insight (optional)</span><span class="hint">What did you learn about yourself today?</span></div><textarea rows="3"></textarea></div>
   <div class="panel"><div class="phead"><span class="sec">Gratitude (optional)</span></div><textarea rows="2"></textarea></div>
   <div class="panel"><div class="phead"><span class="sec">Evening energy</span></div>
     <div class="energypick"><button>Low</button><button class="on">Medium</button><button>High</button></div></div>
@@ -80,13 +96,13 @@
 </div>
 
 <!-- RESULTS -->
-<div class="lane"><span class="tag">4 · Results · closed</span></div>
+<div class="lane"><span class="tag">5 · Results · closed</span></div>
 <div class="flow">read-only summary · both energies</div>
 <div class="col">
   <div class="chead"><div class="h">Wednesday, June 17</div><div class="s">Day closed · read-only</div></div>
   <div class="panel"><div class="phead"><span class="sec">The day</span></div>
     <div class="readonly">2/3 Top 3 done · 2/3 habits<div class="e">Energy — morning <b>High</b> · evening <b>Medium</b></div></div></div>
-  <div class="panel"><div class="phead"><span class="sec">Reflection</span></div><div class="readonly">Shipped the cowork skeleton; the artifact save round-trip held. Spec work ran long but landed.</div></div>
+  <div class="panel"><div class="phead"><span class="sec">Insight</span></div><div class="readonly">I focus better in the morning — the spec work flowed before noon and dragged after. Worth protecting AM for deep work.</div></div>
   <div class="panel"><div class="phead"><span class="sec">Top 3</span></div>
     <div class="trow"><span class="disc" style="background:conic-gradient(var(--teal) 75%,#E5EAF1 0)"></span><div class="t"><div class="title">Finish the toolkit spec</div></div><div class="pct" style="color:var(--teal)">75%</div></div>
     <div class="trow"><span class="disc" style="background:var(--gold)"></span><div class="t"><div class="title struck">Reply to vendor</div></div><div class="pct" style="color:var(--gold)">100%</div></div></div>
