@@ -141,9 +141,12 @@ def test_transition_lock_in():
 
 
 def test_transition_close_day():
+    # close-day enters the CLOSING REVIEW: stays in the Command Center (closing
+    # mode) so the user marks progress per task + adds unplanned, BEFORE the
+    # Insight/Gratitude evening cards (which 'continue-close' reaches).
     s = _run("m.coworkLogic.transition(input, 'close-day')",
              {"status": "active", "phase": "active", "mode": "command"})
-    assert s["phase"] == "closing" and s["mode"] == "coach-evening"
+    assert s["phase"] == "closing" and s["mode"] == "command"
     assert s["status"] == "active"      # not closed until finish
 
 
@@ -151,3 +154,32 @@ def test_transition_finish_close():
     s = _run("m.coworkLogic.transition(input, 'finish-close')",
              {"status": "active", "phase": "closing", "mode": "coach-evening"})
     assert s["status"] == "closed" and s["mode"] == "results"
+
+
+def test_transition_continue_close():
+    # In the closing review, "Continue to close" moves from the Command Center
+    # review into the Insight/Gratitude evening cards.
+    s = _run("m.coworkLogic.transition(input, 'continue-close')",
+             {"status": "active", "phase": "closing", "mode": "command"})
+    assert s["mode"] == "coach-evening" and s["phase"] == "closing"
+    assert s["status"] == "active"
+
+
+def test_add_unplanned_appends_item():
+    state = {"unplanned": [{"text": "existing", "progress": 0, "disposition": "active"}]}
+    out = _run("m.coworkLogic.addUnplanned(input, 'Helped a teammate')", state)
+    assert len(out["unplanned"]) == 2
+    assert out["unplanned"][1]["text"] == "Helped a teammate"
+    assert out["unplanned"][1]["disposition"] == "active"
+    assert out["unplanned"][1]["progress"] == 0
+
+
+def test_add_unplanned_ignores_blank():
+    state = {"unplanned": []}
+    out = _run("m.coworkLogic.addUnplanned(input, '   ')", state)
+    assert out["unplanned"] == []        # blank/whitespace is a no-op
+
+
+def test_add_unplanned_handles_missing_list():
+    out = _run("m.coworkLogic.addUnplanned(input, 'first win')", {})
+    assert out["unplanned"][0]["text"] == "first win"

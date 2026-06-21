@@ -106,7 +106,9 @@ def test_morning_has_done_button_and_energy():
     src = JSX.read_text()
     assert "MorningCoachCards" in src
     assert "onLockIn" in src
-    assert "Done" in src               # plain "Done" CTA (Davo: prefer "Done")
+    # CTA finishes the open-day step (not "start") — "Complete 'Open Day'".
+    assert "Complete 'Open Day'" in src
+    assert "open my day" not in src.lower()   # old confusing copy gone
     assert "energy" in src.lower()
     assert "Morning Coach Cards — stub" not in src   # no longer a stub
     assert "EnergyPicker" in src                     # real energy control

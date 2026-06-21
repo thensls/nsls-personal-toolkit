@@ -60,14 +60,26 @@ function dayStats(state) {
 
 function transition(state, action) {
   const s = Object.assign({}, state);
+  // close-day enters the CLOSING REVIEW (Command Center in closing mode — mark
+  // progress on each task, add unplanned wins). continue-close then moves to the
+  // Insight/Gratitude evening cards. finish-close commits the closed day.
   if (action === "lock-in") { s.status = "active"; s.phase = "active"; s.mode = "command"; }
-  else if (action === "close-day") { s.phase = "closing"; s.mode = "coach-evening"; }
+  else if (action === "close-day") { s.phase = "closing"; s.mode = "command"; }
+  else if (action === "continue-close") { s.phase = "closing"; s.mode = "coach-evening"; }
   else if (action === "finish-close") { s.status = "closed"; s.mode = "results"; }
   return s;
 }
+
+function addUnplanned(state, text) {
+  const t = (text || "").trim();
+  if (!t) return state;  // blank is a no-op
+  const list = (state.unplanned || []).slice();
+  list.push({ text: t, progress: 0, disposition: "active" });
+  return Object.assign({}, state, { unplanned: list });
+}
 // === COWORK-LOGIC:END ===
 
-const coworkLogic = { serializeForSave, streakLabel, cycleProgress, toggleDisposition, dayStats, transition };
+const coworkLogic = { serializeForSave, streakLabel, cycleProgress, toggleDisposition, dayStats, transition, addUnplanned };
 
 // Hardcoded realistic state for 2.1 (Phase 3 wires Claude's Python parse to produce this).
 const SAMPLE = {
@@ -260,7 +272,7 @@ function MorningCoachCards({ state, onUpdate, onLockIn }) {
         <Panel title="Your Top 3" hint="confirm or edit">
           {state.top3.map((it) => <TaskRow key={it.slot} item={it} />)}
         </Panel>
-        <CoachButton label="Done — open my day →" onClick={onLockIn} />
+        <CoachButton label="Complete 'Open Day' →" onClick={onLockIn} />
       </CoachShell>
     </div>
   );

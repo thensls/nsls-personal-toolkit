@@ -58,13 +58,25 @@ function dayStats(state) {
 
 function transition(state, action) {
   const s = Object.assign({}, state);
+  // close-day enters the CLOSING REVIEW (Command Center in closing mode — mark
+  // progress on each task, add unplanned wins). continue-close then moves to the
+  // Insight/Gratitude evening cards. finish-close commits the closed day.
   if (action === "lock-in") { s.status = "active"; s.phase = "active"; s.mode = "command"; }
-  else if (action === "close-day") { s.phase = "closing"; s.mode = "coach-evening"; }
+  else if (action === "close-day") { s.phase = "closing"; s.mode = "command"; }
+  else if (action === "continue-close") { s.phase = "closing"; s.mode = "coach-evening"; }
   else if (action === "finish-close") { s.status = "closed"; s.mode = "results"; }
   return s;
 }
+
+function addUnplanned(state, text) {
+  const t = (text || "").trim();
+  if (!t) return state;  // blank is a no-op
+  const list = (state.unplanned || []).slice();
+  list.push({ text: t, progress: 0, disposition: "active" });
+  return Object.assign({}, state, { unplanned: list });
+}
 // === COWORK-LOGIC:END ===
 
-const coworkLogic = { serializeForSave, streakLabel, cycleProgress, toggleDisposition, dayStats, transition };
+const coworkLogic = { serializeForSave, streakLabel, cycleProgress, toggleDisposition, dayStats, transition, addUnplanned };
 if (typeof module !== "undefined" && module.exports) { module.exports = { coworkLogic }; }
 if (typeof window !== "undefined") { window.coworkLogic = coworkLogic; }
