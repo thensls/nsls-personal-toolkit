@@ -21,7 +21,8 @@ function serializeForSave(state, opts) {
       habits: (state.habits || []).map(function (h) { return { id: h.id, percent: h.percent }; }),
       energy: state.energy || {},
       gratitude: state.gratitude || "",
-      dailyInsight: state.dailyInsight || "",
+      dailyInsight: state.dailyInsight || "",        // Command Center quick capture
+      insightReflection: state.insightReflection || "",  // evening close-day Insight
       statusTransition: opts.statusTransition || null,
     },
   };

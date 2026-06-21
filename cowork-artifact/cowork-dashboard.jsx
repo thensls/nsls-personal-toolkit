@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 // Framework-free logic, inlined VERBATIM from cowork-logic.js. The block between
 // the COWORK-LOGIC sentinels must match cowork-logic.js exactly — a drift-guard
@@ -23,7 +23,8 @@ function serializeForSave(state, opts) {
       habits: (state.habits || []).map(function (h) { return { id: h.id, percent: h.percent }; }),
       energy: state.energy || {},
       gratitude: state.gratitude || "",
-      dailyInsight: state.dailyInsight || "",
+      dailyInsight: state.dailyInsight || "",        // Command Center quick capture
+      insightReflection: state.insightReflection || "",  // evening close-day Insight
       statusTransition: opts.statusTransition || null,
     },
   };
@@ -279,8 +280,10 @@ function MorningCoachCards({ state, onUpdate, onLockIn }) {
 }
 
 function EveningTextarea({ value, onChange }) {
+  // Controlled (value, not defaultValue) so a restored draft or external state
+  // change is reflected, not just the mount-time value. (Codex review #5.)
   return (
-    <textarea rows={3} defaultValue={value || ""} onChange={(e) => onChange(e.target.value)}
+    <textarea rows={3} value={value || ""} onChange={(e) => onChange(e.target.value)}
       style={{ width: "100%", border: "1px solid #D7DEE8", borderRadius: 8, padding: 8,
         fontSize: 13, fontFamily: T.font, boxSizing: "border-box", resize: "vertical" }} />
   );
@@ -429,48 +432,82 @@ export default function CoworkDashboard({ state = SAMPLE }) {
   const [dirty, setDirty] = useState(false);
   const [saveCount, setSaveCount] = useState(0);
 
-  function update(next) {
-    setDraft(next);
-    setDirty(true);
+  // Re-sync the draft if the seeded note changes underneath us (new date or a
+  // fresh baseHash from a re-read). Keyed so an old day's edits never bleed into
+  // a new one. (Codex review #2.)
+  useEffect(() => { setDraft(loadDraft()); setDirty(false); /* eslint-disable-next-line */ }, [state.date, state.baseHash]);
+
+  function persistDraft(next) {
     try {
       if (typeof localStorage !== "undefined") localStorage.setItem(draftKey, JSON.stringify(next));
     } catch (e) { /* in-memory only; draft still survives re-render via React state */ }
   }
 
-  // save() takes the state to persist EXPLICITLY (defaults to current draft) so
-  // transition handlers can save the post-transition state without waiting for
-  // React's async setDraft — avoids a stale-snapshot write.
-  function save(stateToSave) {
-    const s = stateToSave || draft;
-    // Deterministic saveId without Date.now()/Math.random(): date + a counter.
-    const envelope = coworkLogic.serializeForSave(s, { saveId: `${s.date}-${saveCount + 1}` });
-    setSaveCount(saveCount + 1);
-    if (typeof sendPrompt === "function") {
-      sendPrompt("SAVE_DAY " + JSON.stringify(envelope));
-    }
+  // All mutations go through applyDraft, which uses the FUNCTIONAL setState form
+  // so concurrent edits build on the latest state, never a stale closure. The
+  // updater returns the next draft; we persist it as a side effect. (Codex #1,3,4.)
+  function applyDraft(updater) {
+    setDraft((prev) => { const next = updater(prev); persistDraft(next); return next; });
+    setDirty(true);
+  }
+
+  // serializeAndSend reads the latest draft via a functional setDraft (no-op on
+  // state) so we never serialize a stale snapshot; saveId uses the functional
+  // counter form so rapid saves can't collide. (Codex #1.)
+  function save() {
+    setSaveCount((n) => {
+      const id = n + 1;
+      setDraft((cur) => {
+        const envelope = coworkLogic.serializeForSave(cur, { saveId: `${cur.date}-${id}` });
+        if (typeof sendPrompt === "function") sendPrompt("SAVE_DAY " + JSON.stringify(envelope));
+        try { if (typeof localStorage !== "undefined") localStorage.removeItem(draftKey); } catch (e) { /* noop */ }
+        return cur; // no state change — we only needed the latest draft
+      });
+      return id;
+    });
     setDirty(false);
-    try {
-      if (typeof localStorage !== "undefined") localStorage.removeItem(draftKey);
-    } catch (e) { /* nothing to clear */ }
   }
 
   // Replace item at index `i` in list `which` ("top3" | "bonus" | "unplanned").
   function changeItem(which, i, next) {
-    const list = (draft[which] || []).slice();
-    list[i] = next;
-    update(Object.assign({}, draft, { [which]: list }));
+    applyDraft((prev) => {
+      const list = (prev[which] || []).slice();
+      list[i] = next;
+      return Object.assign({}, prev, { [which]: list });
+    });
   }
 
-  function addUnplanned(text) { update(coworkLogic.addUnplanned(draft, text)); }
+  function addUnplanned(text) { applyDraft((prev) => coworkLogic.addUnplanned(prev, text)); }
 
-  function lockIn() { const next = coworkLogic.transition(draft, "lock-in"); setDraft(next); save(next); }
-  function closeDay() { update(coworkLogic.transition(draft, "close-day")); }
-  function continueClose() { update(coworkLogic.transition(draft, "continue-close")); }
-  function finishClose() { const next = coworkLogic.transition(draft, "finish-close"); setDraft(next); save(next); }
+  // Transition then save the SAME post-transition state in one functional pass.
+  function transitionAndSave(action) {
+    setSaveCount((n) => {
+      const id = n + 1;
+      setDraft((prev) => {
+        const next = coworkLogic.transition(prev, action);
+        const envelope = coworkLogic.serializeForSave(next, { saveId: `${next.date}-${id}` });
+        if (typeof sendPrompt === "function") sendPrompt("SAVE_DAY " + JSON.stringify(envelope));
+        persistDraft(next);
+        return next;
+      });
+      return id;
+    });
+    setDirty(false);
+  }
+
+  function lockIn() { transitionAndSave("lock-in"); }
+  function closeDay() { applyDraft((prev) => coworkLogic.transition(prev, "close-day")); }
+  function continueClose() { applyDraft((prev) => coworkLogic.transition(prev, "continue-close")); }
+  function finishClose() { transitionAndSave("finish-close"); }
+
+  // onUpdate accepts a full next-state object (the field-edit handlers build it
+  // from their render-current state) and commits it via applyDraft's functional
+  // path so persist/dirty stay consistent.
+  function onUpdate(next) { applyDraft(() => next); }
 
   const mode = draft.mode; // resolved by Python; the artifact never re-derives it
   const common = {
-    state: draft, dirty, onSave: () => save(), onUpdate: update,
+    state: draft, dirty, onSave: () => save(), onUpdate,
     onCloseDay: closeDay, onContinueClose: continueClose, onLockIn: lockIn,
     onFinishClose: finishClose, onItemChange: changeItem, onAddUnplanned: addUnplanned,
   };

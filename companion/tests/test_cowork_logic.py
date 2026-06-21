@@ -72,6 +72,18 @@ def test_serialize_reduces_habits():
     assert env["changes"]["habits"] == [{"id": "walk", "percent": 1.0}]
 
 
+def test_serialize_carries_both_insight_fields():
+    # Regression (Codex review): the evening Insight writes insightReflection;
+    # the Command Center quick-capture writes dailyInsight. The save payload must
+    # carry BOTH or the evening insight is silently dropped.
+    state = dict(SAMPLE_STATE)
+    state["dailyInsight"] = "midday note"
+    state["insightReflection"] = "evening learning about myself"
+    env = _run("m.coworkLogic.serializeForSave(input, {saveId:'s'})", state)
+    assert env["changes"]["dailyInsight"] == "midday note"
+    assert env["changes"]["insightReflection"] == "evening learning about myself"
+
+
 def test_streak_label_active():
     out = _run("m.coworkLogic.streakLabel(input)", {"streakDays": 12, "status": "ok"})
     assert out == "🔥12"
