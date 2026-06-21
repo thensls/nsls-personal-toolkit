@@ -113,3 +113,41 @@ def test_toggle_disposition_is_mutually_exclusive():
     item = {"text": "x", "progress": 0, "disposition": "done"}
     deleted = _run("m.coworkLogic.toggleDisposition(input, 'deleted')", item)
     assert deleted["disposition"] == "deleted"  # replaces done, not additive
+
+
+STATE_FOR_STATS = {
+    "top3": [
+        {"text": "a", "progress": 100, "disposition": "done"},
+        {"text": "b", "progress": 50,  "disposition": "active"},
+        {"text": "",  "progress": 0,   "disposition": "active"},   # empty slot — not counted
+    ],
+    "habits": [{"id": "w", "percent": 1.0}, {"id": "r", "percent": 0.0}],
+    "status": "active", "phase": "active", "mode": "command",
+}
+
+
+def test_day_stats():
+    s = _run("m.coworkLogic.dayStats(input)", STATE_FOR_STATS)
+    assert s["top3Total"] == 2          # empty slot excluded
+    assert s["top3Done"] == 1
+    assert s["habitsDone"] == 1
+    assert s["habitsTotal"] == 2
+
+
+def test_transition_lock_in():
+    s = _run("m.coworkLogic.transition(input, 'lock-in')",
+             {"status": "planning", "phase": "planning", "mode": "coach-morning"})
+    assert s["status"] == "active" and s["phase"] == "active" and s["mode"] == "command"
+
+
+def test_transition_close_day():
+    s = _run("m.coworkLogic.transition(input, 'close-day')",
+             {"status": "active", "phase": "active", "mode": "command"})
+    assert s["phase"] == "closing" and s["mode"] == "coach-evening"
+    assert s["status"] == "active"      # not closed until finish
+
+
+def test_transition_finish_close():
+    s = _run("m.coworkLogic.transition(input, 'finish-close')",
+             {"status": "active", "phase": "closing", "mode": "coach-evening"})
+    assert s["status"] == "closed" and s["mode"] == "results"

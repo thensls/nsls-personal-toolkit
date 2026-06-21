@@ -42,8 +42,29 @@ function toggleDisposition(item, target) {
   const next = item.disposition === target ? "active" : target;
   return Object.assign({}, item, { disposition: next });
 }
+
+function dayStats(state) {
+  const slots = (state.top3 || []).filter(function (it) {
+    return it.text && it.disposition !== "deleted";
+  });
+  const top3Done = slots.filter(function (it) {
+    return it.disposition === "done" || it.progress >= 100;
+  }).length;
+  const habits = state.habits || [];
+  const habitsDone = habits.filter(function (h) { return h.percent >= 1.0; }).length;
+  return { top3Done: top3Done, top3Total: slots.length,
+    habitsDone: habitsDone, habitsTotal: habits.length };
+}
+
+function transition(state, action) {
+  const s = Object.assign({}, state);
+  if (action === "lock-in") { s.status = "active"; s.phase = "active"; s.mode = "command"; }
+  else if (action === "close-day") { s.phase = "closing"; s.mode = "coach-evening"; }
+  else if (action === "finish-close") { s.status = "closed"; s.mode = "results"; }
+  return s;
+}
 // === COWORK-LOGIC:END ===
 
-const coworkLogic = { serializeForSave, streakLabel, cycleProgress, toggleDisposition };
+const coworkLogic = { serializeForSave, streakLabel, cycleProgress, toggleDisposition, dayStats, transition };
 if (typeof module !== "undefined" && module.exports) { module.exports = { coworkLogic }; }
 if (typeof window !== "undefined") { window.coworkLogic = coworkLogic; }
