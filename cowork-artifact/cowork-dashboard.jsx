@@ -339,16 +339,40 @@ function Results({ state }) {
   );
 }
 
-function CommandCenter({ state, dirty, onSave, onCloseDay, onItemChange }) {
-  // Active-only view. The closing instruction lives in the Evening Coach Cards,
-  // NOT here — the only closing affordance here is the Close Day button.
+function AddUnplannedInput({ onAdd }) {
+  const [text, setText] = useState("");
+  function submit() { const t = text.trim(); if (!t) return; onAdd(t); setText(""); }
+  return (
+    <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+      <input value={text} onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+        placeholder="Add an unplanned win…"
+        style={{ flex: 1, border: "1px solid #D7DEE8", borderRadius: 8, padding: "8px 10px",
+          fontSize: 13, fontFamily: T.font, boxSizing: "border-box" }} />
+      <button onClick={submit} style={{ border: "1px solid " + T.teal, color: T.teal,
+        background: "#fff", borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600,
+        fontFamily: T.font, cursor: "pointer" }}>Add</button>
+    </div>
+  );
+}
+
+function CommandCenter({ state, dirty, onSave, onCloseDay, onContinueClose, onItemChange, onAddUnplanned }) {
+  // Phase-aware. Active: mark progress freely; Save progress + Close Day. Closing
+  // (the review step reached via Close Day): same task rows + add-unplanned, banner
+  // says "review what happened", and the CTA continues into the evening cards.
+  // The "type done"-style closing copy never appears in the active phase.
+  const closing = state.phase === "closing";
   return (
     <div data-mode="command" style={{ background: T.navy, borderRadius: 20, padding: 18,
       maxWidth: 420, margin: "0 auto", fontFamily: T.font }}>
       <Header state={state} />
       <div style={{ background: "#22406E", borderRadius: 12, padding: "11px 13px",
         color: "#C9D8EE", fontSize: 12, lineHeight: 1.45, marginBottom: 14 }}>
-        <b style={{ color: "#fff" }}>Good job —</b> mark progress any time. Click <b>Close Day</b> when you're ready to wrap up.
+        {closing ? (
+          <><b style={{ color: "#fff" }}>Closing the day —</b> review what happened: set each item's progress, add anything unplanned, then continue.</>
+        ) : (
+          <><b style={{ color: "#fff" }}>Good job —</b> mark progress any time. Click <b>Close Day</b> when you're ready to wrap up.</>
+        )}
       </div>
       <Panel title="Top 3" hint="tap a disc to set 0–100%">
         {state.top3.map((it, i) => (
@@ -365,13 +389,18 @@ function CommandCenter({ state, dirty, onSave, onCloseDay, onItemChange }) {
           <TaskRow key={"u" + i} item={it}
             onItemChange={onItemChange ? (next) => onItemChange("unplanned", i, next) : undefined} />
         ))}
+        {onAddUnplanned && <AddUnplannedInput onAdd={onAddUnplanned} />}
       </Panel>
       <Panel title="Habits today">
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {state.habits.map((h) => <HabitChip key={h.id} habit={h} />)}
         </div>
       </Panel>
-      <ActionBar dirty={dirty} onSave={onSave} onCloseDay={onCloseDay} />
+      {closing ? (
+        <CoachButton label="Continue to close →" onClick={onContinueClose} />
+      ) : (
+        <ActionBar dirty={dirty} onSave={onSave} onCloseDay={onCloseDay} />
+      )}
     </div>
   );
 }
@@ -429,15 +458,18 @@ export default function CoworkDashboard({ state = SAMPLE }) {
     update(Object.assign({}, draft, { [which]: list }));
   }
 
+  function addUnplanned(text) { update(coworkLogic.addUnplanned(draft, text)); }
+
   function lockIn() { const next = coworkLogic.transition(draft, "lock-in"); setDraft(next); save(next); }
   function closeDay() { update(coworkLogic.transition(draft, "close-day")); }
+  function continueClose() { update(coworkLogic.transition(draft, "continue-close")); }
   function finishClose() { const next = coworkLogic.transition(draft, "finish-close"); setDraft(next); save(next); }
 
   const mode = draft.mode; // resolved by Python; the artifact never re-derives it
   const common = {
     state: draft, dirty, onSave: () => save(), onUpdate: update,
-    onCloseDay: closeDay, onLockIn: lockIn, onFinishClose: finishClose,
-    onItemChange: changeItem,
+    onCloseDay: closeDay, onContinueClose: continueClose, onLockIn: lockIn,
+    onFinishClose: finishClose, onItemChange: changeItem, onAddUnplanned: addUnplanned,
   };
   if (mode === "coach-morning") return <MorningCoachCards {...common} />;
   if (mode === "coach-evening") return <EveningCoachCards {...common} />;

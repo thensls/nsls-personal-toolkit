@@ -102,6 +102,16 @@ def test_close_day_transitions_via_logic():
     assert "transition" in src and "close-day" in src
 
 
+def test_command_center_closing_review_has_add_unplanned_and_continue():
+    src = JSX.read_text()
+    # In closing mode the Command Center is the progress-review step: it offers
+    # adding an unplanned win and a "Continue to close" CTA into the evening cards.
+    assert "addUnplanned" in src
+    assert "Continue to close" in src
+    assert "Add an unplanned win" in src or "unplanned win" in src.lower()
+    assert "onContinueClose" in src
+
+
 def test_morning_has_done_button_and_energy():
     src = JSX.read_text()
     assert "MorningCoachCards" in src
