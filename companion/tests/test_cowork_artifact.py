@@ -110,3 +110,15 @@ def test_morning_has_done_button_and_energy():
     assert "energy" in src.lower()
     assert "Morning Coach Cards — stub" not in src   # no longer a stub
     assert "EnergyPicker" in src                     # real energy control
+
+
+def test_evening_has_close_flow():
+    src = JSX.read_text()
+    assert "EveningCoachCards" in src
+    assert "Evening Coach Cards — stub" not in src   # no longer a stub
+    assert "onFinishClose" in src
+    assert "dayStats" in src                          # stats recap
+    assert "gratitude" in src.lower()
+    assert "reflection" in src.lower()
+    # the closing instruction lives HERE (evening), not in the active CC
+    assert "Closing the day" in src

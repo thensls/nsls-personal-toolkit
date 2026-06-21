@@ -251,7 +251,39 @@ function MorningCoachCards({ state, onUpdate, onLockIn }) {
   );
 }
 
-function EveningCoachCards({ state }) { return <div data-mode="coach-evening">Evening Coach Cards — stub</div>; }
+function EveningTextarea({ value, onChange }) {
+  return (
+    <textarea rows={3} defaultValue={value || ""} onChange={(e) => onChange(e.target.value)}
+      style={{ width: "100%", border: "1px solid #D7DEE8", borderRadius: 8, padding: 8,
+        fontSize: 13, fontFamily: T.font, boxSizing: "border-box", resize: "vertical" }} />
+  );
+}
+
+function EveningCoachCards({ state, onUpdate, onFinishClose }) {
+  const stats = coworkLogic.dayStats(state);
+  function setField(k, v) { onUpdate(Object.assign({}, state, { [k]: v })); }
+  function setEvening(v) {
+    onUpdate(Object.assign({}, state, { energy: Object.assign({}, state.energy, { evening: v }) }));
+  }
+  return (
+    <div data-mode="coach-evening">
+      <CoachShell title="Closing the day"
+        subtitle={`${stats.top3Done}/${stats.top3Total} Top 3 · ${stats.habitsDone}/${stats.habitsTotal} habits`}>
+        <Panel title="Reflection">
+          <EveningTextarea value={state.insightReflection} onChange={(v) => setField("insightReflection", v)} />
+        </Panel>
+        <Panel title="Gratitude (optional)">
+          <EveningTextarea value={state.gratitude} onChange={(v) => setField("gratitude", v)} />
+        </Panel>
+        <Panel title="Evening energy">
+          <EnergyPicker value={state.energy && state.energy.evening} onPick={setEvening} />
+        </Panel>
+        <CoachButton label="Done — close the day" onClick={onFinishClose} />
+      </CoachShell>
+    </div>
+  );
+}
+
 function Results({ state }) { return <div data-mode="results">Results — stub</div>; }
 
 function CommandCenter({ state, dirty, onSave, onCloseDay, onItemChange }) {
