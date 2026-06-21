@@ -86,17 +86,38 @@ echo "Focus on the status-frontmatter contract and the sendPrompt save path." \
   | codex review --uncommitted - 2>&1 | tee /tmp/codex-review.txt
 ```
 
-## Reading the output (important gotchas)
+## Reading the output (important gotchas — several learned the hard way)
 
-- Codex prints a **header block** (workdir, model, sandbox, session id) and a
-  **`tokens used`** footer. These are chrome — ignore them; the review is the
-  prose between them (after the `codex` marker line).
+- Codex prints a **header block** (workdir, model, sandbox, session id), then its
+  **reasoning + every tool call it runs** (it greps/reads files itself — pages of
+  `exec` blocks and file dumps), then the **final prose verdict**, then a
+  **`tokens used`** footer. Only the final verdict matters; everything before it is
+  process noise.
+- **The final verdict can be long, and naive capture truncates it.** Piping through
+  `tee FILE | tail -N` keeps only the last N lines of the *whole stream* — which is
+  often Codex's last file-dump, NOT its conclusion. **Two reliable ways to get a
+  clean verdict:**
+  1. **Two-pass (recommended for big reviews):** first run the deep review (high
+     effort) for the analysis; then run a SECOND cheap pass that asks ONLY for the
+     conclusion — e.g. `-c model_reasoning_effort=low` with a prompt like *"Be terse,
+     no file dumps, no preamble. Give ONLY a ranked list (max 6) of issues, one line
+     each: file:line — issue — why it matters. End with the single highest-priority
+     fix."* The terse pass's output fits in `tail` cleanly.
+  2. **Ask for the verdict last and structured:** end the review prompt with *"End
+     with a section headed `## VERDICT` containing the ranked issues"*, then extract
+     from `## VERDICT` to end of file rather than `tail`-ing blindly.
+  - If you do capture to a file and it's huge, don't `tail` it — grep for the verdict
+    header / the last `codex` block, or Read the file's final ~120 lines with the
+    Read tool.
 - A line like `ERROR codex_core::session: failed to record rollout items: thread
   ... not found` is a **harmless telemetry warning**. The review still completed.
-  Do not report it as a failure.
-- Runs can take a minute or two (reasoning effort is high by default). Don't poll
-  aggressively; let the command finish. If you need a faster, cheaper pass, add
-  `-c model_reasoning_effort=low` (the `-c` override).
+- **`pytest` is NOT on PATH inside Codex's sandbox.** Codex may try to run the tests
+  itself and get `command not found: pytest` — that's expected and harmless; it just
+  means Codex reviewed statically. Don't ask Codex to run this repo's tests; run them
+  yourself (via the venv python) if you want a test result.
+- Runs take 1–2 min at default (high/xhigh) effort. Consider launching the deep pass
+  with `run_in_background: true` so you're not blocked; you'll be notified on exit.
+  Don't poll aggressively.
 - Default model is whatever the user's `~/.codex/config.toml` selects (e.g.
   `gpt-5.5`). To force one: `-m <model>`.
 
