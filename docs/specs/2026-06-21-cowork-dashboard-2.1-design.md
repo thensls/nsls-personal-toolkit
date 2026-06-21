@@ -50,11 +50,31 @@ UI", sans-serif`). **Constraint:** artifact runtimes block external font CDNs, s
 + hierarchy carry the brand regardless.
 
 **Composition:** stacked panels in one column — header (date + tiny `Energy · High` stat + status
-pill) → context banner → Top 3 → Bonus/unplanned → Habits (compact streak chips) → gold "Save
-progress" button → "saves once, no autosave" reassurance line. Cards only where the card is the
-interaction (a task row, a habit chip).
+pill) → context banner → Top 3 → Bonus/unplanned → Habits (compact streak chips) → action bar →
+reassurance line. Cards only where the card is the interaction (a task row, a habit chip).
 
-Reference mockup: `cowork-artifact/mockups/command-center-cockpit-portrait.html`.
+Reference mockups: `cowork-artifact/mockups/command-center-cockpit-portrait.html`,
+`cowork-artifact/mockups/2.1-command-center-built.html`.
+
+### Flow & per-mode controls (corrected 2026-06-21 — the "type done" instruction was leaking
+into the active state)
+
+The closing instruction belongs ONLY to the closing pass, never to the active Command Center.
+"Close Day" is the explicit user action that transitions active → closing. The `phase` field
+drives the banner + buttons:
+
+| Mode (phase) | Banner | Buttons | On action |
+|---|---|---|---|
+| `coach-morning` (planning) | greet + "set your plan" | **Done** | write plan, `status: active`, → Command Center |
+| `command` (active) | "Good job — mark progress any time." (NO "type done") | **Save progress** (primary) · **Close Day** (secondary) | Save progress → batch-write to vault, stay in day. Close Day → enter Evening Coach Cards |
+| `coach-evening` (closing, entered via Close Day) | "Closing the day — finish, then Done." | **Done** (after the guided steps) | write reflection/gratitude/evening-energy, `status: closed`, → Results |
+| `results` (closed) | read-only summary | — (optionally "Reopen") | — |
+
+- **Close Day** sets `phase: closing` and renders the Evening Coach Cards (stats recap →
+  Insight Reflection → Gratitude → evening energy → Done). It is the staged close, not an
+  instant write — the guided reflection is the point of the ritual.
+- The active Command Center never shows "type done to close." Its only closing affordance is the
+  **Close Day** button.
 
 ## Architecture
 
