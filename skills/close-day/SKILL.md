@@ -54,6 +54,17 @@ If the user invokes with `-v` (e.g., `/close-day -v`), full verbose output is fi
 
 Default to today (`date +%Y-%m-%d`). User can override: `/close-day 2026-03-21`.
 
+### Step 0.1: Surface Selection (CLI · Cowork · Chat) — resolve BEFORE Step 0.5
+
+Same surface model as open-day (see open-day's "Surface Selection" section for the full rationale). Two settings interact: **`visual_mode`** (CLI companion on/off) and **`companion_surface`** (`cli` | `cowork` | `auto`, in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`). Resolve in this exact order, stop at the first match:
+
+1. **Explicit cowork override** — the builder typed `close day cowork` (or `-c`), OR `companion_surface: cowork`. → **Cowork artifact branch**: render the evening/closing flow in the **cowork-dashboard artifact** (see the "Cowork (Claude Desktop) surface" section near the end of this skill), not the CLI Step 0.5. Skip the binary lookup.
+2. **Explicit opt-out** — `visual_mode: off`, or `-v` / "visual off" this run. → close in **chat** (skip Step 0.5, go to Step 0.6).
+3. **CLI companion already running** — `companion_surface` is `cli` or `auto`, and `"$TC" status` reports running. → **Step 0.5** (CLI companion closing pass).
+4. **Nothing matched → chat.** Surface can't run the server and no cowork override. → skip Step 0.5, close in chat.
+
+**Order is load-bearing:** check the cowork override (1) *before* the CLI-binary path (3), so a cowork user isn't routed into the degraded chat fallback after a failed binary lookup. Until O1 (a clean Desktop-vs-CLI signal) is solved, the explicit override is the cowork trigger; `auto` on a Desktop surface degrades to chat — acceptable for v1.
+
 ### Step 0.5: Check the visual companion
 
 **Resolving the binary path** (same lookup as open-day Step 8):

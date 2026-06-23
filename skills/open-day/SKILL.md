@@ -33,6 +33,26 @@ Before doing anything else, parse the builder's invocation phrase to choose a mo
 
 **Reset-first flag (`-r`):** if the invocation includes `-r` (e.g. `open day -r`, `open day -v -r`), **run `/reset-day` (full reset) FIRST**, before Step 1 — clear today's note so open-day rebuilds it from scratch (real carry-overs / close-day seeds, or generated suggestions if there's nothing real). `-r` is independent of `-v`: `-r` alone means "reset, then open with the companion" (the default); `-v -r` means "reset, then open CLI/chat only". Do the reset silently (one-line confirmation at most), then continue with open-day as normal. This is the fast "redo my day cleanly" path used in testing and when a morning plan went sideways.
 
+## Surface Selection (CLI · Cowork · Chat) — resolve this BEFORE the companion logic below
+
+The toolkit runs on more than one surface, and they need different paths. **Resolve the surface first, in this exact order — the order is load-bearing.** Two settings interact; keep them distinct:
+
+- **`visual_mode`** (on by default) — governs whether the *CLI* companion (the local Flask server) runs. Set `off` to stay in chat on the CLI. *(Covered by the table above.)*
+- **`companion_surface`** (`cli` | `cowork` | `auto`, default `auto`) — governs *which surface* renders the plan. `cli` = the local browser companion; `cowork` = the in-chat React **cowork-dashboard artifact**; `auto` = pick by detection (below).
+
+These don't contradict: `visual_mode` only has meaning on the CLI surface. On the cowork surface there is no local server to turn on or off — the artifact is the surface — so `visual_mode` is ignored there and `companion_surface` decides.
+
+**Resolution order (stop at the first match):**
+
+1. **Explicit cowork override** — the builder typed `open day cowork` (or `open day -c`), OR `companion_surface: cowork` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. → **Cowork artifact branch** (see "When the surface is **cowork**" below). This is the reliable signal until O1 is solved.
+2. **Explicit CLI / chat opt-out** — `visual_mode: off`, or the builder passed `-v` / "visual off". → run the **chat flow** (the "When `visual_mode` is **off**" section). No companion, no artifact.
+3. **CLI companion available** — `companion_surface` is `cli` or `auto`, AND you can resolve+start the local companion binary (you're on Claude Code with Bash). → **CLI companion branch** (the "When `visual_mode` is **on**" section + Step 8).
+4. **Nothing else matched → chat fallback.** You're on a surface that can't run the local server (e.g. Claude Desktop / cowork) and no explicit cowork override was given. → run the **chat flow**. *Never* announce a companion that isn't there.
+
+> **Why the order matters (don't reshuffle):** post the default-ON flip, a cowork user with no override would otherwise reach step 3, try to resolve the CLI binary, fail, and land in the degraded chat fallback — never seeing the artifact. Checking the cowork override (step 1) *before* the CLI-binary path (step 3) is what routes them to the artifact. Until there's a clean programmatic Desktop-vs-CLI signal (O1, unsolved), the explicit `open day cowork` / `companion_surface: cowork` override IS the cowork trigger; `auto` on a Desktop surface degrades to chat, which is acceptable for v1.
+
+**When the surface is `cowork`** (resolution step 1): render the **cowork-dashboard artifact** instead of the CLI companion. The data-collection, date/path, and artifact-handoff details live in the **"Cowork (Claude Desktop) surface"** section near the end of this skill — follow that, not Step 8 (which is CLI-only). Skip the CLI binary lookup entirely.
+
 When `visual_mode` is **on** (the default):
 - **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary** (not installed, or you're not on a surface that can run a local server — e.g. Claude Desktop / cowork, which can't run arbitrary Bash), **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
 - **Step 1.5 only**: Auto-run yesterday's close-day if needed (same as CLI mode).
