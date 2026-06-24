@@ -212,6 +212,58 @@ gcal_find_my_free_time(
 
 This returns all free blocks >= 30 min between 7 AM and 8 PM. Used in Step 5 for scheduling.
 
+**2i. Slack follow-up scan**
+
+If `data_sources.slack: true` in the builder profile, scan recent Slack to surface threads where the builder owes a reply or made a commitment they may not have acted on.
+
+**Window:** last 2 work days (skip weekends if today is Mon).
+
+**Two queries to run in parallel:**
+
+1. **Builder's recent sent messages** — surface unverified commitments
+   ```
+   slack_search_public_and_private(
+     query="from:<@$SLACK_USER_ID> after:YYYY-MM-DD",
+     sort="timestamp",
+     limit=20,
+     include_context=false
+   )
+   ```
+   Filter results for commitment language: phrases like "I'll", "I will", "I can", "let me", "I'll put X on the calendar", "going to", "by EOD", "by Friday", "happy to", "I'll send", "I'll draft", "I'll follow up". Each match becomes a candidate "did you do this?" item.
+
+2. **Recent DMs and threads where someone is awaiting a reply** — surface outstanding asks
+   ```
+   slack_search_public_and_private(
+     query="to:<@$SLACK_USER_ID> after:YYYY-MM-DD",
+     sort="timestamp",
+     limit=20,
+     include_context=false
+   )
+   ```
+   For the top channels/DMs that appear, use `slack_read_channel` with `limit=3` to check whether the most recent message is from the builder or someone else. If someone else is the last responder *and* they asked a question or proposed an action, flag as "owes a reply."
+
+**Output in Morning Check-in:**
+
+```markdown
+### Slack follow-ups
+
+**Outstanding asks (someone else's message is last in thread):**
+- [Channel/DM with Name]: "[last 80-char snippet]" — [permalink]
+- ...
+
+**Your commitments (verify these landed):**
+- [Date HH:MM] in [channel/DM]: "I'll [thing]" — [permalink]
+- ...
+```
+
+If the list is empty, omit the section entirely. If a candidate appears in last week's daily notes (already followed up), suppress it.
+
+**Rules:**
+- Skip casual reactions, "ok thanks", single emoji, and obvious non-commitments
+- Skip the builder's own bot DMs (NSLS Coach, SLT EA Bot, etc.) unless they contain a commitment to a person
+- Group by recipient, not by message (one line per person if multiple messages)
+- Surface up to 5 outstanding asks and 5 unverified commitments — beyond that the list becomes noise
+
 **2h. Learning inbox ingestion**
 
 If `learning_capture_method` in the builder profile is set to `slack`, scrape the builder's Slack self-DMs for URLs:
@@ -271,7 +323,7 @@ Run the gate now, in order:
 3. Only if `slt_member: true`: check `$AIRTABLE_API_KEY` is non-empty. If empty, skip with a one-line note to the builder ("SLT integration enabled in profile but `AIRTABLE_API_KEY` is empty — run `/personal-setup` to add it"), then continue to Step 3.
 4. Only after both checks pass, proceed to the query below. Use `source .env` (never inline `export KEY=value`) — see `CLAUDE.md` "Handling Secrets."
 
-- **Base:** `appHDEHQA4bvlWwQq`
+- **Base:** `${SLT_BASE_ID}`
 - **Table:** `tblasgjUjadHCqzrg` (Meeting Actions)
 - **Auth:** `AIRTABLE_API_KEY` env var (after the gate above)
 
@@ -284,7 +336,7 @@ PYTHONPATH=/tmp/pptx_deps python3.12 -c "
 import httpx, os, urllib.parse
 
 key = os.environ['AIRTABLE_API_KEY']
-BASE = 'appHDEHQA4bvlWwQq'
+BASE = '${SLT_BASE_ID}'
 TABLE = 'tblasgjUjadHCqzrg'
 
 formula = \"AND(NOT({status}='Completed'),NOT({status}='Not doing'))\"
@@ -321,12 +373,81 @@ my_actions = [r for r in all_records if os.environ.get('BUILDER_NAME', '') in (r
 
 **Sanity check:** Total open actions across all assignees should return 50-100+. If 0 or errors, formula reverted to field IDs — switch back to the pattern above.
 
+**2k. Apple Health — yesterday's body metrics**
+
+If the `apple-health` MCP is configured (`~/.claude.json` contains `mcpServers.apple-health`), pull yesterday's summary:
+
+```
+mcp__apple-health__apple_health_daily(date="YYYY-MM-DD")  # yesterday's date
+```
+
+If the response contains `{error: ...}` (no data for that day yet), skip this step silently and omit the "Yesterday's body" line from Step 3 + the health frontmatter from Step 6. Don't surface the error to the builder.
+
+Extract these fields for use in Steps 3 and 6:
+
+| Source path in response | Variable |
+|---|---|
+| `activity.steps` | `steps` |
+| `activity.exercise_min` | `exercise_min` |
+| `activity.active_energy_kcal` | `active_energy_kcal` |
+| `sleep.total` (e.g. `"6h 32m"`) | parse to `sleep_total_hrs` (decimal) |
+| `sleep.deep` (e.g. `"1h 9m"`) | parse to `sleep_deep_hrs` (decimal) |
+| `sleep.rem` (e.g. `"1h 33m"`) | parse to `sleep_rem_hrs` (decimal) |
+| `heart.hrv_ms` | `hrv_ms` |
+
+Compute `sleep_restorative_pct`:
+```
+restorative_pct = round((sleep_deep_hrs + sleep_rem_hrs) / sleep_total_hrs * 100) if sleep_total_hrs else None
+```
+
+Restorative % (deep + REM as share of total sleep) is the closest proxy to "sleep quality score" derivable from Apple Health stage data. Typical healthy range: 25-50%.
+
+**2l. Quarterly goal anchor cues**
+
+Read active personal goal files from `$OBSIDIAN_VAULT_PATH/10-strategy/goals/*.md` (skip `personal-goals.md`, `work-goals.md`, anything in `archive/`). Filter to `status: active` AND `category: personal`.
+
+**Preferred — structured `weekly_schedule` (use when present):** If a goal file has a `weekly_schedule:` map (keys `mon`/`tue`/.../`sun`), look up today's day-of-week and use that entry as the cue. This takes precedence over parsing the flat `anchor`/`weekly_action` fields, because it tells the builder the *specific* session for today (e.g. easy vs. hard) rather than a generic weekly summary.
+
+- **Effective-date guard:** If the goal also has `weekly_schedule_effective:` (a date) and today is *before* that date, do **not** apply the structured schedule. Instead fire a soft bridge cue: `weekly_action` = `"Easy / optional movement only (Z2). Structured pattern starts {weekly_schedule_effective}."` and `fires_today_because` = `"bridge week before schedule starts"`. This prevents prescribing a hard session during a planned ramp-in or recovery window. On/after the effective date, apply the schedule normally.
+- If today's entry is a rest day (text starts with `Rest`, or is empty) → **do not fire** the cue.
+- Otherwise → fire the cue with `weekly_action` = today's entry verbatim, and `fires_today_because` = `"today is <Day>"`.
+
+**Fallback — parse the `anchor:` field** (for goals with no `weekly_schedule`). Match against today's day-of-week to decide if today is an anchor day:
+
+- Anchor phrases like `"Mon/Wed/Fri 7:45am"` → today (DOW) matches Mon, Wed, or Fri → fire cue
+- Anchor phrases like `"After morning coffee, weekdays"` → today is a weekday → fire cue
+- Anchor phrases like `"Sunday evening, before kids' bedtime"` → today is Sunday → fire cue
+- Anchor phrases that mention specific events ("After SLT meeting") → check today's calendar for that event
+
+If a cue fires today (by either path), carry forward to Step 3 as a `goal_cues` list:
+
+```python
+goal_cues = [{
+    "slug": "vo2-max",
+    "title": "Hold and improve VO2 max",
+    "anchor": "Laptop on, before opening Slack",
+    "weekly_action": "HARD — Norwegian 4×4 Outdoor Run. 4 × (4 min @ 88-92% HRmax / 3 min jog).",  # today's weekly_schedule entry
+    "fires_today_because": "today is Wednesday",
+}, ...]
+```
+
+Skip this step silently if no goal files exist or none fire today.
+
 ### Step 3: Draft Morning Check-in
 
 Present to the builder. If AI suggestions were seeded by close-day, show them first:
 
 ```markdown
 ## Morning Check-in
+
+### Yesterday's body
+Sleep: [Xh Ym] ([Z]% restorative) · Exercise: [N] min · Steps: [N,NNN]
+
+### Goal cues today
+*Populated from Step 2l. Skip entirely if no anchors fire today.*
+
+For each `goal_cues` entry:
+- **[Goal title]** — anchor fires today ([fires_today_because]). Action: **[weekly_action]** at [anchor time/event].
 
 ### Last Night's AI Suggestions (from /close-day)
 **Top 3:**
@@ -345,24 +466,107 @@ Present to the builder. If AI suggestions were seeded by close-day, show them fi
 
 *[N] meetings, ~[X]h. Deep work windows: [list gaps >= 60 min].*
 
-### Relationship Context (after calendar display)
+### Coaching Actions for Today
 
-After displaying today's meetings, scan attendees against `$OBSIDIAN_VAULT_PATH/30-people/*.md` profiles. For each attendee who has an active coaching goal (grep for `status: active` in `## Coaching Goals`) or a `## Personal` section:
+After displaying today's meetings, collect the names of all attendees who are NSLS people, and pass them to the coaching-action surfacer:
+
+```bash
+# First make sure the action cache is fresh — extract from current profiles
+OPERATING_USER_EMAIL=$(grep '^OPERATING_USER_EMAIL=' ~/.claude/local-plugins/nsls-personal-toolkit/.env | cut -d= -f2 | tr -d '"') \
+OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
+python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/extract_coaching_actions.py 2>/dev/null
+
+# Then surface up to 3 actions, prioritized by today's calendar
+echo "$ATTENDEE_NAMES" | python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_actions_for_day.py \
+  --people-stdin
+```
+
+The script returns JSON with `surfaced_actions` (people-coaching actions), `role_cue` (the at-most-one role-coach cue from `~/.cache/role-coach/cues.json` — null when none), and `sweep_status` (last biweekly sweep result).
+
+**Format in the morning note:**
 
 ```
-👥 Relationship Context for Today
+👥 Coaching Actions for Today
 
-  [time] — [meeting title] ([attendee name])
-    🎯 Active goal: [goal title]
-       → Today: [one-line contextual action from the goal's action list]
-    👤 Personal: [1-2 key personal details if available]
+  🎯 [Person] ([dimension]): [action text]
+     (from "[goal title]")
+
+  🎯 [Person] ([dimension]): [action text]
+     (from "[goal title]")
+
+  🪑 Role: [role_cue.text]   [ledger: P00N]
 ```
 
 **Rules:**
-- Only show people with active coaching goals or personal details — skip empty profiles
-- Compact: 2-3 lines per person max
-- The contextual action should be specific to the meeting type (sprint → sprint-specific action, 1:1 → relationship action)
-- If no attendees have coaching goals or personal details, skip this section entirely — don't show an empty block
+- Hard cap: 3 across today — `🎯` actions + the `🪑` role cue combined (the script enforces this: when `role_cue` is non-null, `surfaced_actions` holds at most 2)
+- The `🪑` line is seat-coaching (from /role-coach's ledger), not person-coaching — render it last, omit when `role_cue` is null
+- Distribute across people first (one per scheduled person before stacking)
+- Two-way coaching: if your manager is in today's calendar (e.g., Gary 1:1),
+  their managing-up actions surface here too
+- If `sweep_status.exit_code != 0` or last sweep was >18 days ago, show a
+  one-line alert: `⚠️ Last person-intelligence sweep failed/stale — run
+  /person-intelligence biweekly sweep`
+- If `surfaced_actions` is empty AND `role_cue` is null AND no sweep error, skip this section entirely
+
+### Management — today's people (Signal)
+
+Only runs when `SIGNAL_INGEST=1`. For the **direct reports on today's calendar**, pull
+live Signal (Quick Notes) and surface the three jobs a great manager does each touchpoint:
+celebrate a win, develop toward a goal, remove a friction. Same `$ATTENDEE_NAMES` as above.
+
+```bash
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
+echo "$ATTENDEE_NAMES" | python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_management_for_day.py \
+  --people-stdin --weeks 4
+
+# Loops to close with people you're seeing today (durable ledger, Phase 4):
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/loop_ledger.py \
+  --for "$ATTENDEE_NAMES"
+```
+
+`surface_management_for_day` returns `{enabled, buckets:[{person, celebrate, develop,
+unblock:{text,streak}, cadence_flag, sentiment_flag}], top3_candidates}`. `loop_ledger --for`
+returns `{close_the_loop:[{person,themes}], open:[...]}` filtered to today's people. Raw Quick
+Notes never touch the vault — both return only distilled, sensitivity-screened fields.
+
+**Format in the morning note** (skip the section entirely if `enabled:false` or `buckets` empty):
+
+```
+🧭 Management — today's people
+
+  [Person]
+    🎉 Celebrate: [celebrate] — say it in their preferred channel today
+    🌱 Develop:   [develop.text] (from "[develop.goal_title]")
+    🔧 Unblock:   [unblock.text] (streak [N] wks) — own a fix + close the loop
+    🔁 Close loop: [loop_ledger close_the_loop themes] — resolved; tell them it was heard
+    ⚠ [cadence_flag / sentiment_flag, if present]
+```
+
+**Rules:**
+- One line per bucket; drop any bucket that's null for that person.
+- **🌱 Develop — deliver it with GAIN (Jack Cohen's feedback framework).** Frame toward the gain,
+  not the pain. Walk the four steps in order:
+  - **G — Goal:** name what you *both* gain from the change ("I want us to ship faster"). Same-team signal, not a complaint.
+  - **A — Actions:** observable behavior, no judgment ("the last handoff skipped the customer research").
+  - **I — Impacts:** the consequence — and own your contribution too ("engineers had to re-ask instead of deciding").
+  - **N — Next Actions:** a concrete commitment, co-designed with them ("can you include that context next time?").
+  Make it a dialogue, frame the new behavior as a time-boxed experiment, and schedule the follow-up.
+- **🔁 Close loop** fires when `loop_ledger --for` lists this person in `close_the_loop` — a
+  friction of theirs resolved and you haven't told them. You're seeing them today: perfect moment.
+  When the builder confirms they closed it, run `loop_ledger.py --close "<name>" --note "..."`.
+- **Feed the Top 3:** every entry in `top3_candidates` (friction streak ≥3 or a novel sentiment
+  low on a direct report) is a candidate for the Morning Top 3 below — a recurring blocker on a
+  report is high-leverage, only-you work. Name it in the Top 3 if present.
+- A `cadence_flag` ("no Quick Notes in ≥2 wks" / "not submitting") is a check-in prompt — surface
+  it even if the person has no other bucket.
+- This complements Coaching Actions above (which is goal-driven); Management is signal-driven.
+  If a person appears in both, fold into one block under their name.
+
+### Slack follow-ups
+*Populated only if Step 2i found anything. Outstanding asks and unverified commitments surface here so the day starts with the threads visible.*
 
 ### Morning Top 3 (fresh from Asana + calendar + carry-overs)
 1. [P1 — explain why it's #1]
@@ -381,7 +585,7 @@ After displaying today's meetings, scan attendees against `$OBSIDIAN_VAULT_PATH/
 **Today / retreat-critical:**
 - [ ] [Action] — `recXXX`
 
-*+[N] in strategic backlog. Full list in Airtable `appHDEHQA4bvlWwQq/tblasgjUjadHCqzrg`.*
+*+[N] in strategic backlog. Full list in Airtable `${SLT_BASE_ID}/tblasgjUjadHCqzrg`.*
 
 ### Open PRs ([waiting] waiting, [yours] yours)
 
@@ -474,7 +678,7 @@ Context: [meeting_title from linked meeting] — [why this matters today]"
 )
 ```
 
-Then confirm with `create_task_confirm` (workspace `657431271309846`).
+Then confirm with `create_task_confirm` (workspace `${ASANA_WORKSPACE_GID}`).
 
 **CRITICAL — the `SLT record: recXXX` line format is load-bearing.** `/close-day` Step 7d parses Asana task notes for exactly this pattern (case-sensitive, followed by a record ID starting with `rec`) to close the loop back to Airtable when the task is marked complete. Don't reformat it as "SLT: rec..." or "Airtable: rec..." — close-day won't match.
 
@@ -600,10 +804,22 @@ $OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md
 The daily note should include:
 
 ```markdown
+---
+sleep_total_hrs: 6.5
+sleep_restorative_pct: 38
+sleep_deep_hrs: 1.15
+sleep_rem_hrs: 1.55
+exercise_min: 29
+steps: 5811
+active_energy_kcal: 429
+hrv_ms: 61
+---
 # YYYY-MM-DD — [Day of Week]
 
 ## Morning Check-in
-- Energy: [builder's input]
+- Yesterday: [6h 32m] sleep ([38]% restorative) · [29] min exercise · [5,811] steps
+- Mood: [builder's input]
+- Goal cues today: [one-line summary per firing goal, OR "—" if none fire]
 
 ### AI Suggested: Top 3 (from [previous day]'s close)
 [preserved from close-day seed if it existed]
@@ -664,6 +880,11 @@ SORT priority ASC
 The `## Work Log`, `## Projects Touched`, `## Carrying Over`, and `## End of Day` sections are left empty — `/close-day` fills those in.
 
 **Habits section:** Read habits from `$OBSIDIAN_VAULT_PATH/30-habits/habits.md`, parsing the Active list. Use each habit's `name` field for the bolded text in the `### Habits` section (one checkbox per active habit). If the file does not exist, ask the builder once whether to create it (offer the template), then write `30-habits/habits.md` and `30-habits/log.md` from the templates. The bolded habit names must match verbatim — `/close-day` and the CLI companion both match on that string.
+**Health frontmatter rules:**
+- The eight `sleep_*`, `exercise_min`, `steps`, `active_energy_kcal`, `hrv_ms` keys come from Step 2k. Use YAML `null` for any value Apple Health didn't provide for yesterday (e.g., `hrv_ms: null`).
+- If Step 2k was skipped entirely (no MCP, no data), omit the whole frontmatter block AND drop the "Yesterday:" line from Morning Check-in.
+- **If the daily note already exists** (close-day seeded it last night) and has existing frontmatter, merge: update the health keys, preserve everything else. If it has no frontmatter, prepend the block.
+- These keys are graphable via the Obsidian Tracker plugin or Dataview — they're stored in structured frontmatter specifically so trends across daily notes can be charted without re-parsing the body.
 
 ### Step 7: Track priority alignment (if AI suggestions existed)
 

@@ -14,16 +14,138 @@ import os
 import re
 import sys
 from datetime import date
+from pathlib import Path
 
-SYSTEM_PROMPT = (
-    "You are building a person intelligence profile for the user's Obsidian knowledge base. "
-    "The user is reviewing this person for their professional context. "
-    "You synthesize data from multiple sources into a structured profile. "
-    "Use direct quotes where available. Be factual and specific — no filler. "
-    "Write in a direct, plain-language style. Numbers over adjectives. Short sentences."
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import load_dotenv_local  # noqa: E402,F401  — load .env into os.environ for cron/non-interactive runs
+
+REFERENCES_DIR = Path(__file__).resolve().parent.parent / "references"
+
+SYSTEM_PROMPT_BASE = (
+    "You are building a person intelligence profile for the operating user's Obsidian "
+    "knowledge base. You synthesize data from multiple sources (Fathom 1:1 transcripts, "
+    "Slack/Gmail signal blocks, Airtable employee + SLT data, existing profile content) "
+    "into a structured profile. Use direct quotes where available. Be factual and specific — "
+    "no filler. Write in a direct, plain-language style: numbers over adjectives, short "
+    "sentences, declarative headlines."
 )
 
+VALID_RELATIONSHIP_TYPES = ("direct_report", "peer", "manager", "key_relationship")
+
 MAX_PROMPT_CHARS = 100_000
+
+# Section headings the synthesizer is allowed to generate. Anything else
+# encountered in an existing profile is treated as human-authored and preserved
+# verbatim through extraction + re-injection rather than via LLM instruction.
+STANDARD_SECTION_HEADINGS = {
+    "Role",
+    "Core Identity & Self-Concept",
+    "Leadership Style",
+    "Mental Models",
+    "Mental Models (Recurring)",
+    "Strategic Priorities",
+    "What Energizes Them",
+    "What Energizes Him",
+    "What Energizes Her",
+    "What Concerns Them",
+    "What Concerns Him",
+    "What Concerns Her",
+    "How They Manage Up / Down / Laterally",
+    "How He Manages Up / Down / Laterally",
+    "How She Manages Up / Down / Laterally",
+    "How to Work With",
+    "Personal Practices & Interests",
+    "Communication Patterns",
+    "Key Relationships",
+    "Key Relationships (Their Lens)",
+    "Key Relationships (His Lens)",
+    "Key Relationships (Her Lens)",
+    "Quotes That Capture Them",
+    "Quotes That Capture Him",
+    "Quotes That Capture Her",
+    # Coaching frames produced by the synthesizer per relationship_type:
+    "What",  # matches "What [Name] Needs to Thrive"
+    "How I Work with",  # matches "How I Work with [Name]"
+    "My Stance",  # matches "My Stance: ..."
+    "How I Can Work More Effectively with",
+    "Working Pattern",
+    # Standard tail sections:
+    "Projects Together",
+    "Meeting Patterns",
+    "Meeting History",
+    "Personal",
+    "Signal Read",  # regenerated each run from distilled Quick Notes signal
+    # Note: "Coaching Goals" and "Relationship Health" are NOT in this list.
+    # They contain user-curated runtime data (active goals, the emoji chart,
+    # journal entries) and must be preserved verbatim like human-authored sections.
+}
+
+
+def extract_human_authored_sections(existing_profile):
+    """Parse `## ...` sections from existing_profile, return those whose heading
+    is NOT in STANDARD_SECTION_HEADINGS.
+
+    Returns list of dicts: [{"heading": "## Kevin's Stance: ...", "content": "..."}, ...]
+    Content includes the heading line and everything until the next `## ` heading
+    or end of document.
+    """
+    if not existing_profile:
+        return []
+
+    # Split on `## ` headings while keeping the heading text
+    parts = re.split(r"(^## .+$)", existing_profile, flags=re.MULTILINE)
+    # parts is interleaved: [pre-text, heading1, body1, heading2, body2, ...]
+    sections = []
+    i = 1
+    while i < len(parts):
+        heading = parts[i].strip()
+        body = parts[i + 1] if i + 1 < len(parts) else ""
+        # Extract heading text after `## `
+        heading_text = heading.lstrip("#").strip()
+        # Match against known standard headings (allow prefix-match for templated ones like "What X Needs to Thrive")
+        is_standard = any(
+            heading_text == std or heading_text.startswith(std + " ") or heading_text.startswith(std + ":")
+            for std in STANDARD_SECTION_HEADINGS
+        )
+        if not is_standard:
+            sections.append({
+                "heading": heading,
+                "content": heading + body,
+            })
+        i += 2
+    return sections
+
+
+def load_reference(filename):
+    """Load a reference frame file, return its content or empty string if missing."""
+    path = REFERENCES_DIR / filename
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def build_system_prompt(relationship_type):
+    """Compose the system prompt: base + dimensional discovery + conditional frame."""
+    parts = [SYSTEM_PROMPT_BASE]
+
+    # Always-on: dimensional discovery
+    discovery = load_reference("dimensional-discovery-frame.md")
+    if discovery:
+        parts.append("\n\n--- DIMENSIONAL DISCOVERY (always applied) ---\n")
+        parts.append(discovery)
+
+    # Conditional: relationship-type-specific frame
+    frame_file = {
+        "direct_report": "manager-coaching-frame.md",
+        "manager": "manager-relationship-frame.md",
+    }.get(relationship_type)
+    if frame_file:
+        frame = load_reference(frame_file)
+        if frame:
+            parts.append(f"\n\n--- RELATIONSHIP FRAME ({relationship_type}) ---\n")
+            parts.append(frame)
+
+    return "".join(parts)
 
 
 def build_user_prompt(data):
@@ -114,6 +236,58 @@ def build_user_prompt(data):
             for g in lop:
                 sections.append(f"  - {g.get('name', '')} ({g.get('cascade_level', '')}, {g.get('status', '')}): {g.get('description', '')}")
 
+    # --- Signal (Quick Notes) — distilled, pre-screened for sensitivity ---
+    # Phase 1: only the NORMALIZED signal reaches the prompt. Raw weekly narration
+    # stays cache-only (fetch_signal.py already dropped HR/health/comp items). The
+    # synthesizer must still apply the KB sensitive-content rubric: write only
+    # shareable facts, never paste a quote that names comp/health/personnel status.
+    signal = data.get("signal")
+    if signal:
+        sections.append("\n## Signal — Quick Notes (distilled; apply the sensitive-content rubric)")
+        s = signal.get("sentiment") or {}
+        if s:
+            sections.append(
+                f"- Sentiment: latest score {s.get('score')} (4w avg {s.get('score_4w_avg')}, "
+                f"8w slope {s.get('slope_8w')}); reversal={s.get('has_recent_reversal')}, "
+                f"novel_low={s.get('is_novel_low')}, friction_streak_weeks={s.get('friction_streak_weeks')}, "
+                f"quick_notes_active={s.get('quick_notes_active')}"
+            )
+        wins = signal.get("wins") or []
+        if wins:
+            sections.append("- Recent wins (shareable):")
+            for w in wins[:8]:
+                sections.append(f"  - [{w.get('week','')}] {w.get('text','')}")
+        fr = signal.get("friction") or []
+        if fr:
+            sections.append("- Recurring friction (themes — de-personalize if sensitive):")
+            for f in fr[:8]:
+                sections.append(f"  - [{f.get('week','')}] {f.get('text','')} ({f.get('category','')})")
+        goals = signal.get("goals") or []
+        if goals:
+            sections.append("- Goal health:")
+            for g in goals[:8]:
+                sections.append(f"  - {g.get('name','')}: {g.get('health','')} "
+                                f"(updated {g.get('weeks_since_update','?')}w ago"
+                                f"{', FLAGGED' if g.get('flagged') else ''})")
+        sub = signal.get("submitted_weeks") or []
+        if sub:
+            sections.append(f"- Submission cadence: {len(sub)} weeks submitted; most recent {sub[0]}")
+        dropped = signal.get("sensitive_dropped") or []
+        if dropped:
+            sections.append(f"- ({len(dropped)} item(s) withheld by the sensitivity pre-filter — do not attempt to recover them)")
+        sections.append(
+            "\nUsing ONLY the distilled signal above, produce a `## Signal Read` section with these lines:\n"
+            "- **Sentiment:** trajectory in plain words (e.g. 'steady; dipped wk of X, recovered'). No raw score dump.\n"
+            "- **Recent wins:** 1-3, named + week.\n"
+            "- **Recurring friction (themes):** theme + streak weeks; de-personalize anything sensitive.\n"
+            "- **Goal health:** counts + any flagged.\n"
+            "- **Submission cadence:** weekly, or a gap of N weeks.\n"
+            "Then, if the signal shows evidence relevant to an ACTIVE coaching goal, emit a "
+            "`<!-- DIGEST: Signal evidence for [goal] — [observation] -->` comment so the biweekly "
+            "review can surface it for approval. NEVER write directly into Coaching Goals; it is "
+            "user-curated. NEVER include comp, health, family, or personnel-status content."
+        )
+
     # --- Existing profiles ---
     existing = data.get("existing_profile")
     if existing:
@@ -145,50 +319,71 @@ def build_user_prompt(data):
             for p in suggested:
                 sections.append(f"  - {p['project']} ({p['matches']} matches): {', '.join(p.get('evidence', []))}")
 
-    # --- Instructions ---
+    # --- Existing profile preservation instruction ---
+    existing = data.get("existing_profile")
+    relationship_type = data.get("relationship_type", "peer")
+    human_sections = extract_human_authored_sections(existing) if existing else []
+    if human_sections:
+        sections.append(
+            "\n## Human-authored sections — DO NOT GENERATE\n"
+            "The user has manually curated these sections in the existing profile. "
+            "**Do NOT include them in your output.** Python post-processing will re-inject "
+            "them at the correct position after your synthesis runs. If you wrote them, "
+            "they would get duplicated.\n"
+            "\nSections to skip generating:"
+        )
+        for s in human_sections:
+            sections.append(f"  - {s['heading']}")
+        sections.append(
+            "\nIf you have observations from recent data that suggest these sections need "
+            "updating, mention them as `<!-- DIGEST: ... -->` comments in your output. "
+            "The digest review step will surface them to the user."
+        )
+
+    # --- Confirmed projects list ---
+    confirmed_list = [p['project'] for p in confirmed]
+
+    # --- Final instructions ---
     sections.append(f"""
 ---
 
-Now produce the profile for {name} following this exact structure. Output ONLY the markdown content (no frontmatter — I'll add that). Start with `## Role`.
+Now produce the profile for {name}. Output ONLY the markdown body (no frontmatter — that's added in post-processing). Start with `## Core Identity & Self-Concept` (or whichever first section the data supports).
 
-Sections to include (omit any section that has no supporting data):
+Relationship type for this person: **{relationship_type}**
 
-## Role
-One paragraph. What they do, how they relate to the user's work.
+## Standard section structure (omit any section without supporting data)
 
-## What {name} Cares About
-Bullet points of recurring themes across all sources. Be specific — cite topics, not vague categories.
+1. `## Core Identity & Self-Concept` — How they frame themselves and the work. Direct quotes where available.
+2. `## Leadership Style` — 2-5 bold-lead patterns with evidence.
+3. `## Mental Models (Recurring)` — Table format. `| Model | How They Use It |`
+4. `## Strategic Priorities` — bold-lead paragraphs per priority with quotes and evidence.
+5. `## What Energizes Them` — bullets.
+6. `## What Concerns Them` — bullets.
+7. `## How They Manage Up / Down / Laterally` — paragraphs.
+8. `## Personal Practices & Interests` — bullets.
+9. `## Communication Patterns` — bold-lead bullets.
+10. `## Key Relationships (Their Lens)` — table format if 3+ relationships, otherwise prose.
+11. `## Quotes That Capture Them` — block quotes with context.
+12. **[Conditional coaching sections per relationship_type — see RELATIONSHIP FRAME in system prompt]**
+13. `## Projects Together` — confirmed only: {json.dumps(confirmed_list)}
+14. `## Personal` — family/interests/life events bullets, with Last updated date.
+15. `## Signal Read` — ONLY if a Signal block was provided above. Follow the line structure in that block. Distilled facts only; apply the sensitive-content rubric.
 
-## Questions {name} Asks
-Use exact quotes in quotation marks where available from meeting summaries. Each bullet is one question.
+## Conditional sections (based on relationship_type)
 
-## Advice and Offers
-Specific recommendations, suggestions, or offers they've made. Actionable items.
+- If `direct_report`: add `## What {name} Needs to Thrive` and `## How I Work with {name}` after section 11. See the manager-coaching frame in the system prompt for subsection structure.
+- If `manager`: add `## My Stance: [emotions]` and `## How I Can Work More Effectively with {name}` after section 11. See the manager-relationship frame in the system prompt for structure.
+- If `peer` or `key_relationship`: skip coaching sections; replace with `## Working Pattern` (one paragraph or short bullets).
 
-## Mental Models
-Frameworks, analogies, metaphors, and thinking patterns they reach for. Format: "Model name — explanation"
+## Hard rules
 
-## How to Work With {name}
-Practical advice based on observed patterns. What works, what to avoid, what they respond to.
-
-## Projects Together
-Format each as: `- [[20-projects/project-slug|Project Name]] — their role or contribution`
-Use these confirmed projects: {json.dumps([p['project'] for p in confirmed])}
-Do NOT include suggested projects in this list.
-
-## Meeting Patterns
-Summarize speaking patterns, engagement style, contribution quality trends from coaching feedback if available. Otherwise note meeting frequency and typical topics.
-
-## Meeting History
-Format each meeting as: `- [[folder/date|date — title]]`
-Use dates and titles from the meeting summaries provided.
-
-Rules:
+- **Apply the DIMENSIONAL DISCOVERY instruction in the system prompt before writing.** Find the dimensions specific to this person before fitting to template.
 - Direct quotes in quotation marks where possible
-- No filler phrases ("it's worth noting", "importantly", etc.)
-- Short sentences
-- If a section would have zero content, omit it entirely
+- No filler phrases ("it's worth noting", "importantly", "additionally", etc.)
+- Short sentences, declarative headlines
+- Omit any section that would have zero content — do not pad
 - For "Projects Together", only use confirmed projects, not suggested ones
+- If the existing profile has human-authored sections (see above), include them verbatim in your output
 """)
 
     return "\n".join(sections)
@@ -211,6 +406,8 @@ def determine_sources(data):
         sources.append("existing-slt-profile")
     if data.get("projects"):
         sources.append("project-inference")
+    if data.get("signal"):
+        sources.append("signal")
     return sources
 
 
@@ -229,6 +426,20 @@ def determine_role(data):
     return "NSLS team member"
 
 
+def _existing_fm_value(data, key):
+    """Return a frontmatter scalar from the existing profile, or None.
+
+    Health scores (`health`, `health_score`, `health_last_assessed`) and the
+    `health-*` graph tag are set by the relationship-health-check flow, NOT by
+    synthesis. Synthesis rebuilds frontmatter from scratch, so it must carry these
+    forward verbatim — otherwise every re-synthesis silently wipes the health
+    dashboard while leaving the body health table intact.
+    """
+    text = data.get("existing_profile") or ""
+    m = re.search(rf"^{re.escape(key)}:[ \t]*(\S[^\n]*)$", text, re.MULTILINE)
+    return m.group(1).strip() if m else None
+
+
 def determine_tags(data):
     """Build tag list based on available data."""
     tags = ["leadership"]
@@ -238,6 +449,10 @@ def determine_tags(data):
     board = data.get("existing_board_profile")
     if board:
         tags.append("board")
+    # Preserve the health-* graph-coloring tag set by the health-check flow.
+    for t in re.findall(r"health-[a-z]+", _existing_fm_value(data, "tags") or ""):
+        if t not in tags:
+            tags.append(t)
     return tags
 
 
@@ -291,10 +506,100 @@ def build_frontmatter(data):
         f"last-synthesized: {date.today().isoformat()}",
         f"sources: [{', '.join(sources)}]",
     ]
+    # Carry forward health-dashboard fields owned by the health-check flow.
+    for hk in ("health", "health_score", "health_last_assessed"):
+        hv = _existing_fm_value(data, hk)
+        if hv is not None:
+            lines.append(f"{hk}: {hv}")
     if meeting_count > 0:
         lines.append(f"meetings_attended: {meeting_count}")
     lines.append("---")
     return "\n".join(lines)
+
+
+def reinject_human_sections(profile, human_sections):
+    """Re-insert human-authored sections into the synthesized profile.
+
+    Strategy: insert preserved sections just before the first "tail" section
+    (Coaching Goals, Relationship Health, or the standalone Personal section
+    — not Personal Practices, which is mid-document).
+    """
+    if not human_sections:
+        return profile
+
+    # Use exact heading matching via regex to avoid prefix collisions like
+    # "## Personal" vs "## Personal Practices & Interests".
+    tail_pattern = re.compile(
+        r"^## (Coaching Goals|Relationship Health|Personal)\s*$",
+        re.MULTILINE,
+    )
+    m = tail_pattern.search(profile)
+    insertion_point = m.start() if m else -1
+
+    preserved_block = "\n\n".join(s["content"].rstrip() for s in human_sections)
+
+    if insertion_point == -1:
+        # No tail section found — append to end.
+        return profile.rstrip() + "\n\n" + preserved_block + "\n"
+
+    # Insert preserved block just before the first tail section.
+    return profile[:insertion_point].rstrip() + "\n\n" + preserved_block + "\n\n" + profile[insertion_point:]
+
+
+# Semantic-overlap keywords for coaching artifacts. If a preserved section's
+# heading contains one of these, and the LLM also wrote a section whose heading
+# contains the same keyword, prefer the preserved one and drop the LLM's.
+SEMANTIC_OVERLAP_KEYWORDS = (
+    "Stance",
+    "Needs to Thrive",
+    "How I Work with",
+    "How I Can Work",
+    "Guardrail",
+    "Working Pattern",
+)
+
+
+def find_overlap_keyword(heading):
+    """Return the first overlap keyword found in heading, or None."""
+    for kw in SEMANTIC_OVERLAP_KEYWORDS:
+        if kw.lower() in heading.lower():
+            return kw
+    return None
+
+
+def remove_overlapping_llm_sections(profile, human_sections):
+    """For each preserved section whose heading hits a known coaching artifact,
+    remove any LLM-generated section whose heading hits the same keyword.
+
+    Example: preserved "## Kevin's Stance: ..." → drop LLM's "## My Stance: ...".
+    """
+    # Build set of overlap keywords claimed by preserved sections.
+    preserved_keywords = set()
+    for s in human_sections:
+        kw = find_overlap_keyword(s["heading"])
+        if kw:
+            preserved_keywords.add(kw)
+
+    if not preserved_keywords:
+        return profile
+
+    # Walk the profile, identify each section, drop those whose heading
+    # contains a preserved keyword.
+    parts = re.split(r"(^## .+$)", profile, flags=re.MULTILINE)
+    out = [parts[0]]
+    i = 1
+    while i < len(parts):
+        heading = parts[i]
+        body = parts[i + 1] if i + 1 < len(parts) else ""
+        kw = find_overlap_keyword(heading)
+        if kw and kw in preserved_keywords:
+            # Skip this LLM section; preserved version will replace it.
+            pass
+        else:
+            out.append(heading)
+            out.append(body)
+        i += 2
+    return "".join(out)
 
 
 def postprocess(raw_profile, data):
@@ -315,6 +620,27 @@ def postprocess(raw_profile, data):
     # Strip leading heading if Claude included `# Name`
     if profile.startswith(f"# {name}"):
         profile = profile[len(f"# {name}"):].strip()
+
+    # Re-inject human-authored sections extracted from existing profile.
+    human_sections = extract_human_authored_sections(data.get("existing_profile", ""))
+    if human_sections:
+        # Step 1: remove any LLM-generated section that semantically overlaps
+        # with a preserved one (e.g., LLM's "## My Stance" when "## Kevin's Stance"
+        # is preserved).
+        profile = remove_overlapping_llm_sections(profile, human_sections)
+
+        # Step 2: also remove exact-heading duplicates the LLM may have written.
+        for s in human_sections:
+            heading_line = s["heading"]
+            if heading_line in profile:
+                start = profile.find(heading_line)
+                next_heading_pattern = re.compile(r"\n## ", re.MULTILINE)
+                m = next_heading_pattern.search(profile, start + len(heading_line))
+                end = m.start() + 1 if m else len(profile)
+                profile = profile[:start].rstrip() + "\n" + profile[end:]
+
+        # Step 3: re-insert preserved sections at the tail position.
+        profile = reinject_human_sections(profile, human_sections)
 
     # Assemble final document
     parts = [frontmatter, "", f"# {name}", ""]
@@ -352,7 +678,18 @@ def main():
         print("ERROR: person_name is required", file=sys.stderr)
         sys.exit(1)
 
-    print(f"Synthesizing profile for: {person_name}", file=sys.stderr)
+    # Validate relationship_type (default: peer for safety — no coaching content)
+    relationship_type = data.get("relationship_type", "peer")
+    if relationship_type not in VALID_RELATIONSHIP_TYPES:
+        print(
+            f"WARN: invalid relationship_type {relationship_type!r}, defaulting to 'peer'. "
+            f"Valid values: {VALID_RELATIONSHIP_TYPES}",
+            file=sys.stderr,
+        )
+        relationship_type = "peer"
+        data["relationship_type"] = "peer"
+
+    print(f"Synthesizing profile for: {person_name} (type: {relationship_type})", file=sys.stderr)
 
     # Import anthropic SDK
     try:
@@ -382,10 +719,13 @@ def main():
     print(f"Prompt length: {len(user_prompt)} chars", file=sys.stderr)
     print("Calling Claude API...", file=sys.stderr)
 
+    system_prompt = build_system_prompt(relationship_type)
+    print(f"System prompt: {len(system_prompt)} chars", file=sys.stderr)
+
     message = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=4000,
-        system=SYSTEM_PROMPT,
+        max_tokens=8000,
+        system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
 

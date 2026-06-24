@@ -48,7 +48,15 @@ Extract:
 
 If the close-week AI suggestions exist, present them to the builder as a starting point alongside the open-week recommendations. Show where they agree and where they differ — close-week suggestions are based on last week's data patterns, while open-week recommendations factor in the upcoming calendar and Asana state.
 
-**1b. Asana backlog**
+**1b. Task backlog**
+
+Pull open tasks from whichever task system the builder uses. Most builders use one of:
+- Asana (default — query via Asana MCP)
+- Airtable Meeting Actions (NSLS pattern — Fathom auto-extracts SLT/1:1 action items into Airtable)
+
+**Detection:** check `~/.claude/local-plugins/nsls-personal-toolkit/.env` for `ASANA_USER_GID`. If it's set and uncommented, use Asana (1b.1). If it's missing/commented, fall back to Airtable Meeting Actions (1b.2). Run **both** if both are configured — combine the results.
+
+**1b.1 — Asana**
 
 ```
 mcp__claude_ai_Asana__get_my_tasks(
@@ -58,11 +66,49 @@ mcp__claude_ai_Asana__get_my_tasks(
 )
 ```
 
-Categorize:
-- P1 (overdue or due this week)
-- P2 (due next 2 weeks)
-- P3 (backlog, no date)
-- "Do today" section items (self-flagged urgent)
+Also pull the "Do today" section items (self-flagged urgent) separately.
+
+**1b.2 — Airtable Meeting Actions** (NSLS)
+
+Query open tasks (status = Not Started or In Progress) assigned to the builder. The builder's name appears in the singleLineText `assignee` field; the linked record sits in `assignee (linked)`.
+
+```
+mcp__b9e0ba62-fba1-48c0-8814-6f701844c723__list_records_for_table(
+  baseId="${SLT_BASE_ID}",
+  tableId="tblasgjUjadHCqzrg",
+  filters={
+    "operator": "and",
+    "operands": [
+      {"operator": "contains", "operands": ["fldmpu3lN0lrgrdSa", "<builder full name>"]},
+      {"operator": "isAnyOf", "operands": ["fldJleDMJFfcj5gPN", ["selSlSYN2tjGdZHZa", "selfOZiZ8QJ9jfDnw"]]}
+    ]
+  },
+  fieldIds=["fldrD45ouHX2KD52A", "fldiPWq8q3NXyNXil", "fldJleDMJFfcj5gPN", "fldXZJaatwC9FNbtX", "fldJ1EKcHoncBtkoo", "fldZlxizRCZnHvWH0", "fldtGjdcicLNRiFvi", "fldo7xzjuXIneaw5J"],
+  pageSize=100
+)
+```
+
+Field IDs decoded:
+- `fldrD45ouHX2KD52A` — action (formula, primary)
+- `fldiPWq8q3NXyNXil` — action_description
+- `fldJleDMJFfcj5gPN` — status (`selSlSYN2tjGdZHZa` = Not Started, `selfOZiZ8QJ9jfDnw` = In Progress)
+- `fldXZJaatwC9FNbtX` — due_date
+- `fldJ1EKcHoncBtkoo` — Priority
+- `fldmpu3lN0lrgrdSa` — assignee (singleLineText)
+- `fldZlxizRCZnHvWH0` — meeting (link to source meeting)
+- `fldtGjdcicLNRiFvi` — created_dtm
+- `fldo7xzjuXIneaw5J` — Notes
+
+**Categorization rules** (apply to combined Asana + Airtable result):
+- **P1** — overdue OR due this week (within the planning window)
+- **P2** — due in next 2 weeks
+- **P3** — anything else, including:
+    - tasks with no due date
+    - tasks due more than 2 weeks out (still surface them — they belong in the week's awareness even if not action-this-week)
+    - tasks self-flagged "Do today" in Asana
+- **De-dupe**: if the same item appears in both Asana and Airtable, prefer the Airtable record (it carries the meeting context).
+
+The full list goes into Step 3's "Also Important" / "What to Say No To" sections. The P1 cluster informs the Top 3 candidates. The P3 cluster — even far-out ones — should be visible in the weekly note so they don't fall off the radar between weeks.
 
 **1c. This week's calendar**
 
@@ -125,6 +171,89 @@ The agent returns structured findings grouped by tier. Use its output to:
 - **Feed Step 2 (coaching):** any "trap" overlap the agent surfaces becomes a coaching signal ("your 'I Don't' zone shows up in 3 of your proposed Top 5 — deliberate?").
 
 If the agent returns "Tier 2 not available" or the tier 2 section is empty, that's fine — this step is purely additive. Log the coverage summary so the builder can see which tiers were read.
+
+**1g. Apple Health — weekly body trends**
+
+If the `apple-health` MCP is configured (`~/.claude.json` contains `mcpServers.apple-health`), pull 28 days of data in one call:
+
+```
+mcp__apple-health__apple_health_trends(days=28)
+```
+
+Returns an array of daily records with: `steps`, `active_energy`, `exercise_min`, `resting_hr`, `hrv`, `sleep_total_hrs`, `sleep_restorative_pct`, `weight`, `vo2_max`. Most days have null for `vo2_max` (Apple Watch only computes it on qualifying outdoor activity) and null for `resting_hr` (HAE's daily-aggregate CSV doesn't include it — gap, not error).
+
+If the call fails or returns `[]`, skip this step silently and omit the "Body & Recovery" section from Step 3. Don't surface the error to the builder.
+
+**Aggregate the 28-day window into these weekly metrics:**
+
+| Metric | How to compute |
+|---|---|
+| `vo2_max_latest` | most recent non-null `vo2_max` in the array |
+| `vo2_max_delta_4w` | `vo2_max_latest` − oldest non-null `vo2_max` in the array (28-day trajectory) |
+| `hrv_avg_7d` | mean of `hrv` over the most recent 7 days (skip nulls) |
+| `hrv_delta_vs_prior_7d` | `hrv_avg_7d` − mean of days 8-14 |
+| `rhr_avg_7d` | mean of `resting_hr` over the most recent 7 days; usually null (gap) |
+| `exercise_min_total_7d` | sum of `exercise_min` over the most recent 7 days |
+| `sleep_total_avg_7d` | mean of `sleep_total_hrs` over the most recent 7 days |
+| `sleep_consistency_stddev` | stddev of `sleep_total_hrs` over the most recent 7 days (lower = more consistent) |
+| `sleep_restorative_avg_7d` | mean of `sleep_restorative_pct` over the most recent 7 days |
+
+Carry these forward to Step 3. The CDC target for `exercise_min_total_7d` is 150 minutes/week (moderate-to-vigorous).
+
+**1h. Active quarterly goals**
+
+Read all goal files from `$OBSIDIAN_VAULT_PATH/10-strategy/goals/*.md` with `status: active` (skip `personal-goals.md` and `work-goals.md` — those are dashboards). Parse frontmatter for each.
+
+For each active goal, compute weekly progress:
+
+**Metric goals** (`type: metric`, `metric_source` set):
+- If `metric_source` starts with `apple_health.`, query the apple-health MCP for the current value:
+  - `apple_health.vo2_max` → latest non-null from `apple_health_trends(days=14).vo2_max`
+  - `apple_health.sleep_total_avg` → `apple_health_trends(days=7).sleep_total_hrs` mean
+  - `apple_health.exercise_min_total` → `apple_health_trends(days=7).exercise_min` sum
+  - `apple_health.hrv_avg` → `apple_health_trends(days=7).hrv` mean
+  - `apple_health.steps` → `apple_health_trends(days=7).steps` sum
+  - `apple_health.weight` → `apple_health_trends(days=14).weight` latest non-null
+- If `metric_source` is `manual`, look in the goal's Weekly Log for the most recent value.
+- Compute progress = `(current - baseline) / (target - baseline) * 100`. Clamp to [0, 100+] (100+ means over-target).
+
+**Behavior goals** (`type: behavior`):
+- Count days in past 7 where `goal_{slug}_moved: true` in daily note frontmatter.
+- Progress = `count / target_freq_per_week * 100`.
+
+**Relationship goals** (`type: relationship`):
+- Same as behavior — count moved days from daily frontmatter.
+
+**Hit rate calculation** (used in coaching push):
+- Past 7 days: count of `goal_{slug}_moved: true` / count of daily notes that have the key
+- Past 28 days: same, longer window
+- If 0 daily notes have the key (goal just created), report "no data yet"
+
+Carry forward for Step 3:
+
+```python
+goals = [{
+    "slug": "vo2-max",
+    "title": "Hold and improve VO2 max",
+    "category": "personal",
+    "type": "metric",
+    "current": 36.2, "baseline": 36.2, "target": 37.0, "unit": "ml/(kg·min)",
+    "progress_pct": 0,  # baseline = current → no gain yet
+    "weekly_action": "2x zone-2 + 1x intervals",
+    "anchor": "After walking Red, Mon/Wed/Fri 7:45am",
+    "hit_rate_7d": "2/3",  # or "no data yet"
+    "hit_rate_28d": "8/12",
+    "end": "2026-06-30",
+    "weeks_remaining": 5,
+}, ...]
+```
+
+**Coaching signals** to surface in Step 3 per goal:
+- If `hit_rate_7d` < 50% AND not "no data yet": include the coaching question pattern.
+- If metric goal is trending wrong direction (current < baseline OR weekly trend negative for 3+ weeks): flag "trajectory needs review".
+- If `weeks_remaining` ≤ 2 AND `progress_pct` < 50%: flag "behind on this — accelerate or rescope".
+
+Skip 1h entirely if no goal files exist or none are active.
 
 ### Step 1.5: Strategy layer check
 
@@ -314,6 +443,92 @@ Before suggesting priorities, surface patterns:
 - **Cross-week insight signal:** If the same theme appeared in the `## Insight Reflection` of 2+ consecutive weekly notes (from Step 1d), escalate it: "This is week [N] of [theme] surfacing in your weekly reflection. That's a structural pattern, not a one-off. What would it take to address it?"
 - **Knowledge graph accretion gap (from Step 1f):** If the knowledge-researcher flagged owned SLT topics as present-but-unpopulated for 2+ weeks running, surface it: "You own [N] SLT topics in the knowledge graph with no recorded Current State, Key Decisions, or Open Questions. The graph has [X] meeting mentions for these topics but zero synthesis. Either close-day 4c isn't firing on topics you own, or the graph is noise. Which?"
 
+### Step 2.5: Management cadence lane (Signal)
+
+Only runs when `SIGNAL_INGEST=1`. One call to the weekly team summary becomes the
+manager's operating rhythm for the week. Pull it:
+
+```bash
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_management_for_week.py
+```
+
+Returns `{week_label, submitted, team_size, wins_count, celebrate_candidates,
+develop_candidates, unblock_candidates (sorted by streak), cadence_alerts, sensitive_dropped}`.
+Friction quotes are sensitivity-screened; raw Quick Notes never reach the vault.
+
+Then reconcile the **durable loop-closure ledger** (Phase 4) — this persists friction
+episodes across weeks so a resolved-but-never-closed loop keeps rolling forward:
+
+```bash
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/loop_ledger.py --update
+```
+
+Returns `{close_the_loop:[{person,themes,resolved_week}], open:[{person,themes,weeks_open}],
+p1_candidates:[{person,weeks_open}]}`. `close_the_loop` = friction that resolved but you
+haven't told the person yet (the trust gap); `p1_candidates` = loops open ≥3 weeks.
+
+This drives a **Management Cadence** block in the Week Plan (Step 3) and the
+**three weekly management intentions** — the core of the lane:
+
+```
+### Management Cadence — week of [week_label]   ([submitted]/[team_size] submitted · [wins_count] wins)
+
+**Set 3 intentions — one each, on three different reports:**
+  🎉 Celebrate: [pick from celebrate_candidates] — say it publicly, in their channel
+  🌱 Develop:   [pick from develop_candidates]  — the goal-linked move
+  🔧 Unblock:   [pick from unblock_candidates]  — top streak first; own a fix + close the loop
+
+**🔁 Close the loop (resolved — go tell them):**
+  - [close_the_loop: person — themes] — friction resolved [resolved_week]; confirm the fix and tell them it was heard
+
+**Still open:**
+  - [open: person — themes (N wks)] — [⚠ P1 if in p1_candidates: open ≥3 wks, trust risk]
+
+**Cadence:** [cadence_alerts] — [chronic → is Quick Notes right for them? / lapsed → check in]
+```
+
+**Rules:**
+- The three intentions are the point — exactly one per bucket, each on a *different* report
+  (recognition + development + unblocking spread across the team, never stacked on one person).
+- **🌱 Develop — plan it with GAIN (Jack Cohen's feedback framework).** When you set the develop
+  intention, frame the conversation toward the gain, not the pain, in four steps:
+  - **G — Goal:** what you *both* gain from the change (same-team signal, not a complaint).
+  - **A — Actions:** observable behavior, no judgment.
+  - **I — Impacts:** the consequence — and own your contribution too.
+  - **N — Next Actions:** a concrete, co-designed commitment.
+  Make it a dialogue, frame the new behavior as a time-boxed experiment, and schedule the follow-up.
+- **Streak ≥3 / any `p1_candidates` loop is a trust emergency** — it should usually become the
+  unblock intention and may warrant a Top-3 slot this week.
+- **Closing loops is the highest-leverage habit:** for each `close_the_loop` person, the move is
+  to *tell them* it was heard and what changed. When you confirm you've done it, I run
+  `loop_ledger.py --close "<name>" --note "<what you told them>"` so it stops rolling forward.
+- A `chronic` cadence alert (rarely submits) is a different conversation than a `lapsed` one —
+  chronic may mean Quick Notes isn't the right instrument for that person; lapsed is a check-in.
+- Skip the whole lane if `enabled:false` or `available:false`.
+
+### Step 2.6: Role lens (role-coach ledger)
+
+Read-only — no fresh evidence sweep, no skill invocation. Read
+`$OBSIDIAN_VAULT_PATH/10-strategy/role-coaching/coaching-log.md` if it exists.
+
+```bash
+echo "Step 2.6: role-coach ledger — found N patterns (X open, Y progressing, Z contested)"
+# or: echo "Step 2.6: no role-coaching ledger — /role-coach not set up, skipping"
+```
+
+Feed the open/progressing patterns into this week's planning:
+- **Coaching insights (Step 2 output):** an `open` pattern at escalation rung ≥1 belongs in the
+  Coaching Notes — phrased per its ledger entry (artifact-vs-artifact, name the cost), never
+  re-litigated from scratch. Cite it as "ledger P00N, week N".
+- **Trap check (Step 1.8):** if a stack-ranked project feeds a known pattern (e.g., a build
+  project while "written closes lag" is open at rung 1+), flag the collision in one line.
+- **Top-3 candidates:** a rung-2 pattern's forcing function is a standing Top-3 candidate —
+  surface it as a suggestion, never auto-insert.
+- `contested` and `lapsed` patterns are NOT raised here (quarterly-only per the role-coach
+  escalation rules). Mastery mode / no trajectory file changes nothing in this step.
+
 ### Step 3: Draft week plan
 
 Present to the builder:
@@ -324,6 +539,37 @@ Present to the builder:
 ### Coaching Notes
 [1-2 pattern observations from Step 2 — be direct, not preachy]
 [If cross-week insight signal detected: "For the [N]th consecutive week, [signal]. [What this suggests structurally, not as a one-off]."]
+
+### Management Cadence
+[The block from Step 2.5: 3 intentions (celebrate/develop/unblock on 3 different reports) + loop-closure + cadence. Skip if SIGNAL_INGEST disabled.]
+
+### Body & Recovery (last 7 days)
+- **VO2 max:** [latest reading] ml/(kg·min) (as of [date]) — 4-week delta: [+/-N.N]
+- **Sleep:** [N.N]h avg (consistency: ±[N.N]h) — [N]% restorative
+- **Exercise:** [N] min total (CDC target: 150)
+- **HRV:** [N] ms avg — Δ vs prior week: [+/-N]
+- **RHR:** [N] bpm avg *(or: "not captured — HAE gap")*
+
+*[1-line interpretation: trajectory + most actionable signal. E.g., "Aerobic base trending slightly down; HRV stable; exercise under target — schedule 2 walks this week."]*
+
+*Skip this whole section if Step 1g returned no data.*
+
+### Active Quarterly Goals
+
+*Populated from Step 1h. Skip section if no active goals.*
+
+For each active personal goal:
+
+- **[Goal title]** ([type], ends [date], [weeks remaining]w left)
+  - Progress: [baseline] → [current] / [target] [unit] ([progress_pct]%)
+  - Last 7 days: [hit rate description, e.g., "2/3 anchor days hit"]
+  - This week: **[weekly action commitment]** at [anchor]
+  - [Coaching question if hit_rate_7d < 50% OR trajectory_warning]
+
+*If coaching signals fire, surface them as questions, not blame. Examples:*
+> "Last week, [goal] fired 1/3 anchor days. What was different about the days it didn't fire?"
+> "[Goal] metric has trended down 3 weeks straight. Time to revisit the protocol, the anchor, or the target?"
+> "[Goal] has 2 weeks left and you're at 30% of target. Accelerate, rescope, or graduate to next quarter?"
 
 ### Calendar Reality
 - [N] meetings this week ([X] hours)
@@ -392,35 +638,92 @@ Then execute the full Relationship Health Check flow from the person-intelligenc
 
 If fewer than 14 days have passed, skip silently.
 
-### Step 4.6: Coaching Goals Portfolio
+### Step 4.6: Coaching Actions for the Week
 
-Regardless of whether the health check runs, display the active coaching portfolio:
+Collect all NSLS people on this week's calendar and run the action surfacer in weekly mode (cap 5):
+
+```bash
+OPERATING_USER_EMAIL=$(grep '^OPERATING_USER_EMAIL=' ~/.claude/local-plugins/nsls-personal-toolkit/.env | cut -d= -f2 | tr -d '"') \
+OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
+python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/extract_coaching_actions.py 2>/dev/null
+
+echo "$WEEK_ATTENDEES" | python3.12 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_actions_for_day.py \
+  --people-stdin --weekly
+```
+
+**Format in the week plan:**
 
 ```
-🎯 Active Coaching Goals ([N] people)
-  [Name] — [goal title] ([duration], [N] evidence items, trending [↑/→/↓])
-  [Name] — [goal title] ([duration], [N] evidence items, trending [↑/→/↓])
-  [Name] — [goal title] (new, proposed last check)
+🎯 Coaching Actions for the Week ([N])
+  [Person] ([dimension]): [action text]
+    (from "[goal title]")
+  ...
+🪑 Role cue (1 of the 5)
+  [role_cue.text]   [ledger: P00N]
 ```
 
-**How to determine trend:**
-- Count evidence items in the last 14 days vs. the 14 days before
-- More recent evidence = ↑ (trending up)
-- Same = → (steady)
-- Less or none = ↓ (stalling)
+The surfacer arbitrates the role-coach pool itself: `role_cue` in its JSON output is the
+at-most-one role-coach cue (written by `/role-coach --week` to `~/.cache/role-coach/cues.json`)
+and it consumes one slot of the weekly cap — `surfaced_actions` holds at most 4 when a role cue
+is present. Render it with the `🪑` glyph after the `🎯` actions; omit the line when `role_cue`
+is null.
 
-**How to gather this data:**
-- Scan all `30-people/*.md` files for `status: active` lines in `## Coaching Goals` sections
-- Parse the goal title, created date, and count evidence entries
-- If no active coaching goals exist across any profile, skip this section
+**Also check the most recent team-pulse digest** at `$OBSIDIAN_VAULT_PATH/30-people/_pulse/YYYY-MM-DD-team-pulse.md`:
+- If a "Manager Mode Review" prompt exists, surface it under the week plan as a question for Kevin to consider
+- If "Proposed Coaching Updates" exist, surface them for review
 
-This gives Kevin a birds-eye view of which relationships he's actively developing and whether momentum is building.
+**Rules:**
+- Hard cap: 5 across the week — `🎯` actions + the `🪑` role cue combined (the script enforces this)
+- Round-robin distribution: one action per person before stacking
+- If `sweep_status.exit_code != 0` or last sweep was >18 days ago, alert
+- If no actions surface AND no role cue AND no sweep error, skip this section
+
+This gives Kevin a birds-eye view of which relationship moves to make this week, prioritized by who's actually on the calendar and what the data says is most important.
 
 ### Step 5: Write week plan
 
 Write to: `$OBSIDIAN_VAULT_PATH/02-weekly/YYYY-[W]WW.md`
 
 If a close-week already wrote this file, **merge** — keep the close-week sections (achievements, learnings, etc.) and add the plan sections below.
+
+**Health frontmatter (from Step 1g):**
+
+If Step 1g returned data, prepend or merge into the weekly note's frontmatter. These keys are read by `03-meta/weekly-health-trends.md` for graphing trajectory and hit-rate over time.
+
+```yaml
+---
+# Weekly health aggregates (last 7 days ending Sunday of this week)
+date: 2026-05-22  # week's end date — Tracker X axis (KEEP THIS — required for weekly-health-trends.md graphs)
+exercise_min_total: 132
+exercise_min_avg_per_day: 18.9
+sleep_total_avg: 6.4
+sleep_consistency_stddev: 0.6
+sleep_restorative_avg_pct: 36
+hrv_avg: 56
+hrv_delta_vs_prior_week: 3
+rhr_avg: null
+vo2_max_latest: 36.2
+vo2_max_delta_4w: -0.9
+# Target hits (booleans for graphing hit-rate)
+hit_exercise_target: false   # exercise_min_total >= 150
+hit_exercise_stretch: false  # exercise_min_total >= 300
+hit_sleep_target: false      # sleep_total_avg >= 7.0
+hit_sleep_stretch: false     # sleep_total_avg >= 7.5
+hit_restorative_target: true # sleep_restorative_avg_pct >= 25
+hit_consistency_target: true # sleep_consistency_stddev <= 1.0
+---
+```
+
+**Target definitions (do not change without updating `weekly-health-trends.md` to match):**
+- `hit_exercise_target`: `exercise_min_total >= 150` (CDC moderate-intensity floor)
+- `hit_exercise_stretch`: `exercise_min_total >= 300` (CDC upper benefit curve)
+- `hit_sleep_target`: `sleep_total_avg >= 7.0` (NSF/AASM consensus floor)
+- `hit_sleep_stretch`: `sleep_total_avg >= 7.5` (sweet spot)
+- `hit_restorative_target`: `sleep_restorative_avg_pct >= 25` (Whoop/Garmin baseline)
+- `hit_consistency_target`: `sleep_consistency_stddev <= 1.0` hour (variance regulates metabolic health more than total)
+
+If a value is null (e.g., `rhr_avg` because HAE doesn't surface daily RHR), use YAML `null`. Don't compute `hit_*_target` for null-valued metrics.
 
 The weekly note must include a Learning Plan section after the Top 3:
 
