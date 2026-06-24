@@ -358,6 +358,32 @@ def _splice_section_body(md: str, section: str, body_lines: list[str]) -> str:
     return "\n".join(spliced) + ("\n" if md.endswith("\n") else "")
 
 
+def _clear_section(md: str, section: str) -> str:
+    """Remove a level-2 ``## <section>`` and its body entirely. No-op if absent.
+
+    Used when a SAVE_DAY field is explicitly cleared (sent as "") — we delete
+    the whole section rather than leave an empty heading behind."""
+    heading = f"## {section}"
+    lines = md.splitlines()
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            start = i
+            continue
+        if start is not None and line.startswith("## ") and not line.startswith("### "):
+            end = i
+            break
+    if start is None:
+        return md
+    # Eat a single trailing blank-line separator the section left behind.
+    while end < len(lines) and lines[end].strip() == "":
+        end += 1
+        break
+    del lines[start:end]
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
 def _set_energy_in_section(md: str, section: str, level: str) -> str:
     """Set ``- Energy: <level>`` inside ``## <section>`` without disturbing the
     rest of the section. Replaces an existing (empty or filled) Energy bullet;
@@ -539,27 +565,35 @@ def apply_save_day(latest_note_md: str, envelope, applied_save_ids,
     # Deleted mark sync (depends on whichever lists were sent).
     md = _sync_deleted_subsection(md, top3 or [], bonus or [], unplanned or [])
 
+    # Habits: only rewrite ### Habits when we have a name map AND it yields rows.
+    # Without active_habits we cannot map ids -> bold labels, so we PRESERVE the
+    # existing section rather than splice an empty one (which would wipe the
+    # checkboxes on an unrelated energy/gratitude save). Codex review [P2].
     habits = changes.get("habits")
-    if habits:
-        md = _splice_subsection(md, "Morning Check-in", "Habits",
-                                _render_habit_lines(habits, active_habits))
+    if habits and active_habits:
+        rows = _render_habit_lines(habits, active_habits)
+        if rows:
+            md = _splice_subsection(md, "Morning Check-in", "Habits", rows)
 
     energy = changes.get("energy") or {}
     for which, section in _SAVE_ENERGY_SECTIONS.items():
         if which in energy and energy[which]:
             md = _set_energy_in_section(md, section, str(energy[which]).lower())
 
-    gratitude = changes.get("gratitude")
-    if gratitude:
-        md = _splice_section_body(md, "Gratitude", [gratitude.rstrip()])
-
-    insight = changes.get("insightReflection")
-    if insight:
-        md = _splice_section_body(md, "Insight Reflection", [insight.rstrip()])
-
-    daily_insight = changes.get("dailyInsight")
-    if daily_insight:
-        md = _splice_section_body(md, "Daily Insight", [daily_insight.rstrip()])
+    # Free-text reflection fields are patched on KEY PRESENCE, not truthiness, so
+    # an explicit clear (the user emptied the field -> "") deletes the section
+    # instead of leaving stale text. A field absent from `changes` is left as-is.
+    # Codex review [P2].
+    for key, section in (("gratitude", "Gratitude"),
+                         ("insightReflection", "Insight Reflection"),
+                         ("dailyInsight", "Daily Insight")):
+        if key not in changes:
+            continue
+        value = (changes.get(key) or "").rstrip()
+        if value:
+            md = _splice_section_body(md, section, [value])
+        else:
+            md = _clear_section(md, section)
 
     transition = changes.get("statusTransition")
     if transition in ("active", "closed", "planning"):

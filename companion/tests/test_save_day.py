@@ -294,6 +294,20 @@ class TestBonusUnplannedPatch:
 # ---------------------------------------------------------------------------
 
 class TestHabitsPatch:
+    def test_habits_preserved_when_name_map_absent(self):
+        # Codex [P2]: a SAVE_DAY that carries `habits` but no active_habits map
+        # must NOT wipe the existing ### Habits checkboxes. (An energy-only save
+        # from the artifact still includes the habits array.)
+        env = _envelope(
+            energy={"morning": "low"},
+            habits=[{"id": "walk", "percent": 1.0}],
+        )
+        r = apply_save_day(BASE_NOTE, env, set())  # no active_habits passed
+        # The original habit rows survive untouched (we couldn't safely rewrite them).
+        assert "**Walk**" in r["note_md"]
+        assert "**Read 15m**" in r["note_md"]
+        assert "**Workout**" in r["note_md"]
+
     def test_completed_habit_checked(self):
         env = _envelope(habits=[
             {"id": "walk", "percent": 1.0},
@@ -361,6 +375,26 @@ class TestReflectionPatch:
         r = apply_save_day(BASE_NOTE, env, set())
         # Don't author empty sections.
         assert "## Insight Reflection" not in r["note_md"]
+
+    def test_explicit_clear_removes_existing_gratitude(self):
+        # Codex [P2]: a user who CLEARS an existing Gratitude field sends "".
+        # That deletion must be persisted, not silently ignored. Key presence,
+        # not truthiness, decides whether to apply the field.
+        noted = BASE_NOTE + "\n## Gratitude\n\nGrateful for the team.\n"
+        env = _envelope(gratitude="")
+        env["baseHash"] = compute_note_hash(noted)
+        r = apply_save_day(noted, env, set())
+        assert "Grateful for the team." not in r["note_md"]
+
+    def test_field_absent_from_changes_preserves_section(self):
+        # The opposite case: if the artifact didn't send the field at all (key
+        # absent), the existing section must be preserved — only sent fields patch.
+        noted = BASE_NOTE + "\n## Gratitude\n\nGrateful for the team.\n"
+        env = _envelope()
+        del env["changes"]["gratitude"]
+        env["baseHash"] = compute_note_hash(noted)
+        r = apply_save_day(noted, env, set())
+        assert "Grateful for the team." in r["note_md"]
 
 
 # ---------------------------------------------------------------------------
