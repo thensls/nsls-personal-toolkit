@@ -150,3 +150,28 @@ def test_taskrow_has_disposition_controls():
     src = JSX.read_text()
     assert "toggleDisposition" in src
     assert "onItemChange" in src
+
+
+# ---------------------------------------------------------------------------
+# Bundled-copy drift guard (Phase 3): the cowork skill ZIPs must ship the
+# artifact, so each skill folder carries a copy of cowork-dashboard.jsx. Cowork
+# loads skills from an install-time snapshot — it can't reach cowork-artifact/.
+# These copies must stay byte-identical to the canonical source or a tested fix
+# to the artifact would silently not ship to cowork.
+# ---------------------------------------------------------------------------
+
+_SKILLS = Path(__file__).resolve().parents[2] / "skills"
+_BUNDLED = (
+    _SKILLS / "open-day" / "cowork-dashboard.jsx",
+    _SKILLS / "close-day" / "cowork-dashboard.jsx",
+)
+
+
+def test_bundled_artifact_copies_match_source():
+    canonical = JSX.read_text()
+    for copy in _BUNDLED:
+        assert copy.exists(), f"missing bundled artifact: {copy}"
+        assert copy.read_text() == canonical, (
+            f"{copy} has drifted from cowork-artifact/cowork-dashboard.jsx — "
+            "re-copy it (the cowork skill ZIP ships this file)."
+        )

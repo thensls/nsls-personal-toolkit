@@ -848,7 +848,7 @@ Write the file to `<mount-root>/01-daily/<date>.md` via the MCP filesystem (a **
 
 ### C3. Render the cowork-dashboard artifact (cowork equivalent of Step 8)
 
-Render the `cowork-artifact/cowork-dashboard.jsx` artifact, seeded with a state blob you build by parsing the note you just wrote. The blob is the JSON contract in `docs/specs/2026-06-21-cowork-dashboard-2.1-design.md` ("JSON state contract"). Build it like this:
+Render the **cowork-dashboard** artifact (its source is bundled with this skill as `cowork-dashboard.jsx` in the skill folder; in the dev repo it lives at `cowork-artifact/cowork-dashboard.jsx`). Seed it with a state blob you build by parsing the note you just wrote. The blob is the JSON contract in `docs/specs/2026-06-21-cowork-dashboard-2.1-design.md` ("JSON state contract"). Build it like this:
 
 - `mode`: **you resolve this in-context and pass it in** — the artifact never re-derives it. For open-day this is **`coach-morning`** (status `planning`). `phase: "planning"`.
 - `date`, `todayPretty`, `notePath`: from C0.
