@@ -797,6 +797,84 @@ Example format (customize per builder):
 - **Tuesday:** "Check standing meeting agenda. Finalize prep."
 - **Friday:** "Run /close-week. Review weekly metrics."
 
+## Cowork (Claude Desktop) surface
+
+Reached when Surface Selection resolves to **cowork** (the builder typed `open day cowork` / `-c`, or `companion_surface: cowork`). On this surface there is **no Bash, no local server, and no Python runtime** — *you* (Claude, in the chat) are the runtime. You collect data through MCP connectors and the MCP filesystem mount, write the note directly, render the `cowork-dashboard` artifact, and on the artifact's `SAVE_DAY` message you write the builder's plan back.
+
+This replaces the CLI Steps 1, 2, 5, 6, 8 with surface-appropriate equivalents. Steps 3/4/4a (chat-based priority selection) are **skipped** — the artifact does priority selection, exactly as the CLI companion does. The data model, section names, and `status` contract are **identical** to the CLI path; only the *collection* and *handoff* mechanics differ.
+
+### C0. Date and path resolution are surface-neutral (3.2a — never shell out)
+
+The CLI path uses `date +%Y-%m-%d` and `$OBSIDIAN_VAULT_PATH`/`$HOME`. **None of those exist here.** On the cowork surface:
+
+- **Today's date** comes from **your model/session context** (the current date you were given), formatted `YYYY-MM-DD`. Do not try to run `date`.
+- **The vault root** is the **MCP filesystem mount root** the builder granted (cowork mounts one folder — that folder is the vault). Build note paths relative to it: `<mount-root>/01-daily/<date>.md`, `<mount-root>/30-habits/habits.md`, `<mount-root>/50-reference/builder-profile.md`, etc. Do not reference `$OBSIDIAN_VAULT_PATH`.
+- **Timezone** still comes from `builder-profile.md` (`timezone`), default `America/Denver` — read it via the filesystem mount.
+
+If the filesystem mount isn't present, tell the builder once: *"I don't have your vault mounted — in cowork, add your Obsidian folder under the folder/file access settings, then say 'open day cowork' again."* Then stop.
+
+### C1. Data collection — per-source cowork coverage (3.2)
+
+Data collection is **re-implemented for this surface**, not shared with the CLI. Below is every open-day source and how it's gathered in cowork. **A source with no cowork path is explicitly marked DROPPED — never silently omitted.** When a source is dropped or degraded, say so in the one-line-per-source summary (e.g. "Familiar: not available in cowork — skipped").
+
+| Open-day source (CLI step) | Cowork path | Status |
+|---|---|---|
+| Today's meetings (2a) | `Google_Calendar` MCP `list_events` | **MCP ✓** |
+| Asana due/overdue (2b) | `Asana` MCP `get_my_tasks` + `search_tasks` | **MCP ✓** |
+| Yesterday's carry-overs (2c) | Filesystem read of `01-daily/<yesterday>.md` via the mount | **FS ✓** |
+| This week's plan (2d) | Filesystem read of `02-weekly/<YYYY-Www>.md` | **FS ✓** |
+| AI suggestions from close-day (2e) | Filesystem read of today's note's `### AI Suggested:` sections | **FS ✓** |
+| Stack rank (2f) | Filesystem read of `10-strategy/stack-rank/` | **FS ✓** (strategy layer only) |
+| Free-time slots (2g) | `Google_Calendar` MCP `find_my_free_time` if present; else derive from the events you already pulled | **MCP ✓ / derive** |
+| Learning inbox (2h) | `Slack` MCP self-DM scrape (if `learning_capture_method: slack`) + filesystem read of `40-learning/` | **MCP ✓ / FS ✓** |
+| Open PRs (2i) | GitHub MCP if connected; otherwise **DROPPED** (no `gh` CLI in cowork) | **degrades — say so** |
+| SLT Meeting Actions (2j) | `Airtable` MCP, gated on `slt_member: true` (same hard gate) | **MCP ✓ (gated)** |
+| Overdue / free-time math | Re-derive in-chat from Calendar+Asana — no bash | **derive** |
+
+**Familiar screen stills:** open-day doesn't read Familiar (that's close-day). Nothing to drop here.
+
+**Output discipline still applies:** present **one condensed summary line per source**, not raw tool dumps. The cowork chat shows tool calls, so keep them tight and don't paste large JSON. Example: *"3 meetings · 6 open Asana · 2 carry-overs · AI suggestions seeded · PRs: GitHub MCP not connected, skipped."*
+
+**Hard gate reminder (SLT / Airtable):** the `slt_member` gate from Step 2j applies identically. Read `builder-profile.md` from the mount first; if not `slt_member: true`, skip the Airtable step entirely — do not touch `AIRTABLE_API_KEY` (and in cowork, prefer the `Airtable` MCP connector over any raw-key path).
+
+### C2. Write the planning note (cowork equivalent of Step 6)
+
+Same content rules as Step 6 — **empty Top 3/Bonus slots** (`1. [ ]` … the artifact fills them), an `### AI Suggested: Top 3` + `### AI Suggested: Delegate These` section (real-from-close-day → carry-overs → generated, same priority order as the CLI path), Habits from `30-habits/habits.md`, Calendar, and the standard template — and the same `status` rule:
+
+- **Creating from template:** write `status: planning`.
+- **Note already exists** with a later status (`active`/`closed`): **preserve it** — don't reset to `planning`.
+
+Write the file to `<mount-root>/01-daily/<date>.md` via the MCP filesystem (a **whole-file write** — cowork gates `rm`, so never delete-then-write).
+
+### C3. Render the cowork-dashboard artifact (cowork equivalent of Step 8)
+
+Render the `cowork-artifact/cowork-dashboard.jsx` artifact, seeded with a state blob you build by parsing the note you just wrote. The blob is the JSON contract in `docs/specs/2026-06-21-cowork-dashboard-2.1-design.md` ("JSON state contract"). Build it like this:
+
+- `mode`: **you resolve this in-context and pass it in** — the artifact never re-derives it. For open-day this is **`coach-morning`** (status `planning`). `phase: "planning"`.
+- `date`, `todayPretty`, `notePath`: from C0.
+- **`baseHash`: the SAME hash the save handler will recompute — a 16-hex-char SHA-256 prefix of the note file's exact UTF-8 text.** This is the conflict-detection key (`companion/parsers.py:compute_note_hash` is the canonical algorithm). Compute it over the note bytes as written; the artifact only echoes it back.
+- `top3` (positional, exactly 3 slots, empty slots kept), `bonus`, `unplanned`, `habits` (with `percent`/`streakDays`/`status` from `30-habits/log.md` — streak math per `companion/streak.py`), `energy` (morning from the note if present, else null; evening null), `gratitude`/`dailyInsight`/`insightReflection` empty at plan time.
+
+Then hand off and **stop**, exactly like the CLI does — one line, no coaching:
+
+> Your plan is in the dashboard above. Pick your Top 3, review the suggestions, then click **Complete 'Open Day'**. I'll save it to your vault when you do.
+
+Do not poll, summarize, or coach. Wait for the artifact's `SAVE_DAY` message.
+
+### C4. The `SAVE_DAY` handler (the heart of 3.2 — what you do when the artifact replies)
+
+When the builder clicks the button, the artifact calls `sendPrompt("SAVE_DAY " + JSON.stringify(envelope))`, which arrives as a **visible user message** beginning `SAVE_DAY {…}`. Treat that message as a save instruction, not conversation. Apply **exactly** the algorithm in `companion/parsers.py:apply_save_day` — that function is the executable spec; follow its behavior step for step:
+
+1. **Parse** the JSON after `SAVE_DAY `. **If it isn't valid JSON, or `type` ≠ `"SAVE_DAY"`, or `schemaVersion` ≠ 1, or `changes`/`saveId` is missing → refuse to write.** Tell the builder plainly (their edits are still safe in the dashboard); do not write a partial note.
+2. **Idempotency:** if you already applied this `saveId` this session, do nothing — just acknowledge. (Each save is a real chat turn; a repeat is a no-op.)
+3. **Re-read the LATEST note from disk** via the mount (NOT the artifact's seeded snapshot). Compute its hash (same `compute_note_hash`).
+4. **If the latest hash == the envelope's `baseHash`:** apply `changes` as a **field-level patch** and whole-file write.
+5. **If they differ** (something — close-day, a manual edit — touched the note since): still apply the field-level patch **onto the latest content**, preserving every section the artifact didn't touch, and tell the builder the note had changed and you merged. **Never write the artifact's whole stale snapshot over the file.**
+
+**What the patch rewrites** (and ONLY these — everything else in the note is preserved verbatim): `### My Top 3` (positional, with `<!--p:NN-->` progress markers and `[x]` for done; deleted items keep their row and are also listed under `### Deleted`), `### Bonus`, `### Unplanned`, `### Habits` checkboxes (`[x]`=1.0, `[/]`=0.5, `[ ]`=0.0; bold label must match the habit `name` verbatim), morning energy in `## Morning Check-in` / evening energy in `## End of Day` (kept distinct), `## Gratitude`, `## Daily Insight`, `## Insight Reflection`, and the `status` frontmatter from `statusTransition` (lock-in → `active`). Write the whole file back (replace in place, never delete).
+
+For open-day's lock-in the envelope carries `statusTransition: "active"` — so this write also flips `status: planning → active`. After writing, print the same brief locked-in summary the CLI prints (Top 3 + Bonus, under 12 lines, no coaching).
+
 ## Edge Cases
 
 - **Weekend:** Still generate if the builder asks, but lean toward vitality and growth blocks over work. Skip meeting prep and Asana overdue.

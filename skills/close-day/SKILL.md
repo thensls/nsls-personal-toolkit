@@ -963,6 +963,59 @@ Report: "Daily note written to `01-daily/YYYY-MM-DD.md`. Seeded tomorrow's note 
 
 ---
 
+## Cowork (Claude Desktop) surface
+
+Reached when Surface Selection (Step 0.1) resolves to **cowork**. As in open-day, on this surface there is **no Bash, no local server, no Python runtime** — you are the runtime: collect via MCP + the filesystem mount, render the artifact's **evening/closing flow**, and on the artifact's `SAVE_DAY` close message write the reflection, reconcile habits, set `status: closed`, and seed tomorrow. The data model and `status` contract are identical to the CLI path; only collection and handoff differ. This replaces the CLI Step 0.5 and the Bash-shaped parts of Step 1; the synthesis steps (3, 4b/4c, 7, 8) still run as written, using MCP/filesystem for any writes.
+
+### CC0. Surface-neutral date/path (same as open-day C0)
+
+Date from your **session context** (`YYYY-MM-DD`), not `date`. Vault root = the **MCP filesystem mount root**, not `$OBSIDIAN_VAULT_PATH`/`$HOME`. Build paths relative to the mount (`<mount-root>/01-daily/<date>.md`, `<mount-root>/30-habits/log.md`, …). Timezone from `builder-profile.md`. If no mount, tell the builder once to mount the vault, then stop.
+
+### CC1. Data collection — per-source cowork coverage (close-day's seven sources)
+
+Re-implemented for this surface. **Any source with no cowork path is marked DROPPED, never silently omitted** — say so in the summary.
+
+| Close-day source (CLI step) | Cowork path | Status |
+|---|---|---|
+| Google Calendar (1a) | `Google_Calendar` MCP `list_events` | **MCP ✓** |
+| Familiar screen stills (1b) | Needs Bash glob over `~/familiar/stills-markdown` — **no Bash in cowork** | **DROPPED — say "no screen-time data in cowork"** |
+| Fathom (1c) | `Fathom` MCP `list_meetings` (+ summary/transcript) | **MCP ✓** |
+| Sent email (1d) | `Gmail` MCP `search_messages` (`from:me …`) | **MCP ✓** |
+| Sent Slack (1e) | `Slack` MCP `search_public_and_private` (`from:<@$SLACK_USER_ID>`) | **MCP ✓** |
+| Asana (1g) | `Asana` MCP `get_my_tasks` + `search_tasks` | **MCP ✓** |
+| Claude session context (1f) | This conversation's history (you have it) | **✓** |
+
+**Consequences of the Familiar drop (be explicit, don't fake it):** Time Allocation / Time Distribution / active-work-hours and Familiar-based Task Evidence (Step 1h) **cannot be computed in cowork.** In the daily note, write *"Screen-time data unavailable on this surface"* in place of Time Allocation rather than inventing numbers. Task Evidence Detection falls back to the non-Familiar signals only (Slack/email/Fathom/Claude session). The plan-vs-reality read still works — it comes from the note's Top 3 progress, not Familiar.
+
+Output discipline: one tight summary line per source; don't paste large tool JSON into chat.
+
+**SLT / Airtable hard gate (Step 7d):** unchanged — read `builder-profile.md` from the mount; only if `slt_member: true` touch the SLT base, via the `Airtable` MCP connector.
+
+### CC2. Render the evening/closing flow in the artifact
+
+Re-read today's note from the mount and build the state blob (same JSON contract as open-day C3). Differences for close:
+
+- The closing entry is the **Close Day → Evening Coach Cards** flow. Seed `mode` per the note's `status`: an `active` note opens the **Command Center** with `phase: "closing"` (the review pass — mark final progress, add unplanned wins), and its **Continue to close →** moves into the evening cards (Insight + Gratitude + evening energy + Done). If the builder is closing a note that's already had its reflection, seed `mode: "coach-evening"` directly.
+- **`baseHash`**: same as open-day — a 16-hex SHA-256 prefix of the note's exact bytes (`compute_note_hash`); the artifact echoes it back for conflict detection.
+- Compute habit `percent`/`streakDays`/`status` from `30-habits/log.md` (streak math = `companion/streak.py`).
+
+Hand off and **stop**:
+
+> Go mark off your day in the dashboard above — set final progress, add any unplanned wins, tick habits, jot gratitude/insight, then click **Done — close the day**. I'll write it up and close the day when you do.
+
+Wait for the artifact's `SAVE_DAY` close message. Do not treat background hook notifications as the builder's "done."
+
+### CC3. The `SAVE_DAY` close handler (3.3) + habit reconciliation parity (3.4)
+
+The artifact sends `SAVE_DAY {…}` with `statusTransition: "closed"`. Apply the **same `apply_save_day` algorithm** as open-day C4 (validate → idempotent on `saveId` → re-read latest → hash check → field-level patch onto latest, preserving untouched sections → whole-file write, never delete). The close payload additionally carries `gratitude`, `insightReflection`, and evening `energy`, which the patch writes into `## Gratitude`, `## Insight Reflection`, and `## End of Day` respectively, and flips `status → closed`.
+
+**Then run the close-day synthesis on top of the saved note** (these are NOT in the artifact's payload — you author them, same as the CLI path, writing via the mount):
+
+1. **Habit reconciliation into `log.md` (3.4 — parity with the CLI path).** This must produce the **same `log.md` row** the CLI/web companion's Step 3.5 produces. Apply the identical rule (`companion/parsers.py` is the reference): read today's existing `log.md` row (`log_ticks`), read the daily-note `### Habits` checkboxes (`note_ticks`: `[x]`=1.0, `[/]`/`[~]`=0.5, `[ ]`=0.0), and write back **the MAX of the two per habit**, idempotent on the date (replace today's row if present). Format: `YYYY-MM-DD · habit_id:percent · habit_id:percent` (one decimal). MAX-merge means an artifact tick never gets undone by close-day, and vice-versa — exactly the CLI's two-writer resolution. Then re-sync the note's `### Habits` checkboxes to the merged result.
+2. **Insight Reflection** (Step 3), **Coaching / Knowledge-graph** check-ins (4b/4c), **carry-over seeding** of any <100% Top 3 item not already under `## Carrying Over` (Step 0.6), **Asana / SLT sync** (Step 7), **Brain Dump routing** (7e), and **seed tomorrow's note** (Step 8) — all as written, with writes going through the filesystem mount (whole-file, never delete) and API calls through MCP connectors.
+
+The artifact owns the *capture* (progress, dispositions, habits ticked, gratitude, insight, energy); close-day owns the *synthesis* (reflection, time read where available, Asana/SLT write-back, tomorrow's seed). The `SAVE_DAY` write happens first, then synthesis layers on top of the now-closed note.
+
 ## Performance Notes
 
 - **Familiar scanning is fast** — grepping frontmatter across 1000+ files takes < 2 seconds. Do NOT read OCR content unless the user asks for specific recall.
