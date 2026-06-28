@@ -18,6 +18,7 @@ from companion.parsers import (
 )
 from companion.safe_write import safe_modify
 from companion.streak import DayResult, compute_concern, status_for, streak_days
+from companion.testmode import is_test_vault
 from companion.week_parsers import (
     parse_quick_notes,
     parse_stack_rank_table,
@@ -949,6 +950,16 @@ def _detect_week_state(weekly_md: str) -> str:
 def create_app(vault_path: str) -> Flask:
     app = Flask(__name__)
     app.config["VAULT_PATH"] = Path(vault_path)
+    # TEST mode is derived from the vault being served (a directory named
+    # `companion-test-vault`), never passed in separately — so the TEST marker
+    # is impossible to spoof off and can never lie about which data is real.
+    app.config["TEST_MODE"] = is_test_vault(vault_path)
+
+    @app.context_processor
+    def _inject_test_mode():
+        # Makes `test_mode` available to every template (base.html's TEST bar,
+        # day.html's TEST flag) without threading it through each render call.
+        return {"test_mode": app.config["TEST_MODE"]}
     # Pick up template edits on the next request without a server restart. The
     # server runs with debug=off (no auto-reloader), so without this a template
     # change is invisible until the process is restarted — the recurring "stale

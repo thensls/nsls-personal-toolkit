@@ -5,7 +5,8 @@ description: >-
   Fathom meeting summaries, sent email, sent Slack messages, and Claude session
   context to generate a daily note and update project session logs. Trigger
   phrases: close day, end of day, daily summary, wrap up, what did I do today,
-  close out the day, daily close, eod
+  close out the day, daily close, eod, close day -t. Add `-t` (`close day -t`) to
+  run against a throwaway test vault so real daily notes are untouched.
 ---
 
 # Daily Close
@@ -53,6 +54,14 @@ If the user invokes with `-v` (e.g., `/close-day -v`), full verbose output is fi
 ### Step 0: Determine the date
 
 Default to today (`date +%Y-%m-%d`). User can override: `/close-day 2026-03-21`.
+
+**Test-mode flag (`-t`):** if the invocation includes `-t` (e.g. `close day -t`), run the **entire skill against a throwaway test vault** so your real daily notes are never touched. The whole system keys off one variable, `$OBSIDIAN_VAULT_PATH` — so test mode is just: **before anything else, point that variable at the test vault.** Resolve the companion binary (the `"$TC"` lookup in Step 0.5) and run:
+
+```bash
+export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
+```
+
+`test-vault` creates + seeds the vault (`~/.claude/local-plugins/nsls-personal-toolkit/companion-test-vault/`, gitignored) and prints its path; it never overwrites existing notes. Every downstream step then reads and writes the test vault, and the companion shows a gold **TEST** banner. Pair with `open day -t` (plan into the test vault first) and `reset-day -t` (clear it).
 
 The close can run with the **CLI companion** (if it's already running) or in **chat**. `visual_mode` decides — on by default, `off` to stay in chat. The companion only works on a CLI surface where Bash can reach a running local server; on any surface that can't, Step 0.5's graceful fallback closes the day in chat.
 

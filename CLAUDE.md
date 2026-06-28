@@ -23,7 +23,7 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 | `/log` | Log session progress to project notes |
 | `/familiar` | Recall past screen activity and work context |
 | `/person-intelligence` | Build relationship profiles, track 1:1 context |
-| `/reset-day` | Start today over — clears today's note so `/open-day` rebuilds it from your real data (`--close-only` keeps the morning plan) |
+| `/reset-day` | Start today over — clears today's note so `/open-day` rebuilds it from your real data (`--close-only` keeps the morning plan; `-t` wipes the throwaway test vault only) |
 | `/unblock` | Fix the VS Code "permission prompt on every edit" trap when editing the toolkit's own files under `~/.claude/` — sets up a git worktree (or clone + symlink) outside `~/.claude/` |
 | `/codex-review` | Get an independent review from OpenAI Codex on code, a design/spec, a plan, or the branch's changes — runs Codex headless + read-only and relays its findings |
 | `obsidian-setup` | Set up an Obsidian knowledge base |
@@ -35,6 +35,8 @@ The companion runs at `http://localhost:7777`. It is optional — install with `
 The binary is installed into a venv and is **not on PATH** in a fresh shell. The venv binary dir is OS-specific: `companion/.venv/bin/toolkit-companion` on macOS/Linux, `companion/.venv/Scripts/toolkit-companion.exe` on Windows. To run it: invoke that full path, activate the venv first, or (Unix) symlink it to `~/.local/bin/`. Skills resolve the correct path automatically — see open-day Step 8 for the platform-aware lookup. Windows users: see `docs/windows-setup.md`.
 
 Habits live in `30-habits/habits.md`; daily ticks accumulate in `30-habits/log.md` (append-only). The streak rule is documented in `skills/close-day/SKILL.md` and implemented in `companion/streak.py`. Both must stay in sync.
+
+**Test mode (`-t`).** `open day -t` / `close day -t` / `reset day -t` run against a throwaway, gitignored test vault (`companion-test-vault/`) so trying the companion never touches real daily notes. It's a pure `$OBSIDIAN_VAULT_PATH` redirect: `toolkit-companion test-vault` creates + seeds it and prints its path; the server flips a gold **TEST** banner whenever the vault it serves is named `companion-test-vault`; `reset day -t` calls `toolkit-companion assert-test-vault` and refuses to delete anything outside it. See `companion/testmode.py`.
 
 ## Handling Secrets (hard rule for Claude)
 

@@ -5,8 +5,9 @@ description: >-
   from your real data (real carry-overs and any real AI suggestions a prior
   close-day wrote). Works whether or not close-day has run. Use when you opened
   the day and want to redo it, or opened and closed it and want to reset both.
+  Add `-t` (`reset day -t`) to wipe the throwaway test vault only, never real data.
   Trigger phrases: reset day, redo day, reset my day, redo today, start the day
-  over, reset today.
+  over, reset today, reset day -t.
 ---
 
 # Reset Day
@@ -37,10 +38,40 @@ itself injects nothing.
 - **Prior days' notes** — never (your real history is the seed source).
 - **Connected accounts** — read-only; nothing is written to Calendar/Asana here.
 
+## Test mode (`-t`) — wipes the test vault only
+
+If the invocation includes `-t` (e.g. `reset-day -t`), reset the **throwaway test
+vault** instead of your real vault — the `companion-test-vault` that `open day -t` /
+`close day -t` write to. This is just an `$OBSIDIAN_VAULT_PATH` redirect, with a
+hard safety guard so it can **never** delete real data.
+
+**Before any read or delete**, resolve the companion binary (same platform-aware
+lookup open-day Step 8 uses), point the vault at the test vault, and *assert* it:
+
+```bash
+VENV="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv"
+TC="$VENV/bin/toolkit-companion"
+[ -x "$TC" ] || TC="$VENV/Scripts/toolkit-companion.exe"
+[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
+"$TC" assert-test-vault "$OBSIDIAN_VAULT_PATH" || { echo "ABORT: not a test vault"; exit 1; }
+```
+
+`assert-test-vault` exits non-zero unless the resolved path is a directory named
+`companion-test-vault`. **If it fails, stop — delete nothing.** Only after it passes
+do you run the delete steps below (which already key off `$OBSIDIAN_VAULT_PATH`).
+
+**Without `-t`, never touch the test vault.** A plain `reset-day` operates on your
+real vault. If the resolved `$OBSIDIAN_VAULT_PATH` is itself named
+`companion-test-vault` (e.g. a stray override left in the shell from an earlier
+`open day -t`) and `-t` was **not** passed, stop and ask the builder to pass `-t`
+explicitly rather than silently resetting the sandbox.
+
 ## Steps
 
 1. **Determine the target date.** Default today (`date +%Y-%m-%d`). User may pass
-   one: `/reset-day 2026-06-13`. Parse `--close-only` if present.
+   one: `/reset-day 2026-06-13`. Parse `--close-only` and `-t` if present (handle
+   `-t` first, per **Test mode** above, before reading any note).
 
 2. **Read today's note** at `$OBSIDIAN_VAULT_PATH/01-daily/<date>.md`. Detect state:
    - No file → nothing to clear; skip to step 5 (still handle the empty-vault guard).

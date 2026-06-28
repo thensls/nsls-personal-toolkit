@@ -6,3 +6,6 @@ __pycache__/
 .toolkit-state.json
 .companion.pid
 .superpowers/
+
+# Throwaway vault for `open day -t` / `close day -t` — never real data.
+companion-test-vault/

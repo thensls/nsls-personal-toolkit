@@ -11,8 +11,9 @@ description: >-
   also handles "open day -v" / "open day visual off" (one-shot skip of the
   companion this run), "open day -v forever" / "open day visual off forever"
   (persistently disable it), "open day visual on" (force/persist on), and
-  "open day -r" (run /reset-day first, then open). Requires Google Calendar and
-  Asana access.
+  "open day -r" (run /reset-day first, then open), and "open day -t" (run against
+  a throwaway test vault so real daily notes are untouched). Requires Google
+  Calendar and Asana access.
 ---
 
 # Open Day
@@ -32,6 +33,14 @@ Before doing anything else, parse the builder's invocation phrase to choose a mo
 | `open day visual on forever` | Set `visual_mode: on` in builder-profile.md (persistent) — same as the default, but explicit |
 
 **Reset-first flag (`-r`):** if the invocation includes `-r` (e.g. `open day -r`, `open day -v -r`), **run `/reset-day` (full reset) FIRST**, before Step 1 — clear today's note so open-day rebuilds it from scratch (real carry-overs / close-day seeds, or generated suggestions if there's nothing real). `-r` is independent of `-v`: `-r` alone means "reset, then open with the companion" (the default); `-v -r` means "reset, then open CLI/chat only". Do the reset silently (one-line confirmation at most), then continue with open-day as normal. This is the fast "redo my day cleanly" path used in testing and when a morning plan went sideways.
+
+**Test-mode flag (`-t`):** if the invocation includes `-t` (e.g. `open day -t`, `open day -t -v`), run the **entire skill against a throwaway test vault** so your real daily notes are never touched — for trying the companion or demoing the flow. The whole system keys off one variable, `$OBSIDIAN_VAULT_PATH`, so test mode is just: **before Step 1, point that variable at the test vault.** Resolve the companion binary (the platform-aware lookup in Step 8) and run:
+
+```bash
+export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
+```
+
+`test-vault` creates + seeds the vault (`~/.claude/local-plugins/nsls-personal-toolkit/companion-test-vault/`, gitignored) on first use and prints its path; it never overwrites existing notes. Every downstream step — data collection, writing the daily note, and the Step 8 `serve` — then targets the test vault automatically. The companion shows a gold **TEST** banner so it's unmistakable. (Calendar/Asana reads are still your real, read-only data; only what gets *written* is redirected.) `-t` composes with `-v` and `-r`. To clear the test day and start over, run `reset-day -t`.
 
 There are two ways the ritual can run: with the **CLI companion** (the local Flask server, the default) or in **chat** (the fallback). `visual_mode` decides between them — on by default, `off` to stay in chat. The companion only runs on a CLI surface (Claude Code) where Bash can start a local server; on any surface that can't, the graceful fallback below finishes the ritual in chat.
 

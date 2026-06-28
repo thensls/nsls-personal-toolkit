@@ -72,6 +72,9 @@ def serve(vault, port, no_open):
         sys.exit(1)
     for line in ensure_vault_structure(vault_path):
         click.echo(f"  {line}")
+    from companion.testmode import is_test_vault
+    if is_test_vault(vault_path):
+        click.echo("  TEST vault — practice data; your real day is untouched.")
     port = port or _find_free_port()
     host = "127.0.0.1"
 
@@ -98,6 +101,36 @@ def serve(vault, port, no_open):
             PID_FILE.unlink()
         except FileNotFoundError:
             pass
+
+
+@main.command("test-vault")
+@click.option("--no-seed", is_flag=True, help="Create the vault structure but don't seed a sample day.")
+def test_vault(no_seed):
+    """Ensure the throwaway test vault exists (seeded) and print its path.
+
+    Skills use this in `-t` mode: `export OBSIDIAN_VAULT_PATH=$(toolkit-companion
+    test-vault)`. Idempotent — never overwrites an existing note.
+    """
+    from companion.testmode import ensure_test_vault
+    vault = ensure_test_vault(seed_today=not no_seed)
+    click.echo(str(vault))
+
+
+@main.command("assert-test-vault")
+@click.argument("path")
+def assert_test_vault_cmd(path):
+    """Exit 0 only if PATH is the test vault; non-zero otherwise.
+
+    reset-day `-t` calls this before deleting, so a stray OBSIDIAN_VAULT_PATH
+    pointing at real data can never be wiped under test mode.
+    """
+    from companion.testmode import assert_test_vault
+    try:
+        resolved = assert_test_vault(path)
+    except ValueError as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(1)
+    click.echo(str(resolved))
 
 
 @main.command()
