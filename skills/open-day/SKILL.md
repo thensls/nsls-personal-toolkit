@@ -754,9 +754,9 @@ When you don't skip:
    - Linux: `xdg-open <url-from-status>`
    - Windows: `start <url-from-status>`
 
-3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now:
+3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now. **Always give a clickable link**: present the URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) as a Markdown link, never a bare IP.
 
-   > A tab opened at `<url>`. Pick your Top 3, add anything else to the Bonus list, then click **Done — show Command Center** when you're ready.
+   > A tab opened at http://localhost:<port> — open it. Pick your Top 3, add anything else to the Bonus list, then click **Done — show Command Center** when you're ready.
    >
    > When you're done, say **done** here and I'll print a one-line summary. Or just go straight into your day — the daily note is being saved as you type. Type `open day visual off` if you'd rather skip the visual next time.
 

@@ -82,13 +82,15 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 
 **Only run this step if the date from Step 0 is today** (`$(date +%Y-%m-%d)`). The companion always shows today's data — if closing a past date, the companion would show the wrong day. Skip silently for past dates.
 
-If `visual_mode` is on AND `"$TC"` resolves AND `"$TC" status` reports running, parse the address from the status output:
+If `visual_mode` is on AND `"$TC"` resolves AND `"$TC" status` reports running, parse the address from the status output.
+
+**Always give the builder a clickable link.** Present the companion URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) formatted as a Markdown link, every time you mention it — never bare text or a raw IP. Closing the day without a link to click is a bug.
 
 1. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If the file doesn't exist, skip this step — there's nothing to show.
 
 2. **Open the companion's Command Center in closing mode** (`open "<url-from-status>/?closing=1"` on macOS). The `?closing=1` flag tells the Command Center this is the end-of-day pass: it swaps the usual "come back any time" banner for a bottom line that reads *"Good job! Return to the terminal and type `done` to close your day."* Tell the builder to go mark their progress:
 
-   > Your day's open at `<url>/?closing=1`. If you still need to mark anything off — progress on your Top 3 and Bonus, unplanned wins, habits, gratitude/insight, end-of-day energy — do it there now.
+   > Your day's open at http://localhost:<port>/?closing=1 — open it. If you still need to mark anything off — progress on your Top 3 and Bonus, unplanned wins, habits, gratitude/insight, end-of-day energy — do it there now.
    >
    > **If you've already updated it, just say `done`.** Otherwise, mark it up and then say `done`.
 
