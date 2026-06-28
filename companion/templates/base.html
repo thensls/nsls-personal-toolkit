@@ -54,15 +54,6 @@
         }
       });
 
-      function isMainDirty() {
-        // Any textarea inside <main> whose current value differs from its initial
-        // value is "dirty" and we should warn before clobbering it.
-        for (const t of document.querySelectorAll("main textarea")) {
-          if (t.value !== (t.defaultValue || "")) return true;
-        }
-        return false;
-      }
-
       function reloadMain() {
         if (Date.now() - lastReload < RELOAD_DEBOUNCE_MS) return;
         // Skip SSE reload when any interactive wizard is active — HTMX
@@ -74,13 +65,18 @@
         // triggers is from OUR write, not an external change.
         if (Date.now() < suppressNextReload) return;
         lastReload = Date.now();
-        if (isMainDirty()) {
-          const ok = confirm(
-            "The CLI updated this file. Reload and lose the edits you're typing?\n\n" +
-            "OK = reload\nCancel = keep my edits (you can refresh manually later)"
-          );
-          if (!ok) return;
-        }
+
+        // Never make the user lose what they're typing, and never show a scary
+        // confirm. Snapshot any in-progress (unsaved) textarea text keyed by its
+        // section, reload <main>, then restore it and nudge htmx to persist.
+        // (The fields also auto-save on their own debounce.)
+        const dirty = {};
+        document.querySelectorAll("main textarea").forEach((t, i) => {
+          if (t.value !== (t.defaultValue || "")) {
+            dirty[t.getAttribute("hx-vals") || t.name || ("ta" + i)] = t.value;
+          }
+        });
+
         // Extract only <main> from the response and replace the entire
         // <main> element. Using innerHTML here would shove the full page
         // (including <nav>) into main, producing a duplicated top menu.
@@ -88,6 +84,15 @@
           target: "main",
           select: "main",
           swap: "outerHTML",
+        }).then(function () {
+          if (!Object.keys(dirty).length) return;
+          document.querySelectorAll("main textarea").forEach((t, i) => {
+            const key = t.getAttribute("hx-vals") || t.name || ("ta" + i);
+            if (dirty[key] !== undefined && t.value !== dirty[key]) {
+              t.value = dirty[key];
+              t.dispatchEvent(new Event("input", { bubbles: true }));
+            }
+          });
         });
       }
 
