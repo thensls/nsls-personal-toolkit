@@ -11,16 +11,7 @@
 <h1 class="text-2xl nsls-h1 mb-1">Today — {{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h1>
 <p class="text-sm nsls-subtle mb-4">Command Center</p>
 
-{% if not closing %}
-  {% if day_status == 'active' %}
-  {% include "_components/day_open_banner.html" %}
-  {% else %}
-  <div class="nsls-banner">
-    <span class="font-medium">Nice — your plan's set.</span> Return to the terminal and
-    type <code>done</code> to lock it in. You can come back here any time to mark progress.
-  </div>
-  {% endif %}
-{% endif %}
+{% include "_components/command_banner.html" %}
 
 <div class="space-y-2 mb-6">
   {% with when='morning', label='Energy — beginning of day', value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
@@ -87,13 +78,7 @@
   {% with when='evening', label='How did you end the day?', value=evening_energy %}{% include "_components/energy_row.html" %}{% endwith %}
 </section>
 
-{% if closing %}
-<div class="text-center text-sm text-stone-500 mt-6 mb-2">
-  <span class="font-medium text-stone-700">Good job!</span> Return to the terminal and type <code class="px-1 bg-stone-100 rounded">done</code> to close your day.
-</div>
-{% elif day_status == 'active' %}
-<div class="mt-6">{% include "_components/day_open_banner.html" %}</div>
-{% endif %}
+<div class="mt-6">{% include "_components/command_banner.html" %}</div>
 
 {% endif %}
 {% endblock %}
