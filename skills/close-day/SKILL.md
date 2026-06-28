@@ -88,9 +88,11 @@ If `visual_mode` is on AND `"$TC"` resolves AND `"$TC" status` reports running, 
 
 2. **Open the companion's Command Center in closing mode** (`open "<url-from-status>/?closing=1"` on macOS). The `?closing=1` flag tells the Command Center this is the end-of-day pass: it swaps the usual "come back any time" banner for a bottom line that reads *"Good job! Return to the terminal and type `done` to close your day."* Tell the builder to go mark their progress:
 
-   > I opened the Command Center at `<url>/?closing=1`. Before we close out, go mark off what you did today — set progress on your Top 3 and Bonus items, add any unplanned wins, tick habits, and jot gratitude/insight if you like.
+   > Your day's open at `<url>/?closing=1`. If you still need to mark anything off — progress on your Top 3 and Bonus, unplanned wins, habits, gratitude/insight, end-of-day energy — do it there now.
    >
-   > Say **done** when you're ready to continue.
+   > **If you've already updated it, just say `done`.** Otherwise, mark it up and then say `done`.
+
+   Many builders mark progress through the day and run close-day only when they're already up to date (that's the intended pattern) — so don't assume they still need to. The prompt above covers both: already-done → `done` now; not-yet → update, then `done`.
 
 3. **Wait for the builder to say "done".** Do NOT proceed until they explicitly respond. Do NOT treat background hook notifications (like "Record skill usage event completed") as user input — those are system messages, not the builder talking. Only a real message from the builder (containing "done", "continue", "go", "ready", or similar intent) should trigger the next step.
 

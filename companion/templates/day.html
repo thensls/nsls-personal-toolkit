@@ -24,10 +24,6 @@
 
 <div class="space-y-2 mb-6">
   {% with when='morning', label='Energy — beginning of day', value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
-  {# End-of-day energy is a close-day capture — only surface it here once it's been set. #}
-  {% if evening_energy %}
-  {% with when='evening', label='Energy — end of day', value=evening_energy %}{% include "_components/energy_row.html" %}{% endwith %}
-  {% endif %}
 </div>
 
 <section class="nsls-card">
@@ -84,6 +80,11 @@
             hx-vals='{"section":"Daily Insight"}' name="content"
             hx-swap="none"
             placeholder="What did you notice about yourself today?">{{ daily_insight_text }}</textarea>
+</section>
+
+<section class="nsls-card">
+  <h2 class="nsls-card-title mb-3">Energy — end of day</h2>
+  {% with when='evening', label='How did you end the day?', value=evening_energy %}{% include "_components/energy_row.html" %}{% endwith %}
 </section>
 
 {% if closing %}

@@ -171,10 +171,10 @@ def test_command_center_renders_task_controls(client_with_today):
     assert "back here any time" in html
     assert "close your day" not in html
     assert "return to the terminal" in html.lower()
-    # Morning energy always shows; evening energy is a close-day capture and
-    # stays hidden on the Command Center until it's been set.
+    # Both energy rows show on the Command Center now: beginning-of-day at top,
+    # end-of-day near Insight so it can be captured before close-day runs.
     assert "energy-morning" in html
-    assert "energy-evening" not in html
+    assert "energy-evening" in html
 
 
 def test_command_center_closing_mode_shows_close_line(client_with_today):
