@@ -97,11 +97,11 @@ def test_day_tab_renders_checked_state(tmp_path):
         page = resp.data.decode()
         assert "Done item" in page
         assert "Pending item" in page
-        # The checked item has line-through styling.
-        assert "line-through" in page
-        # The <input> immediately preceding "Pending item" does NOT.
+        # The checked item has the struck-through marker (.is-done → CSS line-through).
+        assert "is-done" in page
+        # The pending item's text span is NOT marked done.
         pending_idx = page.index("Pending item")
-        pending_input = page[:pending_idx][page[:pending_idx].rfind("<input"):]
-        assert "checked" not in pending_input
+        pending_span = page[:pending_idx][page[:pending_idx].rfind("<span"):]
+        assert "is-done" not in pending_span
     finally:
         app.config["WATCHER"].stop()

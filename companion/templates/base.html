@@ -13,16 +13,14 @@
           onerror="this.onerror=null;var s=document.createElement('script');s.src='https://unpkg.com/htmx.org@1.9.10';document.head.appendChild(s);"></script>
   <script defer src="/static/alpine.min.js"
           onerror="this.onerror=null;var s=document.createElement('script');s.defer=true;s.src='https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js';document.head.appendChild(s);"></script>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-  </style>
 </head>
 <body class="bg-stone-50 text-stone-900">
-  <nav class="border-b bg-white">
+  {% if test_mode %}<div class="nsls-test-bar">Test vault — practice data, your real day is untouched</div>{% endif %}
+  <nav class="nsls-nav">
     <div class="max-w-4xl mx-auto px-6 py-3 flex gap-6">
-      <a href="/" class="font-semibold {{ 'text-blue-900 border-b-2 border-blue-900 pb-3' if active_tab == 'day' else 'text-stone-500' }}">Day</a>
-      <a href="/week" class="font-semibold {{ 'text-blue-900 border-b-2 border-blue-900 pb-3' if active_tab == 'week' else 'text-stone-500' }}">Week</a>
-      <a href="/streaks" class="font-semibold {{ 'text-blue-900 border-b-2 border-blue-900 pb-3' if active_tab == 'streaks' else 'text-stone-500' }}">Streaks</a>
+      <a href="/" class="font-semibold {{ 'nsls-nav-active pb-3' if active_tab == 'day' else '' }}">Day</a>
+      <a href="/week" class="font-semibold {{ 'nsls-nav-active pb-3' if active_tab == 'week' else '' }}">Week</a>
+      <a href="/streaks" class="font-semibold {{ 'nsls-nav-active pb-3' if active_tab == 'streaks' else '' }}">Streaks</a>
     </div>
   </nav>
   <main class="max-w-4xl mx-auto px-6 py-8">

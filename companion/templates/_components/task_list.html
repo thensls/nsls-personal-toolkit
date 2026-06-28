@@ -1,17 +1,23 @@
 <div id="tasklist-{{ section }}">
   {% set rows = items | selectattr("text") | list %}
   {% if rows %}
-  <ul class="divide-y divide-stone-100 list-none">
+  <ul class="list-none">
     {% for item in rows %}
-    <li class="flex items-center gap-3 py-2">
-      <span class="text-sm break-words flex-1 min-w-0 {% if item.progress == 100 %}line-through text-stone-400{% elif item.deleted %}text-stone-400{% endif %}">{{ item.text }}</span>
+    <li class="nsls-row">
+      <!-- Disc: the artifact's signature indicator. empty / teal sweep / gold done. -->
+      <span class="nsls-disc
+        {%- if item.deleted %} nsls-disc--deleted
+        {%- elif item.progress >= 100 %} nsls-disc--done
+        {%- elif item.progress > 0 %} nsls-disc--partial{% endif %}"
+        {% if item.progress > 0 and item.progress < 100 and not item.deleted %}style="--p: {{ item.progress }}"{% endif %}></span>
 
-      <!-- Segmented progress bar: the buttons ARE the bar. Levels at or below
-           the selected one fill blue; the selected one is darkest. -->
-      <div class="flex shrink-0 rounded overflow-hidden border border-stone-200">
+      <span class="nsls-row-text {% if item.progress >= 100 %}is-done{% elif item.deleted %}is-deleted{% endif %}">{{ item.text }}</span>
+
+      <!-- Segmented progress control: the buttons ARE the bar. Levels at/below
+           the selected one fill light; the selected one is teal (gold at 100). -->
+      <div class="nsls-seg">
         {% for lvl in [0, 25, 50, 75, 100] %}
-        <button class="w-9 h-7 text-xs border-stone-200 {% if not loop.first %}border-l{% endif %}
-                       {% if item.progress == lvl %}bg-blue-700 text-white font-medium{% elif lvl != 0 and lvl < item.progress %}bg-blue-100 text-blue-700{% else %}bg-white text-stone-400 hover:bg-stone-50{% endif %}"
+        <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl %}is-current{% elif lvl != 0 and lvl < item.progress %}is-below{% endif %}"
                 hx-post="/set-progress"
                 hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
                 hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
@@ -19,7 +25,7 @@
         {% endfor %}
       </div>
 
-      <button class="shrink-0 w-7 h-7 text-sm rounded {{ 'bg-red-600 text-white' if item.deleted else 'bg-stone-100 text-stone-400 hover:bg-stone-200' }}"
+      <button class="nsls-del {{ 'is-deleted' if item.deleted else '' }}"
               hx-post="/delete-task"
               hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
               hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
@@ -27,8 +33,8 @@
     </li>
     {% endfor %}
   </ul>
-  <p class="text-xs text-stone-400 mt-3">Anything under 100% carries forward to tomorrow. 0 = didn't get to it. ✕ marks for deletion (reversible).</p>
+  <p class="text-xs nsls-subtle mt-3">Anything under 100% carries forward to tomorrow. 0 = didn't get to it. ✕ marks for deletion (reversible).</p>
   {% else %}
-  <p class="text-sm text-stone-500">{% if section == 'top_3' %}No priorities set yet. <a href="/?mode=coach-morning" class="text-blue-700 underline">Plan your day →</a>{% else %}No bonus items.{% endif %}</p>
+  <p class="text-sm nsls-subtle">{% if section == 'top_3' %}No priorities set yet. <a href="/?mode=coach-morning" style="color: var(--nsls-teal); text-decoration: underline;">Plan your day →</a>{% else %}No bonus items yet.{% endif %}</p>
   {% endif %}
 </div>

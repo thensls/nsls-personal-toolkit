@@ -17,7 +17,7 @@
 | # | Task | Status |
 |---|------|--------|
 | 1 | Rename branch → `pp-visual-companion` | ✅ done |
-| 2 | Cleanup: remove cowork artifact (keep `parsers.py` + tests) | ☐ |
+| 2 | Cleanup: remove cowork artifact (keep `parsers.py` + tests) | ✅ done (commit 6c4f598; 185 tests pass; also removed dead SAVE_DAY code, parsers.py 605→208) |
 | 3 | Restyle day surface (artifact theme + progress discs) | ☐ |
 | 4 | Fix stale "type done" banner → state-aware | ☐ |
 | 5 | Add-bonus-item control in Command Center | ☐ |

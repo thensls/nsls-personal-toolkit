@@ -790,10 +790,10 @@ def _detect_day_state(daily_md: str, top_3: list) -> str:
     """Return one of 'coach-morning', 'command', 'coach-evening', 'results'.
 
     Prefers the explicit ``status:`` frontmatter (planning|active|closed) when
-    present — that is the contract shared with the cowork artifact and it kills
-    the section-presence fragility that flipped Command Center → results
-    mid-day. Falls back to the legacy inference when ``status`` is absent or
-    unrecognised, so notes written before this change still open correctly.
+    present — that contract kills the section-presence fragility that flipped
+    Command Center → results mid-day. Falls back to the legacy inference when
+    ``status`` is absent or unrecognised, so notes written before this change
+    still open correctly.
 
     Status mapping:
       - closed   → 'results'
@@ -1002,6 +1002,11 @@ def create_app(vault_path: str) -> Flask:
         # progress) swaps the Command Center's top "come back any time" banner
         # for a bottom "type done to close your day" line.
         ctx["closing"] = request.args.get("closing") == "1"
+        # Day status drives the state-aware Command Center banner: `planning`
+        # still tells the user to type `done`; `active` means the day is open
+        # and the banner just invites them to mark progress (no stale "type
+        # done" instruction). Read straight from the note's frontmatter.
+        ctx["day_status"] = parse_frontmatter(daily_md).get("status", "")
 
         return render_template("day.html", **ctx)
 
@@ -1312,6 +1317,29 @@ def create_app(vault_path: str) -> Flask:
         ))
         # After the add, the item count is idx+1; focus if this was the add slot.
         return _render_bonus_list(_target_date(), focus_add=(idx + 1 == bonus_count))
+
+    @app.route("/add-bonus", methods=["POST"])
+    def add_bonus():
+        """Append a new Bonus item from the Command Center and re-render the
+        Command Center's bonus task list (id=tasklist-bonus). Distinct from
+        /set-bonus, which re-renders the coach-morning plan partial."""
+        text = request.form.get("text", "").rstrip()
+        if not text:
+            return ("", 204)  # empty add — nothing to do
+        if "\n" in text or "\r" in text or len(text) > 256:
+            return ("text must be a single line ≤256 chars", 400)
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+
+        def update(existing: str) -> str:
+            morning = parse_daily_note_sections(existing).get("Morning Check-in", "")
+            count = len(_extract_bonus(morning))
+            return _set_nth_item_text(existing, "### Bonus", count, text)
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+        return _render_task_list(today, "bonus")
 
     @app.route("/delete-bonus", methods=["POST"])
     def delete_bonus():

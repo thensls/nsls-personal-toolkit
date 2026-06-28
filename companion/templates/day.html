@@ -8,16 +8,21 @@
 {% elif mode == 'results' %}
   {% include "_components/results.html" %}
 {% else %}
-<h1 class="text-2xl font-bold mb-1">Today — {{ today_pretty }}</h1>
-<p class="text-sm text-stone-500 mb-4">Command Center</p>
+<h1 class="text-2xl nsls-h1 mb-1">Today — {{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h1>
+<p class="text-sm nsls-subtle mb-4">Command Center</p>
 
 {% if not closing %}
-<div class="bg-blue-50 border border-blue-100 rounded-lg p-4 mb-6 text-sm text-stone-700">
-  <span class="font-medium">Good job —</span> return to the terminal and type
-  <code class="px-1 bg-white rounded border">done</code> to complete. You can come
-  back here any time during the day, at the end, or when you're closing your day to
-  mark off progress.
-</div>
+  {% if day_status == 'active' %}
+  <div class="nsls-banner">
+    <span class="font-medium">Your day's open.</span> Come back any time to mark off
+    progress — tick things as you go, at the end of the day, or when you close out.
+  </div>
+  {% else %}
+  <div class="nsls-banner">
+    <span class="font-medium">Nice — your plan's set.</span> Return to the terminal and
+    type <code>done</code> to lock it in. You can come back here any time to mark progress.
+  </div>
+  {% endif %}
 {% endif %}
 
 <div class="space-y-2 mb-6">
@@ -28,30 +33,31 @@
   {% endif %}
 </div>
 
-<section class="bg-white rounded-lg shadow p-5 mb-4">
+<section class="nsls-card">
   <div class="flex items-baseline justify-between mb-3">
-    <h2 class="text-sm uppercase tracking-wider text-stone-500">Top 3</h2>
-    <span class="text-xs text-stone-400">progress · delete</span>
+    <h2 class="nsls-card-title">Top 3</h2>
+    <span class="text-xs nsls-subtle">progress · delete</span>
   </div>
   {% with section='top_3', items=top_3 %}{% include "_components/task_list.html" %}{% endwith %}
 </section>
 
-<section class="bg-white rounded-lg shadow p-5 mb-4">
-  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Bonus</h2>
+<section class="nsls-card">
+  <h2 class="nsls-card-title mb-3">Bonus</h2>
   {% with section='bonus', items=bonus %}{% include "_components/task_list.html" %}{% endwith %}
+  {% include "_components/bonus_add.html" %}
 </section>
 
-<section class="bg-white rounded-lg shadow p-5 mb-4">
-  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Unplanned wins</h2>
-  <p class="text-xs text-stone-400 mb-2">Add anything you did that wasn't on the plan.</p>
+<section class="nsls-card">
+  <h2 class="nsls-card-title mb-2">Unplanned wins</h2>
+  <p class="text-xs nsls-subtle mb-2">Add anything you did that wasn't on the plan.</p>
   {% include "_components/unplanned_section.html" %}
 </section>
 
-<section class="bg-white rounded-lg shadow p-5 mb-4">
+<section class="nsls-card">
   <div class="flex justify-between items-center mb-3">
-    <h2 class="text-sm uppercase tracking-wider text-stone-500">Habits today</h2>
+    <h2 class="nsls-card-title">Habits today</h2>
     <button hx-get="/manage-habits" hx-target="#habit-form-slot" hx-swap="innerHTML"
-            class="px-3 py-2 border rounded text-sm text-stone-700">Manage habits</button>
+            class="nsls-btn-ghost text-sm">Manage habits</button>
   </div>
   <div id="habit-form-slot"></div>
   {% if habits_today %}
@@ -61,22 +67,22 @@
     {% endfor %}
   </ul>
   {% else %}
-  <p class="text-sm text-stone-500">No habits yet. Click Manage habits to add some.</p>
+  <p class="text-sm nsls-subtle">No habits yet. Click Manage habits to add some.</p>
   {% endif %}
 </section>
 
-<section class="bg-white rounded-lg shadow p-5 mb-4">
-  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-2">Gratitude <span class="normal-case text-stone-400">(optional)</span></h2>
-  <textarea rows="2" class="block w-full border rounded px-3 py-2 text-sm"
+<section class="nsls-card">
+  <h2 class="nsls-card-title mb-2">Gratitude <span class="normal-case nsls-subtle">(optional)</span></h2>
+  <textarea rows="2" class="nsls-textarea"
             hx-post="/save" hx-trigger="input changed delay:1500ms"
             hx-vals='{"section":"Gratitude"}' name="content"
             hx-swap="none"
             placeholder="One thing you're grateful for today...">{{ gratitude_text }}</textarea>
 </section>
 
-<section class="bg-white rounded-lg shadow p-5 mb-4">
-  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-2">Insight <span class="normal-case text-stone-400">(optional)</span></h2>
-  <textarea rows="2" class="block w-full border rounded px-3 py-2 text-sm"
+<section class="nsls-card">
+  <h2 class="nsls-card-title mb-2">Insight <span class="normal-case nsls-subtle">(optional)</span></h2>
+  <textarea rows="2" class="nsls-textarea"
             hx-post="/save" hx-trigger="input changed delay:1500ms"
             hx-vals='{"section":"Daily Insight"}' name="content"
             hx-swap="none"

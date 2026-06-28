@@ -72,19 +72,19 @@ def test_toggle_top_3_checks_then_unchecks(client_with_today):
     resp = client.post("/toggle", data={"section": "top_3", "index": "0"})
     assert resp.status_code == 204
     assert "1. [x] First priority" in note.read_text()
-    # The rendered HTML must reflect the toggled (checked) state with
-    # line-through styling on the text.
+    # The rendered HTML must reflect the toggled (checked/done) state with the
+    # struck-through marker on the row text (.is-done → CSS line-through).
     page = client.get("/").data.decode()
-    assert "line-through" in page
+    assert "is-done" in page
     assert "First priority" in page
     # Toggle back
     client.post("/toggle", data={"section": "top_3", "index": "0"})
     assert "1. [ ] First priority" in note.read_text()
     page = client.get("/").data.decode()
-    # After un-toggle, line-through should not appear for this item
+    # After un-toggle, the done marker should not appear for this item's text.
     first_idx = page.index("First priority")
     preceding = page[max(0, first_idx - 200):first_idx]
-    assert "line-through" not in preceding
+    assert "is-done" not in preceding
 
 
 def test_toggle_injects_checkbox_when_missing(client_with_today):
