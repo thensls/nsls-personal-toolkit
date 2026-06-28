@@ -400,3 +400,48 @@ body {
   color: var(--nsls-nearblack); resize: vertical;
 }
 .nsls-textarea:focus { outline: none; border-color: var(--nsls-teal); }
+
+/* Text input (Top 3 slots, plan inputs) */
+.nsls-input {
+  width: 100%; border: 1px solid var(--nsls-disc-empty); border-radius: 9px;
+  padding: 0.45rem 0.7rem; font-size: 0.875rem; font-family: inherit;
+  color: var(--nsls-nearblack);
+}
+.nsls-input:focus { outline: none; border-color: var(--nsls-teal); }
+
+/* Subtle hairline divider inside a card */
+.nsls-divider { border-bottom: 1px solid var(--nsls-hairline); }
+
+/* Energy Low/Med/High selector */
+.nsls-energy-btn {
+  width: 3.5rem; height: 1.85rem; font-size: 0.75rem; font-weight: 500;
+  border-radius: 8px; cursor: pointer;
+  background: #fff; color: var(--nsls-darkblue);
+  border: 1px solid var(--nsls-disc-empty);
+  transition: background .1s, color .1s;
+}
+.nsls-energy-btn:hover { background: var(--nsls-lightblue); }
+.nsls-energy-btn.is-selected {
+  background: var(--nsls-teal); color: #fff;
+  border-color: var(--nsls-teal); font-weight: 600;
+}
+
+/* Stat tile (evening + results) */
+.nsls-stat {
+  background: var(--nsls-lightblue); border-radius: 11px;
+  padding: 0.7rem 0.85rem;
+}
+.nsls-stat-label { font-size: 0.7rem; color: var(--nsls-darkblue); }
+.nsls-stat-value { font-size: 1.5rem; font-weight: 700; color: var(--nsls-navy); line-height: 1.1; }
+
+/* Multi-step progress bar (evening flow) */
+.nsls-prog { flex: 1 1 0%; height: 0.28rem; border-radius: 999px; }
+.nsls-prog-on { background: var(--nsls-teal); }
+.nsls-prog-off { background: var(--nsls-disc-empty); }
+
+/* Read-only "day closed" header banner (results) */
+.nsls-closed-head {
+  background: var(--nsls-navy); color: #fff;
+  border-radius: 12px; padding: 0.9rem 1.1rem;
+}
+.nsls-closed-head .nsls-closed-flag { color: var(--nsls-gold); font-weight: 700; }

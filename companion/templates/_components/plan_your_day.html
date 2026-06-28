@@ -1,12 +1,12 @@
 <div id="plan-your-day" hx-target="#plan-your-day" hx-swap="outerHTML">
-  <h3 class="font-semibold text-lg mb-1">Plan your day</h3>
-  <p class="text-sm text-stone-600 mb-3">
+  <h3 class="font-semibold text-lg mb-1 nsls-h1">Plan your day</h3>
+  <p class="text-sm nsls-subtle mb-3">
     Pick <strong>three</strong> priorities. Anything else goes on the Bonus list.
   </p>
 
   {% if plan.suggestions %}
-  <div class="border rounded mb-4">
-    <div class="px-3 py-2 bg-stone-50 text-xs uppercase tracking-wider text-stone-500 border-b">
+  <div class="rounded mb-4" style="border:1px solid var(--nsls-hairline)">
+    <div class="px-3 py-2 nsls-card-title nsls-divider" style="background:var(--nsls-lightblue)">
       Suggestions &amp; carry-overs
     </div>
     <table class="w-full text-sm">
@@ -68,11 +68,11 @@
   {% endif %}
 
   <div class="mb-4">
-    <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-2">Your Top 3</h4>
+    <h4 class="nsls-card-title mb-2">Your Top 3</h4>
     <ol class="space-y-2">
       {% for i in range(3) %}
         <li class="flex items-center gap-2">
-          <span class="text-stone-400 text-sm w-4">{{ i + 1 }}.</span>
+          <span class="nsls-subtle text-sm w-4">{{ i + 1 }}.</span>
           <input type="text"
                  value="{{ plan.top3_slots[i] }}"
                  placeholder="Priority {{ i + 1 }}"
@@ -82,19 +82,19 @@
                  hx-swap="none"
                  name="text"
                  autocomplete="off"
-                 class="flex-1 border rounded px-3 py-2 text-sm">
+                 class="flex-1 nsls-input">
         </li>
       {% endfor %}
     </ol>
   </div>
 
   <div class="mb-4">
-    <h4 class="text-sm font-semibold uppercase tracking-wider text-stone-500 mb-2">Bonus list</h4>
+    <h4 class="nsls-card-title mb-2">Bonus list</h4>
     {% include "_components/bonus_list.html" %}
   </div>
 
   <div class="flex justify-end">
     <button hx-post="/reset-plan"
-            class="text-sm text-stone-500 hover:text-red-600 underline">Reset all</button>
+            class="text-sm nsls-subtle hover:text-red-600 underline">Reset all</button>
   </div>
 </div>

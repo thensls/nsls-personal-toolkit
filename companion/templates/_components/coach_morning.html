@@ -1,5 +1,5 @@
-<div x-data="{ coachMode: true }" class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
-  <div class="mb-5 pb-4 border-b">
+<div x-data="{ coachMode: true }" class="nsls-card max-w-2xl mx-auto">
+  <div class="mb-5 pb-4 nsls-divider">
     {% with when='morning', label="How's your energy this morning?", value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
   </div>
 
@@ -8,6 +8,6 @@
   <div class="mt-6 flex justify-end">
     <button hx-post="/lock-in" hx-vals='{"phase":"morning"}'
             hx-select="main" hx-target="main" hx-swap="outerHTML"
-            class="px-4 py-2 bg-blue-900 text-white rounded">Done — show Command Center →</button>
+            class="nsls-btn-gold">Done — show Command Center →</button>
   </div>
 </div>
