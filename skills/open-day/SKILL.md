@@ -33,28 +33,10 @@ Before doing anything else, parse the builder's invocation phrase to choose a mo
 
 **Reset-first flag (`-r`):** if the invocation includes `-r` (e.g. `open day -r`, `open day -v -r`), **run `/reset-day` (full reset) FIRST**, before Step 1 — clear today's note so open-day rebuilds it from scratch (real carry-overs / close-day seeds, or generated suggestions if there's nothing real). `-r` is independent of `-v`: `-r` alone means "reset, then open with the companion" (the default); `-v -r` means "reset, then open CLI/chat only". Do the reset silently (one-line confirmation at most), then continue with open-day as normal. This is the fast "redo my day cleanly" path used in testing and when a morning plan went sideways.
 
-## Surface Selection (CLI · Cowork · Chat) — resolve this BEFORE the companion logic below
-
-The toolkit runs on more than one surface, and they need different paths. **Resolve the surface first, in this exact order — the order is load-bearing.** Two settings interact; keep them distinct:
-
-- **`visual_mode`** (on by default) — governs whether the *CLI* companion (the local Flask server) runs. Set `off` to stay in chat on the CLI. *(Covered by the table above.)*
-- **`companion_surface`** (`cli` | `cowork` | `auto`, default `auto`) — governs *which surface* renders the plan. `cli` = the local browser companion; `cowork` = the in-chat React **cowork-dashboard artifact**; `auto` = pick by detection (below).
-
-These don't contradict: `visual_mode` only has meaning on the CLI surface. On the cowork surface there is no local server to turn on or off — the artifact is the surface — so `visual_mode` is ignored there and `companion_surface` decides.
-
-**Resolution order (stop at the first match):**
-
-1. **Explicit cowork override** — the builder typed `open day cowork` (or `open day -c`), OR `companion_surface: cowork` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. → **Cowork artifact branch** (see "When the surface is **cowork**" below). This is the reliable signal until O1 is solved.
-2. **Explicit CLI / chat opt-out** — `visual_mode: off`, or the builder passed `-v` / "visual off". → run the **chat flow** (the "When `visual_mode` is **off**" section). No companion, no artifact.
-3. **CLI companion available** — `companion_surface` is `cli` or `auto`, AND you can resolve+start the local companion binary (you're on Claude Code with Bash). → **CLI companion branch** (the "When `visual_mode` is **on**" section + Step 8).
-4. **Nothing else matched → chat fallback.** You're on a surface that can't run the local server (e.g. Claude Desktop / cowork) and no explicit cowork override was given. → run the **chat flow**. *Never* announce a companion that isn't there.
-
-> **Why the order matters (don't reshuffle):** post the default-ON flip, a cowork user with no override would otherwise reach step 3, try to resolve the CLI binary, fail, and land in the degraded chat fallback — never seeing the artifact. Checking the cowork override (step 1) *before* the CLI-binary path (step 3) is what routes them to the artifact. Until there's a clean programmatic Desktop-vs-CLI signal (O1, unsolved), the explicit `open day cowork` / `companion_surface: cowork` override IS the cowork trigger; `auto` on a Desktop surface degrades to chat, which is acceptable for v1.
-
-**When the surface is `cowork`** (resolution step 1): render the **cowork-dashboard artifact** instead of the CLI companion. The data-collection, date/path, and artifact-handoff details live in the **"Cowork (Claude Desktop) surface"** section near the end of this skill — follow that, not Step 8 (which is CLI-only). Skip the CLI binary lookup entirely.
+There are two ways the ritual can run: with the **CLI companion** (the local Flask server, the default) or in **chat** (the fallback). `visual_mode` decides between them — on by default, `off` to stay in chat. The companion only runs on a CLI surface (Claude Code) where Bash can start a local server; on any surface that can't, the graceful fallback below finishes the ritual in chat.
 
 When `visual_mode` is **on** (the default):
-- **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary** (not installed, or you're not on a surface that can run a local server — e.g. Claude Desktop / cowork, which can't run arbitrary Bash), **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
+- **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary** (not installed, or you're not on a surface that can run a local server), **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
 - **Step 1.5 only**: Auto-run yesterday's close-day if needed (same as CLI mode).
 - **Step 2**: Collect ALL data (calendar, Asana, carry-overs, AI suggestions, stack rank, free time, habits, learning, PRs, SLT). Run Bash commands in the background or silently — **do not show raw Bash output to the user**. Present ONE condensed summary line per data source (e.g., "3 meetings today · 6 open Asana · 2 carry-overs · AI suggestions seeded").
 - **Step 6**: Write the daily note with **empty Top 3 and Bonus slots** (`1. [ ]`, `2. [ ]`, `3. [ ]`). Include habits, calendar, and the standard template. **Do NOT fill in Top 3 — that's the companion's job.** BUT the companion needs suggestions to show, so **always write an `### AI Suggested: Top 3` section** (3 items) and `### AI Suggested: Delegate These`, in priority order:
@@ -686,7 +668,7 @@ SORT priority ASC
 
 The `## Work Log`, `## Projects Touched`, `## Carrying Over`, and `## End of Day` sections are left empty — `/close-day` fills those in.
 
-**`status` frontmatter (the mode contract):** The note carries `status: planning | active | closed` in YAML frontmatter. This is the single signal both the web companion and the cowork artifact read to pick a mode — never infer the mode from which sections exist. On open-day:
+**`status` frontmatter (the mode contract):** The note carries `status: planning | active | closed` in YAML frontmatter. This is the single signal the web companion reads to pick a mode — never infer the mode from which sections exist. On open-day:
 - **Creating from template:** write `status: planning` (the builder hasn't locked in a plan yet).
 - **Note already exists** with a later status (`active`/`closed`) — e.g. the builder re-runs open-day mid-day: **preserve the existing status**, don't reset it to `planning` (that would silently re-open a locked-in or closed day). Only `/reset-day` (or `open day -r`) clears the note back to `planning`.
 
@@ -725,7 +707,7 @@ Count the totals: e.g., `2 adopted, 0 modified, 1 replaced`
 **Skip this entire step** if any of these is true:
 - The builder said `open day -v` / `open day visual off` (one-shot CLI mode) or `open day -v forever` / `open day visual off forever`
 - `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
-- The companion binary cannot be found at either of the locations below, or you're on a surface that can't run a local server (e.g. cowork) — the companion is optional; see `CLAUDE.md`
+- The companion binary cannot be found at either of the locations below, or you're on a surface that can't run a local server — the companion is optional; see `CLAUDE.md`
 
 When you skip, finish the morning ritual entirely in chat (Steps 3 and 4 in this skill already cover the chat-based draft + review of Top 3 / Bonus / etc.).
 
@@ -796,86 +778,6 @@ Example format (customize per builder):
 - **Monday:** "Review topic submissions. Prepare weekly update."
 - **Tuesday:** "Check standing meeting agenda. Finalize prep."
 - **Friday:** "Run /close-week. Review weekly metrics."
-
-## Cowork (Claude Desktop) surface
-
-Reached when Surface Selection resolves to **cowork** (the builder typed `open day cowork` / `-c`, or `companion_surface: cowork`). On this surface there is **no Bash, no local server, and no Python runtime** — *you* (Claude, in the chat) are the runtime. You collect data through MCP connectors and the MCP filesystem mount, write the note directly, render the `cowork-dashboard` artifact, and on the artifact's `SAVE_DAY` message you write the builder's plan back.
-
-This replaces the CLI Steps 1, 2, 5, 6, 8 with surface-appropriate equivalents. Steps 3/4/4a (chat-based priority selection) are **skipped** — the artifact does priority selection, exactly as the CLI companion does. The data model, section names, and `status` contract are **identical** to the CLI path; only the *collection* and *handoff* mechanics differ.
-
-### C0. Date and path resolution are surface-neutral (3.2a — never shell out)
-
-The CLI path uses `date +%Y-%m-%d` and `$OBSIDIAN_VAULT_PATH`/`$HOME`. **None of those exist here.** On the cowork surface:
-
-- **Today's date** comes from **your model/session context** (the current date you were given), formatted `YYYY-MM-DD`. Do not try to run `date`.
-- **The vault root** is the **MCP filesystem mount root** the builder granted (cowork mounts one folder — that folder is the vault). Build note paths relative to it: `<mount-root>/01-daily/<date>.md`, `<mount-root>/30-habits/habits.md`, `<mount-root>/50-reference/builder-profile.md`, etc. Do not reference `$OBSIDIAN_VAULT_PATH`.
-- **Timezone** still comes from `builder-profile.md` (`timezone`), default `America/Denver` — read it via the filesystem mount.
-
-If the filesystem mount isn't present, tell the builder once: *"I don't have your vault mounted — in cowork, add your Obsidian folder under the folder/file access settings, then say 'open day cowork' again."* Then stop.
-
-### C1. Data collection — per-source cowork coverage (3.2)
-
-Data collection is **re-implemented for this surface**, not shared with the CLI. Below is every open-day source and how it's gathered in cowork. **A source with no cowork path is explicitly marked DROPPED — never silently omitted.** When a source is dropped or degraded, say so in the one-line-per-source summary (e.g. "Familiar: not available in cowork — skipped").
-
-| Open-day source (CLI step) | Cowork path | Status |
-|---|---|---|
-| Today's meetings (2a) | `Google_Calendar` MCP `list_events` | **MCP ✓** |
-| Asana due/overdue (2b) | `Asana` MCP `get_my_tasks` + `search_tasks` | **MCP ✓** |
-| Yesterday's carry-overs (2c) | Filesystem read of `01-daily/<yesterday>.md` via the mount | **FS ✓** |
-| This week's plan (2d) | Filesystem read of `02-weekly/<YYYY-Www>.md` | **FS ✓** |
-| AI suggestions from close-day (2e) | Filesystem read of today's note's `### AI Suggested:` sections | **FS ✓** |
-| Stack rank (2f) | Filesystem read of `10-strategy/stack-rank/` | **FS ✓** (strategy layer only) |
-| Free-time slots (2g) | `Google_Calendar` MCP `find_my_free_time` if present; else derive from the events you already pulled | **MCP ✓ / derive** |
-| Learning inbox (2h) | `Slack` MCP self-DM scrape (if `learning_capture_method: slack`) + filesystem read of `40-learning/` | **MCP ✓ / FS ✓** |
-| Open PRs (2i) | GitHub MCP if connected; otherwise **DROPPED** (no `gh` CLI in cowork) | **degrades — say so** |
-| SLT Meeting Actions (2j) | `Airtable` MCP, gated on `slt_member: true` (same hard gate) | **MCP ✓ (gated)** |
-| Overdue / free-time math | Re-derive in-chat from Calendar+Asana — no bash | **derive** |
-
-**Familiar screen stills:** open-day doesn't read Familiar (that's close-day). Nothing to drop here.
-
-**Output discipline still applies:** present **one condensed summary line per source**, not raw tool dumps. The cowork chat shows tool calls, so keep them tight and don't paste large JSON. Example: *"3 meetings · 6 open Asana · 2 carry-overs · AI suggestions seeded · PRs: GitHub MCP not connected, skipped."*
-
-**Hard gate reminder (SLT / Airtable):** the `slt_member` gate from Step 2j applies identically. Read `builder-profile.md` from the mount first; if not `slt_member: true`, skip the Airtable step entirely — do not touch `AIRTABLE_API_KEY` (and in cowork, prefer the `Airtable` MCP connector over any raw-key path).
-
-### C2. Write the planning note (cowork equivalent of Step 6)
-
-Same content rules as Step 6 — **empty Top 3/Bonus slots** (`1. [ ]` … the artifact fills them), an `### AI Suggested: Top 3` + `### AI Suggested: Delegate These` section (real-from-close-day → carry-overs → generated, same priority order as the CLI path), Habits from `30-habits/habits.md`, Calendar, and the standard template — and the same `status` rule:
-
-- **Creating from template:** write `status: planning`.
-- **Note already exists** with a later status (`active`/`closed`): **preserve it** — don't reset to `planning`.
-
-Write the file to `<mount-root>/01-daily/<date>.md` via the MCP filesystem (a **whole-file write** — cowork gates `rm`, so never delete-then-write).
-
-### C3. Render the cowork-dashboard artifact (cowork equivalent of Step 8)
-
-Render the **cowork-dashboard** artifact (its source is bundled with this skill as `cowork-dashboard.jsx` in the skill folder; in the dev repo it lives at `cowork-artifact/cowork-dashboard.jsx`). Seed it with a state blob you build by parsing the note you just wrote. The blob is the JSON contract in `docs/specs/2026-06-21-cowork-dashboard-2.1-design.md` ("JSON state contract"). Build it like this:
-
-- `mode`: **you resolve this in-context and pass it in** — the artifact never re-derives it. For open-day this is **`coach-morning`** (status `planning`). `phase: "planning"`.
-- `date`, `todayPretty`, `notePath`: from C0.
-- **`baseHash`: the SAME hash the save handler will recompute — a 16-hex-char SHA-256 prefix of the note file's exact UTF-8 text.** This is the conflict-detection key (`companion/parsers.py:compute_note_hash` is the canonical algorithm). Compute it over the note bytes as written; the artifact only echoes it back.
-- `top3` (positional, exactly 3 slots, empty slots kept), `bonus`, `unplanned`, `habits` (with `percent`/`streakDays`/`status` from `30-habits/log.md` — streak math per `companion/streak.py`), `energy` (morning from the note if present, else null; evening null), `gratitude`/`dailyInsight`/`insightReflection` empty at plan time.
-
-Then hand off and **stop**, exactly like the CLI does — one line, no coaching:
-
-> Your plan is in the dashboard above. Pick your Top 3, review the suggestions, then click **Complete 'Open Day'**. I'll save it to your vault when you do.
-
-Do not poll, summarize, or coach. Wait for the artifact's `SAVE_DAY` message.
-
-### C4. The `SAVE_DAY` handler (the heart of 3.2 — what you do when the artifact replies)
-
-When the builder clicks the button, the artifact calls `sendPrompt("SAVE_DAY " + JSON.stringify(envelope))`, which arrives as a **visible user message** beginning `SAVE_DAY {…}`. Treat that message as a save instruction, not conversation. Apply **exactly** the algorithm in `companion/parsers.py:apply_save_day` — that function is the executable spec; follow its behavior step for step:
-
-1. **Parse** the JSON after `SAVE_DAY `. **If it isn't valid JSON, or `type` ≠ `"SAVE_DAY"`, or `schemaVersion` ≠ 1, or `changes`/`saveId` is missing → refuse to write.** Tell the builder plainly (their edits are still safe in the dashboard); do not write a partial note.
-2. **Idempotency:** if you already applied this `saveId` this session, do nothing — just acknowledge. (Each save is a real chat turn; a repeat is a no-op.)
-3. **Re-read the LATEST note from disk** via the mount (NOT the artifact's seeded snapshot). Compute its hash (same `compute_note_hash`).
-4. **If the latest hash == the envelope's `baseHash`:** apply `changes` as a **field-level patch** and whole-file write.
-5. **If they differ** (something — close-day, a manual edit — touched the note since): still apply the field-level patch **onto the latest content**, preserving every section the artifact didn't touch, and tell the builder the note had changed and you merged. **Never write the artifact's whole stale snapshot over the file.**
-
-**What the patch rewrites** (and ONLY these — everything else in the note is preserved verbatim): `### My Top 3` (positional, with `<!--p:NN-->` progress markers and `[x]` for done; deleted items keep their row and are also listed under `### Deleted`), `### Bonus`, `### Unplanned`, `### Habits` checkboxes (`[x]`=1.0, `[/]`=0.5, `[ ]`=0.0; bold label must match the habit `name` verbatim — read the id→name map from `30-habits/habits.md`; **if you can't resolve a habit's name, leave the existing `### Habits` rows untouched rather than rewrite them blank**), morning energy in `## Morning Check-in` / evening energy in `## End of Day` (kept distinct), `## Gratitude`, `## Daily Insight`, `## Insight Reflection`, and the `status` frontmatter from `statusTransition` (lock-in → `active`). Write the whole file back (replace in place, never delete).
-
-**Patch on what the payload SENT, not on truthiness.** A free-text field present in `changes` but empty (`""`) means the builder *cleared* it — delete that section, don't leave the old text. A field **absent** from `changes` is one the builder didn't touch — preserve it. (This is why `apply_save_day` keys on field presence: an explicit clear is a real edit; an omission is not.)
-
-For open-day's lock-in the envelope carries `statusTransition: "active"` — so this write also flips `status: planning → active`. After writing, print the same brief locked-in summary the CLI prints (Top 3 + Bonus, under 12 lines, no coaching).
 
 ## Edge Cases
 

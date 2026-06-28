@@ -54,16 +54,7 @@ If the user invokes with `-v` (e.g., `/close-day -v`), full verbose output is fi
 
 Default to today (`date +%Y-%m-%d`). User can override: `/close-day 2026-03-21`.
 
-### Step 0.1: Surface Selection (CLI · Cowork · Chat) — resolve BEFORE Step 0.5
-
-Same surface model as open-day (see open-day's "Surface Selection" section for the full rationale). Two settings interact: **`visual_mode`** (CLI companion on/off) and **`companion_surface`** (`cli` | `cowork` | `auto`, in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`). Resolve in this exact order, stop at the first match:
-
-1. **Explicit cowork override** — the builder typed `close day cowork` (or `-c`), OR `companion_surface: cowork`. → **Cowork artifact branch**: render the evening/closing flow in the **cowork-dashboard artifact** (see the "Cowork (Claude Desktop) surface" section near the end of this skill), not the CLI Step 0.5. Skip the binary lookup.
-2. **Explicit opt-out** — `visual_mode: off`, or `-v` / "visual off" this run. → close in **chat** (skip Step 0.5, go to Step 0.6).
-3. **CLI companion already running** — `companion_surface` is `cli` or `auto`, and `"$TC" status` reports running. → **Step 0.5** (CLI companion closing pass).
-4. **Nothing matched → chat.** Surface can't run the server and no cowork override. → skip Step 0.5, close in chat.
-
-**Order is load-bearing:** check the cowork override (1) *before* the CLI-binary path (3), so a cowork user isn't routed into the degraded chat fallback after a failed binary lookup. Until O1 (a clean Desktop-vs-CLI signal) is solved, the explicit override is the cowork trigger; `auto` on a Desktop surface degrades to chat — acceptable for v1.
+The close can run with the **CLI companion** (if it's already running) or in **chat**. `visual_mode` decides — on by default, `off` to stay in chat. The companion only works on a CLI surface where Bash can reach a running local server; on any surface that can't, Step 0.5's graceful fallback closes the day in chat.
 
 ### Step 0.5: Check the visual companion
 
@@ -76,7 +67,7 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 
 **The companion is ON by default.** Run this step unless the builder opted out — i.e. skip it (and run close-day as a pure CLI ritual, proceeding straight to Step 0.6) when EITHER the builder passed `-v` (or "visual off") this invocation, OR `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If the field is absent, missing, or anything other than the literal string `off`, the companion is on.
 
-**Graceful fallback (default-on safety).** Default-on only does something on a CLI surface where the local companion is installed and running. If `"$TC"` doesn't resolve, or `"$TC" status` doesn't report running, or you're on a surface that can't run a local server (e.g. Claude Desktop / cowork, which can't run arbitrary Bash), **skip this step silently** and close in chat. Never announce a companion that isn't there. (Unlike open-day, close-day does not start the companion — it uses it only if it's already running, which it usually is if the morning open-day started it.)
+**Graceful fallback (default-on safety).** Default-on only does something on a CLI surface where the local companion is installed and running. If `"$TC"` doesn't resolve, or `"$TC" status` doesn't report running, or you're on a surface that can't run a local server, **skip this step silently** and close in chat. Never announce a companion that isn't there. (Unlike open-day, close-day does not start the companion — it uses it only if it's already running, which it usually is if the morning open-day started it.)
 
 **Only run this step if the date from Step 0 is today** (`$(date +%Y-%m-%d)`). The companion always shows today's data — if closing a past date, the companion would show the wrong day. Skip silently for past dates.
 
@@ -705,7 +696,7 @@ Write to: `$OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md`
 
 **If the file already exists** (user started it in the morning with priorities), **merge** — keep the existing Morning Check-in section and append/update the generated sections below it.
 
-**Set `status: closed` in the note's YAML frontmatter** as part of this write. `status` (`planning | active | closed`) is the single signal both the web companion and the cowork artifact read to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
+**Set `status: closed` in the note's YAML frontmatter** as part of this write. `status` (`planning | active | closed`) is the single signal the web companion reads to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
 
 ### Step 6: Update project session logs
 
@@ -960,61 +951,6 @@ If the file already exists (user or `/open-day` already created it), do NOT over
 ### Step 9: Confirm
 
 Report: "Daily note written to `01-daily/YYYY-MM-DD.md`. Seeded tomorrow's note at `01-daily/YYYY-MM-DD+1.md`. Updated session logs for: [project list]. Asana: [N] completed, [N] updated, [N] created."
-
----
-
-## Cowork (Claude Desktop) surface
-
-Reached when Surface Selection (Step 0.1) resolves to **cowork**. As in open-day, on this surface there is **no Bash, no local server, no Python runtime** — you are the runtime: collect via MCP + the filesystem mount, render the artifact's **evening/closing flow**, and on the artifact's `SAVE_DAY` close message write the reflection, reconcile habits, set `status: closed`, and seed tomorrow. The data model and `status` contract are identical to the CLI path; only collection and handoff differ. This replaces the CLI Step 0.5 and the Bash-shaped parts of Step 1; the synthesis steps (3, 4b/4c, 7, 8) still run as written, using MCP/filesystem for any writes.
-
-### CC0. Surface-neutral date/path (same as open-day C0)
-
-Date from your **session context** (`YYYY-MM-DD`), not `date`. Vault root = the **MCP filesystem mount root**, not `$OBSIDIAN_VAULT_PATH`/`$HOME`. Build paths relative to the mount (`<mount-root>/01-daily/<date>.md`, `<mount-root>/30-habits/log.md`, …). Timezone from `builder-profile.md`. If no mount, tell the builder once to mount the vault, then stop.
-
-### CC1. Data collection — per-source cowork coverage (close-day's seven sources)
-
-Re-implemented for this surface. **Any source with no cowork path is marked DROPPED, never silently omitted** — say so in the summary.
-
-| Close-day source (CLI step) | Cowork path | Status |
-|---|---|---|
-| Google Calendar (1a) | `Google_Calendar` MCP `list_events` | **MCP ✓** |
-| Familiar screen stills (1b) | Needs Bash glob over `~/familiar/stills-markdown` — **no Bash in cowork** | **DROPPED — say "no screen-time data in cowork"** |
-| Fathom (1c) | `Fathom` MCP `list_meetings` (+ summary/transcript) | **MCP ✓** |
-| Sent email (1d) | `Gmail` MCP `search_messages` (`from:me …`) | **MCP ✓** |
-| Sent Slack (1e) | `Slack` MCP `search_public_and_private` (`from:<@$SLACK_USER_ID>`) | **MCP ✓** |
-| Asana (1g) | `Asana` MCP `get_my_tasks` + `search_tasks` | **MCP ✓** |
-| Claude session context (1f) | This conversation's history (you have it) | **✓** |
-
-**Consequences of the Familiar drop (be explicit, don't fake it):** Time Allocation / Time Distribution / active-work-hours and Familiar-based Task Evidence (Step 1h) **cannot be computed in cowork.** In the daily note, write *"Screen-time data unavailable on this surface"* in place of Time Allocation rather than inventing numbers. Task Evidence Detection falls back to the non-Familiar signals only (Slack/email/Fathom/Claude session). The plan-vs-reality read still works — it comes from the note's Top 3 progress, not Familiar.
-
-Output discipline: one tight summary line per source; don't paste large tool JSON into chat.
-
-**SLT / Airtable hard gate (Step 7d):** unchanged — read `builder-profile.md` from the mount; only if `slt_member: true` touch the SLT base, via the `Airtable` MCP connector.
-
-### CC2. Render the evening/closing flow in the artifact
-
-Re-read today's note from the mount and build the state blob (same JSON contract as open-day C3). Differences for close:
-
-- The closing entry is the **Close Day → Evening Coach Cards** flow. Seed `mode` per the note's `status`: an `active` note opens the **Command Center** with `phase: "closing"` (the review pass — mark final progress, add unplanned wins), and its **Continue to close →** moves into the evening cards (Insight + Gratitude + evening energy + Done). If the builder is closing a note that's already had its reflection, seed `mode: "coach-evening"` directly.
-- **`baseHash`**: same as open-day — a 16-hex SHA-256 prefix of the note's exact bytes (`compute_note_hash`); the artifact echoes it back for conflict detection.
-- Compute habit `percent`/`streakDays`/`status` from `30-habits/log.md` (streak math = `companion/streak.py`).
-
-Hand off and **stop**:
-
-> Go mark off your day in the dashboard above — set final progress, add any unplanned wins, tick habits, jot gratitude/insight, then click **Done — close the day**. I'll write it up and close the day when you do.
-
-Wait for the artifact's `SAVE_DAY` close message. Do not treat background hook notifications as the builder's "done."
-
-### CC3. The `SAVE_DAY` close handler (3.3) + habit reconciliation parity (3.4)
-
-The artifact sends `SAVE_DAY {…}` with `statusTransition: "closed"`. Apply the **same `apply_save_day` algorithm** as open-day C4 (validate → idempotent on `saveId` → re-read latest → hash check → field-level patch onto latest, preserving untouched sections → whole-file write, never delete). The close payload additionally carries `gratitude`, `insightReflection`, and evening `energy`, which the patch writes into `## Gratitude`, `## Insight Reflection`, and `## End of Day` respectively, and flips `status → closed`.
-
-**Then run the close-day synthesis on top of the saved note** (these are NOT in the artifact's payload — you author them, same as the CLI path, writing via the mount):
-
-1. **Habit reconciliation into `log.md` (3.4 — parity with the CLI path).** This must produce the **same `log.md` row** the CLI/web companion's Step 3.5 produces. Apply the identical rule (`companion/parsers.py` is the reference): read today's existing `log.md` row (`log_ticks`), read the daily-note `### Habits` checkboxes (`note_ticks`: `[x]`=1.0, `[/]`/`[~]`=0.5, `[ ]`=0.0), and write back **the MAX of the two per habit**, idempotent on the date (replace today's row if present). Format: `YYYY-MM-DD · habit_id:percent · habit_id:percent` (one decimal). MAX-merge means an artifact tick never gets undone by close-day, and vice-versa — exactly the CLI's two-writer resolution. Then re-sync the note's `### Habits` checkboxes to the merged result.
-2. **Insight Reflection** (Step 3), **Coaching / Knowledge-graph** check-ins (4b/4c), **carry-over seeding** of any <100% Top 3 item not already under `## Carrying Over` (Step 0.6), **Asana / SLT sync** (Step 7), **Brain Dump routing** (7e), and **seed tomorrow's note** (Step 8) — all as written, with writes going through the filesystem mount (whole-file, never delete) and API calls through MCP connectors.
-
-The artifact owns the *capture* (progress, dispositions, habits ticked, gratitude, insight, energy); close-day owns the *synthesis* (reflection, time read where available, Asana/SLT write-back, tomorrow's seed). The `SAVE_DAY` write happens first, then synthesis layers on top of the now-closed note.
 
 ## Performance Notes
 
