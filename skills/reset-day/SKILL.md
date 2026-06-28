@@ -38,9 +38,33 @@ itself injects nothing.
 - **Prior days' notes** — never (your real history is the seed source).
 - **Connected accounts** — read-only; nothing is written to Calendar/Asana here.
 
+## Confirm before resetting (safety — ALWAYS, unless already disambiguated)
+
+reset-day **deletes** today's note. Before touching anything, **ask the builder
+which day to reset and wait for an answer** — do not delete first. Ask (use the
+AskUserQuestion tool, or a plain question):
+
+> **Reset which?**
+> - **Your real day** (`<date>`) — clears today's actual note so `/open-day` rebuilds it.
+> - **The test sandbox** — wipes only the throwaway `companion-test-vault`; your real day is untouched.
+> - **Cancel** — do nothing.
+
+Then:
+- **Real day** → proceed against the real vault (the steps below, default `$OBSIDIAN_VAULT_PATH`).
+- **Test sandbox** → follow **Test mode** below (redirect + assert guard), then run the same steps.
+- **Cancel** → stop. Delete nothing.
+
+**Skip this confirmation only when the intent is already explicit:**
+- `-t` was passed (`reset-day -t`) → answer is "test sandbox"; go straight to Test mode.
+- reset-day is running as the `-r` pre-step of `/open-day` (e.g. `open day -r`) → the
+  `-r` flag is itself the authorization; open-day handles that reset silently, no prompt.
+
+This makes a bare `reset-day` safe by default: a misfired trigger can't silently
+wipe a real day, and there's no way to confuse "reset my day" with "reset the test data".
+
 ## Test mode (`-t`) — wipes the test vault only
 
-If the invocation includes `-t` (e.g. `reset-day -t`), reset the **throwaway test
+When the builder chose **test sandbox** (or passed `-t`), reset the **throwaway test
 vault** instead of your real vault — the `companion-test-vault` that `open day -t` /
 `close day -t` write to. This is just an `$OBSIDIAN_VAULT_PATH` redirect, with a
 hard safety guard so it can **never** delete real data.
@@ -69,9 +93,11 @@ explicitly rather than silently resetting the sandbox.
 
 ## Steps
 
-1. **Determine the target date.** Default today (`date +%Y-%m-%d`). User may pass
-   one: `/reset-day 2026-06-13`. Parse `--close-only` and `-t` if present (handle
-   `-t` first, per **Test mode** above, before reading any note).
+1. **Confirm what to reset, then determine the target date.** Run the
+   **Confirm before resetting** gate above *first* (unless `-t` or an `open day -r`
+   chain already disambiguates) — delete nothing until the builder answers. Default
+   the date to today (`date +%Y-%m-%d`); the user may pass one: `/reset-day 2026-06-13`.
+   Parse `--close-only` and `-t` if present.
 
 2. **Read today's note** at `$OBSIDIAN_VAULT_PATH/01-daily/<date>.md`. Detect state:
    - No file → nothing to clear; skip to step 5 (still handle the empty-vault guard).
