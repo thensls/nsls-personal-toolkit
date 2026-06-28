@@ -144,12 +144,12 @@ def ensure_test_vault(seed_today: bool = True) -> Path:
     has_habit = habits.exists() and "- id:" in habits.read_text(encoding="utf-8")
     if not has_habit:
         habits.parent.mkdir(parents=True, exist_ok=True)
-        habits.write_text(_SAMPLE_HABITS, encoding="utf-8")
+        habits.write_text(_SAMPLE_HABITS, encoding="utf-8", newline="")
 
     if seed_today:
         today_note = vault / "01-daily" / f"{date.today().isoformat()}.md"
         if not today_note.exists():
             today_note.parent.mkdir(parents=True, exist_ok=True)
-            today_note.write_text(_sample_day_note(), encoding="utf-8")
+            today_note.write_text(_sample_day_note(), encoding="utf-8", newline="")
 
     return vault
