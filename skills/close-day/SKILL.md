@@ -63,6 +63,8 @@ export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
 
 `test-vault` creates + seeds the vault (`~/.claude/local-plugins/nsls-personal-toolkit/companion-test-vault/`, gitignored) and prints its path; it never overwrites existing notes. Every downstream step then reads and writes the test vault, and the companion shows a gold **TEST** banner. Pair with `open day -t` (plan into the test vault first) and `reset-day -t` (clear it).
 
+**No collision with your real companion.** The test server is a separate instance on its own port (**7788**, vs the real **7777**) with its own pidfile (`.companion-test.pid`). In Step 0.5, when in test mode use the `--test` flag (`"$TC" status --test`) and never `"$TC" stop` without it — that would hit the real companion. close-day only *uses* a running companion, it doesn't start one, so if the test server isn't up it simply closes in chat against the test vault.
+
 The close can run with the **CLI companion** (if it's already running) or in **chat**. `visual_mode` decides — on by default, `off` to stay in chat. The companion only works on a CLI surface where Bash can reach a running local server; on any surface that can't, Step 0.5's graceful fallback closes the day in chat.
 
 ### Step 0.5: Check the visual companion

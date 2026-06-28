@@ -166,3 +166,47 @@ def test_cli_test_vault_seeds_and_prints_path(tmp_path, monkeypatch):
     assert result.exit_code == 0
     assert str(target) in result.output
     assert (target / "01-daily" / f"{date.today().isoformat()}.md").exists()
+
+
+# --- no-collision with the real companion (separate port + pidfile) ----------
+
+from companion import cli
+
+
+def test_test_instance_uses_distinct_port_and_pidfile():
+    assert cli.PID_FILE != cli.TEST_PID_FILE
+    assert cli.DEFAULT_PORT != cli.TEST_DEFAULT_PORT
+
+
+def test_stop_test_only_touches_test_pidfile(tmp_path, monkeypatch):
+    real = tmp_path / ".companion.pid"
+    test = tmp_path / ".companion-test.pid"
+    real.write_text("424242\n127.0.0.1:7777\n")   # 424242 = nonexistent pid (safe)
+    test.write_text("424243\n127.0.0.1:7788\n")
+    monkeypatch.setattr(cli, "PID_FILE", real)
+    monkeypatch.setattr(cli, "TEST_PID_FILE", test)
+    CliRunner().invoke(main, ["stop", "--test"])
+    assert not test.exists()   # test instance cleaned up
+    assert real.exists()       # real companion left completely alone
+
+
+def test_stop_real_leaves_test_pidfile(tmp_path, monkeypatch):
+    real = tmp_path / ".companion.pid"
+    test = tmp_path / ".companion-test.pid"
+    real.write_text("424242\n127.0.0.1:7777\n")
+    test.write_text("424243\n127.0.0.1:7788\n")
+    monkeypatch.setattr(cli, "PID_FILE", real)
+    monkeypatch.setattr(cli, "TEST_PID_FILE", test)
+    CliRunner().invoke(main, ["stop"])
+    assert not real.exists()
+    assert test.exists()       # a real `stop` never touches the test instance
+
+
+def test_status_test_ignores_real_pidfile(tmp_path, monkeypatch):
+    real = tmp_path / ".companion.pid"
+    real.write_text("424242\n127.0.0.1:7777\n")   # real "running", test absent
+    monkeypatch.setattr(cli, "PID_FILE", real)
+    monkeypatch.setattr(cli, "TEST_PID_FILE", tmp_path / ".companion-test.pid")
+    result = CliRunner().invoke(main, ["status", "--test"])
+    assert result.exit_code == 1
+    assert "Not running" in result.output

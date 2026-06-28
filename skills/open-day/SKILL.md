@@ -42,6 +42,8 @@ export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
 
 `test-vault` creates + seeds the vault (`~/.claude/local-plugins/nsls-personal-toolkit/companion-test-vault/`, gitignored) on first use and prints its path; it never overwrites existing notes. Every downstream step — data collection, writing the daily note, and the Step 8 `serve` — then targets the test vault automatically. The companion shows a gold **TEST** banner so it's unmistakable. (Calendar/Asana reads are still your real, read-only data; only what gets *written* is redirected.) `-t` composes with `-v` and `-r`. To clear the test day and start over, run `reset-day -t`.
 
+**No collision with your real companion.** A test server is a fully separate instance — it binds its own port (**7788**, vs the real companion's **7777**) and writes its own pidfile (`.companion-test.pid`). So `open day -t` can never displace, stop, or be confused with a real `open day` already running. In Step 8, when in test mode, manage the companion with the `--test` flag (`"$TC" status --test`; `serve` auto-detects the test vault and picks 7788) and open the **7788** URL. Never run `"$TC" stop` (no flag) in test mode — that targets the real companion.
+
 There are two ways the ritual can run: with the **CLI companion** (the local Flask server, the default) or in **chat** (the fallback). `visual_mode` decides between them — on by default, `off` to stay in chat. The companion only runs on a CLI surface (Claude Code) where Bash can start a local server; on any surface that can't, the graceful fallback below finishes the ritual in chat.
 
 When `visual_mode` is **on** (the default):

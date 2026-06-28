@@ -11,11 +11,18 @@ from pathlib import Path
 import click
 
 
-PID_FILE = Path.home() / ".claude" / "local-plugins" / "nsls-personal-toolkit" / ".companion.pid"
+_PLUGIN_DIR = Path.home() / ".claude" / "local-plugins" / "nsls-personal-toolkit"
+PID_FILE = _PLUGIN_DIR / ".companion.pid"
+# Test mode runs as a fully separate instance: its own pidfile and its own
+# default port, so `open day -t` can never displace, stop, or be confused with
+# the real companion the regular `open day` runs on 7777.
+TEST_PID_FILE = _PLUGIN_DIR / ".companion-test.pid"
+DEFAULT_PORT = 7777
+TEST_DEFAULT_PORT = 7788
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 
-def _find_free_port(start: int = 7777) -> int:
+def _find_free_port(start: int = DEFAULT_PORT) -> int:
     for port in range(start, start + 100):
         with socket.socket() as s:
             try:
@@ -58,7 +65,7 @@ def main():
 
 @main.command()
 @click.option("--vault", default=None, help="Override vault path (defaults to OBSIDIAN_VAULT_PATH env var)")
-@click.option("--port", default=None, type=int, help="Port (default: first free starting at 7777)")
+@click.option("--port", default=None, type=int, help="Port (default: 7777, or 7788 for a test vault)")
 @click.option("--no-open", is_flag=True, help="Don't open the browser")
 def serve(vault, port, no_open):
     """Start the local web companion."""
@@ -73,17 +80,21 @@ def serve(vault, port, no_open):
     for line in ensure_vault_structure(vault_path):
         click.echo(f"  {line}")
     from companion.testmode import is_test_vault
-    if is_test_vault(vault_path):
+    test_mode = is_test_vault(vault_path)
+    # A test server is a separate instance: its own pidfile and its own default
+    # port, so it can never collide with the real companion on 7777.
+    pid_file = TEST_PID_FILE if test_mode else PID_FILE
+    if test_mode:
         click.echo("  TEST vault — practice data; your real day is untouched.")
-    port = port or _find_free_port()
+    port = port or _find_free_port(TEST_DEFAULT_PORT if test_mode else DEFAULT_PORT)
     host = "127.0.0.1"
 
     from companion.server import create_app
     app = create_app(vault_path=str(vault_path))
 
-    PID_FILE.parent.mkdir(parents=True, exist_ok=True)
-    PID_FILE.write_text(f"{os.getpid()}\n{host}:{port}\n", encoding="utf-8", newline="")
-    PID_FILE.chmod(0o600)
+    pid_file.parent.mkdir(parents=True, exist_ok=True)
+    pid_file.write_text(f"{os.getpid()}\n{host}:{port}\n", encoding="utf-8", newline="")
+    pid_file.chmod(0o600)
 
     url = f"http://{host}:{port}"
     click.echo(f"Serving at {url}")
@@ -98,7 +109,7 @@ def serve(vault, port, no_open):
         app.run(host=host, port=port, debug=False, use_reloader=False, threaded=True)
     finally:
         try:
-            PID_FILE.unlink()
+            pid_file.unlink()
         except FileNotFoundError:
             pass
 
@@ -134,45 +145,50 @@ def assert_test_vault_cmd(path):
 
 
 @main.command()
-def stop():
+@click.option("--test", "test_mode", is_flag=True, help="Target the test companion (its own pidfile), not the real one.")
+def stop(test_mode):
     """Stop a running companion server."""
-    if not PID_FILE.exists():
+    pid_file = TEST_PID_FILE if test_mode else PID_FILE
+    if not pid_file.exists():
         click.echo("No running companion found.")
         return
     try:
-        pid = int(PID_FILE.read_text(encoding="utf-8").splitlines()[0])
+        pid = int(pid_file.read_text(encoding="utf-8").splitlines()[0])
     except (IndexError, ValueError):
         click.echo("Malformed pidfile; cleaning up.")
-        PID_FILE.unlink(missing_ok=True)
+        pid_file.unlink(missing_ok=True)
         return
     try:
         os.kill(pid, signal.SIGTERM)
         click.echo(f"Sent SIGTERM to {pid}")
     except ProcessLookupError:
         click.echo("Stale pidfile; cleaning up.")
-    PID_FILE.unlink(missing_ok=True)
+    pid_file.unlink(missing_ok=True)
 
 
 @main.command()
-def status():
+@click.option("--test", "test_mode", is_flag=True, help="Report on the test companion, not the real one.")
+def status(test_mode):
     """Show companion status."""
-    if not PID_FILE.exists():
+    pid_file = TEST_PID_FILE if test_mode else PID_FILE
+    default_addr = f"127.0.0.1:{TEST_DEFAULT_PORT if test_mode else DEFAULT_PORT}"
+    if not pid_file.exists():
         click.echo("Not running.")
         sys.exit(1)
-    lines = PID_FILE.read_text(encoding="utf-8").splitlines()
+    lines = pid_file.read_text(encoding="utf-8").splitlines()
     try:
         pid = int(lines[0])
     except (IndexError, ValueError):
         click.echo("Not running (malformed pidfile cleaned up).")
-        PID_FILE.unlink(missing_ok=True)
+        pid_file.unlink(missing_ok=True)
         sys.exit(1)
-    addr = lines[1] if len(lines) > 1 else "127.0.0.1:7777"
+    addr = lines[1] if len(lines) > 1 else default_addr
     # Check if the process is actually alive
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
         click.echo("Not running (stale pidfile cleaned up).")
-        PID_FILE.unlink(missing_ok=True)
+        pid_file.unlink(missing_ok=True)
         sys.exit(1)
     except PermissionError:
         pass  # process exists but owned by another user — treat as alive
@@ -187,6 +203,6 @@ def status():
             os.kill(pid, signal.SIGTERM)
         except ProcessLookupError:
             pass
-        PID_FILE.unlink(missing_ok=True)
+        pid_file.unlink(missing_ok=True)
         sys.exit(1)
     click.echo(f"Running: pid {pid}, address {addr}")
