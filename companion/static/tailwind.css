@@ -214,20 +214,53 @@ a { color: inherit; text-decoration: none; }
 
 body {
   font-family: var(--nsls-font);
-  background: #F4F6FA;
+  background: #E6EBF2;
   color: var(--nsls-nearblack);
 }
+[x-cloak] { display: none !important; }
 
-/* Top nav restyled to brand navy */
-.nsls-nav {
+/* Bounded app shell — a navy frame with curved corners wraps the whole
+ * companion (nav + content), echoing the contained look of the artifact.
+ * The navy sides "come down" around a light inner panel. */
+.nsls-shell {
+  max-width: 880px;
+  margin: 22px auto;
   background: var(--nsls-navy);
-  border-bottom: none;
+  border-radius: 22px;
+  padding: 0 9px 9px;          /* navy frame on sides + bottom; nav is the top */
+  box-shadow: 0 14px 46px -20px rgba(24,49,90,0.55);
 }
-.nsls-nav a { color: rgba(255,255,255,0.62); transition: color .12s; }
-.nsls-nav a:hover { color: rgba(255,255,255,0.85); }
-.nsls-nav a.nsls-nav-active {
-  color: #fff;
-  border-bottom: 2px solid var(--nsls-gold);
+.nsls-shell-main {
+  background: #F4F6FA;
+  border-radius: 15px;
+  padding: 1.75rem 1.5rem 1.5rem;
+}
+
+/* Top nav — the top edge of the navy shell */
+.nsls-nav { background: var(--nsls-navy); border-bottom: none; }
+.nsls-nav-inner { display: flex; gap: 1.5rem; align-items: center; padding: 0.85rem 1.25rem; }
+.nsls-nav-link {
+  font-weight: 600; font-size: 1rem; font-family: inherit;
+  color: rgba(255,255,255,0.62); text-decoration: none;
+  background: none; border: none; cursor: pointer;
+  padding: 0 0 0.5rem; transition: color .12s;
+}
+.nsls-nav-link:hover { color: rgba(255,255,255,0.85); }
+.nsls-nav-active { color: #fff; border-bottom: 2px solid var(--nsls-gold); }
+
+/* "Coming soon" popover on the Week tab */
+.nsls-nav-item { position: relative; display: inline-flex; }
+.nsls-soon-pop {
+  position: absolute; top: 132%; left: 50%; transform: translateX(-50%);
+  background: #fff; color: var(--nsls-navy);
+  font-size: 0.72rem; font-weight: 600; white-space: nowrap;
+  padding: 0.3rem 0.6rem; border-radius: 8px;
+  box-shadow: 0 8px 22px -6px rgba(0,0,0,0.4); z-index: 50;
+}
+.nsls-soon-pop::before {
+  content: ""; position: absolute; bottom: 100%; left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent; border-bottom-color: #fff;
 }
 
 /* Page heading */

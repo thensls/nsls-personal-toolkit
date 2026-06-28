@@ -13,10 +13,7 @@
 
 {% if not closing %}
   {% if day_status == 'active' %}
-  <div class="nsls-banner">
-    <span class="font-medium">Your day's open.</span> Come back any time to mark off
-    progress — tick things as you go, at the end of the day, or when you close out.
-  </div>
+  {% include "_components/day_open_banner.html" %}
   {% else %}
   <div class="nsls-banner">
     <span class="font-medium">Nice — your plan's set.</span> Return to the terminal and
@@ -93,6 +90,8 @@
 <div class="text-center text-sm text-stone-500 mt-6 mb-2">
   <span class="font-medium text-stone-700">Good job!</span> Return to the terminal and type <code class="px-1 bg-stone-100 rounded">done</code> to close your day.
 </div>
+{% elif day_status == 'active' %}
+<div class="mt-6">{% include "_components/day_open_banner.html" %}</div>
 {% endif %}
 
 {% endif %}
