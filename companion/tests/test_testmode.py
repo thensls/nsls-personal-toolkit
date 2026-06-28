@@ -82,7 +82,8 @@ def test_ensure_test_vault_creates_structure_and_sample(test_vault_at):
     assert (vault / "30-habits").is_dir()
     today = vault / "01-daily" / f"{date.today().isoformat()}.md"
     assert today.exists()
-    assert "status: active" in today.read_text(encoding="utf-8")
+    # Seeded in the planning state so `open day -t` lands on the planning screen.
+    assert "status: planning" in today.read_text(encoding="utf-8")
     # Sample habits seeded so there's something to tick.
     assert "- id:" in (vault / "30-habits" / "habits.md").read_text(encoding="utf-8")
 

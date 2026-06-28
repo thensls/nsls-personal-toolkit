@@ -88,26 +88,32 @@ _SAMPLE_HABITS = """# Daily Habits
 
 
 def _sample_day_note() -> str:
-    """A realistic, clearly-sample active day so a fresh test vault has content."""
+    """A clearly-sample day in the *planning* state, so `open day -t` lands on
+    the morning planning screen (pick your Top 3) — the most important first
+    screen — with a few suggestions to choose from, rather than jumping past it
+    into the Command Center."""
     return """---
-status: active
+status: planning
 ---
 # Daily Note — (sample test day)
 
 ## Morning Check-in
 
+### AI Suggested: Tomorrow's Top 3
+1. Review the Q3 LOP draft
+2. Reply to the vendor contract thread
+3. Prep the board update
+
 ### My Top 3
-1. [ ] Try out the visual companion
-2. [x] Skim the morning planning flow
-3. [ ] Mark a couple of things done
+1.
+2.
+3.
 
 ### Bonus
-1. [ ] Add a bonus item to see how it works
-2. [x] Tick a habit
 
 ### Habits
 - [ ] **Walk**
-- [x] **Read 15m**
+- [ ] **Read 15m**
 - [ ] **Meditate**
 """
 

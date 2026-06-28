@@ -17,7 +17,7 @@
            the selected one fill light; the selected one is teal (gold at 100). -->
       <div class="nsls-seg">
         {% for lvl in [0, 25, 50, 75, 100] %}
-        <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl %}is-current{% elif lvl != 0 and lvl < item.progress %}is-below{% endif %}"
+        <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl %}is-current{% elif lvl < item.progress %}is-below{% endif %}"
                 hx-post="/set-progress"
                 hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
                 hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"

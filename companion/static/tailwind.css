@@ -313,7 +313,9 @@ body {
 }
 .nsls-seg button:first-child { border-left: none; }
 .nsls-seg button:hover { background: var(--nsls-lightblue); }
-.nsls-seg button.is-below { background: var(--nsls-lightblue); color: var(--nsls-teal-dark); }
+/* Fill look: every step up to and including the current value is solid teal;
+   a 100%/done item shows 0–75 solid teal and only 100 in gold. */
+.nsls-seg button.is-below { background: var(--nsls-teal); color: #fff; }
 .nsls-seg button.is-current { background: var(--nsls-teal); color: #fff; font-weight: 600; }
 .nsls-seg button.is-current-done { background: var(--nsls-gold); color: var(--nsls-navy); font-weight: 600; }
 

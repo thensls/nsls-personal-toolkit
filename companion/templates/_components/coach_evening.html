@@ -1,24 +1,12 @@
 <div x-data="{ step: {{ step or 1 }} }" data-suppress-sse-reload class="nsls-card max-w-2xl mx-auto">
   <div class="flex gap-1 mb-3">
-    {% for i in range(1, 5) %}
+    {% for i in range(1, 4) %}
       <div class="nsls-prog" :class="step >= {{ i }} ? 'nsls-prog-on' : 'nsls-prog-off'"></div>
     {% endfor %}
   </div>
-  <div class="nsls-card-title mb-4">Step <span x-text="step"></span> of 4 · Evening</div>
+  <div class="nsls-card-title mb-4">Step <span x-text="step"></span> of 3 · Evening</div>
 
   <template x-if="step === 1">
-    <div>
-      <h3 class="font-semibold text-lg mb-3 nsls-h1">Today's stats</h3>
-      <div class="grid grid-cols-2 gap-3 text-sm">
-        <div class="nsls-stat"><div class="nsls-stat-label">Top 3 completed</div><div class="nsls-stat-value">{{ stats.top_3_done }}/{{ stats.top_3_total }}</div></div>
-        <div class="nsls-stat"><div class="nsls-stat-label">Habits completed</div><div class="nsls-stat-value">{{ stats.habits_done }}/{{ stats.habits_total }}</div></div>
-        <div class="nsls-stat"><div class="nsls-stat-label">Focus time</div><div class="nsls-stat-value">{{ stats.focus_hours }}h</div></div>
-        <div class="nsls-stat"><div class="nsls-stat-label">Streak</div><div class="nsls-stat-value">{{ stats.streak_days }}d</div></div>
-      </div>
-    </div>
-  </template>
-
-  <template x-if="step === 2">
     <div>
       <h3 class="font-semibold text-lg mb-2 nsls-h1">Insight Reflection</h3>
       <p class="text-sm nsls-subtle mb-3">What did you notice about yourself today? One pattern, one resistance, one win — whatever is alive. Auto-saves as you type.</p>
@@ -30,7 +18,7 @@
     </div>
   </template>
 
-  <template x-if="step === 3">
+  <template x-if="step === 2">
     <div>
       <h3 class="font-semibold text-lg mb-2 nsls-h1">Gratitude</h3>
       <p class="text-sm nsls-subtle mb-3">One thing you're grateful for today. Short or long. Auto-saves as you type.</p>
@@ -42,7 +30,7 @@
     </div>
   </template>
 
-  <template x-if="step === 4">
+  <template x-if="step === 3">
     <div>
       <h3 class="font-semibold text-lg mb-3 nsls-h1">Done for today</h3>
       <div class="mb-4">
@@ -56,9 +44,9 @@
   <div class="mt-6 flex justify-between gap-3">
     <button @click="step--" :disabled="step <= 1"
             class="nsls-btn-ghost disabled:opacity-30">Back</button>
-    <button @click="step++" x-show="step < 4"
+    <button @click="step++" x-show="step < 3"
             class="nsls-btn-teal">Next</button>
-    <button x-show="step >= 4"
+    <button x-show="step >= 3"
             hx-post="/lock-in" hx-vals='{"phase":"evening"}'
             hx-select="main" hx-target="main" hx-swap="outerHTML"
             class="nsls-btn-gold">Done →</button>

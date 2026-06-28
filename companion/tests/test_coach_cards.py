@@ -64,15 +64,17 @@ def test_morning_coach_renders_plan_and_done(client_with_today):
     assert b"Step" not in resp.data
 
 
-def test_evening_coach_renders_4_steps(client_with_today):
+def test_evening_coach_renders_3_steps(client_with_today):
     client, vault = client_with_today
     today = date.today().isoformat()
     note = vault / "01-daily" / f"{today}.md"
     note.write_text("## Morning Check-in\n### My Top 3\n\n## Insight Reflection\n\n")
     resp = client.get("/?mode=coach-evening")
     assert resp.status_code == 200
-    for label in (b"Today's stats", b"Insight Reflection",
-                  b"Gratitude", b"Done"):
+    # Stats step was cut — close is now Insight → Gratitude → Done (3 steps).
+    assert b"Today's stats" not in resp.data
+    assert b"of 3" in resp.data
+    for label in (b"Insight Reflection", b"Gratitude", b"Done"):
         assert label in resp.data, f"missing: {label}"
 
 
