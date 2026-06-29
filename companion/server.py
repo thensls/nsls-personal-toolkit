@@ -287,6 +287,19 @@ def _extract_ai_suggestions(morning_section: str) -> list[dict]:
     return items
 
 
+_SUGGESTION_TAG_RE = re.compile(r"^(optional\s+nsls:|optional:|\(pers\)|pers:)\s*", re.IGNORECASE)
+
+
+def _norm_suggestion(text: str) -> str:
+    """Normalize a suggestion for dedup: drop leading tags ("Optional NSLS:",
+    "(pers)"), a trailing parenthetical ("(~50% done)", "(from …)"), case, and
+    extra whitespace — so the same task surfaced from two sources collapses to
+    one key instead of showing twice."""
+    t = _SUGGESTION_TAG_RE.sub("", text.strip())
+    t = re.sub(r"\s*\([^)]*\)\s*$", "", t)          # trailing (...)
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
 def _extract_carryovers(vault_path: Path, today: str, lookback_days: int = 7) -> list[dict]:
     """Find the most recent prior daily note (up to ``lookback_days`` back)
     and return its unchecked Top 3 + Bonus items as carry-over suggestions.
@@ -307,9 +320,18 @@ def _extract_carryovers(vault_path: Path, today: str, lookback_days: int = 7) ->
             continue
         sections = parse_daily_note_sections(note_path.read_text(encoding="utf-8"))
         morning = sections.get("Morning Check-in", "")
+        # Don't resurrect items the builder already deleted or completed in the
+        # prior note — they live in that note's `### Deleted` / `### Done`
+        # (companion-written) sections and must not carry over.
+        excluded = {
+            _norm_suggestion(x)
+            for x in (_extract_subsection_items(morning, "Deleted")
+                      | _extract_subsection_items(morning, "Done")
+                      | _extract_subsection_items(morning, "Dismissed"))
+        }
         items = []
         for it in _extract_top_3(morning) + _extract_bonus(morning):
-            if it["text"] and not it["checked"]:
+            if it["text"] and not it["checked"] and _norm_suggestion(it["text"]) not in excluded:
                 items.append({"text": it["text"], "source": f"from {candidate}"})
         if items:
             return items
@@ -342,11 +364,12 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
                        priorities: list, bonus: list) -> dict:
     """Build the Plan Your Day screen context: suggestions + carry-overs + taken state.
 
-    Suggestion ordering: AI suggestions from /close-day (today's note's
-    `### AI Suggested: …` subsections under `## Morning Check-in`) come first,
-    then carry-overs (most recent prior daily note within the lookback window).
-    Texts dedupe across sources — AI wins if both name the same item.
-    Dismissed items are filtered out entirely.
+    Suggestion source: when /close-day seeded `### AI Suggested: …` items, those
+    ARE the curated version of the carry-overs, so we show them *instead of* the
+    raw carry-overs — surfacing both showed every task twice (once reworded by
+    the AI, once raw), which is the duplication builders hit. Carry-overs are the
+    fallback only when there are no AI suggestions. Either way the list is
+    normalize-deduped so near-identical wording collapses to one row.
     """
     morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
     ai_items = _extract_ai_suggestions(morning)
@@ -360,10 +383,11 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
 
     seen: set[str] = set()
     suggestions: list[dict] = []
-    for item in ai_items + carryovers:
-        if item["text"] in seen:
+    for item in (ai_items if ai_items else carryovers):
+        key = _norm_suggestion(item["text"])
+        if key in seen:
             continue
-        seen.add(item["text"])
+        seen.add(key)
         suggestions.append(item)
 
     priority_texts = {p["text"] for p in priorities if p.get("text")}

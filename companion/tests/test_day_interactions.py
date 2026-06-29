@@ -301,3 +301,69 @@ def test_set_top_3_rejects_out_of_bounds_index(client_with_today):
     client, _ = client_with_today
     resp = client.post("/set-top-3", data={"index": "99", "text": "x"})
     assert resp.status_code == 400
+
+
+# --- suggestion dedup + deleted-exclusion (no duplicate / no-resurrect) ------
+
+def _yesterday(today):
+    from datetime import datetime, timedelta
+    return (datetime.strptime(today, "%Y-%m-%d") - timedelta(days=1)).date().isoformat()
+
+
+def _plan_for(vault, today):
+    from companion.server import _build_plan_context, _extract_top_3, _extract_bonus
+    from companion.parsers import parse_daily_note_sections
+    body = (vault / "01-daily" / f"{today}.md").read_text()
+    morning = parse_daily_note_sections(body).get("Morning Check-in", "")
+    return _build_plan_context(body, vault, today, _extract_top_3(morning), _extract_bonus(morning))
+
+
+def test_ai_suggestions_suppress_reworded_carryover_dupes(client_with_today):
+    """When close-day seeded AI suggestions, the raw carry-over they were built
+    from must NOT also show — that's the reworded duplicate builders hit."""
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    (vault / "01-daily" / f"{_yesterday(today)}.md").write_text(
+        "## Morning Check-in\n### My Top 3\n1. [ ] Port PP CLI to Cowork\n### Bonus\n"
+    )
+    (vault / "01-daily" / f"{today}.md").write_text(
+        "## Morning Check-in\n"
+        "### AI Suggested: Top 3\n1. Finish the PP CLI Cowork port (~50% done)\n"
+        "### My Top 3\n1. [ ]\n2. [ ]\n3. [ ]\n### Bonus\n"
+    )
+    texts = [s["text"] for s in _plan_for(vault, today)["suggestions"]]
+    assert any("Finish the PP CLI Cowork port" in t for t in texts)
+    assert all("Port PP CLI to Cowork" not in t for t in texts)  # carry-over suppressed
+
+
+def test_deleted_items_do_not_carry_over(client_with_today):
+    """An item the builder deleted yesterday (in the prior note's ### Deleted)
+    must not resurface as a carry-over suggestion today."""
+    from companion.server import _extract_carryovers
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    (vault / "01-daily" / f"{_yesterday(today)}.md").write_text(
+        "## Morning Check-in\n"
+        "### My Top 3\n1. [ ] Keep me\n2. [ ] Delete me\n"
+        "### Bonus\n\n### Deleted\n- Delete me\n"
+    )
+    texts = [c["text"] for c in _extract_carryovers(vault, today)]
+    assert "Keep me" in texts
+    assert "Delete me" not in texts
+
+
+def test_carryover_normalized_dedup_collapses_near_identical(client_with_today):
+    """Tagged / parenthetical variants of the same task collapse to one row."""
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    (vault / "01-daily" / f"{_yesterday(today)}.md").write_text(
+        "## Morning Check-in\n### My Top 3\n"
+        "1. [ ] Optional NSLS: Finish the draft\n"
+        "2. [ ] Finish the draft (~50% done)\n### Bonus\n"
+    )
+    # today's note has no AI suggestions → carry-over path
+    (vault / "01-daily" / f"{today}.md").write_text(
+        "## Morning Check-in\n### My Top 3\n1. [ ]\n### Bonus\n"
+    )
+    sugg = _plan_for(vault, today)["suggestions"]
+    assert len(sugg) == 1

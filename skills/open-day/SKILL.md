@@ -187,7 +187,11 @@ Read yesterday's daily note:
 $OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD-1.md
 ```
 
-Extract the `## Carrying Over` section. These are unfinished items from yesterday.
+Extract the `## Carrying Over` section plus any unfinished `### My Top 3` / `### Bonus` items. These are unfinished items from yesterday.
+
+**Exclude what was deleted or done.** Skip any item that appears in yesterday's `### Deleted`, `### Done`, or `### Dismissed` subsections (companion-written) — a deleted item must never resurface. (The companion enforces this too; do it here so the chat path and the AI-Suggested section you write don't reintroduce it.)
+
+**Dedupe before presenting.** Carry-overs and the AI-suggested items often describe the *same task in different words* (close-day reworded a carry-over). Collapse those to a single suggestion — prefer the AI/curated wording — so the builder never sees the same task twice. Match on meaning, not just exact string.
 
 **2d. This week's plan (if it exists)**
 
