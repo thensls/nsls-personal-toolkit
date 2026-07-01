@@ -45,11 +45,20 @@ Extract from each:
 
 **1b. Familiar time data for the full week**
 
+Familiar may capture on more than one machine, so resolve every configured
+capture root from the builder profile and scan them all — summing across
+machines for each day. (Shared resolver; falls back to the legacy default path,
+prints nothing when disabled.)
+
 ```bash
+PROFILE="${OBSIDIAN_VAULT_PATH}/50-reference/builder-profile.md"
+FAMILIAR_ROOTS="$(python3 ~/.claude/local-plugins/nsls-personal-toolkit/skills/familiar/resolve-roots.py "$PROFILE")"
+
 for DATE in $SAT $SUN $MON $TUE $WED $THU $FRI; do  # all 7 days, Sat-Fri
   echo "=== $DATE ==="
-  grep -h "^app:" $HOME/familiar/stills-markdown/session-${DATE}T*/*.md 2>/dev/null \
-    | sort | uniq -c | sort -rn
+  while IFS= read -r root; do [ -n "$root" ] && \
+    grep -h "^app:" "$root"/session-${DATE}T*/*.md 2>/dev/null
+  done <<< "$FAMILIAR_ROOTS" | sort | uniq -c | sort -rn
 done
 ```
 
@@ -57,8 +66,10 @@ And Chrome breakdown:
 ```bash
 for DATE in $SAT $SUN $MON $TUE $WED $THU $FRI; do  # all 7 days
   echo "=== $DATE ==="
-  awk '/^app: Google Chrome/{found=1} found && /^window_title_raw:/{print; found=0}' \
-    $HOME/familiar/stills-markdown/session-${DATE}T*/*.md 2>/dev/null
+  while IFS= read -r root; do [ -n "$root" ] && \
+    awk '/^app: Google Chrome/{found=1} found && /^window_title_raw:/{print; found=0}' \
+      "$root"/session-${DATE}T*/*.md 2>/dev/null
+  done <<< "$FAMILIAR_ROOTS"
 done | sort | uniq -c | sort -rn
 ```
 

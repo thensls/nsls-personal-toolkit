@@ -17,7 +17,7 @@ Synthesize the builder's full day from seven data sources into a daily note and 
 | Source | What It Covers | Access Method |
 |--------|---------------|---------------|
 | **Google Calendar** | Meetings scheduled, attendees, times | `gcal_list_events` MCP tool |
-| **Familiar** | Screen activity — apps used, window titles, URLs, time distribution | Bash: scan `$HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md` frontmatter |
+| **Familiar** | Screen activity — apps used, window titles, URLs, time distribution | Bash: scan every configured Familiar root (see `data_sources.familiar.paths` in the builder profile — may be more than one machine) for `session-YYYY-MM-DDT*/*.md` frontmatter |
 | **Fathom** | Meeting summaries, topics, action items, decisions | Bash: Python script calling Fathom API (see below) |
 | **Sent Email** | Approvals, decisions, outbound communications | `gmail_search_messages` MCP tool (`from:me after:YYYY/M/DD before:YYYY/M/DD+1`) |
 | **Sent Slack** | Conversations, decisions, coordination, context | `slack_search_public_and_private` MCP tool (`from:<@${SLACK_USER_ID}> on:YYYY-MM-DD`) |
@@ -94,34 +94,59 @@ If no builder profile exists, fall back to the **Executive / SLT preset** catego
 
 **Phase 1: Collect raw data (run in parallel with Fathom)**
 
+First resolve the Familiar capture roots. A builder may capture on more than
+one machine, so read the list from the profile (`data_sources.familiar.paths`)
+and scan **every** root — rolling all machines into one daily total. The
+resolver falls back to the legacy default `~/familiar/stills-markdown` when the
+profile has `familiar: true` (old boolean form) or is unset, and yields nothing
+when Familiar is disabled.
+
 ```bash
-# Step 1: Get top-level app counts
-grep -h "^app:" $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+# Resolve all configured Familiar roots into $FAMILIAR_ROOTS (one path per line).
+# The shared resolver reads data_sources.familiar.paths from the profile,
+# falls back to ~/familiar/stills-markdown for the legacy boolean form, and
+# prints nothing when Familiar is disabled.
+PROFILE="${OBSIDIAN_VAULT_PATH}/50-reference/builder-profile.md"
+FAMILIAR_ROOTS="$(python3 ~/.claude/local-plugins/nsls-personal-toolkit/skills/familiar/resolve-roots.py "$PROFILE")"
+
+# Step 1: Get top-level app counts (summed across every machine)
+while IFS= read -r root; do [ -n "$root" ] && \
+  grep -h "^app:" "$root"/session-YYYY-MM-DDT*/*.md 2>/dev/null
+done <<< "$FAMILIAR_ROOTS" | sort | uniq -c | sort -rn
 
 # Step 2: Break down Chrome by window title
-awk '/^app: Google Chrome/{found=1} found && /^window_title_raw:/{print; found=0}' \
-  $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+while IFS= read -r root; do [ -n "$root" ] && \
+  awk '/^app: Google Chrome/{found=1} found && /^window_title_raw:/{print; found=0}' \
+    "$root"/session-YYYY-MM-DDT*/*.md 2>/dev/null
+done <<< "$FAMILIAR_ROOTS" | sort | uniq -c | sort -rn
 
 # Step 3: Break down Slack by window title (channel/DM names)
-awk '/^app: Slack/{found=1} found && /^window_title_raw:/{print; found=0}' \
-  $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+while IFS= read -r root; do [ -n "$root" ] && \
+  awk '/^app: Slack/{found=1} found && /^window_title_raw:/{print; found=0}' \
+    "$root"/session-YYYY-MM-DDT*/*.md 2>/dev/null
+done <<< "$FAMILIAR_ROOTS" | sort | uniq -c | sort -rn
 
 # Step 4: Break down Warp by window title (Claude Code session names)
-awk '/^app: Warp/{found=1} found && /^window_title_raw:/{print; found=0}' \
-  $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+while IFS= read -r root; do [ -n "$root" ] && \
+  awk '/^app: Warp/{found=1} found && /^window_title_raw:/{print; found=0}' \
+    "$root"/session-YYYY-MM-DDT*/*.md 2>/dev/null
+done <<< "$FAMILIAR_ROOTS" | sort | uniq -c | sort -rn
 
-# Step 5: Session timestamps for time calculation
-for s in $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/; do
-  first=$(ls "$s"*.md 2>/dev/null | head -1 | xargs basename | sed 's/.md//')
-  last=$(ls "$s"*.md 2>/dev/null | tail -1 | xargs basename | sed 's/.md//')
-  count=$(ls "$s"*.md 2>/dev/null | wc -l | tr -d ' ')
-  echo "$first|$last|$count"
-done
+# Step 5: Session timestamps for time calculation (across all machines)
+while IFS= read -r root; do [ -n "$root" ] && \
+  for s in "$root"/session-YYYY-MM-DDT*/; do
+    [ -d "$s" ] || continue
+    first=$(ls "$s"*.md 2>/dev/null | head -1 | xargs basename | sed 's/.md//')
+    last=$(ls "$s"*.md 2>/dev/null | tail -1 | xargs basename | sed 's/.md//')
+    count=$(ls "$s"*.md 2>/dev/null | wc -l | tr -d ' ')
+    echo "$first|$last|$count"
+  done
+done <<< "$FAMILIAR_ROOTS"
 ```
+
+> Multiple machines: the counts above are already summed across roots. If the
+> builder wants a per-machine breakdown, run the same scans inside the loop but
+> label each block with `$root` before piping.
 
 **Phase 2: Calculate active work time**
 
