@@ -17,16 +17,21 @@
   {% with when='morning', label='Energy — beginning of day', value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
 </div>
 
+{% set planned = (top_3 + bonus) | selectattr('est') | map(attribute='est') | sum %}
 <section class="nsls-card">
-  <div class="flex items-baseline justify-between mb-3">
+  <div class="flex items-baseline justify-between mb-1">
     <h2 class="nsls-card-title">Top 3</h2>
-    <span class="text-xs nsls-subtle">progress · delete</span>
+    <span class="text-xs nsls-subtle nsls-tip">est. hrs<span class="ic">i</span><span class="pop"><b>Estimated time (timeboxing).</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span><span>&nbsp;·&nbsp;progress&nbsp;·&nbsp;delete</span></span>
   </div>
+  {% if planned %}<p class="text-xs nsls-subtle mb-2">≈ <span class="font-medium">{{ '%g'|format(planned) }}h</span> planned today</p>{% endif %}
   {% with section='top_3', items=top_3 %}{% include "_components/task_list.html" %}{% endwith %}
 </section>
 
 <section class="nsls-card">
-  <h2 class="nsls-card-title mb-3">Bonus</h2>
+  <div class="flex items-baseline justify-between mb-3">
+    <h2 class="nsls-card-title">Bonus</h2>
+    <span class="text-xs nsls-subtle">est. hrs&nbsp;·&nbsp;progress&nbsp;·&nbsp;delete</span>
+  </div>
   {% with section='bonus', items=bonus %}{% include "_components/task_list.html" %}{% endwith %}
   {% include "_components/bonus_add.html" %}
 </section>

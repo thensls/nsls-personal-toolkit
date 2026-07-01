@@ -441,6 +441,37 @@ body {
 .nsls-prog-on { background: var(--nsls-teal); }
 .nsls-prog-off { background: var(--nsls-disc-empty); }
 
+/* Per-task estimated hours (timeboxing) */
+.nsls-est { display: inline-flex; align-items: center; gap: 3px; flex: none; }
+.nsls-est input {
+  width: 2.9rem; text-align: right; font-family: inherit; font-size: 0.78rem;
+  color: var(--nsls-nearblack); background: #fff;
+  border: 1px solid var(--nsls-disc-empty); border-radius: 8px; padding: 0.32rem 0.4rem;
+}
+.nsls-est input:focus { outline: none; border-color: var(--nsls-teal); }
+.nsls-est .u { font-size: 0.72rem; color: var(--nsls-darkblue); }
+
+/* Little (i) tooltip — used for the timeboxing explainer on the est column */
+.nsls-tip { position: relative; display: inline-flex; align-items: center; cursor: help; }
+.nsls-tip .ic {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: var(--nsls-darkblue); color: #fff; font-size: 9px; font-weight: 700; margin-left: 4px;
+}
+.nsls-tip .pop {
+  position: absolute; bottom: 150%; right: -6px; width: 232px; z-index: 20;
+  background: #fff; color: var(--nsls-nearblack);
+  font-size: 0.72rem; font-weight: 400; text-transform: none; letter-spacing: 0; line-height: 1.4;
+  padding: 0.55rem 0.65rem; border-radius: 10px; box-shadow: 0 10px 26px -8px rgba(0,0,0,0.4);
+  opacity: 0; visibility: hidden; transition: opacity .12s;
+}
+.nsls-tip .pop b { color: var(--nsls-navy); }
+.nsls-tip .pop::after {
+  content: ""; position: absolute; top: 100%; right: 10px;
+  border: 6px solid transparent; border-top-color: #fff;
+}
+.nsls-tip:hover .pop, .nsls-tip:focus-within .pop { opacity: 1; visibility: visible; }
+
 /* Read-only "day closed" header banner (results) */
 .nsls-closed-head {
   background: var(--nsls-navy); color: #fff;

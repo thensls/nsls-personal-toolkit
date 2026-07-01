@@ -94,6 +94,29 @@ def _strip_progress(text: str) -> tuple[str, int]:
     return text, 0
 
 
+# Per-task estimated hours (timeboxing) — trailing HTML comment `<!--e:1.5-->`,
+# invisible in rendered Obsidian, same round-trip trick as progress. Decimal
+# hours; stored as entered (trailing zeros trimmed). Not $-anchored so it can be
+# stripped regardless of whether the progress marker sits before or after it.
+_EST_RE = re.compile(r"\s*<!--\s*e:([0-9]*\.?[0-9]+)\s*-->")
+
+
+def _strip_est(text: str) -> tuple[str, float | None]:
+    """Remove an ``<!--e:X-->`` marker (anywhere) from item text.
+
+    Returns (clean_text, hours) with hours=None if no marker.
+    """
+    m = _EST_RE.search(text)
+    if m:
+        return (text[: m.start()] + text[m.end():]).strip(), float(m.group(1))
+    return text, None
+
+
+def _fmt_hours(hours: float) -> str:
+    """Compact hours string: 1.5 -> '1.5', 2.0 -> '2', 0.25 -> '0.25'."""
+    return f"{hours:g}"
+
+
 def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
     """Extract `1. [x] Foo` / `1. [ ] Foo` / `1. Foo` items under a `### heading`.
 
@@ -121,12 +144,14 @@ def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
                 text = after_num[3:].strip()
             else:
                 text = after_num
+            text, est = _strip_est(text)
             text, prog = _strip_progress(text)
             if text:
                 items.append({
                     "text": text,
                     "checked": checked,
                     "progress": 100 if checked else prog,
+                    "est": est,
                 })
     return items
 
@@ -155,8 +180,9 @@ def _extract_numbered_checkbox_list_raw(section: str, heading: str) -> list[dict
                 text = after_num[3:].strip()
             else:
                 text = after_num
+            text, est = _strip_est(text)
             text, _ = _strip_progress(text)
-            items.append({"text": text, "checked": checked})
+            items.append({"text": text, "checked": checked, "est": est})
     return items
 
 
@@ -414,10 +440,12 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
     # typed in slot 3 reappear in slot 1 after a re-render.
     raw_top3 = _extract_numbered_checkbox_list_raw(morning, "### My Top 3")
     top3_slots = [(raw_top3[i]["text"] if i < len(raw_top3) else "") for i in range(3)]
+    top3_est = [(raw_top3[i].get("est") if i < len(raw_top3) else None) for i in range(3)]
     return {
         "suggestions": suggestions,
         "priorities": priorities_with_text,
         "top3_slots": top3_slots,
+        "top3_est": top3_est,
         "bonus": bonus_with_text,
     }
 
@@ -570,10 +598,42 @@ def _set_nth_progress(md: str, heading: str, index: int, level: int) -> str:
             prefix, rest = m.group(1), m.group(2)
             if rest.startswith("[ ]") or rest[:3].lower() == "[x]":
                 rest = rest[3:].lstrip()
+            rest, est = _strip_est(rest)          # preserve the time estimate
             rest, _ = _strip_progress(rest)
             box = "[x]" if level == 100 else "[ ]"
             marker = f" <!--p:{level}-->" if 0 < level < 100 else ""
-            lines[i] = f"{prefix}{box} {rest}{marker}".rstrip()
+            est_marker = f" <!--e:{_fmt_hours(est)}-->" if est else ""
+            lines[i] = f"{prefix}{box} {rest}{marker}{est_marker}".rstrip()
+            break
+        seen += 1
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _set_nth_est(md: str, heading: str, index: int, hours: float | None) -> str:
+    """Set/clear the ``<!--e:X-->`` estimate on the Nth item under `heading`.
+
+    Preserves the item's text, checkbox, and progress marker exactly — only the
+    estimate marker is swapped. ``hours`` None/0 removes the marker.
+    """
+    lines = md.splitlines()
+    in_section = False
+    seen = 0
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            in_section = True
+            continue
+        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            break
+        if not in_section:
+            continue
+        m = _LIST_ITEM_RE.match(line)
+        if not m:
+            continue
+        if seen == index:
+            prefix, rest = m.group(1), m.group(2)
+            rest, _ = _strip_est(rest)            # drop any existing estimate, keep the rest
+            est_marker = f" <!--e:{_fmt_hours(hours)}-->" if hours else ""
+            lines[i] = f"{prefix}{rest}{est_marker}".rstrip()
             break
         seen += 1
     return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
@@ -1575,6 +1635,37 @@ def create_app(vault_path: str) -> Flask:
             return _set_nth_progress(md, heading, index, target)
 
         safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+        return _render_task_list(today, section)
+
+    @app.route("/set-estimate", methods=["POST"])
+    def set_estimate():
+        """Set/clear a task's estimated hours (timeboxing). Blank/0 clears it."""
+        section = request.form.get("section", "").strip()
+        heading = _TASK_HEADINGS.get(section)
+        if heading is None:
+            return ("invalid section", 400)
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        raw = (request.form.get("hours", "") or "").strip()
+        if raw in ("", "-"):
+            hours: float | None = None
+        else:
+            try:
+                hours = float(raw)
+            except ValueError:
+                return ("hours must be a number", 400)
+            if hours < 0 or hours > 24:
+                return ("hours must be between 0 and 24", 400)
+            if hours == 0:
+                hours = None
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+        safe_modify(note_path, lambda md: _set_nth_est(md, heading, index, hours))
         broadcast(f"01-daily/{today}.md")
         return _render_task_list(today, section)
 

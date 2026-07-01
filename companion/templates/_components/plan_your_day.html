@@ -68,7 +68,10 @@
   {% endif %}
 
   <div class="mb-4">
-    <h4 class="nsls-card-title mb-2">Your Top 3</h4>
+    <div class="flex items-baseline justify-between mb-2">
+      <h4 class="nsls-card-title">Your Top 3</h4>
+      <span class="text-xs nsls-subtle nsls-tip">est. hrs<span class="ic">i</span><span class="pop"><b>Estimated time (timeboxing).</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span>
+    </div>
     <ol class="space-y-2">
       {% for i in range(3) %}
         <li class="flex items-center gap-2">
@@ -83,6 +86,16 @@
                  name="text"
                  autocomplete="off"
                  class="flex-1 nsls-input">
+          <span class="nsls-est">
+            <input type="text" inputmode="decimal" name="hours" autocomplete="off"
+                   value="{{ '%g'|format(plan.top3_est[i]) if plan.top3_est[i] else '' }}" placeholder="—"
+                   aria-label="Estimated hours for priority {{ i + 1 }}"
+                   hx-post="/set-estimate"
+                   hx-vals='{"section":"top_3","index":"{{ i }}"}'
+                   hx-trigger="change, keyup[key=='Enter']"
+                   hx-swap="none">
+            <span class="u">h</span>
+          </span>
         </li>
       {% endfor %}
     </ol>

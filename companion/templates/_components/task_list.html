@@ -13,6 +13,19 @@
 
       <span class="nsls-row-text {% if item.progress >= 100 %}is-done{% elif item.deleted %}is-deleted{% endif %}">{{ item.text }}</span>
 
+      <!-- Estimated hours (timeboxing): saves on blur / Enter, clears when emptied. -->
+      <span class="nsls-est">
+        <input type="text" inputmode="decimal" name="hours" autocomplete="off"
+               value="{{ '%g'|format(item.est) if item.est else '' }}" placeholder="—"
+               aria-label="Estimated hours"
+               hx-post="/set-estimate"
+               hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
+               hx-trigger="change, keyup[key=='Enter']"
+               hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
+               hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
+        <span class="u">h</span>
+      </span>
+
       <!-- Segmented progress control: the buttons ARE the bar. Levels at/below
            the selected one fill light; the selected one is teal (gold at 100). -->
       <div class="nsls-seg">

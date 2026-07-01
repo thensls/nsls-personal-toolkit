@@ -352,6 +352,51 @@ def test_deleted_items_do_not_carry_over(client_with_today):
     assert "Delete me" not in texts
 
 
+# --- per-task estimated hours (timeboxing) ----------------------------------
+
+def test_set_estimate_writes_and_clears_marker(client_with_today):
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    assert client.post("/set-estimate", data={"section": "top_3", "index": "0", "hours": "1.5"}).status_code == 200
+    assert "<!--e:1.5-->" in note.read_text()
+    client.post("/set-estimate", data={"section": "top_3", "index": "0", "hours": ""})
+    assert "<!--e:" not in note.read_text()
+
+
+def test_estimate_survives_progress_change(client_with_today):
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    client.post("/set-estimate", data={"section": "top_3", "index": "1", "hours": "2.25"})
+    client.post("/set-progress", data={"section": "top_3", "index": "1", "level": "50"})
+    line = [l for l in note.read_text().splitlines() if "<!--e:2.25-->" in l][0]
+    assert "<!--p:50-->" in line  # estimate and progress coexist on the same item
+
+
+def test_estimate_parsed_into_item(client_with_today):
+    from companion.server import _extract_top_3
+    from companion.parsers import parse_daily_note_sections
+    client, vault = client_with_today
+    today = date.today().isoformat()
+    note = vault / "01-daily" / f"{today}.md"
+    note.write_text(
+        "## Morning Check-in\n### My Top 3\n"
+        "1. [ ] Task A <!--e:0.25-->\n"
+        "2. [ ] Task B <!--p:50--> <!--e:3-->\n### Bonus\n"
+    )
+    morning = parse_daily_note_sections(note.read_text()).get("Morning Check-in", "")
+    items = _extract_top_3(morning)
+    assert items[0]["text"] == "Task A" and items[0]["est"] == 0.25
+    assert items[1]["text"] == "Task B" and items[1]["est"] == 3.0 and items[1]["progress"] == 50
+
+
+def test_set_estimate_rejects_bad_hours(client_with_today):
+    client, _ = client_with_today
+    assert client.post("/set-estimate", data={"section": "top_3", "index": "0", "hours": "abc"}).status_code == 400
+    assert client.post("/set-estimate", data={"section": "top_3", "index": "0", "hours": "99"}).status_code == 400
+
+
 def test_carryover_normalized_dedup_collapses_near_identical(client_with_today):
     """Tagged / parenthetical variants of the same task collapse to one row."""
     client, vault = client_with_today

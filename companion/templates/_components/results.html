@@ -19,13 +19,18 @@
     {% endif %}
   </section>
 
+  {% set planned = (top_3 + bonus) | selectattr('est') | map(attribute='est') | sum %}
   <section class="nsls-card">
-    <h3 class="nsls-card-title mb-3">Top 3</h3>
+    <div class="flex items-baseline justify-between mb-3">
+      <h3 class="nsls-card-title">Top 3</h3>
+      {% if planned %}<span class="text-xs nsls-subtle">≈ {{ '%g'|format(planned) }}h planned</span>{% endif %}
+    </div>
     <ul class="space-y-1">
       {% for item in top_3 %}
       <li class="flex items-start gap-2">
         <span>{% if item.checked %}✅{% else %}⬜{% endif %}</span>
-        <span class="{% if item.checked %}line-through nsls-subtle{% endif %}">{{ item.text }}</span>
+        <span class="flex-1 {% if item.checked %}line-through nsls-subtle{% endif %}">{{ item.text }}</span>
+        {% if item.est %}<span class="text-xs nsls-subtle">{{ '%g'|format(item.est) }}h</span>{% endif %}
       </li>
       {% endfor %}
     </ul>
