@@ -68,10 +68,7 @@
   {% endif %}
 
   <div class="mb-4">
-    <div class="flex items-baseline justify-between mb-2">
-      <h4 class="nsls-card-title">Your Top 3</h4>
-      <span class="text-xs nsls-subtle nsls-tip">est. hrs<span class="ic">i</span><span class="pop"><b>Estimated time (timeboxing).</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span>
-    </div>
+    <h4 class="nsls-card-title mb-2">Your Top 3 <span class="nsls-tip" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--nsls-darkblue)">· est. hrs<span class="ic">i</span><span class="pop"><b>Estimated time (timeboxing).</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></h4>
     <ol class="space-y-2">
       {% for i in range(3) %}
         <li class="flex items-center gap-2">

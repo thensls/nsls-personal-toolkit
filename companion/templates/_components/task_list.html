@@ -17,7 +17,7 @@
       <span class="nsls-est">
         <input type="text" inputmode="decimal" name="hours" autocomplete="off"
                value="{{ '%g'|format(item.est) if item.est else '' }}" placeholder="—"
-               aria-label="Estimated hours"
+               aria-label="Estimated hours" title="Estimated hours (timeboxing)"
                hx-post="/set-estimate"
                hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
                hx-trigger="change, keyup[key=='Enter']"
