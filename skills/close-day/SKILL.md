@@ -6,7 +6,8 @@ description: >-
   context to generate a daily note and update project session logs. Trigger
   phrases: close day, end of day, daily summary, wrap up, what did I do today,
   close out the day, daily close, eod, close day -t. Add `-t` (`close day -t`) to
-  run against a throwaway test vault so real daily notes are untouched.
+  run against a throwaway test vault so real daily notes are untouched; add `-b`
+  to bypass the visual companion and close in chat.
 ---
 
 # Daily Close
@@ -65,7 +66,7 @@ export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
 
 **No collision with your real companion.** The test server is a separate instance on its own port (**7788**, vs the real **7777**) with its own pidfile (`.companion-test.pid`). In Step 0.5, when in test mode use the `--test` flag (`"$TC" status --test`) and never `"$TC" stop` without it — that would hit the real companion. close-day only *uses* a running companion, it doesn't start one, so if the test server isn't up it simply closes in chat against the test vault.
 
-The close can run with the **CLI companion** (if it's already running) or in **chat**. `visual_mode` decides — on by default, `off` to stay in chat. The companion only works on a CLI surface where Bash can reach a running local server; on any surface that can't, Step 0.5's graceful fallback closes the day in chat.
+The close routes through the **CLI companion** by default (Step 0.5 starts it if needed and sends you there to finalize), or runs in **chat** when you pass `-b` / `visual_mode: off` / aren't on a CLI surface. The companion only works where Bash can run a local server; anywhere it can't, Step 0.5's graceful fallback closes the day in chat.
 
 ### Step 0.5: Check the visual companion
 
@@ -76,31 +77,30 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 [ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
 ```
 
-**The companion is ON by default.** Run this step unless the builder opted out — i.e. skip it (and run close-day as a pure CLI ritual, proceeding straight to Step 0.6) when EITHER the builder passed `-v` (or "visual off") this invocation, OR `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If the field is absent, missing, or anything other than the literal string `off`, the companion is on.
+**The companion is ON by default, and close-day routes you to it.** Skip this step (close as a pure CLI ritual, straight to Step 0.6) ONLY when the builder passed **`-b`** (bypass the companion this run — close in chat), OR `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. **Note:** in close-day `-v` means *verbose* (see Output Discipline), NOT visual-off — the flag to close without the companion is **`-b`**.
 
-**Graceful fallback (default-on safety).** Default-on only does something on a CLI surface where the local companion is installed and running. If `"$TC"` doesn't resolve, or `"$TC" status` doesn't report running, or you're on a surface that can't run a local server, **skip this step silently** and close in chat. Never announce a companion that isn't there. (Unlike open-day, close-day does not start the companion — it uses it only if it's already running, which it usually is if the morning open-day started it.)
+**Assume there's more to mark — do NOT guess the day is already done.** The builder may have ticked progress through the day, but the close is exactly when they finalize it (end-of-day energy, last wins, gratitude/insight). So by default **send them to the Command Center to review before you synthesize** — and **start the companion if it isn't already running** (close-day may be the first thing run today). Only if they *tell* you it's already updated, or pass `-b`, do you skip straight to the close.
 
-**Only run this step if the date from Step 0 is today** (`$(date +%Y-%m-%d)`). The companion always shows today's data — if closing a past date, the companion would show the wrong day. Skip silently for past dates.
+**Only run this step if the date from Step 0 is today** (`$(date +%Y-%m-%d)`). The companion always shows today's data — closing a past date would show the wrong day. Skip silently for past dates.
 
-If `visual_mode` is on AND `"$TC"` resolves AND `"$TC" status` reports running, parse the address from the status output.
+**Always give a clickable localhost link.** Present the URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) as a Markdown link, every time — never a raw IP. Closing without a link to click is a bug.
 
-**Always give the builder a clickable link.** Present the companion URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) formatted as a Markdown link, every time you mention it — never bare text or a raw IP. Closing the day without a link to click is a bug.
+1. **Resolve `"$TC"`** (above). If it can't be found, or you're not on a surface that can run a local server, **skip silently** and close in chat.
+2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Not running`, start it in the background, then re-check:
+   ```bash
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
+   sleep 2
+   "$TC" status
+   ```
+   If it still won't start, **skip silently** and close in chat. Parse the address from the status output.
+3. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If it doesn't exist, skip this step.
+4. **Open the Command Center in closing mode** (`open "<localhost-url>/?closing=1"` on macOS; `start`/`xdg-open` on Windows/Linux). `?closing=1` puts the Command Center in its end-of-day state. Give the builder the link + this prompt:
 
-1. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If the file doesn't exist, skip this step — there's nothing to show.
+   > Your day's open at http://localhost:<port>/?closing=1 — **open it and mark off where you landed**: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**.)
 
-2. **Open the companion's Command Center in closing mode** (`open "<url-from-status>/?closing=1"` on macOS). The `?closing=1` flag tells the Command Center this is the end-of-day pass: it swaps the usual "come back any time" banner for a bottom line that reads *"Good job! Return to the terminal and type `done` to close your day."* Tell the builder to go mark their progress:
+5. **Wait for the builder to say "done".** Do NOT proceed until they explicitly respond. Do NOT treat background hook notifications (like "Record skill usage event completed") as user input — only a real message from the builder ("done", "continue", "go", "ready", or similar) advances.
 
-   > Your day's open at http://localhost:<port>/?closing=1 — open it. If you still need to mark anything off — progress on your Top 3 and Bonus, unplanned wins, habits, gratitude/insight, end-of-day energy — do it there now.
-   >
-   > **If you've already updated it, just say `done`.** Otherwise, mark it up and then say `done`.
-
-   Many builders mark progress through the day and run close-day only when they're already up to date (that's the intended pattern) — so don't assume they still need to. The prompt above covers both: already-done → `done` now; not-yet → update, then `done`.
-
-3. **Wait for the builder to say "done".** Do NOT proceed until they explicitly respond. Do NOT treat background hook notifications (like "Record skill usage event completed") as user input — those are system messages, not the builder talking. Only a real message from the builder (containing "done", "continue", "go", "ready", or similar intent) should trigger the next step.
-
-4. After they say done, re-read the daily note to pick up any changes they made in the companion, then proceed to Step 1.
-
-If the companion binary isn't found, isn't running, or today's daily note doesn't exist, skip this step silently — proceed to Step 1 as before.
+6. After they say done, re-read the daily note to pick up their changes, then proceed to Step 1.
 
 ### Step 0.6: Read the day's captured signal
 
@@ -966,6 +966,14 @@ If the file already exists (user or `/open-day` already created it), do NOT over
 ### Step 9: Confirm
 
 Report: "Daily note written to `01-daily/YYYY-MM-DD.md`. Seeded tomorrow's note at `01-daily/YYYY-MM-DD+1.md`. Updated session logs for: [project list]. Asana: [N] completed, [N] updated, [N] created."
+
+### Step 10: Offer to open tomorrow
+
+Right after the confirm, offer to roll straight into tomorrow's plan — everything is fresh in context (carry-overs, what got deleted, tomorrow's seeded AI suggestions), so opening now is cheaper and better-informed than a cold `/open-day` later:
+
+> Want to open tomorrow now? Say **`open day`** and I'll plan it while the carry-overs are fresh — or leave it and run `/open-day` in the morning.
+
+If the builder says `open day` (or "yes"/"open it"), run the **`/open-day`** skill for tomorrow. Preserve the current mode: if this was a test-mode close (`-t`), open tomorrow with `-t` too (same test vault); otherwise open the real day. Don't auto-run it — wait for their go.
 
 ## Performance Notes
 
