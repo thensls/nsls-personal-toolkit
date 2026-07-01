@@ -322,6 +322,40 @@ This sets:
 - Attachments go to `00-inbox/attachments`
 - Use `[[wikilinks]]` style (Obsidian's strength)
 
+Then create `$OBSIDIAN_VAULT_PATH/.obsidian/daily-notes.json`. This is what the
+core **Daily Notes** plugin reads to know *where* and *how* to create a note
+when the builder clicks a date in the Calendar sidebar (Calendar delegates to
+core Daily Notes). **Without this file, "click today's date → new daily note"
+silently fails** or drops an untemplated note in the vault root — the builder
+then has to configure core Daily Notes by hand:
+```json
+{
+  "format": "YYYY-MM-DD",
+  "folder": "01-daily",
+  "template": "",
+  "autorun": false
+}
+```
+
+Why these exact values:
+- **`folder`** must match the daily folder from Step 2 (`01-daily`).
+- **`format`** is the filename pattern — `YYYY-MM-DD` is what `open-day` and
+  `close-day` expect when they look up today's note.
+- **`template` is intentionally left empty.** Do **not** point it at
+  `_templates/daily-note`: that template is written in Templater syntax
+  (`<% … %>`), which core Daily Notes would insert *raw* — the builder would
+  see literal `<% %>`. Templater owns templating for this vault. Step 6
+  configures `trigger_on_file_creation` plus a folder template for `01-daily`,
+  so when the note is created there Templater applies and *processes*
+  `_templates/daily-note.md` automatically. Setting a core template on top of
+  that would double-apply.
+  - (Only if you ever switch to a plain-markdown daily template with no
+    Templater code: set `"template": "_templates/daily-note"` — **no `.md`
+    extension, core appends it** — and remove the `01-daily` entry from Step 6
+    so the template isn't applied twice.)
+- The core **Daily Notes** plugin ships enabled by default; the manual
+  checklist (Step 7) has the builder confirm it.
+
 ## Step 5: Configure Plugin List
 
 Create `$OBSIDIAN_VAULT_PATH/.obsidian/community-plugins.json`:
@@ -385,8 +419,9 @@ After creating all files, present this checklist to the builder:
 >    - **Smart Connections** — AI-powered related notes (needs API key)
 >    - **Tasks** — checkbox task tracking with due dates and queries
 > 4. **Enable each plugin** — After installing, go back to Community Plugins and toggle each one on
-> 5. **Restart Obsidian** — Close and reopen to pick up the Templater config
-> 6. **Test** — Click today's date in the Calendar sidebar. It should create a daily note in `01-daily/` with the template applied.
+> 5. **Confirm Daily Notes is on** — Settings > Core plugins > **Daily notes** should be enabled (it's on by default). Its folder/format/template are already configured for you (`.obsidian/daily-notes.json`) — you don't need to touch them.
+> 6. **Restart Obsidian** — Close and reopen to pick up the Templater config
+> 7. **Test** — Click today's date in the Calendar sidebar. A daily note should appear in `01-daily/` with the template already applied — no manual Daily Notes setup needed. (If you instead see raw `<% %>` text, Templater isn't enabled yet — turn it on in Community Plugins and restart.)
 >
 > **Optional:**
 > - Smart Connections needs an API key (OpenAI or Anthropic) — set it in Settings > Smart Connections if you want AI-related notes
