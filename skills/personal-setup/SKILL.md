@@ -20,7 +20,7 @@ This takes about 10 minutes:
   1. Set up your knowledge base (Obsidian)        — 5 min
   2. Connect your accounts (mostly auto-detected)  — 2 min
   3. Optional integrations (Fathom meeting notes)  — 3 min
-  4. Done — try "open my day" to see it in action
+  4. Done — try "open day" to see it in action
 ```
 
 ## Step 0: Check current state
@@ -293,13 +293,16 @@ Your personal productivity toolkit is configured!
   [check or skip] Airtable: skipped (not needed for org context)
   [check] Org chart: [N] people files synced
 
-Try it now — say "open my day" to see your morning planning.
+Try it now — say "open day" to see your morning planning.
 
 Other things you can do:
-  "close my day"           — end-of-day summary
+  "close day"              — end-of-day summary
   "plan my week"           — weekly planning (Sunday/Monday)
   /log                     — capture session progress
   /person-intelligence     — relationship profiles
+
+These run in the Claude Code terminal — not Cowork and not the Claude
+desktop/web chat. Launch Claude Code from your terminal, then type the phrase.
 
 Your .env file is at:
   ~/.claude/local-plugins/nsls-personal-toolkit/.env
@@ -307,6 +310,29 @@ Your .env file is at:
 This file is gitignored — your keys stay on your machine.
 Edit any skill in the toolkit — they're yours to customize.
 ```
+
+### Starting a fresh session tomorrow
+
+After the confirmation above, show the builder exactly how to come back —
+using their **actual vault path** captured during setup, not a placeholder:
+
+```
+Tomorrow morning, from any terminal:
+
+  cd <OBSIDIAN_VAULT_PATH>
+  claude
+
+Then type:  open day
+
+(These skills live in the Claude Code terminal. "open day", "close day",
+and "plan my week" are the exact phrases — they won't trigger from Cowork
+or the Claude desktop/web chat.)
+```
+
+Substitute `<OBSIDIAN_VAULT_PATH>` with the vault path from Step 1 (e.g.
+`~/nsls-vault`) so the builder can copy-paste it directly. If you have the
+`cc` shortcut from the builder-toolkit install, `cc` works in place of
+`claude`.
 
 If any values are missing, note which skills are affected:
 ```
