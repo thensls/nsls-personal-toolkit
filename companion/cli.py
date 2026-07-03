@@ -22,6 +22,32 @@ TEST_DEFAULT_PORT = 7788
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 
+def _pid_alive(pid: int) -> bool:
+    """Liveness probe that is safe on every OS.
+
+    Never use ``os.kill(pid, 0)`` on Windows: there, any signal other than
+    the CTRL events is routed to TerminateProcess — the "check" would kill
+    the running server. Probe with OpenProcess instead.
+    """
+    if sys.platform == "win32":
+        import ctypes
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        handle = ctypes.windll.kernel32.OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION, False, pid
+        )
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # exists but owned by another user
+    return True
+
+
 def _find_free_port(start: int = DEFAULT_PORT) -> int:
     for port in range(start, start + 100):
         with socket.socket() as s:
@@ -99,7 +125,8 @@ def serve(vault, port, no_open):
     url = f"http://{host}:{port}"
     click.echo(f"Serving at {url}")
     if not no_open:
-        webbrowser.open(url)
+        if not webbrowser.open(url):
+            click.echo(f"Couldn't open a browser automatically — visit {url}")
 
     try:
         # threaded=True is required, not optional: the SSE /events endpoint holds
@@ -159,9 +186,11 @@ def stop(test_mode):
         pid_file.unlink(missing_ok=True)
         return
     try:
+        # On Windows SIGTERM maps to TerminateProcess — still a stop. A dead
+        # pid raises OSError variants beyond ProcessLookupError there.
         os.kill(pid, signal.SIGTERM)
         click.echo(f"Sent SIGTERM to {pid}")
-    except ProcessLookupError:
+    except OSError:
         click.echo("Stale pidfile; cleaning up.")
     pid_file.unlink(missing_ok=True)
 
@@ -183,15 +212,12 @@ def status(test_mode):
         pid_file.unlink(missing_ok=True)
         sys.exit(1)
     addr = lines[1] if len(lines) > 1 else default_addr
-    # Check if the process is actually alive
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
+    # Check if the process is actually alive (see _pid_alive — a bare
+    # os.kill(pid, 0) here would TERMINATE the server on Windows).
+    if not _pid_alive(pid):
         click.echo("Not running (stale pidfile cleaned up).")
         pid_file.unlink(missing_ok=True)
         sys.exit(1)
-    except PermissionError:
-        pass  # process exists but owned by another user — treat as alive
     # Verify the port actually responds
     host, _, port_str = addr.partition(":")
     try:
@@ -201,7 +227,7 @@ def status(test_mode):
         click.echo("Not running (process alive but port not responding; cleaning up).")
         try:
             os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
+        except OSError:
             pass
         pid_file.unlink(missing_ok=True)
         sys.exit(1)

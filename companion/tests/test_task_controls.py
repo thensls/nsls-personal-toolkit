@@ -172,8 +172,10 @@ def test_delete_works_on_bonus(client_with_today):
 def test_task_controls_return_full_table(client_with_today, route, data):
     client, _ = client_with_today
     html = client.post(route, data=data).get_data(as_text=True)
-    assert html.lstrip().startswith("<table"), f"{route} must return the full <table>, got: {html[:80]!r}"
-    assert 'id="task-table"' in html
+    assert not html.lstrip().startswith("<tbody"), f"{route} must not return a bare <tbody>"
+    assert '<table class="nsls-tasktable" id="task-table"' in html
+    # the "≈ Xh planned today" header total refreshes out-of-band
+    assert 'id="planned-total"' in html and "hx-swap-oob" in html
     # both sections come back in one swap
     assert "tasklist-top_3" in html and "tasklist-bonus" in html
     # and every control in the fragment targets the whole table

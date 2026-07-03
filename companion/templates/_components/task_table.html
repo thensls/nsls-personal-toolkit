@@ -2,6 +2,7 @@
    entire <table> via hx-target="#task-table" — swapping a bare <tbody>
    fragment triggers the browser table-parsing pitfall that collapsed the
    layout after a click. #}
+{% if swap_oob %}{% with oob=true %}{% include "_components/planned_total.html" %}{% endwith %}{% endif %}
 <table class="nsls-tasktable" id="task-table">
   <thead>
     <tr>

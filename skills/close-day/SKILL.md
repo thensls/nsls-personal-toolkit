@@ -366,10 +366,14 @@ Review the current conversation for:
 - Projects touched (match against known project mappings from `/log` skill)
 - Open items and next steps
 
-Also check if any other Claude Code sessions ran today by scanning:
+Also check if any other Claude Code sessions ran today by scanning (the
+project-dir name encodes the home path, which differs per OS — list the dirs
+first and match, don't assume the macOS `-Users-<name>` form):
 ```bash
-ls -la ~/.claude/projects/-Users-$(whoami)/*.jsonl | grep "$(date +%b\ %d)" 2>/dev/null
+ls -t ~/.claude/projects/ | head -5   # find the dir(s) for this machine's home path
+ls -la ~/.claude/projects/<matching-dir>/*.jsonl | grep "$(date +%b\ %d)" 2>/dev/null
 ```
+If nothing matches (fresh install, different layout), skip this signal silently.
 
 **1g. Asana — pending tasks and what was due**
 

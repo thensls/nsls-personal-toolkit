@@ -1665,6 +1665,7 @@ def create_app(vault_path: str) -> Flask:
             it["deleted"] = it["text"] in deleted
         return render_template(
             "_components/task_table.html", top_3=top_3, bonus=bonus,
+            swap_oob=True,  # also refresh the "≈ Xh planned today" header total
         )
 
     @app.route("/set-progress", methods=["POST"])

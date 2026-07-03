@@ -17,11 +17,10 @@
   {% with when='morning', label='Energy — beginning of day', value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
 </div>
 
-{% set planned = (top_3 + bonus) | selectattr('est') | map(attribute='est') | sum %}
 <section class="nsls-card">
   <div class="flex items-baseline justify-between mb-3">
     <h2 class="nsls-card-title">Top 3</h2>
-    {% if planned %}<span class="text-xs nsls-subtle">≈ <span class="font-medium">{{ '%g'|format(planned) }}h</span> planned today</span>{% endif %}
+    {% include "_components/planned_total.html" %}
   </div>
   {% include "_components/task_table.html" %}
   {% include "_components/bonus_add.html" %}
