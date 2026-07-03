@@ -22,7 +22,8 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 | `/self-insight` | Personal insight — analyzes your calendar, meetings, and behavior to build a personal profile + operating memo |
 | `/log` | Log session progress to project notes |
 | `/familiar` | Recall past screen activity and work context |
-| `/person-intelligence` | Build relationship profiles, track 1:1 context |
+| `/person-intelligence` | Build relationship profiles, track 1:1 context, biweekly sweep, team-pulse digest, manager-coaching frame (Thrive + How I Work With), managing-up frame for your manager, coaching-action surfacing in /open-day and /open-week |
+| `/role-coach` | Coaching from your seat — reads the role you have (and optionally the role you want), diffs stated priorities against what actually happened, and keeps a pattern ledger so advice compounds. Evidence scoped to your access: ICs see only their own data, managers their team, execs org-wide. Wired into close-day/close-week/open-day/open-week |
 | `/reset-day` | Start today over — clears today's note so `/open-day` rebuilds it from your real data (`--close-only` keeps the morning plan; `-t` wipes the throwaway test vault only) |
 | `/unblock` | Fix the VS Code "permission prompt on every edit" trap when editing the toolkit's own files under `~/.claude/` — sets up a git worktree (or clone + symlink) outside `~/.claude/` |
 | `/codex-review` | Get an independent review from OpenAI Codex on code, a design/spec, a plan, or the branch's changes — runs Codex headless + read-only and relays its findings |

@@ -1,0 +1,10 @@
+# SLT members authorized to write to thensls/nsls-knowledge.
+# v1 hardcode — eventually replaced by Airtable `is_slt` field lookup.
+# One email per line, # comments, blank lines ignored.
+kprentiss@nsls.org
+mobrien@nsls.org
+gtuerack@nsls.org
+astone@nsls.org
+hdarnell@nsls.org
+asmith@nsls.org
+cbyers@nsls.org

@@ -114,7 +114,17 @@ departments:
 time_tracking_mode: [doing-vs-orchestrating | deep-vs-meetings | department-balance | all]
 work_schedule: [weekdays | weekdays-plus-weekends | daily | custom]
 data_sources:
-  familiar: [true | false]
+  # Familiar is a LIST of capture roots (one per machine), not a boolean —
+  # a builder may capture on more than one computer. Populated during the
+  # Familiar step in Step 1b (with auto-detection). Legacy note: an older
+  # profile may have `familiar: true` — readers treat that as enabled with the
+  # single default path ~/familiar/stills-markdown.
+  familiar:
+    enabled: [true | false]
+    paths:
+      - name: [machine label, e.g. macbook-2020]
+        path: [absolute path to that machine's stills-markdown root]
+      # ...one entry per machine; omit the list entirely when enabled is false
   fathom: [true | false]
   slack: [true | false]
   gmail: [true | false]
@@ -215,12 +225,77 @@ Summary line: "Deep work ratio: X% focused, X% collaboration, X% meetings/admin"
 
 Based on the data sources the builder selected in Step 0, walk through connecting each one. **Only show steps for sources they said they use.** Skip the rest.
 
-**Familiar (screen capture)**
+**Familiar (screen capture)** — first-class setup, multi-machine aware
 
-> 1. Download Familiar from https://familiar.app
-> 2. Grant screen recording permission when prompted
-> 3. Verify it's capturing: check that `~/familiar/stills-markdown/` has session folders appearing
-> 4. The close-day skill reads from this directory automatically — no API key needed
+Familiar can capture on more than one computer (e.g. a laptop and a desktop),
+and builders sometimes point it at a non-default folder. If setup assumes the
+default `~/familiar/stills-markdown` path, a builder with a custom folder or a
+second machine ends up with `familiar: enabled` but zero data reaching
+close-day. So resolve the **actual capture path(s)** here and store them as a
+list in the profile.
+
+Ask: **"Is Familiar already capturing on this machine?"**
+
+- **a) Set it up now** — walk through:
+  > 1. Download Familiar from https://familiar.app
+  > 2. Grant screen recording permission when prompted
+  > 3. Let it run for a minute so a `session-*` folder appears
+  Then auto-detect (below) to capture the path it chose.
+- **b) Handle it later** — set `enabled: false` in the profile and tell the
+  builder how to wire it later (re-run `/personal-setup`, or add the machine's
+  path under `data_sources.familiar.paths`). Skip the rest of this block.
+- **c) It's already set up** — auto-detect the path.
+
+**Auto-detect the capture root.** Search common locations for a directory that
+contains `session-YYYY-MM-DDT*` subfolders (that timestamped-session shape is
+the reliable signature of a real Familiar stills root):
+
+```bash
+for base in \
+  "$HOME/familiar/stills-markdown" \
+  "$HOME/Familiar/stills-markdown" \
+  "$HOME/Documents/familiar/stills-markdown" \
+  "$HOME/Library/Application Support/familiar/stills-markdown"; do
+  if compgen -G "$base/session-*T*" >/dev/null 2>&1; then
+    echo "FOUND: $base"
+  fi
+done
+```
+
+Present any hits to the builder and let them **accept or override** with the
+real path. If nothing is found, ask for the path directly (don't assume the
+default).
+
+**Ask how many machines** the builder captures on. If more than one, **loop**:
+for each machine, ask for a short label (e.g. `macbook-2020`, `studio-desktop`)
+and its capture path. For machines not currently attached, the builder supplies
+the path manually (they know where Familiar writes on that box).
+
+**Verify every path before saving** — each must contain at least one
+`session-*` folder:
+
+```bash
+compgen -G "<PATH>/session-*T*" >/dev/null 2>&1 && echo "OK: <PATH>" || echo "EMPTY (no session-* folders): <PATH>"
+```
+
+If a path is EMPTY, flag it and let the builder fix or drop it — a path with no
+captures silently contributes nothing to close-day.
+
+**Write the result into the profile** (`50-reference/builder-profile.md`,
+generated in Step 1a) under `data_sources.familiar`:
+
+```yaml
+    familiar:
+      enabled: true
+      paths:
+        - name: macbook-2020
+          path: /Users/you/familiar/stills-markdown
+        - name: studio-desktop
+          path: /Users/you/Documents/familiar/stills-markdown
+```
+
+close-day, close-week, and self-insight read this list, scan every path, and
+roll all machines into one daily total — no manual skill edits needed.
 
 **Fathom (meeting summaries)**
 
@@ -322,6 +397,40 @@ This sets:
 - Attachments go to `00-inbox/attachments`
 - Use `[[wikilinks]]` style (Obsidian's strength)
 
+Then create `$OBSIDIAN_VAULT_PATH/.obsidian/daily-notes.json`. This is what the
+core **Daily Notes** plugin reads to know *where* and *how* to create a note
+when the builder clicks a date in the Calendar sidebar (Calendar delegates to
+core Daily Notes). **Without this file, "click today's date → new daily note"
+silently fails** or drops an untemplated note in the vault root — the builder
+then has to configure core Daily Notes by hand:
+```json
+{
+  "format": "YYYY-MM-DD",
+  "folder": "01-daily",
+  "template": "",
+  "autorun": false
+}
+```
+
+Why these exact values:
+- **`folder`** must match the daily folder from Step 2 (`01-daily`).
+- **`format`** is the filename pattern — `YYYY-MM-DD` is what `open-day` and
+  `close-day` expect when they look up today's note.
+- **`template` is intentionally left empty.** Do **not** point it at
+  `_templates/daily-note`: that template is written in Templater syntax
+  (`<% … %>`), which core Daily Notes would insert *raw* — the builder would
+  see literal `<% %>`. Templater owns templating for this vault. Step 6
+  configures `trigger_on_file_creation` plus a folder template for `01-daily`,
+  so when the note is created there Templater applies and *processes*
+  `_templates/daily-note.md` automatically. Setting a core template on top of
+  that would double-apply.
+  - (Only if you ever switch to a plain-markdown daily template with no
+    Templater code: set `"template": "_templates/daily-note"` — **no `.md`
+    extension, core appends it** — and remove the `01-daily` entry from Step 6
+    so the template isn't applied twice.)
+- The core **Daily Notes** plugin ships enabled by default; the manual
+  checklist (Step 7) has the builder confirm it.
+
 ## Step 5: Configure Plugin List
 
 Create `$OBSIDIAN_VAULT_PATH/.obsidian/community-plugins.json`:
@@ -385,8 +494,9 @@ After creating all files, present this checklist to the builder:
 >    - **Smart Connections** — AI-powered related notes (needs API key)
 >    - **Tasks** — checkbox task tracking with due dates and queries
 > 4. **Enable each plugin** — After installing, go back to Community Plugins and toggle each one on
-> 5. **Restart Obsidian** — Close and reopen to pick up the Templater config
-> 6. **Test** — Click today's date in the Calendar sidebar. It should create a daily note in `01-daily/` with the template applied.
+> 5. **Confirm Daily Notes is on** — Settings > Core plugins > **Daily notes** should be enabled (it's on by default). Its folder/format/template are already configured for you (`.obsidian/daily-notes.json`) — you don't need to touch them.
+> 6. **Restart Obsidian** — Close and reopen to pick up the Templater config
+> 7. **Test** — Click today's date in the Calendar sidebar. A daily note should appear in `01-daily/` with the template already applied — no manual Daily Notes setup needed. (If you instead see raw `<% %>` text, Templater isn't enabled yet — turn it on in Community Plugins and restart.)
 >
 > **Optional:**
 > - Smart Connections needs an API key (OpenAI or Anthropic) — set it in Settings > Smart Connections if you want AI-related notes

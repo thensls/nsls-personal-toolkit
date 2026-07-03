@@ -31,7 +31,7 @@ The output is honest, not flattering. If you spend 60% of your time on things yo
 |--------|----------------|--------|------------|
 | **Google Calendar** | Where time goes: meeting load, partners, recurring commitments, deep work gaps | `gcal_list_events` MCP (90 days) | Yes — everyone has this |
 | **Fathom transcripts** | How you think: what you advocate for, resist, where you lead vs. follow, coaching themes | Fathom API (90 days) | No — optional |
-| **Familiar captures** | Where attention goes: apps, screen time, tool distribution | Bash: scan `$HOME/familiar/stills-markdown/` (7 days) | No — optional |
+| **Familiar captures** | Where attention goes: apps, screen time, tool distribution | Bash: scan every configured Familiar root (`data_sources.familiar.paths` in the builder profile — may be multiple machines), 7 days | No — optional |
 | **Reflective conversation** | Self-awareness: what you believe about your role, strengths, traps | Direct dialogue | Yes — always |
 
 Use whatever sources are available. Calendar + conversation is the minimum viable input. Each additional source adds depth.
@@ -45,8 +45,12 @@ Use whatever sources are available. Calendar + conversation is the minimum viabl
 echo "${FATHOM_API_KEY:+FATHOM: available}" || true
 [ -z "$FATHOM_API_KEY" ] && grep -q FATHOM_API_KEY .env 2>/dev/null && echo "FATHOM: available (from .env)" || [ -z "$FATHOM_API_KEY" ] && echo "FATHOM: not available"
 
-# Check Familiar
-ls $HOME/familiar/stills-markdown/ 2>/dev/null | head -1 && echo "FAMILIAR: available" || echo "FAMILIAR: not available"
+# Check Familiar — resolve configured capture roots (may be multiple machines)
+PROFILE="${OBSIDIAN_VAULT_PATH}/50-reference/builder-profile.md"
+FAMILIAR_ROOTS="$(python3 ~/.claude/local-plugins/nsls-personal-toolkit/skills/familiar/resolve-roots.py "$PROFILE")"
+_found=""
+while IFS= read -r root; do [ -n "$root" ] && ls "$root"/ 2>/dev/null | head -1 | grep -q . && _found=1; done <<< "$FAMILIAR_ROOTS"
+[ -n "$_found" ] && echo "FAMILIAR: available" || echo "FAMILIAR: not available"
 ```
 
 Google Calendar is always available via MCP.
@@ -97,15 +101,20 @@ Analyze summaries and action items for:
 
 **2c. Familiar analysis (if available, last 7 days)**
 
+Uses `$FAMILIAR_ROOTS` resolved in Step 1 — scans every configured machine and
+sums the results.
+
 ```bash
-# App distribution
-grep -h "^app:" $HOME/familiar/stills-markdown/session-*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+# App distribution (across all configured machines, last 7 days)
+while IFS= read -r root; do [ -n "$root" ] && \
+  grep -h "^app:" "$root"/session-*/*.md 2>/dev/null
+done <<< "$FAMILIAR_ROOTS" | sort | uniq -c | sort -rn
 
 # Chrome breakdown
-awk '/^app: Google Chrome/{f=1} f && /^window_title_raw:/{print; f=0}' \
-  $HOME/familiar/stills-markdown/session-*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn | head -30
+while IFS= read -r root; do [ -n "$root" ] && \
+  awk '/^app: Google Chrome/{f=1} f && /^window_title_raw:/{print; f=0}' \
+    "$root"/session-*/*.md 2>/dev/null
+done <<< "$FAMILIAR_ROOTS" | sort | uniq -c | sort -rn | head -30
 ```
 
 Analyze:

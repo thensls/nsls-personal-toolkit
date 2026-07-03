@@ -18,6 +18,10 @@ import time
 import urllib.request
 import urllib.parse
 import urllib.error
+from pathlib import Path as _Path
+
+sys.path.insert(0, str(_Path(__file__).resolve().parent))
+import load_dotenv_local  # noqa: E402,F401  — load .env into os.environ for cron/non-interactive runs
 
 BASE_ID = os.environ.get("PEOPLE_OPS_BASE_ID", "")
 if not BASE_ID:
