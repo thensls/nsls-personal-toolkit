@@ -1603,8 +1603,13 @@ def create_app(vault_path: str) -> Flask:
         for idx, it in enumerate(items):
             it["index"] = idx
             it["deleted"] = it["text"] in deleted
+        # Top 3 and Bonus share one table; each section is a <tbody> that HTMX
+        # swaps independently. Bonus carries its own in-table label row.
         return render_template(
-            "_components/task_list.html", section=section, items=items
+            "_components/task_rows.html",
+            section=section,
+            items=items,
+            section_label="Bonus" if section == "bonus" else None,
         )
 
     @app.route("/set-progress", methods=["POST"])
