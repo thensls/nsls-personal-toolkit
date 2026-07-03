@@ -23,19 +23,7 @@
     <h2 class="nsls-card-title">Top 3</h2>
     {% if planned %}<span class="text-xs nsls-subtle">≈ <span class="font-medium">{{ '%g'|format(planned) }}h</span> planned today</span>{% endif %}
   </div>
-  <table class="nsls-tasktable">
-    <thead>
-      <tr>
-        <th class="tt-disc"></th>
-        <th class="tt-goal"></th>
-        <th class="tt-est">Estimated time<span class="nsls-tip"><span class="ic">i</span><span class="pop"><b>Timeboxing.</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></th>
-        <th class="tt-prog">Progress</th>
-        <th class="tt-del"></th>
-      </tr>
-    </thead>
-    {% with section='top_3', items=top_3 %}{% include "_components/task_rows.html" %}{% endwith %}
-    {% with section='bonus', items=bonus, section_label='Bonus' %}{% include "_components/task_rows.html" %}{% endwith %}
-  </table>
+  {% include "_components/task_table.html" %}
   {% include "_components/bonus_add.html" %}
   <p class="text-xs nsls-subtle mt-3">Anything under 100% carries forward to tomorrow. 0 = didn't get to it. ✕ marks for deletion (reversible).</p>
 </section>

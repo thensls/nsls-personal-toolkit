@@ -158,6 +158,29 @@ def test_delete_works_on_bonus(client_with_today):
     assert any(b["text"] == "brainstorm marketing" for b in _extract_bonus(_morning(vault)))
 
 
+# --- controls must swap the WHOLE table, not a bare <tbody> ---
+# A bare <tbody> fragment gets mangled by the browser/HTMX table-parsing
+# rules (tbody/tr/td outside a <table> are stripped), which collapsed the
+# Command Center layout after the first click.
+
+@pytest.mark.parametrize("route,data", [
+    ("/set-progress", {"section": "top_3", "index": "0", "level": "50"}),
+    ("/set-estimate", {"section": "top_3", "index": "0", "hours": "1.5"}),
+    ("/delete-task", {"section": "bonus", "index": "0"}),
+    ("/add-bonus", {"text": "new bonus item"}),
+])
+def test_task_controls_return_full_table(client_with_today, route, data):
+    client, _ = client_with_today
+    html = client.post(route, data=data).get_data(as_text=True)
+    assert html.lstrip().startswith("<table"), f"{route} must return the full <table>, got: {html[:80]!r}"
+    assert 'id="task-table"' in html
+    # both sections come back in one swap
+    assert "tasklist-top_3" in html and "tasklist-bonus" in html
+    # and every control in the fragment targets the whole table
+    assert 'hx-target="#task-table"' in html
+    assert "#tasklist-" not in html
+
+
 # --- smoke: Command Center renders the redesigned controls ---
 
 def test_command_center_renders_task_controls(client_with_today):

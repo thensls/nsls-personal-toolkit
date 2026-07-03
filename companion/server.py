@@ -1434,7 +1434,7 @@ def create_app(vault_path: str) -> Flask:
 
         safe_modify(note_path, update)
         broadcast(f"01-daily/{today}.md")
-        return _render_task_list(today, "bonus")
+        return _render_task_table(today)
 
     @app.route("/delete-bonus", methods=["POST"])
     def delete_bonus():
@@ -1591,25 +1591,26 @@ def create_app(vault_path: str) -> Flask:
 
     _TASK_HEADINGS = {"top_3": "### My Top 3", "bonus": "### Bonus"}
 
-    def _render_task_list(today: str, section: str):
-        """Re-render one task section (Top 3 or Bonus) with fresh state."""
-        heading = _TASK_HEADINGS[section]
+    def _render_task_table(today: str):
+        """Re-render the whole Command Center task table (Top 3 + Bonus).
+
+        Controls swap the entire <table id="task-table">. Returning a bare
+        <tbody> fragment made HTMX/the browser mangle the rows (table elements
+        parsed outside a <table> context get stripped), collapsing the layout
+        after the first click.
+        """
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
         morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
-        items = (_extract_top_3(morning) if section == "top_3"
-                 else _extract_bonus(morning))
+        top_3 = _extract_top_3(morning)
+        bonus = _extract_bonus(morning)
         deleted = _extract_subsection_items(morning, "Deleted")
-        for idx, it in enumerate(items):
-            it["index"] = idx
-            it["deleted"] = it["text"] in deleted
-        # Top 3 and Bonus share one table; each section is a <tbody> that HTMX
-        # swaps independently. Bonus carries its own in-table label row.
+        for items in (top_3, bonus):
+            for idx, it in enumerate(items):
+                it["index"] = idx
+                it["deleted"] = it["text"] in deleted
         return render_template(
-            "_components/task_rows.html",
-            section=section,
-            items=items,
-            section_label="Bonus" if section == "bonus" else None,
+            "_components/task_table.html", top_3=top_3, bonus=bonus,
         )
 
     @app.route("/set-progress", methods=["POST"])
@@ -1641,7 +1642,7 @@ def create_app(vault_path: str) -> Flask:
 
         safe_modify(note_path, update)
         broadcast(f"01-daily/{today}.md")
-        return _render_task_list(today, section)
+        return _render_task_table(today)
 
     @app.route("/set-estimate", methods=["POST"])
     def set_estimate():
@@ -1672,7 +1673,7 @@ def create_app(vault_path: str) -> Flask:
             return ("today's note not found", 404)
         safe_modify(note_path, lambda md: _set_nth_est(md, heading, index, hours))
         broadcast(f"01-daily/{today}.md")
-        return _render_task_list(today, section)
+        return _render_task_table(today)
 
     @app.route("/delete-task", methods=["POST"])
     def delete_task():
@@ -1709,7 +1710,7 @@ def create_app(vault_path: str) -> Flask:
 
         safe_modify(note_path, update)
         broadcast(f"01-daily/{today}.md")
-        return _render_task_list(today, section)
+        return _render_task_table(today)
 
     @app.route("/add-bonus-slot", methods=["POST"])
     def add_bonus_slot():

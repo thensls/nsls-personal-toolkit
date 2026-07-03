@@ -459,6 +459,8 @@ body {
 .nsls-tasktable .tt-disc { width: 22px; padding-right: 0.85rem; }
 .nsls-tasktable .tt-goal .nsls-row-text { display: block; max-width: 25.3rem; overflow-wrap: anywhere; }
 .nsls-tasktable .tt-est, .nsls-tasktable th.tt-est { white-space: nowrap; }
+/* Stacked 3-line est header ("Estimated / remaining / time") */
+.nsls-tasktable th.tt-est .tt-est-stack { display: inline-block; line-height: 1.35; }
 /* In-table section divider (e.g. "Bonus") — one table, two labelled groups. */
 .nsls-tasktable .tt-section {
   font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.09em;
