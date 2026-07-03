@@ -24,7 +24,7 @@
                  hx-post="/set-estimate"
                  hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
                  hx-trigger="change, keyup[key=='Enter']"
-                 hx-target="#task-table" hx-swap="outerHTML"
+                 hx-target="#task-table" hx-swap="outerHTML" hx-sync="#task-table:replace"
                  hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
           <span class="u">h</span>
         </span>
@@ -35,7 +35,7 @@
           <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl %}is-current{% elif lvl < item.progress %}is-below{% endif %}"
                   hx-post="/set-progress"
                   hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
-                  hx-target="#task-table" hx-swap="outerHTML"
+                  hx-target="#task-table" hx-swap="outerHTML" hx-sync="#task-table:replace"
                   title="{{ lvl }}%{% if lvl == 0 %} — didn't get to it{% elif lvl == 100 %} — done{% endif %}">{{ lvl }}</button>
           {% endfor %}
         </div>
@@ -44,7 +44,7 @@
         <button class="nsls-del {{ 'is-deleted' if item.deleted else '' }}"
                 hx-post="/delete-task"
                 hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
-                hx-target="#task-table" hx-swap="outerHTML"
+                hx-target="#task-table" hx-swap="outerHTML" hx-sync="#task-table:replace"
                 title="{{ 'Marked for deletion — click to undo' if item.deleted else 'Mark for deletion' }}">✕</button>
       </td>
     </tr>

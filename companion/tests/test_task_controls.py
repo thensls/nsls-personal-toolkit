@@ -181,6 +181,120 @@ def test_task_controls_return_full_table(client_with_today, route, data):
     assert "#tasklist-" not in html
 
 
+# --- raw row indexes: blank slots must not shift writes onto the wrong row ---
+# (Codex review 2026-07-03: the UI used compacted indexes — blank rows are
+# filtered from display — while the mutators count every raw row, so with a
+# blank `1. [ ]` slot a click on "second" wrote its marker onto the blank row.)
+
+BLANK_SLOT_NOTE = """# Daily Note
+
+## Morning Check-in
+
+### My Top 3
+1. [ ]
+2. [ ] second task
+3. [ ] third task
+
+### Bonus
+1. [ ]
+2. [ ] existing bonus
+
+### Habits
+- [ ] **Walk**
+"""
+
+
+@pytest.fixture
+def client_with_blank_slots(client_with_today):
+    client, vault = client_with_today
+    (vault / "01-daily" / f"{date.today().isoformat()}.md").write_text(BLANK_SLOT_NOTE)
+    return client, vault
+
+
+def test_ui_sends_raw_indexes_past_blank_slots(client_with_blank_slots):
+    client, _ = client_with_blank_slots
+    html = client.get("/").get_data(as_text=True)
+    # "second task" sits on raw row 1 (row 0 is the blank slot)
+    assert '"section":"top_3","index":1' in html
+    assert '"section":"top_3","index":0' not in html
+
+
+def test_set_progress_targets_raw_row_not_blank_slot(client_with_blank_slots):
+    client, vault = client_with_blank_slots
+    client.post("/set-progress", data={"section": "top_3", "index": "1", "level": "50"})
+    items = _top3(vault)
+    assert next(i for i in items if i["text"] == "second task")["progress"] == 50
+    # the blank slot stays untouched
+    assert "1. [ ]\n" in _note(vault)
+    # clicking the same level again toggles off — the toggle lookup must also
+    # resolve by raw index, not list position
+    client.post("/set-progress", data={"section": "top_3", "index": "1", "level": "50"})
+    assert next(i for i in _top3(vault) if i["text"] == "second task")["progress"] == 0
+
+
+def test_set_estimate_targets_raw_row_not_blank_slot(client_with_blank_slots):
+    client, vault = client_with_blank_slots
+    client.post("/set-estimate", data={"section": "top_3", "index": "1", "hours": "1.5"})
+    assert next(i for i in _top3(vault) if i["text"] == "second task")["est"] == 1.5
+    assert "1. [ ]\n" in _note(vault)
+
+
+def test_delete_targets_raw_row_not_blank_slot(client_with_blank_slots):
+    client, vault = client_with_blank_slots
+    client.post("/delete-task", data={"section": "top_3", "index": "1"})
+    assert "second task" in _extract_subsection_items(_morning(vault), "Deleted")
+
+
+def test_add_bonus_appends_after_blank_slot(client_with_blank_slots):
+    client, vault = client_with_blank_slots
+    client.post("/add-bonus", data={"text": "new item"})
+    texts = [b["text"] for b in _extract_bonus(_morning(vault))]
+    assert texts == ["existing bonus", "new item"]  # nothing overwritten
+
+
+def test_negative_index_rejected(client_with_today):
+    client, _ = client_with_today
+    for route in ("/set-progress", "/set-estimate", "/delete-task"):
+        data = {"section": "top_3", "index": "-1", "level": "50", "hours": "1"}
+        assert client.post(route, data=data).status_code == 400, route
+
+
+# --- estimate marker robustness ---
+
+def test_strip_est_removes_duplicate_markers():
+    from companion.server import _strip_est
+    clean, hours = _strip_est("Task <!--e:1--> mid <!--e:2-->")
+    assert clean == "Task mid"
+    assert hours == 2.0  # last marker wins
+
+
+def test_set_estimate_rejects_non_finite(client_with_today):
+    client, vault = client_with_today
+    for bad in ("nan", "inf", "-inf"):
+        resp = client.post("/set-estimate", data={"section": "top_3", "index": "0", "hours": bad})
+        assert resp.status_code == 400, bad
+    assert "<!--e:" not in _note(vault)
+
+
+# --- CSRF: cross-origin browser POSTs must be rejected ---
+
+def test_cross_origin_post_rejected(client_with_today):
+    client, vault = client_with_today
+    resp = client.post("/set-progress",
+                       data={"section": "top_3", "index": "0", "level": "50"},
+                       headers={"Origin": "http://evil.example"})
+    assert resp.status_code == 403
+    assert _top3(vault)[0]["progress"] == 0  # nothing written
+
+
+def test_same_origin_post_allowed(client_with_today):
+    client, _ = client_with_today
+    resp = client.post("/set-progress",
+                       data={"section": "top_3", "index": "0", "level": "50"},
+                       headers={"Origin": "http://localhost"})
+    assert resp.status_code == 200
+
+
 # --- smoke: Command Center renders the redesigned controls ---
 
 def test_command_center_renders_task_controls(client_with_today):

@@ -1,10 +1,12 @@
 """Flask app factory for the NSLS toolkit companion."""
 
 import hashlib
+import math
 import queue
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import urlparse
 
 from flask import Flask, Response, render_template, request, stream_with_context
 
@@ -78,7 +80,7 @@ def _serialize_habits(habits: dict) -> str:
 
 # Per-task progress is stored as a trailing HTML comment (`<!--p:50-->`) so it
 # is invisible in rendered Obsidian but round-trips cleanly. 100% is also
-# represented by `[x]`; partials (25/50/70) keep `[ ]` plus the marker.
+# represented by `[x]`; partials (25/50/75) keep `[ ]` plus the marker.
 _PROGRESS_RE = re.compile(r"\s*<!--\s*p:(\d{1,3})\s*-->\s*$")
 _VALID_PROGRESS = (0, 25, 50, 75, 100)
 
@@ -102,14 +104,19 @@ _EST_RE = re.compile(r"\s*<!--\s*e:([0-9]*\.?[0-9]+)\s*-->")
 
 
 def _strip_est(text: str) -> tuple[str, float | None]:
-    """Remove an ``<!--e:X-->`` marker (anywhere) from item text.
+    """Remove every ``<!--e:X-->`` marker (anywhere) from item text.
 
-    Returns (clean_text, hours) with hours=None if no marker.
+    Returns (clean_text, hours) with hours=None if no marker. Hand-edited
+    notes can carry duplicate markers; all are removed (so none leak into the
+    visible text) and the last one wins as the value.
     """
+    hours: float | None = None
     m = _EST_RE.search(text)
-    if m:
-        return (text[: m.start()] + text[m.end():]).strip(), float(m.group(1))
-    return text, None
+    while m:
+        hours = float(m.group(1))
+        text = text[: m.start()] + text[m.end():]
+        m = _EST_RE.search(text)
+    return (text.strip(), hours) if hours is not None else (text, None)
 
 
 def _fmt_hours(hours: float) -> str:
@@ -120,12 +127,20 @@ def _fmt_hours(hours: float) -> str:
 def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
     """Extract `1. [x] Foo` / `1. [ ] Foo` / `1. Foo` items under a `### heading`.
 
-    Returns dicts shaped like ``{"text": str, "checked": bool, "progress": int}``.
-    `progress` is 0/25/50/70/100 (100 implied by `[x]`). Tolerates `[X]`.
+    Returns dicts shaped like ``{"text": str, "checked": bool, "progress": int,
+    "est": float | None, "raw_index": int}``.
+    `progress` is 0/25/50/75/100 (100 implied by `[x]`). Tolerates `[X]`.
     Items without a checkbox are treated as unchecked.
+
+    ``raw_index`` is the item's position counting EVERY list row under the
+    heading (blank slots and dash rows included) — the same counting the
+    Nth-item mutators use. Empty rows are filtered from the returned list, so
+    positions in this list must never be used as write indexes: a blank
+    ``1. [ ]`` slot would shift every write onto the wrong row.
     """
     items: list[dict] = []
     in_section = False
+    raw = -1
     for line in section.splitlines():
         stripped = line.strip()
         if stripped.startswith(heading):
@@ -133,26 +148,33 @@ def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
             continue
         if in_section and stripped.startswith("###"):
             break
-        if in_section and stripped and stripped[0].isdigit():
-            # Drop the leading "1." / "12." numbering.
-            after_num = stripped.split(".", 1)[-1].strip()
-            checked = False
-            if after_num.startswith("[ ]"):
-                text = after_num[3:].strip()
-            elif after_num[:3].lower() == "[x]":
-                checked = True
-                text = after_num[3:].strip()
-            else:
-                text = after_num
-            text, est = _strip_est(text)
-            text, prog = _strip_progress(text)
-            if text:
-                items.append({
-                    "text": text,
-                    "checked": checked,
-                    "progress": 100 if checked else prog,
-                    "est": est,
-                })
+        if not in_section:
+            continue
+        m = _LIST_ITEM_RE.match(line)
+        if not m:
+            continue
+        raw += 1
+        if not stripped[0].isdigit():
+            continue  # dash rows aren't shown, but still occupy a raw slot
+        after_num = m.group(2)
+        checked = False
+        if after_num.startswith("[ ]"):
+            text = after_num[3:].strip()
+        elif after_num[:3].lower() == "[x]":
+            checked = True
+            text = after_num[3:].strip()
+        else:
+            text = after_num
+        text, est = _strip_est(text)
+        text, prog = _strip_progress(text)
+        if text:
+            items.append({
+                "text": text,
+                "checked": checked,
+                "progress": 100 if checked else prog,
+                "est": est,
+                "raw_index": raw,
+            })
     return items
 
 
@@ -575,9 +597,9 @@ def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
 
 
 def _set_nth_progress(md: str, heading: str, index: int, level: int) -> str:
-    """Set progress (0/25/50/70/100) on the Nth list item under `heading`.
+    """Set progress (0/25/50/75/100) on the Nth list item under `heading`.
 
-    100 → `[x]` and no marker; 25/50/70 → `[ ]` + `<!--p:NN-->`; 0 → `[ ]`,
+    100 → `[x]` and no marker; 25/50/75 → `[ ]` + `<!--p:NN-->`; 0 → `[ ]`,
     marker removed. Preserves the item's text.
     """
     lines = md.splitlines()
@@ -759,6 +781,22 @@ def _ensure_daily_note_scaffold(path: Path) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_DAILY_NOTE_SCAFFOLD, encoding="utf-8", newline="")
+
+
+def _count_section_list_rows(md: str, heading: str) -> int:
+    """Raw slot count under `heading`: every list row (numbered or dash,
+    blank or filled) — the same counting the Nth-item mutators use."""
+    in_section = False
+    count = 0
+    for line in md.splitlines():
+        if line.strip() == heading:
+            in_section = True
+            continue
+        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            break
+        if in_section and _LIST_ITEM_RE.match(line):
+            count += 1
+    return count
 
 
 def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
@@ -979,14 +1017,12 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     morning = sections.get("Morning Check-in", "")
     unplanned = _extract_unplanned(morning)
 
-    # Annotate Top 3 / Bonus items with their index + marked-for-deletion state
-    # so the task_list partial can render progress + delete controls.
+    # Annotate Top 3 / Bonus items with their raw row index (what the Nth-item
+    # mutators count — blank slots included) + marked-for-deletion state so the
+    # task_list partial can render progress + delete controls.
     deleted_texts = _extract_subsection_items(morning, "Deleted")
-    for idx, it in enumerate(top_3):
-        it["index"] = idx
-        it["deleted"] = it["text"] in deleted_texts
-    for idx, it in enumerate(bonus):
-        it["index"] = idx
+    for it in top_3 + bonus:
+        it["index"] = it["raw_index"]
         it["deleted"] = it["text"] in deleted_texts
 
     # Energy is captured twice: morning (Morning Check-in) and evening (End of Day).
@@ -1052,6 +1088,23 @@ def create_app(vault_path: str) -> Flask:
     # hard-refresh (Cmd+Shift+R) if the browser cached an old stylesheet.
     app.config["TEMPLATES_AUTO_RELOAD"] = True
     app.jinja_env.auto_reload = True
+
+    @app.before_request
+    def _reject_cross_origin_posts():
+        """CSRF guard. The companion binds localhost, but any web page the
+        user visits can still form-POST to http://localhost:<port>/ and
+        mutate the vault. Browsers attach an Origin header to cross-site
+        POSTs — reject when it names a different host than the one we're
+        being addressed as. Same-origin browser posts match; non-browser
+        clients (curl, skills, tests) send no Origin and pass."""
+        if request.method != "POST":
+            return None
+        origin = request.headers.get("Origin")
+        if not origin:
+            return None
+        if urlparse(origin).netloc != request.host:
+            return ("cross-origin request rejected", 403)
+        return None
 
     subscribers: list[queue.Queue] = []
     last_hashes: dict[str, str] = {}  # relpath -> sha256[:16] of last broadcast
@@ -1428,8 +1481,10 @@ def create_app(vault_path: str) -> Flask:
         _ensure_daily_note_scaffold(note_path)
 
         def update(existing: str) -> str:
-            morning = parse_daily_note_sections(existing).get("Morning Check-in", "")
-            count = len(_extract_bonus(morning))
+            # Append after the last RAW list row (blank slots included) —
+            # counting only non-empty items would overwrite the row after a
+            # blank slot instead of appending.
+            count = _count_section_list_rows(existing, "### Bonus")
             return _set_nth_item_text(existing, "### Bonus", count, text)
 
         safe_modify(note_path, update)
@@ -1605,10 +1660,9 @@ def create_app(vault_path: str) -> Flask:
         top_3 = _extract_top_3(morning)
         bonus = _extract_bonus(morning)
         deleted = _extract_subsection_items(morning, "Deleted")
-        for items in (top_3, bonus):
-            for idx, it in enumerate(items):
-                it["index"] = idx
-                it["deleted"] = it["text"] in deleted
+        for it in top_3 + bonus:
+            it["index"] = it["raw_index"]
+            it["deleted"] = it["text"] in deleted
         return render_template(
             "_components/task_table.html", top_3=top_3, bonus=bonus,
         )
@@ -1624,6 +1678,8 @@ def create_app(vault_path: str) -> Flask:
             level = int(request.form.get("level", ""))
         except (TypeError, ValueError):
             return ("invalid index/level", 400)
+        if index < 0:
+            return ("invalid index", 400)
         if level not in _VALID_PROGRESS:
             return (f"level must be one of {_VALID_PROGRESS}", 400)
         today = _target_date()
@@ -1635,9 +1691,12 @@ def create_app(vault_path: str) -> Flask:
             morning = parse_daily_note_sections(md).get("Morning Check-in", "")
             items = (_extract_top_3(morning) if section == "top_3"
                      else _extract_bonus(morning))
+            # `index` is a raw row index; look the item up by raw_index (the
+            # extracted list is compacted — blank rows are filtered out).
+            current = next((i for i in items if i["raw_index"] == index), None)
             # Clicking the already-active level toggles it back to 0 (so 100% is
             # un-clickable-off — fixes "I can't unclick 100").
-            target = 0 if (index < len(items) and items[index]["progress"] == level) else level
+            target = 0 if (current is not None and current["progress"] == level) else level
             return _set_nth_progress(md, heading, index, target)
 
         safe_modify(note_path, update)
@@ -1655,6 +1714,8 @@ def create_app(vault_path: str) -> Flask:
             index = int(request.form.get("index", ""))
         except (TypeError, ValueError):
             return ("invalid index", 400)
+        if index < 0:
+            return ("invalid index", 400)
         raw = (request.form.get("hours", "") or "").strip()
         if raw in ("", "-"):
             hours: float | None = None
@@ -1663,7 +1724,9 @@ def create_app(vault_path: str) -> Flask:
                 hours = float(raw)
             except ValueError:
                 return ("hours must be a number", 400)
-            if hours < 0 or hours > 24:
+            # float() accepts "nan"/"inf"; NaN passes every comparison below
+            # and would write an unparseable <!--e:nan--> marker.
+            if not math.isfinite(hours) or hours < 0 or hours > 24:
                 return ("hours must be between 0 and 24", 400)
             if hours == 0:
                 hours = None
@@ -1692,6 +1755,8 @@ def create_app(vault_path: str) -> Flask:
             index = int(request.form.get("index", ""))
         except (TypeError, ValueError):
             return ("invalid index", 400)
+        if index < 0:
+            return ("invalid index", 400)
         today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         if not note_path.exists():
@@ -1701,9 +1766,10 @@ def create_app(vault_path: str) -> Flask:
             morning = parse_daily_note_sections(md).get("Morning Check-in", "")
             items = (_extract_top_3(morning) if section == "top_3"
                      else _extract_bonus(morning))
-            if index >= len(items):
+            item = next((i for i in items if i["raw_index"] == index), None)
+            if item is None:
                 return md
-            text = items[index]["text"]
+            text = item["text"]
             if text in _extract_subsection_items(morning, "Deleted"):
                 return _remove_from_subsection(md, "Deleted", text)
             return _add_to_subsection(md, "Deleted", text)

@@ -90,7 +90,7 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
    ```bash
    OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
    sleep 2
-   "$TC" status
+   "$TC" status   # in test mode: "$TC" status --test — plain status reports the REAL companion
    ```
    If it still won't start, **skip silently** and close in chat. Parse the address from the status output.
 3. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If it doesn't exist, skip this step.
@@ -108,7 +108,7 @@ Read today's daily note and pull in everything the builder recorded during the d
 
 **(a) Top 3 / Bonus completion** — from `## Morning Check-in` → `### My Top 3` and `### Bonus`:
 - `[x]`, or a trailing `<!--p:100-->` → **done (100%)**
-- a trailing `<!--p:NN-->` marker where NN is 25/50/70 → **partial, NN%** (line still shows `[ ]`; the marker is an HTML comment, invisible in rendered Obsidian)
+- a trailing `<!--p:NN-->` marker where NN is 25/50/75 → **partial, NN%** (line still shows `[ ]`; the marker is an HTML comment, invisible in rendered Obsidian)
 - `[ ]` with no marker → **not started**
 - text also listed under `## Carrying Over` → the builder chose to **carry it forward**
 
