@@ -85,7 +85,7 @@
                  class="flex-1 nsls-input">
           <span class="nsls-est">
             <input type="text" inputmode="decimal" name="hours" autocomplete="off"
-                   value="{{ '%g'|format(plan.top3_est[i]) if plan.top3_est[i] else '' }}" placeholder="—"
+                   value="{{ '%g'|format(plan.top3_est[i]) if plan.top3_est is defined and plan.top3_est[i] else '' }}" placeholder="—"
                    aria-label="Estimated hours for priority {{ i + 1 }}"
                    hx-post="/set-estimate"
                    hx-vals='{"section":"top_3","index":"{{ i }}"}'
