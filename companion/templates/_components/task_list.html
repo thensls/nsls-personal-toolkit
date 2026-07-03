@@ -1,51 +1,64 @@
 <div id="tasklist-{{ section }}">
   {% set rows = items | selectattr("text") | list %}
   {% if rows %}
-  <ul class="list-none">
-    {% for item in rows %}
-    <li class="nsls-row">
-      <!-- Disc: the artifact's signature indicator. empty / teal sweep / gold done. -->
-      <span class="nsls-disc
-        {%- if item.deleted %} nsls-disc--deleted
-        {%- elif item.progress >= 100 %} nsls-disc--done
-        {%- elif item.progress > 0 %} nsls-disc--partial{% endif %}"
-        {% if item.progress > 0 and item.progress < 100 and not item.deleted %}style="--p: {{ item.progress }}"{% endif %}></span>
-
-      <span class="nsls-row-text {% if item.progress >= 100 %}is-done{% elif item.deleted %}is-deleted{% endif %}">{{ item.text }}</span>
-
-      <!-- Estimated hours (timeboxing): saves on blur / Enter, clears when emptied. -->
-      <span class="nsls-est">
-        <input type="text" inputmode="decimal" name="hours" autocomplete="off"
-               value="{{ '%g'|format(item.est) if item.est else '' }}" placeholder="—"
-               aria-label="Estimated hours" title="Estimated hours (timeboxing)"
-               hx-post="/set-estimate"
-               hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
-               hx-trigger="change, keyup[key=='Enter']"
-               hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
-               hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
-        <span class="u">h</span>
-      </span>
-
-      <!-- Segmented progress control: the buttons ARE the bar. Levels at/below
-           the selected one fill light; the selected one is teal (gold at 100). -->
-      <div class="nsls-seg">
-        {% for lvl in [0, 25, 50, 75, 100] %}
-        <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl %}is-current{% elif lvl < item.progress %}is-below{% endif %}"
-                hx-post="/set-progress"
-                hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
-                hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
-                title="{{ lvl }}%{% if lvl == 0 %} — didn't get to it{% elif lvl == 100 %} — done{% endif %}">{{ lvl }}</button>
-        {% endfor %}
-      </div>
-
-      <button class="nsls-del {{ 'is-deleted' if item.deleted else '' }}"
-              hx-post="/delete-task"
-              hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
-              hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
-              title="{{ 'Marked for deletion — click to undo' if item.deleted else 'Mark for deletion' }}">✕</button>
-    </li>
-    {% endfor %}
-  </ul>
+  <table class="nsls-tasktable">
+    <thead>
+      <tr>
+        <th class="tt-disc"></th>
+        <th class="tt-goal"></th>
+        <th class="tt-est">Estimated time<span class="nsls-tip"><span class="ic">i</span><span class="pop"><b>Timeboxing.</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></th>
+        <th class="tt-prog">Progress</th>
+        <th class="tt-del"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in rows %}
+      <tr>
+        <td class="tt-disc">
+          <span class="nsls-disc
+            {%- if item.deleted %} nsls-disc--deleted
+            {%- elif item.progress >= 100 %} nsls-disc--done
+            {%- elif item.progress > 0 %} nsls-disc--partial{% endif %}"
+            {% if item.progress > 0 and item.progress < 100 and not item.deleted %}style="--p: {{ item.progress }}"{% endif %}></span>
+        </td>
+        <td class="tt-goal">
+          <span class="nsls-row-text {% if item.progress >= 100 %}is-done{% elif item.deleted %}is-deleted{% endif %}">{{ item.text }}</span>
+        </td>
+        <td class="tt-est">
+          <span class="nsls-est">
+            <input type="text" inputmode="decimal" name="hours" autocomplete="off"
+                   value="{{ '%g'|format(item.est) if item.est else '' }}" placeholder="—"
+                   aria-label="Estimated hours" title="Estimated hours (timeboxing)"
+                   hx-post="/set-estimate"
+                   hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
+                   hx-trigger="change, keyup[key=='Enter']"
+                   hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
+                   hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
+            <span class="u">h</span>
+          </span>
+        </td>
+        <td class="tt-prog">
+          <div class="nsls-seg">
+            {% for lvl in [0, 25, 50, 75, 100] %}
+            <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl %}is-current{% elif lvl < item.progress %}is-below{% endif %}"
+                    hx-post="/set-progress"
+                    hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
+                    hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
+                    title="{{ lvl }}%{% if lvl == 0 %} — didn't get to it{% elif lvl == 100 %} — done{% endif %}">{{ lvl }}</button>
+            {% endfor %}
+          </div>
+        </td>
+        <td class="tt-del">
+          <button class="nsls-del {{ 'is-deleted' if item.deleted else '' }}"
+                  hx-post="/delete-task"
+                  hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
+                  hx-target="#tasklist-{{ section }}" hx-swap="outerHTML"
+                  title="{{ 'Marked for deletion — click to undo' if item.deleted else 'Mark for deletion' }}">✕</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
   <p class="text-xs nsls-subtle mt-3">Anything under 100% carries forward to tomorrow. 0 = didn't get to it. ✕ marks for deletion (reversible).</p>
   {% else %}
   <p class="text-sm nsls-subtle">{% if section == 'top_3' %}No priorities set yet. <a href="/?mode=coach-morning" style="color: var(--nsls-teal); text-decoration: underline;">Plan your day →</a>{% else %}No bonus items yet.{% endif %}</p>

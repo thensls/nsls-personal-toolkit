@@ -19,10 +19,10 @@
 
 {% set planned = (top_3 + bonus) | selectattr('est') | map(attribute='est') | sum %}
 <section class="nsls-card">
-  <h2 class="nsls-card-title mb-1">Top 3</h2>
-  <p class="text-xs nsls-subtle mb-2">
-    {% if planned %}≈ <span class="font-medium">{{ '%g'|format(planned) }}h</span> planned today · {% endif %}<span class="nsls-tip">est. hrs<span class="ic">i</span><span class="pop"><b>Estimated time (timeboxing).</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span> per task, then progress
-  </p>
+  <div class="flex items-baseline gap-3 mb-2">
+    <h2 class="nsls-card-title">Top 3</h2>
+    {% if planned %}<span class="text-xs nsls-subtle">≈ <span class="font-medium">{{ '%g'|format(planned) }}h</span> planned today</span>{% endif %}
+  </div>
   {% with section='top_3', items=top_3 %}{% include "_components/task_list.html" %}{% endwith %}
 </section>
 

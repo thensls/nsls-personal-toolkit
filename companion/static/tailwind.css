@@ -441,6 +441,26 @@ body {
 .nsls-prog-on { background: var(--nsls-teal); }
 .nsls-prog-off { background: var(--nsls-disc-empty); }
 
+/* Task table (Top 3 / Bonus) — real columns so headers align by structure,
+ * not by font metrics. Table sizes to content and sits left; the goal column
+ * is capped and wraps, so long goals don't stretch the layout and short ones
+ * keep the controls tucked in close instead of flung to the right margin. */
+.nsls-tasktable { border-collapse: collapse; width: auto; }
+.nsls-tasktable th {
+  font-size: 0.62rem; text-transform: uppercase; letter-spacing: 0.06em;
+  font-weight: 700; color: var(--nsls-darkblue); text-align: left;
+  padding: 0 1.25rem 0.5rem 0; white-space: nowrap; vertical-align: bottom;
+}
+.nsls-tasktable td {
+  padding: 0.55rem 1.25rem 0.55rem 0; vertical-align: middle;
+  border-top: 1px solid var(--nsls-hairline);
+}
+.nsls-tasktable tbody tr:first-child td { border-top: none; }
+.nsls-tasktable th:last-child, .nsls-tasktable td:last-child { padding-right: 0; }
+.nsls-tasktable .tt-disc { width: 22px; padding-right: 0.85rem; }
+.nsls-tasktable .tt-goal .nsls-row-text { display: block; max-width: 22rem; overflow-wrap: anywhere; }
+.nsls-tasktable .tt-est, .nsls-tasktable th.tt-est { white-space: nowrap; }
+
 /* Per-task estimated hours (timeboxing) */
 .nsls-est { display: inline-flex; align-items: center; gap: 3px; flex: none; }
 .nsls-est input {
