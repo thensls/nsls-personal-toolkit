@@ -25,6 +25,10 @@ Parse the user's input to determine which mode to run:
 - `/learn [topic]` → **New Learning Goal** (if topic doesn't exist in `40-learning/`) or **Topic Review** (if it does)
 - `/learn inbox` → **Process Inbox**
 - `/learn scaffold [topic]` → **Refresh Learning Path**
+- `/learn oss [query]` → **Search OSS Catalog** (open-source building blocks for Society / Ignite Next)
+
+> **Reserved word:** `oss` is the catalog-search command — never treat `/learn oss …` as a
+> New Learning Goal for a topic literally named "oss".
 
 ---
 
@@ -198,11 +202,48 @@ Present:
 ## Mode: Process Inbox (`/learn inbox`)
 
 1. Read `$OBSIDIAN_VAULT_PATH/40-learning/_inbox.md`
-2. For each unprocessed item (`- [ ]`):
-   - If it already has tags matching an active topic → present summary, confirm tag, mark as `- [x]`, add to topic dashboard's Resources section
-   - If no tag → summarize the link (read title + first paragraph via WebFetch), suggest a topic tag or "untagged"
+2. For each unprocessed item (`- [ ]`), first decide **reading vs. OSS project** (see
+   "Classifying OSS projects" below):
+   - **OSS project** → add a catalog entry to `40-learning/oss-catalog.md` (see "Filing to the
+     OSS catalog"), then mark the inbox item `- [x] … ✅ filed YYYY-MM-DD → [[oss-catalog]]`.
+     An OSS project can ALSO carry a topic tag (e.g. an agent framework is both catalog + #agentic-harnesses) — file it both places.
+   - **Reading with a tag matching an active topic** → present summary, confirm tag, mark `- [x]`, add to that topic dashboard's Resources section.
+   - **Reading, no tag** → summarize the link (title + first paragraph via WebFetch), suggest a topic tag or "untagged".
 3. Present untagged items to the user: "These links don't match any active goals. Want to tag them, create a new goal, or skip?"
-4. Write updates back to `_inbox.md` and any affected topic dashboards
+4. Write updates back to `_inbox.md`, any affected topic dashboards, and `oss-catalog.md`.
+
+### Classifying OSS projects
+
+Mark an item as an **OSS project** when it is (or showcases) a *specific* open-source software
+project, library, framework, or tool — a GitHub repo link, or a social post (e.g. `x.com/tom_doerr`,
+`threads.com/@githubprojects`) highlighting one named OSS project. A post that bundles several
+projects becomes several catalog entries. Articles, news, videos, and opinion/leadership threads
+are **readings**, not OSS projects — even when they mention a tool in passing.
+
+### Filing to the OSS catalog
+
+`40-learning/oss-catalog.md` is a flat, greppable catalog of open-source building blocks for
+**Society / Ignite Next** (repo `ignite-next`) and other NSLS products. Append each project as
+one `###` block under `## Projects` (newest first), following the schema documented at the top
+of that file:
+
+```
+### <Project Name>
+- **Repo:** <github url or source>
+- **What it does:** <one line>
+- **Lang / License:** <language> · <license>
+- **Relevance:** <why it could matter for Society / Ignite Next>
+- **Tags:** #tag #tag        (from the taxonomy in oss-catalog.md)
+- **Status:** candidate
+- **Source:** <original link> · captured YYYY-MM-DD
+```
+
+Before appending, **dedup**: grep the catalog for the repo URL or project name; if it already
+exists, skip (or refine the existing block) rather than adding a duplicate. Enrich `Lang /
+License` and `Repo` from GitHub when discoverable (`gh repo view <owner/repo> --json …`, or the
+public API) but never block on it — leave a field blank rather than guess. When in doubt about
+`Relevance`, write what product surface it could serve (learning, community, AI, auth,
+onboarding, dev-tooling…) so search still finds it.
 
 ---
 
@@ -217,25 +258,78 @@ Present:
 
 ---
 
-## Link Ingestion (runs during /open-day)
+## Mode: Search OSS Catalog (`/learn oss [query]`)
+
+Searches `40-learning/oss-catalog.md` — the catalog of open-source building blocks for Society /
+Ignite Next and other NSLS products. Used directly by Kevin, and called by `/interrogate` during
+new-product planning to surface relevant building blocks.
+
+1. Read `$OBSIDIAN_VAULT_PATH/40-learning/oss-catalog.md`. If it doesn't exist, say so and
+   suggest running `/learn inbox` to build it.
+2. **No query** (`/learn oss`) → summarize the catalog: total projects, a breakdown by tag, and
+   the most recent 5 additions. Suggest a query.
+3. **With a query** → match each project block against the query across **name, what-it-does,
+   relevance, and tags**. Treat the query loosely:
+   - tag-style queries (`auth`, `gamification`, `agent`, `llm`) → match `Tags:` and text
+   - capability queries (`"send push notifications"`, `"in-app chat"`) → semantic/keyword match against What it does + Relevance
+   - Rank by closeness; prefer `Status: candidate|evaluating|adopted` over `rejected` (mention rejected only if directly on-point, with its rejection reason).
+4. Present the top matches as a compact list:
+   ```
+   OSS candidates for "<query>" (N matches):
+   1. <Name> — <what it does>. Relevance: <…>. [repo](<url>) · #tags · status:<status>
+   2. …
+   ```
+   If zero matches, say so and offer to run a live web/GitHub search (WebSearch / `gh search repos`)
+   and, with approval, file the best finds into the catalog.
+
+---
+
+## Link Ingestion (runs during /open-day, and the engine behind `/learn inbox`)
 
 When called from `/open-day`, ingest new links based on the builder's configured `learning_capture_method` (from builder profile):
 
-**If `slack`:** Use `mcp__plugin_slack_slack__slack_read_channel` to read the builder's self-DM channel (using `$SLACK_USER_ID`) for messages from the last 24 hours. Extract URLs, fetch titles via WebFetch, and append to `_inbox.md`.
+**If `slack`:** Use `mcp__plugin_slack_slack__slack_read_channel` to read the builder's self-DM channel (using `$SLACK_USER_ID`, passed as `channel_id`) for messages since the last ingestion. Extract URLs, **resolve shortlinks (below)**, fetch titles, classify, and append to `_inbox.md`. Skip automated reminder messages (e.g. anything containing "person-intelligence sweep" or an `:alarm_clock:` prefix).
 
 **If other method or not configured:** Skip automatic ingestion. The builder adds links to `_inbox.md` manually or via `/learn inbox`. This is the default — automatic ingestion is opt-in.
 
-For each ingested URL:
-- Fetch the page title and first paragraph via WebFetch
-- Generate a 1-2 sentence summary
-- Check if it matches any active learning goal topics (keyword match against topic names and tags in `_learning-goals.md`)
-- Append to `_inbox.md` in the format:
+### Resolving shortlinks (`share.google`, etc.)
+
+Kevin's self-DM links are almost all `https://share.google/XXXX` redirect shortlinks. **Resolve
+every shortlink to its real destination with `curl` first** — it's fast and reliable:
+
+```bash
+curl -sL -o /dev/null -w '%{url_effective}' --max-time 25 "https://share.google/XXXX"
+```
+
+Use the resolved URL everywhere downstream (dedup, fetch, the link written to `_inbox.md`).
+**Playwright is a fallback, not the default** — only reach for the browser (Playwright MCP:
+`browser_navigate` + `browser_snapshot`) when `curl` returns a Google interstitial instead of a
+real destination, OR when the *destination itself* (x.com, threads.com, other JS-walled pages)
+won't render for content extraction. If a destination stays blocked after one Playwright attempt,
+record the title best-effort and append "(unresolved — fetch blocked)" to the summary; do not loop.
+
+> A previous version of this flow opened every link in Playwright. That was slow and flaky —
+> `curl` resolves `share.google` in one shot. Keep curl-first.
+
+### Per-URL processing
+
+For each ingested URL (after resolution):
+- **Dedup** against `_inbox.md` and `oss-catalog.md` by resolved URL — skip if already present.
+- Fetch the page title and first paragraph (WebFetch; Playwright fallback per above).
+- Generate a 1-2 sentence factual summary.
+- **Classify reading vs. OSS project** (see "Classifying OSS projects" under Process Inbox).
+- Always append to `_inbox.md` in the format below (the inbox is the audit trail). Tag OSS
+  projects `#oss-project` plus any matching topic; tag readings with the matched topic or `#untagged`:
   ```
-  - [ ] [Page Title](URL) — YYYY-MM-DD, from: [source]
+  - [ ] [Page Title](resolved-URL) — YYYY-MM-DD, from: [source]
     > [1-2 sentence summary]
-    > Tags: #[matched-topic] (or #untagged)
+    > Tags: #oss-project #[topic]   (or #[matched-topic] / #untagged for readings)
   ```
-- Report: "Ingested [N] new links. [M] matched active topics, [K] untagged."
+- For OSS projects, also append a catalog block to `oss-catalog.md` (see "Filing to the OSS
+  catalog") and mark the inbox line filed. When run non-interactively from `/open-day`, file
+  clear OSS projects straight to the catalog; leave genuinely ambiguous items as `- [ ]` for the
+  next `/learn inbox`.
+- Report: "Ingested [N] new links. [M] readings matched topics, [K] untagged, [P] OSS projects → catalog."
 
 ---
 
@@ -248,6 +342,12 @@ For each ingested URL:
 
 Unprocessed links scraped from Slack and other sources. Run `/learn inbox` to process.
 ```
+
+### `oss-catalog.md`
+
+Flat catalog of open-source building blocks for Society / Ignite Next. Self-documents its schema
+and tag taxonomy in its header; `## Projects` holds one `###` block per project (newest first).
+Searched via `/learn oss`, written by `/learn inbox` + `/open-day` ingestion, read by `/interrogate`.
 
 ### `_learning-goals.md`
 

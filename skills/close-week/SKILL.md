@@ -126,6 +126,33 @@ mcp__claude_ai_asana__asana_search_tasks(
 )
 ```
 
+**1e. Active quarterly goals + per-goal weekly progress**
+
+Read goal files from `$OBSIDIAN_VAULT_PATH/10-strategy/goals/*.md` with `status: active` (skip dashboards and archive). For each:
+
+1. Parse frontmatter.
+2. Compute weekly hit rate: from the 7 daily notes already loaded in 1a, count notes with `goal_{slug}_moved: true` / count of notes that have the key (true/false).
+3. If `type: metric` and `metric_source` is `apple_health.*`, query the apple-health MCP for the week's metric value (same logic as `/open-week` Step 1h).
+4. If `type: behavior`, weekly progress = hit_rate.
+
+Carry forward as `goals_for_reflection`:
+```python
+goals_for_reflection = [{
+    "slug": "vo2-max",
+    "title": "Hold and improve VO2 max",
+    "baseline": 36.2, "target": 37.0, "current": 36.4, "unit": "ml/(kg·min)",
+    "weekly_action": "2x zone-2 + 1x intervals",
+    "anchor": "After walking Red, Mon/Wed/Fri 7:45am",
+    "hit_rate": "2/3",  # days with goal_<slug>_moved: true / days with key set
+    "weeks_remaining": 4,
+    "trend": "stable",  # up | down | stable | no data
+}, ...]
+```
+
+This feeds Step 2 (synthesis) and Step 3 (weekly goal reflection writeback).
+
+Skip if no goals are active.
+
 ### Step 2: Synthesize
 
 **Achievements:** Scan all Work Log bullets across the week. Pick the 5-8 most impactful — things that shipped, decisions that moved the needle, external commitments met. Prefer concrete outcomes with numbers over activity descriptions.
@@ -295,24 +322,59 @@ Rules:
 
 The Insight Reflection is the **first section** in the weekly note (Output A), before Achievements. It is also summarized as a single "Insight of the Week" sentence in Output B.
 
-### Step 2b: Knowledge Graph Consolidation
+### Step 2b. NSLS Knowledge Base week audit
 
-If `$OBSIDIAN_VAULT_PATH/60-nsls-knowledge/` exists, do a weekly pass on the knowledge graph:
+Always runs. Everyone gets the audit; write actions (promotions, stale-flags) apply to your KB — pushed if you're on SLT (company KB), committed locally otherwise.
 
-1. **Review this week's entries**: Read all `60-nsls-knowledge/*.md` files that were modified this week (check `last-updated` frontmatter or git log). Look at what close-day added.
+```bash
+echo "Step 2b: auditing your knowledge base for week $WEEK..."
+```
 
-2. **Consolidate**: If multiple daily entries on the same topic say essentially the same thing, merge them into one clearer entry. Remove redundancy.
+Invoke the harvest skill in audit mode:
 
-3. **Update Current State**: For any topic where the week's decisions or insights meaningfully changed the overall picture, rewrite the `## Current State` section to reflect the new reality. Keep it to 2-3 sentences.
+```
+/harvest-meeting --week-audit --week $WEEK
+```
 
-4. **Surface neglected topics** (optional, light touch): If there are topics owned by Kevin with no activity in 4+ weeks, mention them: "Revenue Strategy hasn't been updated since March 15 — still accurate?" Don't do this every week; once a month is enough.
+The skill displays:
+- Activity summary (commits, edits, files touched)
+- Unharvested meetings
+- Stale topics (last-updated > 60 days)
+- Open Questions older than 30 days
 
-5. **Report**: At the end of the weekly note, add a brief line:
-   ```
-   📚 Knowledge graph: [N] topics updated this week, [M] entries consolidated
-   ```
+The skill additionally (for everyone, against your own KB):
+- Offers promotions for resolved Open Questions → Key Decisions
+- Offers stale-flag updates on old topic frontmatter
 
-Keep this lightweight. The goal is quality control on what close-day added, not a major writing exercise.
+The user approves changes via the same numbered-list UX as `/harvest-meeting --date`.
+
+**After the skill returns:** Append a `## Knowledge Base` section to the weekly close note with the audit summary (and any commits made).
+
+### Step 2c. Role coaching (role-coach weekly block)
+
+Runs when `$OBSIDIAN_VAULT_PATH/10-strategy/role-coaching/role-profile.md` exists; otherwise heartbeat the skip.
+
+```bash
+echo "Step 2c: invoking /role-coach --week $WEEK (role coaching from your seat)..."
+# or: echo "Step 2c: no role-profile.md — /role-coach not set up, skipping"
+```
+
+Invoke the role-coach skill:
+
+```
+/role-coach --week $WEEK
+```
+
+The skill will:
+- Sweep the week's evidence (vault + whatever sources its scope probe finds), every claim cited
+- Render the ≤10-line Role Coaching block: Said / Did / Gap + pattern-ledger deltas + Horizon (if a trajectory exists)
+- Propose ledger bookkeeping (ok-class) and any moves/proposals (explicit-yes class)
+- Write one cue candidate to `~/.cache/role-coach/cues.json` for next week's /open-week pool (after the move is restated)
+
+**After the skill returns:** Append the approved Role Coaching block to the weekly close note as a `## Role Coaching` section. Outcome lines (exactly one):
+- `## Role Coaching` section appended — [N] patterns updated, cue queued for open-week
+- Role coaching skipped — no role-profile.md (run /role-coach to set up)
+- Role coaching declined this week — noted, ledger untouched
 
 ### Step 3: Generate two outputs
 
@@ -362,6 +424,34 @@ Priorities vs. Reality:
 Insight of the Week:
 [One sentence — the sharpest non-obvious thing the week's data revealed. Specific, declarative, anchored.]
 ```
+
+**Output B.5: Per-goal weekly reflection** (interactive — appended to each goal file's Weekly Log)
+
+For each goal in `goals_for_reflection` (from Step 1e), conduct a 3-prompt reflective conversation. Don't batch — ask one goal at a time, one prompt at a time. Keep prompts open-ended, not leading.
+
+Prompts per goal:
+
+> **For [Goal title]:**
+> Hit rate this week: [N/M anchor days fired]. Metric: [current] [unit] ([trend vs last week]).
+>
+> 1. **What worked toward this goal this week?**
+> 2. **What got in the way?** (Skip if hit rate is 100% — nothing to diagnose.)
+> 3. **Refinement for next week?** — keep the same action/anchor, adjust (specify how), or pause/abandon?
+
+After all goals, write back to each goal file's Weekly Log section:
+
+```markdown
+### 2026-W## (week ending YYYY-MM-DD)
+- **Metric:** [current] [unit] ([Δ vs last week])
+- **Hit rate:** [N/M]
+- **What worked:** [from response 1]
+- **What got in the way:** [from response 2 — or "—" if 100% hit]
+- **Refinement:** [from response 3]
+```
+
+If a goal's `weeks_remaining ≤ 1` and progress ≥ 80%, prompt: "Looks like you're closing in on the target. Graduate this goal next week and pick a new one?"
+
+If a goal's `weeks_remaining ≤ 0` (cycle ended), prompt: "Cycle ended. Status: [done | abandoned | extend]?" Then update the goal file's frontmatter `status` accordingly.
 
 **Output C: AI-Suggested Next Week Priorities** (seeded into the weekly note for `/open-week` to pick up)
 

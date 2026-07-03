@@ -1,0 +1,20 @@
+{
+  "name": "@nsls/signal-mcp",
+  "version": "0.1.0",
+  "description": "Read-only MCP server for the NSLS Signal app — exposes team adoption, friction signals, wins, and per-person profiles to Claude Code.",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "signal-mcp": "./index.ts"
+  },
+  "scripts": {
+    "start": "tsx index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
