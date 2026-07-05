@@ -415,6 +415,35 @@ def _extract_subsection_items(morning_section: str, heading: str) -> set[str]:
     return items
 
 
+def _recent_dispositions(vault_path: Path, today: str, lookback_days: int = 7) -> set[str]:
+    """Normalized texts the builder marked Deleted/Done/Dismissed in the last
+    ``lookback_days`` of daily notes (today excluded — today's sets render as
+    live toggle state instead).
+
+    These are tombstones: a suggestion the builder killed on Tuesday must stay
+    dead on Thursday, even when close-day independently regenerates the same
+    idea from the same underlying signal. Deletion knowledge otherwise lives
+    only in one day's note, so it expired after a single day.
+    """
+    out: set[str] = set()
+    try:
+        base = datetime.strptime(today, "%Y-%m-%d")
+    except ValueError:
+        return out
+    for offset in range(1, lookback_days + 1):
+        candidate = (base - timedelta(days=offset)).date().isoformat()
+        note_path = vault_path / "01-daily" / f"{candidate}.md"
+        if not note_path.exists():
+            continue
+        morning = parse_daily_note_sections(
+            note_path.read_text(encoding="utf-8")
+        ).get("Morning Check-in", "")
+        for heading in ("Deleted", "Done", "Dismissed"):
+            out |= {_norm_suggestion(x)
+                    for x in _extract_subsection_items(morning, heading)}
+    return out
+
+
 def _build_plan_context(daily_md: str, vault_path: Path, today: str,
                        priorities: list, bonus: list) -> dict:
     """Build the Plan Your Day screen context: suggestions + carry-overs + taken state.
@@ -436,11 +465,15 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
     # treat those as Done so old items still render.
     done |= _extract_subsection_items(morning, "Dismissed")
 
+    # Cross-day tombstones: anything deleted/done in the last week stays
+    # buried, even if close-day re-suggested it in today's AI sections.
+    tombstones = _recent_dispositions(vault_path, today)
+
     seen: set[str] = set()
     suggestions: list[dict] = []
     for item in (ai_items if ai_items else carryovers):
         key = _norm_suggestion(item["text"])
-        if key in seen:
+        if key in seen or key in tombstones:
             continue
         seen.add(key)
         suggestions.append(item)
@@ -911,8 +944,8 @@ def _habit_state_for(app, habit_id: str, today: str, percent: float) -> dict:
         "name": habit["name"],
         "emoji": habit.get("emoji", ""),
         "percent": percent,
-        "streak_days": streak_days(habit_log),
-        "status": status_for(compute_concern(habit_log)),
+        "streak_days": streak_days(habit_log, today),
+        "status": status_for(compute_concern(habit_log, today)),
     }
 
 
@@ -997,8 +1030,8 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
             "name": h["name"],
             "emoji": h.get("emoji", ""),
             "percent": today_log.get(h["id"], 0.0),
-            "streak_days": streak_days(habit_log),
-            "status": status_for(compute_concern(habit_log)),
+            "streak_days": streak_days(habit_log, today),
+            "status": status_for(compute_concern(habit_log, today)),
         })
 
     # Stats for evening modes / results
@@ -1285,10 +1318,10 @@ def create_app(vault_path: str) -> Flask:
                     None,
                 )
                 cells.append({"date": day, "percent": pct})
-            concern = compute_concern(habit_log)
+            concern = compute_concern(habit_log, today.isoformat())
             rows.append({
                 "habit": h,
-                "streak_days": streak_days(habit_log),
+                "streak_days": streak_days(habit_log, today.isoformat()),
                 "concern": concern,
                 "status": status_for(concern),
                 "cells": cells,

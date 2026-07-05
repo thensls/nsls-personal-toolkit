@@ -18,8 +18,9 @@
       </td>
       <td class="tt-est">
         <span class="nsls-est">
+          {# Done ⇒ 0h remaining (display only — untoggling 100% restores the file's estimate) #}
           <input type="text" inputmode="decimal" name="hours" autocomplete="off"
-                 value="{{ '%g'|format(item.est) if item.est else '' }}" placeholder="—"
+                 value="{{ '0' if item.progress >= 100 else ('%g'|format(item.est) if item.est else '') }}" placeholder="—"
                  aria-label="Estimated hours" title="Estimated hours (timeboxing)"
                  hx-post="/set-estimate"
                  hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
