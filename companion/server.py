@@ -956,7 +956,13 @@ def _detect_day_state(daily_md: str, top_3: list) -> str:
 
 
 def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str) -> dict:
-    """Assemble template context shared by all four day-tab modes."""
+    """Assemble template context shared by all four day-tab modes.
+
+    ``today`` is the note date being served — via ``?date=`` it can be a past
+    day (close-day catching up on a day that wasn't closed same-day).
+    ``is_today`` lets templates drop the "Today —" framing for past dates.
+    """
+    is_today = today == date.today().isoformat()
     try:
         today_pretty = datetime.strptime(today, "%Y-%m-%d").strftime("%A, %B %-d, %Y")
     except ValueError:
@@ -1032,6 +1038,7 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     return {
         "today": today,
         "today_pretty": today_pretty,
+        "is_today": is_today,
         "note_md": daily_md,
         "top_3": top_3,
         "top_3_slots": top_3_slots[:3],
@@ -1139,7 +1146,15 @@ def create_app(vault_path: str) -> Flask:
         daily_insight_text = sections.get("Daily Insight", "").strip()
 
         # User override → respected; otherwise auto-detect
-        mode = request.args.get("mode") or _detect_day_state(daily_md, top_3)
+        mode_override = request.args.get("mode")
+        closing = request.args.get("closing") == "1"
+        mode = mode_override or _detect_day_state(daily_md, top_3)
+        if closing and not mode_override:
+            # /close-day handshake: hard-force the closing Command Center
+            # view. Without this, a note still at `status: planning` (the
+            # builder never locked in) bounces to Plan-your-day mid-close.
+            # An already-closed day stays read-only on Results.
+            mode = "results" if mode == "results" else "command"
 
         ctx = _build_day_context(app, daily_md, top_3, bonus, today)
         ctx["insight_reflection_text"] = insight_reflection_text
@@ -1149,7 +1164,7 @@ def create_app(vault_path: str) -> Flask:
         # `?closing=1` (set by /close-day when it sends the user here to mark
         # progress) swaps the Command Center's top "come back any time" banner
         # for a bottom "type done to close your day" line.
-        ctx["closing"] = request.args.get("closing") == "1"
+        ctx["closing"] = closing
         # Day status drives the state-aware Command Center banner: `planning`
         # still tells the user to type `done`; `active` means the day is open
         # and the banner just invites them to mark progress (no stale "type

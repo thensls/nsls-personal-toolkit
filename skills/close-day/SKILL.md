@@ -89,7 +89,7 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 
 **Assume there's more to mark — do NOT guess the day is already done.** The builder may have ticked progress through the day, but the close is exactly when they finalize it (end-of-day energy, last wins, gratitude/insight). So by default **send them to the Command Center to review before you synthesize** — and **start the companion if it isn't already running** (close-day may be the first thing run today). Only if they *tell* you it's already updated, or pass `-b`, do you skip straight to the close.
 
-**Only run this step if the date from Step 0 is today** (`$(date +%Y-%m-%d)`). The companion always shows today's data — closing a past date would show the wrong day. Skip silently for past dates.
+**Past dates get the companion too.** When the date from Step 0 isn't today (the builder is catching up on a day they never closed — common), still drive the companion: the `?date=YYYY-MM-DD` param scopes the whole page to that day's note, and every edit made there writes ONLY that date's note — today's note is untouched. Do NOT fall back to a chat-only close just because the date is in the past.
 
 **Always give a clickable localhost link.** Present the URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) as a Markdown link, every time — never a raw IP. Closing without a link to click is a bug.
 
@@ -101,14 +101,14 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
    "$TC" status   # in test mode: "$TC" status --test — plain status reports the REAL companion
    ```
    If it still won't start, **skip silently** and close in chat. Parse the address from the status output.
-3. **Read today's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`. If it doesn't exist, skip this step.
-4. **Open the Command Center in closing mode** (`open "<localhost-url>/?closing=1"` on macOS; `start`/`xdg-open` on Windows/Linux). `?closing=1` puts the Command Center in its end-of-day state. Give the builder the link + this prompt:
+3. **Read the target date's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/<target-date>.md` (Step 0's date, default today). If it doesn't exist, skip this step.
+4. **Open the Command Center in closing mode**, scoped to the target date: build the URL as `/?date=<target-date>&closing=1` (`open "<url>"` on macOS; `start`/`xdg-open` on Windows/Linux). `?closing=1` forces the Command Center's end-of-day state (even if the note was never locked in); `?date=` pins the page — and every write from it — to that day's note. Give the builder the link + this prompt (adapt "day's open" phrasing when closing a past day):
 
-   > Your day's open at http://localhost:<port>/?closing=1 — **open it and mark off where you landed**: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**.)
+   > Your day's open at http://localhost:<port>/?date=<target-date>&closing=1 — **open it and mark off where you landed**: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**.)
 
 5. **Wait for the builder to say "done".** Do NOT proceed until they explicitly respond. Do NOT treat background hook notifications (like "Record skill usage event completed") as user input — only a real message from the builder ("done", "continue", "go", "ready", or similar) advances.
 
-6. After they say done, re-read the daily note to pick up their changes, then proceed to Step 1.
+6. After they say done, re-read the target date's daily note to pick up their changes, then proceed to Step 1 — synthesizing **for the target date only**.
 
 ### Step 0.6: Read the day's captured signal
 

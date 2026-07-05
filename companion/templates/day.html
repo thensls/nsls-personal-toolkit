@@ -1,6 +1,11 @@
 {% extends "base.html" %}
 {% set active_tab = 'day' %}
 {% block content %}
+{# Pin every request from this page to the note date being served. hx-vals is
+   inherited, so all HTMX posts (progress, estimates, habits, energy, save,
+   lock-in…) carry date={{ today }} — closing a past day via ?date= can never
+   write into today's note. #}
+<div hx-vals='{"date": "{{ today }}"}'>
 {% if mode == 'coach-morning' %}
   {% include "_components/coach_morning.html" %}
 {% elif mode == 'coach-evening' %}
@@ -8,8 +13,8 @@
 {% elif mode == 'results' %}
   {% include "_components/results.html" %}
 {% else %}
-<h1 class="text-2xl nsls-h1 mb-1">Today — {{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h1>
-<p class="text-sm nsls-subtle mb-4">Command Center</p>
+<h1 class="text-2xl nsls-h1 mb-1">{% if is_today %}Today — {% endif %}{{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h1>
+<p class="text-sm nsls-subtle mb-4">Command Center{% if not is_today %} — closing out a past day{% endif %}</p>
 
 {% include "_components/command_banner.html" %}
 
@@ -77,4 +82,5 @@
 <div class="mt-6">{% include "_components/command_banner.html" %}</div>
 
 {% endif %}
+</div>
 {% endblock %}
