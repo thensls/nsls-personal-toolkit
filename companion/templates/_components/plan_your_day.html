@@ -26,14 +26,14 @@
           <td class="px-2 py-1 text-center">
             <input type="checkbox" {% if s.taken == 'pri' %}checked{% endif %}
                    hx-post="/plan-action"
-                   hx-vals='{"text": {{ s.text|tojson }}, "action": "pri"}'
+                   hx-vals='{"text": {{ s.text|tojson }}, "action": "pri"{% if s.est %}, "est": "{{ '%g'|format(s.est) }}"{% endif %}}'
                    hx-trigger="change"
                    {% if plan.priorities|length >= 3 and s.taken != 'pri' %}disabled title="3 priorities already chosen"{% endif %}>
           </td>
           <td class="px-2 py-1 text-center">
             <input type="checkbox" {% if s.taken == 'bonus' %}checked{% endif %}
                    hx-post="/plan-action"
-                   hx-vals='{"text": {{ s.text|tojson }}, "action": "bonus"}'
+                   hx-vals='{"text": {{ s.text|tojson }}, "action": "bonus"{% if s.est %}, "est": "{{ '%g'|format(s.est) }}"{% endif %}}'
                    hx-trigger="change">
           </td>
           <td class="px-2 py-1 text-center">
@@ -56,6 +56,7 @@
           </td>
           <td class="px-2 py-1">
             <span {% if s.taken in ('done', 'deleted', 'deferred') %}class="line-through text-stone-400"{% endif %}>{{ s.text }}</span>
+            {% if s.est %}<span class="text-xs ml-1" style="color:var(--nsls-teal)">~{{ '%g'|format(s.est) }}h left</span>{% endif %}
             {% if s.source %}<span class="text-xs text-stone-400 ml-1">({{ s.source }})</span>{% endif %}
           </td>
         </tr>

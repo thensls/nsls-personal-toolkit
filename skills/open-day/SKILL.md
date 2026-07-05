@@ -193,6 +193,8 @@ Extract the `## Carrying Over` section plus any unfinished `### My Top 3` / `###
 
 **Dedupe before presenting.** Carry-overs and the AI-suggested items often describe the *same task in different words* (close-day reworded a carry-over). Collapse those to a single suggestion — prefer the AI/curated wording — so the builder never sees the same task twice. Match on meaning, not just exact string.
 
+**Preserve time estimates.** Carried items may end with an `<!--e:X-->` marker — the estimated *remaining* hours as of last close (the builder may have revised it). When a carried item lands in today's `### My Top 3` / `### Bonus`, keep that exact marker on the line (never show it as visible text — it's an HTML comment the companion reads to pre-fill the estimate field). When presenting suggestions in chat, mention the estimate as "~Xh left".
+
 **2d. This week's plan (if it exists)**
 
 Check for a weekly plan note:

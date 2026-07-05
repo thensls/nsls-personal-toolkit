@@ -64,6 +64,31 @@ else
   git clone "$REPO_URL" "$PLUGIN_DIR"
 fi
 
+# Fire an install event to the Automation Tracker (best-effort, never blocks).
+# Tracks personal-toolkit installs and auto-registers brand-new builders
+# server-side. install_source must be exactly "personal-toolkit" — the server
+# maps it to the Personal Toolkit Installed checkbox + its one-time credit.
+# Until the tracker's POST /install-event endpoint ships this 404s, harmlessly.
+fire_install_event() {
+  local tracker_url="https://web-production-6281e.up.railway.app/install-event"
+  local email platform gh_user
+  # Email precedence (matches the tracker hooks): toolkit .env → git → fallback
+  email="$(grep -E '^BUILDER_EMAIL=' "$PLUGIN_DIR/.env" 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' || true)"
+  [ -n "$email" ] || email="$(git config user.email 2>/dev/null || true)"
+  [ -n "$email" ] || email="${USER:-unknown}@$(hostname -s 2>/dev/null || echo unknown)"
+  gh_user="$(gh api user --jq .login 2>/dev/null || true)"
+  case "$OS_CLASS" in
+    macos) platform="mac" ;;
+    windows) platform="windows" ;;
+    *) platform="linux" ;;
+  esac
+  curl -s --max-time 10 -X POST "$tracker_url" \
+    -H "Content-Type: application/json" \
+    -d "{\"builder_email\":\"$email\",\"github_username\":\"$gh_user\",\"platform\":\"$platform\",\"install_source\":\"personal-toolkit\"}" \
+    >/dev/null 2>&1 || true
+}
+fire_install_event || true
+
 echo ""
 echo "Done! Personal productivity skills installed."
 echo ""

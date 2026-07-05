@@ -324,14 +324,18 @@ def _extract_ai_suggestions(morning_section: str) -> list[dict]:
         list_m = _AI_ITEM_LEAD_RE.match(raw_line)
         if not list_m:
             continue
-        cleaned = _clean_ai_item(list_m.group(1))
+        # Pull the carried time estimate (close-day appends <!--e:X--> with the
+        # remaining estimate) BEFORE cleaning — the marker must never surface
+        # as visible text, and it pre-fills the estimate when the item is taken.
+        raw_text, est = _strip_est(list_m.group(1))
+        cleaned = _clean_ai_item(raw_text)
         if not cleaned:
             continue
         # Filter pure scaffold placeholders the close-day template leaves
         # behind if /close-day didn't fill them.
         if cleaned.lower().startswith(("item ", "highest-impact item", "task")):
             continue
-        items.append({"text": cleaned, "source": f"AI: {current_label}"})
+        items.append({"text": cleaned, "source": f"AI: {current_label}", "est": est})
     return items
 
 
@@ -380,7 +384,10 @@ def _extract_carryovers(vault_path: Path, today: str, lookback_days: int = 7) ->
         items = []
         for it in _extract_top_3(morning) + _extract_bonus(morning):
             if it["text"] and not it["checked"] and _norm_suggestion(it["text"]) not in excluded:
-                items.append({"text": it["text"], "source": f"from {candidate}"})
+                # Carry the remaining time estimate so taking the suggestion
+                # pre-fills tomorrow's estimate field.
+                items.append({"text": it["text"], "source": f"from {candidate}",
+                              "est": it.get("est")})
         if items:
             return items
     return []
@@ -1885,6 +1892,17 @@ def create_app(vault_path: str) -> Flask:
             return ("invalid action", 400)
         if not text or "\n" in text or "\r" in text or len(text) > 256:
             return ("invalid text", 400)
+        # Carried time estimate (suggestion rows pass the prior day's remaining
+        # estimate) — pre-fills the taken item's estimate field.
+        est_raw = (request.form.get("est") or "").strip()
+        est: float | None = None
+        if est_raw:
+            try:
+                est = float(est_raw)
+            except ValueError:
+                return ("est must be a number", 400)
+            if not math.isfinite(est) or est <= 0 or est > 24:
+                est = None  # bad carried value — take the item, drop the estimate
 
         today = _target_date()
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
@@ -1948,6 +1966,11 @@ def create_app(vault_path: str) -> Flask:
             top_3 = _extract_top_3(morning)
             bonus_items = _extract_bonus(morning)
 
+            def _place(md: str, heading: str, i: int) -> str:
+                """Write the item text and its carried estimate at slot i."""
+                md = _set_nth_item_text(md, heading, i, text)
+                return _set_nth_est(md, heading, i, est) if est else md
+
             if action == "pri":
                 # Use _extract_numbered_checkbox_list with empty items to find
                 # the first empty slot in the raw markdown (not the filtered
@@ -1955,16 +1978,16 @@ def create_app(vault_path: str) -> Flask:
                 raw_items = _extract_numbered_checkbox_list_raw(morning, "### My Top 3")
                 for i in range(min(3, len(raw_items))):
                     if not raw_items[i].get("text"):
-                        return _set_nth_item_text(existing, "### My Top 3", i, text)
+                        return _place(existing, "### My Top 3", i)
                 # All 3 slots occupied — try appending if < 3 raw items
                 if len(raw_items) < 3:
-                    return _set_nth_item_text(existing, "### My Top 3", len(raw_items), text)
+                    return _place(existing, "### My Top 3", len(raw_items))
                 return existing  # Top 3 full; client respects the disabled attr.
             if action == "bonus":
                 for i, b in enumerate(bonus_items):
                     if not b.get("text"):
-                        return _set_nth_item_text(existing, "### Bonus", i, text)
-                return _set_nth_item_text(existing, "### Bonus", len(bonus_items), text)
+                        return _place(existing, "### Bonus", i)
+                return _place(existing, "### Bonus", len(bonus_items))
             return existing
 
         safe_modify(note_path, update)
