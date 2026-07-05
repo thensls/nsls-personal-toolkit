@@ -51,6 +51,11 @@ def _pid_alive(pid: int) -> bool:
 def _find_free_port(start: int = DEFAULT_PORT) -> int:
     for port in range(start, start + 100):
         with socket.socket() as s:
+            # Match the server's own bind semantics (werkzeug binds with
+            # SO_REUSEADDR): without it, TIME_WAIT sockets left by a
+            # just-stopped instance make the default port look busy and a
+            # stop→start restart silently drifts to the next port.
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(("127.0.0.1", port))
                 return port
