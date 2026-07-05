@@ -60,6 +60,16 @@ def test_tick_rejects_bad_habit_id(client_with_today):
     assert resp.status_code == 400
 
 
+def test_tick_rejects_undeclared_habit_id(client_with_today):
+    """Well-formed ids that aren't Active habits in habits.md must not enter
+    log.md — phantom ids grow streaks and corrupt close-day reconciliation."""
+    client, vault = client_with_today
+    resp = client.post("/tick", data={"habit_id": "open-day", "percent": "1.0"})
+    assert resp.status_code == 400
+    log = (vault / "30-habits" / "log.md").read_text()
+    assert "open-day" not in log
+
+
 def test_toggle_top_3_checks_then_unchecks(client_with_today):
     client, vault = client_with_today
     today = date.today().isoformat()

@@ -1379,6 +1379,18 @@ def create_app(vault_path: str) -> Flask:
         if percent not in (0.0, 0.5, 1.0):
             return ("percent must be 0.0 / 0.5 / 1.0", 400)
 
+        # Only ids declared in habits.md's Active list may enter log.md — a
+        # stray programmatic POST must not mint phantom habits (they'd grow
+        # streaks and corrupt close-day's Step 3.5 reconciliation).
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        habits = (
+            parse_habits(habits_path.read_text(encoding="utf-8"))
+            if habits_path.exists()
+            else {"active": [], "archived": []}
+        )
+        if not any(h["id"] == habit_id for h in habits["active"]):
+            return ("unknown habit_id — not an active habit in habits.md", 400)
+
         today = _target_date()
         log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
 
