@@ -1369,6 +1369,13 @@ def create_app(vault_path: str) -> Flask:
 
         def stream():
             try:
+                # Flush a greeting immediately. Without any bytes, werkzeug
+                # never sends the response headers while the generator blocks
+                # on q.get(), so the browser's EventSource never fires `open`
+                # — and the client's reconnected-after-restart reload (which
+                # rescues stale tabs) never triggers. An SSE comment line is
+                # invisible to onmessage.
+                yield ": connected\n\n"
                 while True:
                     msg = q.get()
                     yield f"data: {msg}\n\n"

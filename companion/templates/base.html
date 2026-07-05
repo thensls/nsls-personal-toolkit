@@ -54,16 +54,21 @@
         }
       });
 
-      function reloadMain() {
+      function reloadMain(force) {
         if (Date.now() - lastReload < RELOAD_DEBOUNCE_MS) return;
-        // Skip SSE reload when any interactive wizard is active — HTMX
-        // partial swaps handle the UI updates, and a full main replace
-        // would blow away Alpine's step state, causing the screen to jump.
-        if (document.querySelector("[x-data*='coachMode']") ||
-            document.querySelector("[data-suppress-sse-reload]")) return;
-        // Skip SSE reload shortly after our own POST — the broadcast it
-        // triggers is from OUR write, not an external change.
-        if (Date.now() < suppressNextReload) return;
+        if (!force) {
+          // Skip SSE reload when any interactive wizard is active — HTMX
+          // partial swaps handle the UI updates, and a full main replace
+          // would blow away Alpine's step state, causing the screen to jump.
+          // (force=true — a server restart — overrides this: the server's
+          // state is authoritative and the tab is provably stale. Dirty
+          // textarea text is still preserved below.)
+          if (document.querySelector("[x-data*='coachMode']") ||
+              document.querySelector("[data-suppress-sse-reload]")) return;
+          // Skip SSE reload shortly after our own POST — the broadcast it
+          // triggers is from OUR write, not an external change.
+          if (Date.now() < suppressNextReload) return;
+        }
         lastReload = Date.now();
 
         // Never make the user lose what they're typing, and never show a scary
@@ -96,10 +101,37 @@
         });
       }
 
+      // Tiny status pill shown while the SSE stream is down (e.g. the
+      // companion restarting). Without it, a stale tab looks fine but
+      // silently shows a pre-restart view.
+      function sseStatus(show) {
+        let pill = document.getElementById("toolkit-sse-status");
+        if (!pill) {
+          pill = document.createElement("div");
+          pill.id = "toolkit-sse-status";
+          pill.className = "fixed bottom-4 left-4 text-xs px-3 py-1.5 rounded-full shadow z-50";
+          pill.style.cssText += ";background:var(--nsls-darkblue,#1b2a4a);color:#fff;opacity:.92;display:none";
+          pill.textContent = "Reconnecting to the companion…";
+          document.body.appendChild(pill);
+        }
+        pill.style.display = show ? "block" : "none";
+      }
+
+      let dropped = false;   // saw an error since the last successful open
       function connect() {
         if (es) try { es.close(); } catch (_) {}
         es = new EventSource("/events");
-        es.onopen = () => { reconnectDelay = 1000; };
+        es.onopen = () => {
+          reconnectDelay = 1000;
+          sseStatus(false);
+          if (dropped) {
+            // Reconnected after a drop (usually a companion restart): the
+            // tab may have missed broadcasts — or the server itself changed
+            // — so force a re-render instead of trusting the stale view.
+            dropped = false;
+            reloadMain(true);
+          }
+        };
         es.onmessage = (e) => {
           const path = e.data;
           if (path.startsWith("01-daily/") || path.startsWith("30-habits/") || path.startsWith("02-weekly/")) {
@@ -107,6 +139,8 @@
           }
         };
         es.onerror = () => {
+          dropped = true;
+          sseStatus(true);
           try { es.close(); } catch (_) {}
           setTimeout(connect, reconnectDelay);
           reconnectDelay = Math.min(reconnectDelay * 2, 30000);  // cap 30s

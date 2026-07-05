@@ -61,6 +61,21 @@ def test_events_route_returns_event_stream_content_type(app):
             iterable.close()
 
 
+def test_events_stream_flushes_greeting_immediately(app):
+    """The first chunk must arrive without waiting for a broadcast. Without
+    it, werkzeug never flushes headers on an idle stream, the browser's
+    EventSource never fires `open`, and the stale-tab-after-restart reload
+    (base.html) can never trigger."""
+    status, _headers, iterable = _wsgi_call(app, "/events")
+    try:
+        assert status.startswith("200")
+        first = next(iter(iterable))
+        assert first.decode().startswith(": connected")
+    finally:
+        if hasattr(iterable, "close"):
+            iterable.close()
+
+
 def test_subscribers_cap_returns_429(app):
     """Open 10 streams, the 11th should be rejected."""
     iterables = []
