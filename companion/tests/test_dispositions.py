@@ -117,6 +117,27 @@ def test_legacy_dismissed_reads_as_done(client_with_today):
 
 # --- Unplanned items ---
 
+def test_unplanned_write_ignores_decoy_heading_outside_morning(client_with_today):
+    """A `### Unplanned` under `## End of Day` (left by a close pass) must not
+    swallow writes: the reader only looks inside Morning Check-in, so writing
+    to the decoy made every added win invisible (2026-07-05, Davo)."""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text(note.read_text() + "\n## End of Day\n- Energy: medium\n\n### Unplanned\n1. [ ] stranded win\n")
+    resp = client.post("/set-unplanned", data={"index": "0", "text": "pickleball"})
+    assert resp.status_code == 200
+    from companion.parsers import parse_daily_note_sections
+    md = _note(vault)
+    morning = parse_daily_note_sections(md).get("Morning Check-in", "")
+    assert "pickleball" in morning                       # landed where the UI reads
+    end_of_day = md.split("## End of Day", 1)[1]
+    assert "pickleball" not in end_of_day                # decoy untouched
+    assert "stranded win" in end_of_day
+    # and the UI now shows it
+    html = client.get("/?mode=command").get_data(as_text=True)
+    assert "pickleball" in html
+
+
 def test_set_unplanned_writes_and_returns_partial(client_with_today):
     client, vault = client_with_today
     resp = client.post("/set-unplanned", data={"index": "0", "text": "Fixed prod bug"})

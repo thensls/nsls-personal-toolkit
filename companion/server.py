@@ -846,11 +846,32 @@ def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
 
     Items are numbered list rows (`1. `) or dash rows (`- `). Lines without a
     marker get one injected (`[ ]`) so subsequent toggle clicks work.
+
+    The heading is resolved INSIDE ``## Morning Check-in`` when that section
+    exists — the readers (_extract_top_3/_extract_bonus/_extract_unplanned)
+    only look there, so writing to a same-named heading elsewhere in the note
+    (e.g. an `### Unplanned` a close pass left under `## End of Day`) makes
+    the write invisible: the UI re-renders empty and every retry overwrites
+    the same unseen row. If the heading is missing within Morning Check-in,
+    it is created at the END of Morning Check-in, not at the end of the note.
     """
     lines = md.splitlines()
-    section_start = None
-    section_end = len(lines)
+
+    # Bound the search to ## Morning Check-in when present.
+    bound_start, bound_end = 0, len(lines)
     for i, line in enumerate(lines):
+        if line.strip() == "## Morning Check-in":
+            bound_start = i + 1
+            for j in range(bound_start, len(lines)):
+                if lines[j].startswith("## ") and not lines[j].startswith("### "):
+                    bound_end = j
+                    break
+            break
+
+    section_start = None
+    section_end = bound_end
+    for i in range(bound_start, bound_end):
+        line = lines[i]
         if section_start is None:
             if line.strip() == heading:
                 section_start = i
@@ -860,9 +881,15 @@ def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
             break
 
     if section_start is None:
-        # Heading missing — append the heading + the item at the end of the note.
-        suffix = [heading, f"1. [ ] {text}", ""]
-        return md.rstrip("\n") + "\n\n" + "\n".join(suffix) + "\n"
+        # Heading missing — create it at the end of Morning Check-in (or the
+        # end of the note when there's no Morning Check-in to anchor to).
+        block = [heading, f"1. [ ] {text}", ""]
+        if bound_end < len(lines):
+            insert_at = bound_end
+            # keep one blank line before the next `## ` section
+            new_lines = lines[:insert_at] + [""] + block if (insert_at and lines[insert_at - 1].strip()) else lines[:insert_at] + block
+            return "\n".join(new_lines + lines[insert_at:]) + ("\n" if md.endswith("\n") else "")
+        return md.rstrip("\n") + "\n\n" + "\n".join(block) + "\n"
 
     # Walk items within the section
     item_indices: list[int] = []

@@ -129,7 +129,7 @@ Use all of the above to:
 2. **Seed Carrying Over** — any Top 3 **or Bonus** item that is <100% and not already under `## Carrying Over` is a carry-over candidate; add it so it resurfaces in tomorrow's `/open-day` (skip items the builder deleted). **Preserve the time estimate:** if the item carries an `<!--e:X-->` marker (estimated *remaining* time — the builder may have updated it during the day), append that exact marker to the carry-over line (e.g. `- Reply to vendor thread <!--e:0.5-->`). The companion reads it to pre-fill tomorrow's estimate field; dropping it loses the builder's timeboxing data.
 3. **Feed the Work Log and Insight Reflection** (b) and (c) above.
 
-`<!--p:NN-->` markers and the `### Unplanned` / `### Done` / `### Deleted` / `### Deferred` / `## Daily Insight` sections are companion-written — read them, never author them from the skill. In CLI-only mode they simply won't be present.
+`<!--p:NN-->` markers and the `### Unplanned` / `### Done` / `### Deleted` / `### Deferred` / `## Daily Insight` sections are companion-written — read them, never author them from the skill. In CLI-only mode they simply won't be present. **Never create a `### Unplanned` (or `### Done`/`### Deleted`/`### Deferred`) heading anywhere else in the note — especially not under `## End of Day`.** The companion reads these only from inside `## Morning Check-in`; a same-named heading elsewhere makes builder input invisible (this happened: an End-of-Day `### Unplanned` swallowed unplanned wins silently).
 
 ### Step 1: Collect data (run in parallel where possible)
 
