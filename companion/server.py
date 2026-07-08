@@ -883,7 +883,11 @@ def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
     if section_start is None:
         # Heading missing — create it at the end of Morning Check-in (or the
         # end of the note when there's no Morning Check-in to anchor to).
-        block = [heading, f"1. [ ] {text}", ""]
+        # Honor `index`: emit blank rows for slots 0..index-1 so `text` lands
+        # at the requested position (matches the append branch's contract).
+        block = [heading]
+        block += [f"{n}. [ ] " for n in range(1, index + 1)]
+        block += [f"{index + 1}. [ ] {text}", ""]
         if bound_end < len(lines):
             insert_at = bound_end
             # keep one blank line before the next `## ` section

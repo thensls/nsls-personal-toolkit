@@ -72,7 +72,7 @@ export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
 
 `test-vault` creates + seeds the vault (`~/.claude/local-plugins/nsls-personal-toolkit/companion-test-vault/`, gitignored) and prints its path; it never overwrites existing notes. Every downstream step then reads and writes the test vault, and the companion shows a gold **TEST** banner. Pair with `open day -t` (plan into the test vault first) and `reset-day -t` (clear it).
 
-**No collision with your real companion.** The test server is a separate instance on its own port (**7788**, vs the real **7777**) with its own pidfile (`.companion-test.pid`). In Step 0.5, when in test mode use the `--test` flag (`"$TC" status --test`) and never `"$TC" stop` without it — that would hit the real companion. close-day only *uses* a running companion, it doesn't start one, so if the test server isn't up it simply closes in chat against the test vault.
+**No collision with your real companion.** The test server is a separate instance on its own port (**7788**, vs the real **7777**) with its own pidfile (`.companion-test.pid`). In Step 0.5, when in test mode use the `--test` flag (`"$TC" status --test`) and never `"$TC" stop` without it — that would hit the real companion. If the test companion isn't already running, Step 0.5's start-if-needed step brings it up (against the test vault); if it still can't start, close-day simply closes in chat against the test vault.
 
 The close routes through the **CLI companion** by default (Step 0.5 starts it if needed and sends you there to finalize), or runs in **chat** when you pass `-b` / `visual_mode: off` / aren't on a CLI surface. The companion only works where Bash can run a local server; anywhere it can't, Step 0.5's graceful fallback closes the day in chat.
 
@@ -112,7 +112,7 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 
 ### Step 0.6: Read the day's captured signal
 
-Read today's daily note and pull in everything the builder recorded during the day — whether they used the companion or filled the note by hand. **This is a read; the skill never authors the companion-written sections.** In CLI-only use these sections are simply absent, and this step degrades with no behavior change.
+Read the **target date's** daily note (`$OBSIDIAN_VAULT_PATH/01-daily/<target-date>.md` — Step 0's date, which is today by default but a past date when catching up) and pull in everything the builder recorded during the day — whether they used the companion or filled the note by hand. **This is a read; the skill never authors the companion-written sections.** In CLI-only use these sections are simply absent, and this step degrades with no behavior change.
 
 **(a) Top 3 / Bonus completion** — from `## Morning Check-in` → `### My Top 3` and `### Bonus`:
 - `[x]`, or a trailing `<!--p:100-->` → **done (100%)**
