@@ -155,6 +155,17 @@ def list_fathom_meetings_since(email, since_date):
     return {"count": len(meetings), "meetings": meetings, "error": None}
 
 
+def plan_signal(rel, signal_available):
+    """Set signal_ingest_planned + signal_slug on a relationship dict. Pure/testable."""
+    eligible = bool(rel.get("signal_eligible"))
+    rel["signal_ingest_planned"] = bool(signal_available) and eligible
+    if rel["signal_ingest_planned"]:
+        rel["signal_slug"] = (
+            rel["name"].lower().replace("'", "").replace(".", "").replace(" ", "-")
+        )
+    return rel
+
+
 def build_manifest(vault_path, cache_dir):
     """Build the manifest of what the sweep needs to process."""
     # 1. Identity + relationship set
@@ -284,10 +295,7 @@ def build_manifest(vault_path, cache_dir):
 
         rel["slack_ingest_planned"] = slack_available and bool(rel.get("slack"))
         rel["gmail_ingest_planned"] = gmail_available and bool(rel.get("email"))
-        is_direct_report = rel.get("tracking_reason") == "direct_report"
-        rel["signal_ingest_planned"] = signal_available and is_direct_report
-        if rel["signal_ingest_planned"]:
-            rel["signal_slug"] = rel["name"].lower().replace("'", "").replace(".", "").replace(" ", "-")
+        plan_signal(rel, signal_available)
 
     # 4. Assemble manifest
     manifest = {
