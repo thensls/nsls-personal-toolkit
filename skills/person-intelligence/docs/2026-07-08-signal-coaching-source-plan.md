@@ -302,6 +302,109 @@ git commit -m "feat(person-intelligence): --list-signal for the broadened eligib
 
 ---
 
+### Task 3B: Restrict ingest to the shareable signal tier (add `growth`, strip work-journal narrative) in `fetch_signal.py`
+
+**Files:**
+- Modify: `skills/person-intelligence/scripts/fetch_signal.py` (`normalize_history`, `normalize`, and the cache-write path so `narration_raw`/`entry_text` are stripped before caching)
+- Test: `skills/person-intelligence/tests/test_fetch_signal_tier.py` (new)
+
+**Interfaces:**
+- Produces: normalized signal now includes a `growth: list[{week,text}]` field; cached raw history no longer contains `narration_raw` or `entry_text`. Adds `strip_work_journal(bundle: dict) -> dict`.
+- Constraint: Person Intelligence consumes ONLY sentiment + `wins` + `friction` + `growth` (the shareable tier). The private work-journal narrative is never surfaced and never cached.
+
+- [ ] **Step 1: Write the failing tests** — `tests/test_fetch_signal_tier.py`:
+
+```python
+import importlib.util
+from pathlib import Path
+
+SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
+
+def _load():
+    spec = importlib.util.spec_from_file_location("fetch_signal", SCRIPTS / "fetch_signal.py")
+    mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod); return mod
+
+def test_normalize_history_includes_growth():
+    fs = _load()
+    hist = {"history": [{"week_of": "2026-06-29", "extraction": {
+        "wins": [{"description": "shipped X"}],
+        "challenges": [],
+        "growth": [{"description": "learning graph DBs"}],
+    }}]}
+    out = fs.normalize_history(hist)
+    assert any(g["text"] == "learning graph DBs" for g in out["growth"])
+
+def test_strip_work_journal_removes_narrative():
+    fs = _load()
+    bundle = {"history": {"history": [
+        {"week_of": "2026-06-29", "narration_raw": "PRIVATE JOURNAL",
+         "entry_text": "PRIVATE", "extraction": {"wins": [{"description": "shipped X"}]}}
+    ]}}
+    clean = fs.strip_work_journal(bundle)
+    wk = clean["history"]["history"][0]
+    assert "narration_raw" not in wk and "entry_text" not in wk
+    assert wk["extraction"]["wins"][0]["description"] == "shipped X"  # signal kept
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `cd skills/person-intelligence && python3.12 -m pytest tests/test_fetch_signal_tier.py -v`
+Expected: FAIL — `normalize_history` returns no `growth` key; no attribute `strip_work_journal`.
+
+- [ ] **Step 3: Add `growth` to `normalize_history`.** In its loop over `history`, alongside the wins/challenges handling, add growth collection and include it in the return dict:
+
+```python
+        for g in ex.get("growth", []):
+            desc = g.get("description", "")
+            if is_sensitive(desc):
+                sensitive_dropped.append({"week": week, "kind": "growth", "reason": "sensitivity"})
+                continue
+            growth.append({"week": week, "text": desc})
+```
+
+Initialize `growth = []` at the top of the function (next to `wins, friction, ...`), and add `"growth": growth` to the returned dict.
+
+- [ ] **Step 4: Surface `growth` in `normalize()`** — add `"growth": hist["growth"],` to the dict `normalize()` returns (next to `wins`/`friction`).
+
+- [ ] **Step 5: Add `strip_work_journal` and apply it before caching.** Add the function:
+
+```python
+def strip_work_journal(bundle):
+    """Remove the private work-journal narrative before anything is cached/surfaced.
+
+    Person Intelligence consumes only the shareable signal tier (sentiment, wins,
+    friction, growth). narration_raw/entry_text are the employee<->manager journal
+    and must never be cached or surfaced here.
+    """
+    hist = (bundle.get("history") or {}).get("history")
+    if isinstance(hist, list):
+        for wk in hist:
+            wk.pop("narration_raw", None)
+            wk.pop("entry_text", None)
+    return bundle
+```
+
+Then in `main()` (and `fetch_bundle` usage), call it immediately after the bundle is obtained and before `write_raw_cache`:
+
+```python
+    bundle = strip_work_journal(bundle)
+    p = write_raw_cache(args.slug, bundle)
+```
+
+- [ ] **Step 6: Run tests to verify they pass**
+
+Run: `cd skills/person-intelligence && python3.12 -m pytest tests/test_fetch_signal_tier.py -v`
+Expected: PASS
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add skills/person-intelligence/scripts/fetch_signal.py skills/person-intelligence/tests/test_fetch_signal_tier.py
+git commit -m "feat(person-intelligence): shareable-tier only — add growth, strip work-journal narrative"
+```
+
+---
+
 ### Task 4: `## How to Support`, provenance line, and relationship-context weave in `synthesize_profile.py`
 
 **Files:**
@@ -330,11 +433,13 @@ def test_how_to_support_instruction_present_with_signal():
             "meeting_summaries": [{"date": "2026-07-01", "title": "1:1", "summary": "x"}],
             "signal": {"wins": [{"week": "2026-06-29", "text": "shipped auth gate"}],
                        "friction": [{"week": "2026-06-29", "text": "excluded from architecture", "category": "process"}],
+                       "growth": [{"week": "2026-06-29", "text": "learning graph DBs"}],
                        "sentiment": {}, "goals": [], "submitted_weeks": ["2026-06-29"]}}
     prompt = sp.build_user_prompt(data)
     assert "## How to Support Red Akasha" in prompt
     assert "Remove friction" in prompt and "Celebrate wins" in prompt and "Support growth" in prompt
     assert "Signal source:" in prompt  # provenance-line instruction
+    assert "learning graph DBs" in prompt  # growth signal rendered into the prompt
 
 def test_how_to_support_present_from_meetings_without_signal():
     sp = _load()
@@ -356,6 +461,16 @@ def test_no_support_section_without_any_evidence():
 
 Run: `cd skills/person-intelligence && python3.12 -m pytest tests/test_synthesize_prompt.py -v`
 Expected: FAIL — assertions on missing "## How to Support" / "Signal source:" text.
+
+- [ ] **Step 2.5: Render `growth` signals into the Signal block.** In `build_user_prompt`, inside `if signal:`, right after the friction-rendering loop (`fr = signal.get("friction") ...`), add:
+
+```python
+        gr = signal.get("growth") or []
+        if gr:
+            sections.append("- Growth signals (their own aspirations / learning):")
+            for g in gr[:8]:
+                sections.append(f"  - [{g.get('week','')}] {g.get('text','')}")
+```
 
 - [ ] **Step 3: Add the provenance-line instruction to the Signal block.** In `build_user_prompt`, inside `if signal:`, change the "produce a `## Signal Read` section" instruction so its first bullet is the provenance line. Replace the line that starts the Signal Read instruction with:
 
@@ -558,6 +673,7 @@ git commit -m "docs(person-intelligence): broadened Signal scope + score-free as
 - R4 score stays Signal-free → Task 6 assertion (no code change needed; scoring never reads `data["signal"]`). ✓
 - R5 sensitivity + provenance → Task 4 Step 3 provenance line; safeguards preserved (constraint). ✓
 - R6 pulse surfacing → Task 5. ✓
+- R7 shareable-tier boundary (+ growth) → Task 3B (add `growth`, strip `narration_raw`/`entry_text` before caching). ✓
 
 **Placeholder scan:** No TBD/TODO; every code step shows real code; test bodies are concrete. One conditional ("if the suite injects the org chart differently, mirror it") is a real instruction to match existing fixtures, not a placeholder — the implementer reads `test_list_relationships.py` which is already present.
 

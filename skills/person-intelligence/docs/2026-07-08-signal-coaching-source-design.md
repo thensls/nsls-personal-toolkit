@@ -53,6 +53,14 @@ meeting evidence. Signal informs coaching and relationship *context*, not the nu
    line).
 6. **Pulse surfacing.** `generate_team_pulse.py` adds a per-person "How to support
    them this cycle" line (top friction to remove / win to celebrate).
+7. **Shareable-tier boundary (privacy model).** Person Intelligence consumes ONLY
+   the shareable Signal tier — sentiment analytics + the extracted `wins`,
+   `challenges` (friction), and `growth` signals. It NEVER reads or caches the raw
+   work-journal narrative (`narration_raw`, `entry_text`), which stays between the
+   employee and their manager. This is the privacy line that makes the broadened
+   scope acceptable: we see the signals that are shareable-by-design, not the
+   private journal. Also: **add `growth` to the normalized signal** (currently
+   only wins + friction are pulled) so growth can feed the Support-Growth bucket.
 
 ## Design
 
