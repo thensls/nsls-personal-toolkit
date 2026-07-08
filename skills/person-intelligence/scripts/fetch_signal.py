@@ -180,6 +180,21 @@ def cache_path(slug: str) -> pathlib.Path:
     return p
 
 
+def strip_work_journal(bundle):
+    """Remove the private work-journal narrative before anything is cached/surfaced.
+
+    Person Intelligence consumes only the shareable signal tier (sentiment, wins,
+    friction, growth). narration_raw/entry_text are the employee<->manager journal
+    and must never be cached or surfaced here.
+    """
+    hist = (bundle.get("history") or {}).get("history")
+    if isinstance(hist, list):
+        for wk in hist:
+            wk.pop("narration_raw", None)
+            wk.pop("entry_text", None)
+    return bundle
+
+
 def write_raw_cache(slug: str, bundle: dict) -> pathlib.Path:
     CACHE_ROOT.mkdir(parents=True, exist_ok=True)
     p = cache_path(slug)
@@ -214,10 +229,10 @@ def normalize_sentiment(person: dict | None) -> dict:
 
 def normalize_history(history: dict | None) -> dict:
     """Pull wins + friction themes from the structured extraction, screen sensitivity."""
-    wins, friction, submitted_weeks, sensitive_dropped = [], [], [], []
+    wins, friction, growth, submitted_weeks, sensitive_dropped = [], [], [], [], []
     if not history:
-        return {"wins": wins, "friction": friction, "submitted_weeks": submitted_weeks,
-                "sensitive_dropped": sensitive_dropped}
+        return {"wins": wins, "friction": friction, "growth": growth,
+                "submitted_weeks": submitted_weeks, "sensitive_dropped": sensitive_dropped}
     for wk in history.get("history", []):
         week = wk.get("week_of")
         if week:
@@ -240,8 +255,14 @@ def normalize_history(history: dict | None) -> dict:
                 "category": c.get("backend_category"),
                 "primary_sentiment": wk.get("sentiment_primary"),
             })
-    return {"wins": wins, "friction": friction, "submitted_weeks": submitted_weeks,
-            "sensitive_dropped": sensitive_dropped}
+        for g in ex.get("growth", []):
+            desc = g.get("description", "")
+            if is_sensitive(desc):
+                sensitive_dropped.append({"week": week, "kind": "growth", "reason": "sensitivity"})
+                continue
+            growth.append({"week": week, "text": desc})
+    return {"wins": wins, "friction": friction, "growth": growth,
+            "submitted_weeks": submitted_weeks, "sensitive_dropped": sensitive_dropped}
 
 
 def normalize_goals(goals: dict | None) -> list[dict]:
@@ -268,6 +289,7 @@ def normalize(slug: str, bundle: dict, weeks: int) -> dict:
         "sentiment": normalize_sentiment(person),
         "wins": hist["wins"],
         "friction": hist["friction"],
+        "growth": hist["growth"],
         "goals": normalize_goals(bundle.get("goals")),
         "submitted_weeks": sorted(set(hist["submitted_weeks"]), reverse=True),
         "sensitive_dropped": hist["sensitive_dropped"],
@@ -316,6 +338,7 @@ def main() -> None:
             raise SystemExit("No raw Signal bundle on stdin. Pipe {person,history,goals} JSON, or use --fetch.")
         bundle = json.loads(raw)
     bundle.setdefault("fetched_at", dt.datetime.now(dt.UTC).isoformat())
+    bundle = strip_work_journal(bundle)
 
     p = write_raw_cache(args.slug, bundle)
     log(f"cached raw → {p}")
