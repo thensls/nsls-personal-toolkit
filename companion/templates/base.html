@@ -49,8 +49,11 @@
       document.body.addEventListener("htmx:afterRequest", function (e) {
         // Extend suppression after the response arrives — the SSE broadcast
         // from our write may still be in-flight on the EventSource connection.
+        // Use max() so a slow (>2s) POST can only push the deadline later, never
+        // shorten the window beforeRequest set — otherwise our own broadcast
+        // arrives after suppression lapses and clobbers the view.
         if (e.detail.requestConfig && e.detail.requestConfig.verb !== "get") {
-          suppressNextReload = Date.now() + 1000;
+          suppressNextReload = Math.max(suppressNextReload, Date.now() + 1000);
         }
       });
 

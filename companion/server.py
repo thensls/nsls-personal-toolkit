@@ -909,16 +909,20 @@ def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
         target_line = lines[item_indices[index]]
         m = _LIST_ITEM_RE.match(target_line)
         prefix, rest = m.group(1), m.group(2)
-        # Preserve any trailing progress/estimate markers (<!--p:..-->/<!--e:..-->)
-        # so renaming a task (set-top-3 / set-bonus / plan-action) doesn't wipe
-        # its saved progress or remaining-time estimate.
-        markers = re.findall(r"<!--[pe]:.*?-->", rest)
-        suffix = (" " + " ".join(markers)) if markers else ""
-        if rest.startswith("[ ]") or rest.startswith("[x]") or rest.startswith("[X]"):
-            marker = rest[:3]
-            lines[item_indices[index]] = f"{prefix}{marker} {text}".rstrip() + suffix
+        has_box = rest[:3] in ("[ ]", "[x]", "[X]")
+        marker = rest[:3] if has_box else "[ ]"
+        body = rest[3:] if has_box else rest
+        existing_text = re.sub(r"<!--[pe]:.*?-->", "", body).strip()
+        # Preserve trailing progress/estimate markers ONLY when the title is
+        # unchanged (e.g. a checkbox toggle re-writing the same text). A genuine
+        # rename — or a cleared slot reused by a new task — must NOT inherit the
+        # previous task's progress/estimate, which would misstate its state.
+        if existing_text == text.strip():
+            markers = re.findall(r"<!--[pe]:.*?-->", body)
+            suffix = (" " + " ".join(markers)) if markers else ""
         else:
-            lines[item_indices[index]] = f"{prefix}[ ] {text}".rstrip() + suffix
+            suffix = ""
+        lines[item_indices[index]] = f"{prefix}{marker} {text}".rstrip() + suffix
     else:
         # Append blank items up to and including the target index
         insertion_point = item_indices[-1] + 1 if item_indices else section_start + 1
