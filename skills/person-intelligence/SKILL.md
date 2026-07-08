@@ -48,7 +48,7 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
 python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/fetch_airtable_people_ops.py "{name}" > /tmp/person-intel-people-ops.json
 ```
 
-**Signal — Quick Notes** (only when `SIGNAL_INGEST=1` AND the person is a **direct report**):
+**Signal — Quick Notes** (when `SIGNAL_INGEST=1` AND the person is `signal_eligible` — has an `@nsls.org` email, `tracking_reason` is not `key_relationship_external`, and the name is not in `SIGNAL_EXCLUDE` (default `{"Cory Capoccia"}` — this is how board members are excluded); see `list_relationships.py`):
 
 Phase 1 is MCP-in-session — *you* (the orchestrator) call the `signal_*` MCP tools, bundle
 their raw JSON, and pipe it to `fetch_signal.py`, which caches the raw (cache-only, never the
@@ -64,10 +64,14 @@ python3.12 .../scripts/fetch_signal.py --list-reports
 ```
 
 Then include the normalized output as the `signal` field in the synthesize payload (Step 5).
-**Scope: direct reports only.** **Raw Quick Notes never enter the vault** — `fetch_signal.py`
+**Scope: any tracked person who is `signal_eligible`** (has an `@nsls.org` email, `tracking_reason` is not `key_relationship_external`, and the name is not in `SIGNAL_EXCLUDE` — default `{"Cory Capoccia"}` — this is how board members are excluded). **Raw Quick Notes never enter the vault** — `fetch_signal.py`
 drops HR/health/comp items mechanically, and `synthesize_profile.py` applies the KB
-sensitive-content rubric to what remains. Signal-derived coaching evidence surfaces as
-`<!-- DIGEST -->` comments for biweekly approval, never written into Coaching Goals directly.
+sensitive-content rubric to what remains. Distilled into `## Signal Read` + advisory `## How to Support`.
+Signal-derived coaching evidence surfaces as `<!-- DIGEST -->` comments for biweekly approval, never written into Coaching Goals directly.
+
+**Signal never contributes to `health_score`.** Scoring reads Fathom-meeting
+evidence only; Signal feeds the `## Signal Read` and `## How to Support` sections
+and relationship context — coaching, not the number.
 
 **Existing Obsidian profiles** (vault at `$OBSIDIAN_VAULT_PATH`):
 - `30-people/{Name}.md` (display name with spaces)
@@ -188,7 +192,7 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
 
 Outputs a manifest at `~/.cache/person-intelligence/biweekly-sweep-YYYY-MM-DD.manifest.json` listing each tracked relationship, last-synthesized date, count of new Fathom meetings since that date, and which ingest sources are available. The Claude orchestrator session reads this manifest and runs per-person synthesis as needed.
 
-**Signal ingest in the sweep:** when `SIGNAL_INGEST=1`, each direct-report relationship carries `signal_ingest_planned: true` + a `signal_slug`. For those, the orchestrator runs `fetch_signal.py --fetch --slug <signal_slug> --weeks 12` (token-direct — no MCP needed, so the headless cron sweep works) and includes the normalized result as the `signal` field in the synthesize payload. Raw Quick Notes stay cache-only; only the distilled `## Signal Read` reaches the profile.
+**Signal ingest in the sweep:** when `SIGNAL_INGEST=1`, each `signal_eligible` relationship (any tracked NSLS-email person who isn't board/external) carries `signal_ingest_planned: true` + a `signal_slug`. For those, the orchestrator runs `fetch_signal.py --fetch --slug <signal_slug> --weeks 12` (token-direct — no MCP needed, so the headless cron sweep works) and includes the normalized result as the `signal` field in the synthesize payload. Raw Quick Notes stay cache-only; only the distilled `## Signal Read` reaches the profile.
 
 Re-running on the same day is idempotent (`--resume` reads the existing manifest).
 
@@ -238,7 +242,7 @@ The skill pulls signal from four sources. Full scoping and privacy posture in
 | **Fathom** | 1:1 transcripts since the profile's `last-synthesized` date | `FATHOM_API_KEY` env var |
 | **Slack** | DMs + shared-thread messages from the last 14 days | User-authorized MCP (`/connect slack`) |
 | **Gmail** | Threads where both parties are direct participants, last 14 days | User-authorized MCP (`/connect gmail`) |
-| **Signal** | Quick Notes wins/friction/sentiment/goal-health (**direct reports only**, `SIGNAL_INGEST=1`). Raw narration cached-only; distilled into `## Signal Read`. | `signal_*` MCP (Phase 1) |
+| **Signal** | Quick Notes wins/friction/sentiment/goal-health (any tracked person who is `signal_eligible` — has an `@nsls.org` email, `tracking_reason` is not `key_relationship_external`, and the name is not in `SIGNAL_EXCLUDE` (default `{"Cory Capoccia"}` — this is how board members are excluded); see `list_relationships.py`), `SIGNAL_INGEST=1`. Distilled into `## Signal Read` + advisory `## How to Support`. | `signal_*` MCP (Phase 1) |
 
 Three filters apply before content reaches the synthesizer:
 1. **Third-party name stripping** — names other than you and the target person become role descriptors

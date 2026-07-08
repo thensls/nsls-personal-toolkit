@@ -18,7 +18,11 @@ Two responsibilities:
 
 Modes:
   --list-reports                 Print direct-report slugs (JSON) from list_relationships.py
+  --list-signal                  Print all signal_eligible slugs (broadened set) as JSON
   --slug X [--weeks N]           Normalize: read raw MCP bundle from stdin, cache it, emit normalized JSON
+  --fetch --slug X               Token-direct: pull person/history/goals from the Signal API (no MCP, no stdin)
+  --team-summary [--manager X] [--week YYYY-MM-DD]
+                                  Token-direct: pull the weekly team summary (the manager's team pulse)
 
 Input bundle (stdin, --slug mode):
   {"slug": "...",
@@ -141,23 +145,48 @@ def slugify(name: str) -> str:
     return name.lower().replace("'", "").replace(".", "").replace(" ", "-")
 
 
-def list_reports() -> list[dict]:
-    """Direct reports (tracking_reason == direct_report) via list_relationships.py."""
+def _relationships_json():
+    """Run list_relationships.py and return its parsed JSON (seam for tests)."""
     env = dict(os.environ)
-    env.setdefault(
-        "OPERATING_USER_EMAIL",
-        env.get("BUILDER_EMAIL", ""),
-    )
+    env.setdefault("OPERATING_USER_EMAIL", env.get("BUILDER_EMAIL", ""))
     out = subprocess.check_output(
         ["python3.12", str(SCRIPT_DIR / "list_relationships.py")],
         env=env, text=True, stderr=subprocess.DEVNULL,
     )
-    data = json.loads(out)
-    reports = []
-    for r in data.get("relationships", []):
-        if r.get("tracking_reason") == "direct_report":
-            reports.append({"name": r["name"], "slug": slugify(r["name"])})
-    return reports
+    return json.loads(out)
+
+
+def list_reports() -> list[dict]:
+    """Direct reports only (back-compat)."""
+    data = _relationships_json()
+    return [{"name": r["name"], "slug": slugify(r["name"])}
+            for r in data.get("relationships", [])
+            if r.get("tracking_reason") == "direct_report"]
+
+
+def list_signal_slugs() -> list[dict]:
+    """Every signal_eligible relationship (the broadened set).
+
+    Slugs are name-derived to match the upstream Signal API key, so two
+    eligible people sharing a display name collide on the same slug. That
+    conflation isn't fixable here without breaking the upstream match, so we
+    just surface it loudly (stderr) instead of silently overwriting one
+    person's cache with the other's.
+    """
+    data = _relationships_json()
+    entries = [{"name": r["name"], "slug": slugify(r["name"])}
+               for r in data.get("relationships", [])
+               if r.get("signal_eligible")]
+
+    by_slug: dict[str, list[str]] = {}
+    for e in entries:
+        by_slug.setdefault(e["slug"], []).append(e["name"])
+    for slug, names in by_slug.items():
+        if len(names) > 1:
+            log(f"WARNING: slug collision for '{slug}' — {names} all map to it. "
+                f"Signal cache/fetch will conflate these people.")
+
+    return entries
 
 
 # --- cache safety -----------------------------------------------------------
@@ -170,6 +199,21 @@ def cache_path(slug: str) -> pathlib.Path:
     if str(CACHE_ROOT.resolve()) not in str(p):
         raise SystemExit("Cache path escaped CACHE_ROOT — aborting.")
     return p
+
+
+def strip_work_journal(bundle):
+    """Remove the private work-journal narrative before anything is cached/surfaced.
+
+    Person Intelligence consumes only the shareable signal tier (sentiment, wins,
+    friction, growth). narration_raw/entry_text are the employee<->manager journal
+    and must never be cached or surfaced here.
+    """
+    hist = (bundle.get("history") or {}).get("history")
+    if isinstance(hist, list):
+        for wk in hist:
+            wk.pop("narration_raw", None)
+            wk.pop("entry_text", None)
+    return bundle
 
 
 def write_raw_cache(slug: str, bundle: dict) -> pathlib.Path:
@@ -206,10 +250,10 @@ def normalize_sentiment(person: dict | None) -> dict:
 
 def normalize_history(history: dict | None) -> dict:
     """Pull wins + friction themes from the structured extraction, screen sensitivity."""
-    wins, friction, submitted_weeks, sensitive_dropped = [], [], [], []
+    wins, friction, growth, submitted_weeks, sensitive_dropped = [], [], [], [], []
     if not history:
-        return {"wins": wins, "friction": friction, "submitted_weeks": submitted_weeks,
-                "sensitive_dropped": sensitive_dropped}
+        return {"wins": wins, "friction": friction, "growth": growth,
+                "submitted_weeks": submitted_weeks, "sensitive_dropped": sensitive_dropped}
     for wk in history.get("history", []):
         week = wk.get("week_of")
         if week:
@@ -232,8 +276,14 @@ def normalize_history(history: dict | None) -> dict:
                 "category": c.get("backend_category"),
                 "primary_sentiment": wk.get("sentiment_primary"),
             })
-    return {"wins": wins, "friction": friction, "submitted_weeks": submitted_weeks,
-            "sensitive_dropped": sensitive_dropped}
+        for g in ex.get("growth", []):
+            desc = g.get("description", "")
+            if is_sensitive(desc):
+                sensitive_dropped.append({"week": week, "kind": "growth", "reason": "sensitivity"})
+                continue
+            growth.append({"week": week, "text": desc})
+    return {"wins": wins, "friction": friction, "growth": growth,
+            "submitted_weeks": submitted_weeks, "sensitive_dropped": sensitive_dropped}
 
 
 def normalize_goals(goals: dict | None) -> list[dict]:
@@ -260,6 +310,7 @@ def normalize(slug: str, bundle: dict, weeks: int) -> dict:
         "sentiment": normalize_sentiment(person),
         "wins": hist["wins"],
         "friction": hist["friction"],
+        "growth": hist["growth"],
         "goals": normalize_goals(bundle.get("goals")),
         "submitted_weeks": sorted(set(hist["submitted_weeks"]), reverse=True),
         "sensitive_dropped": hist["sensitive_dropped"],
@@ -273,6 +324,8 @@ def normalize(slug: str, bundle: dict, weeks: int) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--list-reports", action="store_true")
+    ap.add_argument("--list-signal", action="store_true",
+                    help="Print all signal_eligible slugs (broadened set) as JSON.")
     ap.add_argument("--slug")
     ap.add_argument("--weeks", type=int, default=12)
     ap.add_argument("--fetch", action="store_true",
@@ -285,6 +338,10 @@ def main() -> None:
 
     if args.list_reports:
         print(json.dumps(list_reports(), indent=2))
+        return
+
+    if args.list_signal:
+        print(json.dumps(list_signal_slugs(), indent=2))
         return
 
     if args.team_summary:
@@ -302,6 +359,7 @@ def main() -> None:
             raise SystemExit("No raw Signal bundle on stdin. Pipe {person,history,goals} JSON, or use --fetch.")
         bundle = json.loads(raw)
     bundle.setdefault("fetched_at", dt.datetime.now(dt.UTC).isoformat())
+    bundle = strip_work_journal(bundle)
 
     p = write_raw_cache(args.slug, bundle)
     log(f"cached raw → {p}")
