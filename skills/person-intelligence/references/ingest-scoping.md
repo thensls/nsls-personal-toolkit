@@ -39,6 +39,20 @@ For each person the sweep tracks, three sources fire in parallel.
 - Threads where you're a direct participant (sender or recipient)
 - **No keyword sweeps on the person's name** across your full mailbox.
 
+### Signal — Quick Notes (shareable-tier only, when `SIGNAL_INGEST=1`)
+
+- Any tracked person who is `signal_eligible` — NSLS email, not board/external
+  (determined by `list_relationships.py`)
+- **Shareable-tier fields only**: sentiment, wins, friction, growth. **Never** raw
+  work-journal narration (`narration_raw`, `entry_text`)
+- Default exclusion: `SIGNAL_EXCLUDE={"Cory Capoccia"}` (override in `.env` if
+  needed)
+- **Provenance**: Quick Notes sourced from the Signal dashboard; cached raw, distilled
+  into normalized fields before synthesis
+- **Never contributes to scoring.** `health_score` reads Fathom-meeting evidence
+  only; Signal feeds `## Signal Read` + advisory `## How to Support` sections
+  and relationship context — coaching, not the number.
+
 ## Three filters applied before content reaches the synthesizer
 
 These run on every Slack message and every Gmail thread, regardless of source:
