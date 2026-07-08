@@ -165,11 +165,28 @@ def list_reports() -> list[dict]:
 
 
 def list_signal_slugs() -> list[dict]:
-    """Every signal_eligible relationship (the broadened set)."""
+    """Every signal_eligible relationship (the broadened set).
+
+    Slugs are name-derived to match the upstream Signal API key, so two
+    eligible people sharing a display name collide on the same slug. That
+    conflation isn't fixable here without breaking the upstream match, so we
+    just surface it loudly (stderr) instead of silently overwriting one
+    person's cache with the other's.
+    """
     data = _relationships_json()
-    return [{"name": r["name"], "slug": slugify(r["name"])}
-            for r in data.get("relationships", [])
-            if r.get("signal_eligible")]
+    entries = [{"name": r["name"], "slug": slugify(r["name"])}
+               for r in data.get("relationships", [])
+               if r.get("signal_eligible")]
+
+    by_slug: dict[str, list[str]] = {}
+    for e in entries:
+        by_slug.setdefault(e["slug"], []).append(e["name"])
+    for slug, names in by_slug.items():
+        if len(names) > 1:
+            log(f"WARNING: slug collision for '{slug}' — {names} all map to it. "
+                f"Signal cache/fetch will conflate these people.")
+
+    return entries
 
 
 # --- cache safety -----------------------------------------------------------

@@ -40,10 +40,13 @@ quotes over adjectives. Short sentences.
 Each section should only appear if the data supports it. Skip empty sections.
 "Cadence Integrity" always renders.
 
-For each person covered in the digest, include:
-- Support: one line — the single highest-leverage move this cycle (remove
-  [friction] / celebrate [win]), drawn from the person's "How to support"
-  block when present.
+For each person covered in the digest:
+- Include a Support: line — one line naming the single highest-leverage move
+  this cycle (remove [friction] / celebrate [win]) — ONLY when that person's
+  data includes a "How to support" block. Draw the line directly from that
+  block; do not paraphrase beyond it.
+- If no "How to support" block is present for a person, OMIT the Support line
+  entirely for them. Never invent or infer support advice from other data.
 
 Format the output as Obsidian-flavored markdown. Use the template structure
 provided. Do NOT include YAML frontmatter — the caller adds that.

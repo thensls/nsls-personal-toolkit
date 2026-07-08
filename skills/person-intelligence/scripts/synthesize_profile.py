@@ -75,6 +75,7 @@ STANDARD_SECTION_HEADINGS = {
     "Meeting History",
     "Personal",
     "Signal Read",  # regenerated each run from distilled Quick Notes signal
+    "How to Support",  # regenerated each run — advisory, from Signal + meetings
     # Note: "Coaching Goals" and "Relationship Health" are NOT in this list.
     # They contain user-curated runtime data (active goals, the emoji chart,
     # journal entries) and must be preserved verbatim like human-authored sections.

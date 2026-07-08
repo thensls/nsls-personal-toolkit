@@ -41,8 +41,10 @@ For each person the sweep tracks, three sources fire in parallel.
 
 ### Signal — Quick Notes (shareable-tier only, when `SIGNAL_INGEST=1`)
 
-- Any tracked person who is `signal_eligible` — NSLS email, not board/external
-  (determined by `list_relationships.py`)
+- Any tracked person who is `signal_eligible` — has an `@nsls.org` email,
+  `tracking_reason` is not `key_relationship_external`, and the name is not in
+  `SIGNAL_EXCLUDE` (default `{"Cory Capoccia"}` — this is how board members are
+  excluded) (determined by `list_relationships.py`)
 - **Shareable-tier fields only**: sentiment, wins, friction, growth, goal health. **Never** raw
   work-journal narration (`narration_raw`, `entry_text`)
 - Default exclusion: `SIGNAL_EXCLUDE={"Cory Capoccia"}` (override in `.env` if
