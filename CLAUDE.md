@@ -24,7 +24,36 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 | `/familiar` | Recall past screen activity and work context |
 | `/person-intelligence` | Build relationship profiles, track 1:1 context, biweekly sweep, team-pulse digest, manager-coaching frame (Thrive + How I Work With), managing-up frame for your manager, coaching-action surfacing in /open-day and /open-week |
 | `/role-coach` | Coaching from your seat — reads the role you have (and optionally the role you want), diffs stated priorities against what actually happened, and keeps a pattern ledger so advice compounds. Evidence scoped to your access: ICs see only their own data, managers their team, execs org-wide. Wired into close-day/close-week/open-day/open-week |
+| `/reset-day` | Start today over — clears today's note so `/open-day` rebuilds it from your real data (`--close-only` keeps the morning plan; `-t` wipes the throwaway test vault only) |
+| `/unblock` | Fix the VS Code "permission prompt on every edit" trap when editing the toolkit's own files under `~/.claude/` — sets up a git worktree (or clone + symlink) outside `~/.claude/` |
+| `/codex-review` | Get an independent review from OpenAI Codex on code, a design/spec, a plan, or the branch's changes — runs Codex headless + read-only and relays its findings |
 | `obsidian-setup` | Set up an Obsidian knowledge base |
+
+## Web Companion
+
+The companion runs at `http://localhost:7777`. It is optional — install with `install.sh` or `cd companion && pip install -e .`.
+
+The binary is installed into a venv and is **not on PATH** in a fresh shell. The venv binary dir is OS-specific: `companion/.venv/bin/toolkit-companion` on macOS/Linux, `companion/.venv/Scripts/toolkit-companion.exe` on Windows. To run it: invoke that full path, activate the venv first, or (Unix) symlink it to `~/.local/bin/`. Skills resolve the correct path automatically — see open-day Step 8 for the platform-aware lookup. Windows users: see `docs/windows-setup.md`.
+
+Habits live in `30-habits/habits.md`; daily ticks accumulate in `30-habits/log.md` (append-only). The streak rule is documented in `skills/close-day/SKILL.md` and implemented in `companion/streak.py`. Both must stay in sync.
+
+**Test mode (`-t`).** `open day -t` / `close day -t` / `reset day -t` run against a throwaway, gitignored test vault (`companion-test-vault/`) so trying the companion never touches real daily notes. It's a pure `$OBSIDIAN_VAULT_PATH` redirect: `toolkit-companion test-vault` creates + seeds it and prints its path; the server flips a gold **TEST** banner whenever the vault it serves is named `companion-test-vault`; `reset day -t` calls `toolkit-companion assert-test-vault` and refuses to delete anything outside it. See `companion/testmode.py`.
+
+## Handling Secrets (hard rule for Claude)
+
+When a skill calls an HTTP API that reads an API key from the environment (e.g., `AIRTABLE_API_KEY`, `FATHOM_API_KEY`):
+
+- **Never** inline the secret value in a Bash command. Patterns like `export AIRTABLE_API_KEY=patW...; python3 -c "..."` echo the literal key into the tool log, the conversation transcript on disk, and any request logs upstream. That key is then leaked even if it was previously private.
+- **Always** source the env file first, then reference only the variable name:
+  ```bash
+  set -a; source /Users/claw/.claude/local-plugins/nsls-personal-toolkit/.env; set +a
+  python3 -c "import os; print(len(os.environ['AIRTABLE_API_KEY']))"
+  ```
+  Only the variable *name* appears in the command; the value stays in the file.
+- If a skill's example shows an inline `export` or pastes a literal key, treat that as a bug in the skill — fix it before running, don't reproduce it. Flag it to the user.
+- Gates matter. If a skill says "skip this section unless `slt_member: true`," check the gate *before* touching the relevant env var or making the call. Don't run the API step for non-applicable users — it can't succeed, and the attempt can leak the key.
+
+This rule applies to every skill in this toolkit and overrides any inline example that contradicts it.
 
 ## Strategy Layer (Optional)
 

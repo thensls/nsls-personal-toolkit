@@ -1,0 +1,63 @@
+<!-- Week Results — read-only summary of a closed week -->
+<div class="max-w-2xl mx-auto space-y-4">
+
+<header class="bg-amber-50 p-4 rounded">
+  <h2 class="font-semibold">Week closed — {{ week_of }}</h2>
+</header>
+
+{% if sections.get('Priorities vs. Reality') or sections.get('Priorities vs Reality') %}
+<section class="bg-white p-5 rounded shadow">
+  <h3 class="text-sm uppercase text-stone-500 mb-2">Priorities vs. Reality</h3>
+  <div class="text-sm text-stone-700 whitespace-pre-wrap">{{ sections.get('Priorities vs. Reality', sections.get('Priorities vs Reality', '')) }}</div>
+</section>
+{% endif %}
+
+{% if sections.get('Time Allocation') %}
+<section class="bg-white p-5 rounded shadow">
+  <h3 class="text-sm uppercase text-stone-500 mb-2">Time Allocation</h3>
+  <div class="text-sm text-stone-700 whitespace-pre-wrap">{{ sections['Time Allocation'] }}</div>
+</section>
+{% endif %}
+
+{% if sections.get('Achievements') %}
+<section class="bg-white p-5 rounded shadow">
+  <h3 class="text-sm uppercase text-stone-500 mb-2">Achievements</h3>
+  <div class="text-sm text-stone-700 whitespace-pre-wrap">{{ sections['Achievements'] }}</div>
+</section>
+{% endif %}
+
+{% if sections.get('Learnings') %}
+<section class="bg-white p-5 rounded shadow">
+  <h3 class="text-sm uppercase text-stone-500 mb-2">Learnings</h3>
+  <div class="text-sm text-stone-700 whitespace-pre-wrap">{{ sections['Learnings'] }}</div>
+</section>
+{% endif %}
+
+{% if sections.get('Insight Reflection') %}
+<section class="bg-white p-5 rounded shadow">
+  <h3 class="text-sm uppercase text-stone-500 mb-2">Insight Reflection</h3>
+  <p class="whitespace-pre-wrap font-serif text-stone-800">{{ sections['Insight Reflection'] }}</p>
+</section>
+{% endif %}
+
+{% set quick_notes = sections.get('Quick Notes', '') %}
+{% if quick_notes %}
+<section class="bg-white p-5 rounded shadow" x-data="{ copied: false }">
+  <div class="flex items-center justify-between mb-2">
+    <h3 class="text-sm uppercase text-stone-500">Quick Notes</h3>
+    <button @click="navigator.clipboard.writeText($refs.qn.textContent); copied = true; setTimeout(() => copied = false, 2000)"
+            class="text-xs px-2 py-1 border rounded hover:bg-stone-50"
+            x-text="copied ? 'Copied!' : 'Copy'">Copy</button>
+  </div>
+  <pre x-ref="qn" class="text-sm text-stone-700 whitespace-pre-wrap bg-stone-50 p-3 rounded">{{ quick_notes }}</pre>
+</section>
+{% endif %}
+
+{% if sections.get('AI Suggested: Next Week\'s Top 3 (from weekly close)') or sections.get('AI Suggested: Next Week\'s Top 3') %}
+<section class="bg-white p-5 rounded shadow">
+  <h3 class="text-sm uppercase text-stone-500 mb-2">AI Suggested: Next Week</h3>
+  <div class="text-sm text-stone-700 whitespace-pre-wrap">{{ sections.get("AI Suggested: Next Week's Top 3 (from weekly close)", sections.get("AI Suggested: Next Week's Top 3", "")) }}</div>
+</section>
+{% endif %}
+
+</div>

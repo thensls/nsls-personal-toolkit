@@ -7,12 +7,62 @@ description: >-
   Check-in in today's Obsidian daily note. Use when the user says "open day",
   "plan day", "plan my day", "start my day", "morning", "good morning",
   "what's on my plate", "what do I have today", "daily planning", or opens a
-  new session in the morning. Requires Google Calendar and Asana access.
+  new session in the morning. The visual browser companion is ON by default;
+  also handles "open day -v" / "open day visual off" (one-shot skip of the
+  companion this run), "open day -v forever" / "open day visual off forever"
+  (persistently disable it), "open day visual on" (force/persist on), and
+  "open day -r" (run /reset-day first, then open), and "open day -t" (run against
+  a throwaway test vault so real daily notes are untouched). Requires Google
+  Calendar and Asana access.
 ---
 
 # Open Day
 
 Pull today's calendar, Asana tasks, overdue items, and yesterday's carry-overs. Help the builder set priorities across work and vitality, schedule them on the calendar, and populate today's daily note.
+
+## Visual Companion Mode
+
+Before doing anything else, parse the builder's invocation phrase to choose a mode and (sometimes) persist their choice:
+
+| Phrase | Action |
+|---|---|
+| `open day` (or any trigger above with no flag) | **Visual companion ON by default.** Read `visual_mode` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`; treat absent / missing / anything-but-`off` as **on**. Only `visual_mode: off` opts out. (If the companion can't actually start, fall back to chat — see graceful fallback below.) |
+| `open day -v` (or `open day visual off`) | **Negate the companion this run** — run CLI/chat only this time. Does not change the profile. (`-v` = "no visual this run".) |
+| `open day -v forever` (or `open day visual off forever`) | Set `visual_mode: off` in builder-profile.md (persistent), then run CLI/chat only |
+| `open day visual on` | Force the companion this time (e.g. if you've persisted it off) |
+| `open day visual on forever` | Set `visual_mode: on` in builder-profile.md (persistent) — same as the default, but explicit |
+
+**Reset-first flag (`-r`):** if the invocation includes `-r` (e.g. `open day -r`, `open day -v -r`), **run `/reset-day` (full reset) FIRST**, before Step 1 — clear today's note so open-day rebuilds it from scratch (real carry-overs / close-day seeds, or generated suggestions if there's nothing real). `-r` is independent of `-v`: `-r` alone means "reset, then open with the companion" (the default); `-v -r` means "reset, then open CLI/chat only". Do the reset silently (one-line confirmation at most), then continue with open-day as normal. This is the fast "redo my day cleanly" path used in testing and when a morning plan went sideways.
+
+**Test-mode flag (`-t`):** if the invocation includes `-t` (e.g. `open day -t`, `open day -t -v`), run the **entire skill against a throwaway test vault** so your real daily notes are never touched — for trying the companion or demoing the flow. The whole system keys off one variable, `$OBSIDIAN_VAULT_PATH`, so test mode is just: **before Step 1, point that variable at the test vault.** Resolve the companion binary (the platform-aware lookup in Step 8) and run:
+
+```bash
+export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
+```
+
+`test-vault` creates + seeds the vault (`~/.claude/local-plugins/nsls-personal-toolkit/companion-test-vault/`, gitignored) on first use and prints its path; it never overwrites existing notes. Every downstream step — data collection, writing the daily note, and the Step 8 `serve` — then targets the test vault automatically. The companion shows a gold **TEST** banner so it's unmistakable. (Calendar/Asana reads are still your real, read-only data; only what gets *written* is redirected.) `-t` composes with `-v` and `-r`. To clear the test day and start over, run `reset-day -t`.
+
+**No collision with your real companion.** A test server is a fully separate instance — it binds its own port (**7788**, vs the real companion's **7777**) and writes its own pidfile (`.companion-test.pid`). So `open day -t` can never displace, stop, or be confused with a real `open day` already running. In Step 8, when in test mode, manage the companion with the `--test` flag (`"$TC" status --test`; `serve` auto-detects the test vault and picks 7788) and open the **7788** URL. Never run `"$TC" stop` (no flag) in test mode — that targets the real companion.
+
+There are two ways the ritual can run: with the **CLI companion** (the local Flask server, the default) or in **chat** (the fallback). `visual_mode` decides between them — on by default, `off` to stay in chat. The companion only runs on a CLI surface (Claude Code) where Bash can start a local server; on any surface that can't, the graceful fallback below finishes the ritual in chat.
+
+When `visual_mode` is **on** (the default):
+- **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary** (not installed, or you're not on a surface that can run a local server), **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
+- **Step 1.5 only**: Auto-run yesterday's close-day if needed (same as CLI mode).
+- **Step 2**: Collect ALL data (calendar, Asana, carry-overs, AI suggestions, stack rank, free time, habits, learning, PRs, SLT). Run Bash commands in the background or silently — **do not show raw Bash output to the user**. Present ONE condensed summary line per data source (e.g., "3 meetings today · 6 open Asana · 2 carry-overs · AI suggestions seeded").
+- **Step 6**: Write the daily note with **empty Top 3 and Bonus slots** (`1. [ ]`, `2. [ ]`, `3. [ ]`). Include habits, calendar, and the standard template. **Do NOT fill in Top 3 — that's the companion's job.** BUT the companion needs suggestions to show, so **always write an `### AI Suggested: Top 3` section** (3 items) and `### AI Suggested: Delegate These`, in priority order:
+  1. **Real, from the last close-day** — if today's note already has them (close-day seeded them) or the most recent prior close-day wrote next-day suggestions, use those verbatim.
+  2. **Real, from carry-overs** — else, pull unfinished items from recent daily notes' `## Carrying Over` / incomplete Top 3.
+  3. **Reasonable, generated** — only if there's nothing real (fresh user, no prior close, e.g. first run or after a reset on an empty week): generate 3 sensible suggestions from what you DO know — the builder profile (role, projects in `20-projects/`, operating memo), this week's stack rank, today's calendar. Mark them plainly (e.g. a one-line note "suggested from your role/projects — no prior close-day to pull from"). Keep them realistic, not filler. This guarantees the companion always has something to react to — important for new users and testing.
+- **Skip Steps 3, 4, 4a, 5** — the companion handles priority selection, not chat.
+- **Step 8**: Open the visual companion and stop. Print exactly: *"Continue in the browser at <url>. Pick your Top 3, review suggestions, then click Done. Say 'done' here when you're ready."* **Then stop. Do not print coaching, suggestions, or commentary.**
+- **On "done"**: Re-read the daily note, extract Top 3 + Bonus + habits, print a brief summary (under 12 lines). No coaching unless asked.
+
+When `visual_mode` is **off**:
+- Run the full chat flow (Steps 1-7), present suggestions in chat, accept the builder's edits in chat, and write the daily note from chat. **Skip Step 8.**
+- Show full verbose output for all steps.
+
+Builder-profile read/write: `visual_mode` is a top-level frontmatter field. **The default is ON** — if the field is absent, missing, or anything other than the literal string `off`, run with the companion (subject to the graceful fallback above). The companion is skipped only when `visual_mode: off` is set in the profile, OR the builder passes `-v` (or "visual off") this run. To opt out persistently, set `visual_mode: off`. Note: default-on only has an effect on a CLI surface where the local companion can start; on surfaces that can't run it, the graceful fallback finishes the ritual in chat.
 
 ## Philosophy
 
@@ -37,6 +87,22 @@ Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env` or `$OBSIDI
 ## Timezone
 
 Read timezone from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (the `timezone` field). Default to `America/Denver` if not set.
+
+## Output Discipline
+
+**The user must never see raw Bash command output.** The CLI renders Bash tool calls and their output directly — you cannot hide them after the fact. So the rule is: **do not run Bash commands that produce multi-line output.** Instead:
+
+- **Read files with the Read tool**, not `cat` or `grep` in Bash. Read tool output is collapsible; Bash output is not.
+- **Use MCP tools** (Google Calendar, Asana, Fathom, Slack) instead of Bash for API calls.
+- **If you must use Bash** (e.g., for Familiar data, file existence checks), write a single command that computes the summary internally and `echo`s only the one-line result:
+  ```bash
+  echo "Familiar: $(find $DIR -name '*.md' | wc -l | tr -d ' ') captures across $(ls -d $DIR/session-* 2>/dev/null | wc -l | tr -d ' ') sessions"
+  ```
+  NOT a command that dumps 50+ lines of app counts, timestamps, or file contents.
+- **Never `cat` a file in Bash.** Use the Read tool.
+- **Never run a Bash command whose output exceeds 3 lines** without `-v` mode.
+
+If the user invokes with `-v` (e.g., `/open-day -v`), full verbose output is fine — show everything.
 
 ## Step-by-step Execution
 
@@ -121,7 +187,13 @@ Read yesterday's daily note:
 $OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD-1.md
 ```
 
-Extract the `## Carrying Over` section. These are unfinished items from yesterday.
+Extract the `## Carrying Over` section plus any unfinished `### My Top 3` / `### Bonus` items. These are unfinished items from yesterday.
+
+**Exclude what was deleted or done.** Skip any item that appears in yesterday's `### Deleted`, `### Done`, or `### Dismissed` subsections (companion-written) — a deleted item must never resurface. (The companion enforces this too; do it here so the chat path and the AI-Suggested section you write don't reintroduce it.)
+
+**Dedupe before presenting.** Carry-overs and the AI-suggested items often describe the *same task in different words* (close-day reworded a carry-over). Collapse those to a single suggestion — prefer the AI/curated wording — so the builder never sees the same task twice. Match on meaning, not just exact string.
+
+**Preserve time estimates.** Carried items may end with an `<!--e:X-->` marker — the estimated *remaining* hours as of last close (the builder may have revised it). When a carried item lands in today's `### My Top 3` / `### Bonus`, keep that exact marker on the line (never show it as visible text — it's an HTML comment the companion reads to pre-fill the estimate field). When presenting suggestions in chat, mention the estimate as "~Xh left".
 
 **2d. This week's plan (if it exists)**
 
@@ -259,13 +331,20 @@ Skip the entire section in Step 3 if both buckets are empty.
 
 **2j. SLT Meeting Actions — open items from the SLT knowledge base**
 
-Pull Kevin's open Meeting Actions from the SLT Meeting Intelligence base. Symmetric with `/close-day` Step 1h. These are action items from SLT meetings tracked separately from Asana — many have no due date but are time-sensitive (retreat prep, offsite logistics, quarterly deliverables).
+Pull the builder's open Meeting Actions from the SLT Meeting Intelligence base. Symmetric with `/close-day` Step 1h. These are action items from SLT meetings tracked separately from Asana — many have no due date but are time-sensitive (retreat prep, offsite logistics, quarterly deliverables).
 
-Skip this step if `$AIRTABLE_API_KEY` is not set or the builder profile does not enable SLT integration.
+**🛑 HARD GATE — check BEFORE doing anything else in this step.** This integration is for SLT members only and is the only thing in this skill that uses Airtable. Skipping it leaves no gaps for non-SLT builders.
+
+Run the gate now, in order:
+
+1. Read `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If frontmatter does NOT contain `slt_member: true`, **skip this entire step (2j) and continue to Step 3.** Do not read `AIRTABLE_API_KEY`. Do not run any Bash command that references it. Do not attempt the call "just to see if it works."
+2. If the profile is missing or unreadable, treat that as `slt_member: false` and skip.
+3. Only if `slt_member: true`: check `$AIRTABLE_API_KEY` is non-empty. If empty, skip with a one-line note to the builder ("SLT integration enabled in profile but `AIRTABLE_API_KEY` is empty — run `/personal-setup` to add it"), then continue to Step 3.
+4. Only after both checks pass, proceed to the query below. Use `source .env` (never inline `export KEY=value`) — see `CLAUDE.md` "Handling Secrets."
 
 - **Base:** `${SLT_BASE_ID}`
 - **Table:** `tblasgjUjadHCqzrg` (Meeting Actions)
-- **Auth:** `AIRTABLE_API_KEY` env var
+- **Auth:** `AIRTABLE_API_KEY` env var (after the gate above)
 
 **CRITICAL — query pattern gotchas:**
 - `{assignee_name}` in `filterByFormula` silently fails with `INVALID_FILTER_BY_FORMULA: Unknown field names: assignee_name`. Display name drifts from schema doc.
@@ -745,6 +824,7 @@ The daily note should include:
 
 ```markdown
 ---
+status: planning
 sleep_total_hrs: 6.5
 sleep_restorative_pct: 38
 sleep_deep_hrs: 1.15
@@ -768,16 +848,32 @@ hrv_ms: 61
 [preserved from close-day seed if it existed]
 
 ### My Top 3
-1. [Priority #1 description] — [[project-slug]] *(week rank: N)*
-2. [Priority #2 description] — [[project-slug]] *(week rank: N)*
-3. [Priority #3 description] — [[project-slug]] *(week rank: N)*
+1. [ ] [Priority #1 description] — [[project-slug]] *(week rank: N)*
+2. [ ] [Priority #2 description] — [[project-slug]] *(week rank: N)*
+3. [ ] [Priority #3 description] — [[project-slug]] *(week rank: N)*
 
 *Link the project and surface the week rank when a project home exists. Use `*(not in week's Top 5)*` for active projects outside the stack rank. Omit link/rank for pure people work or goals with no project home.*
+
+### Bonus
+
+(nice-to-have items if there's time today — typically 1-3 items)
+
+1. [ ] [Bonus item 1]
+2. [ ] [Bonus item 2]
+3. [ ] [Bonus item 3]
 
 ### Vitality
 - [ ] [Movement activity]
 - [ ] [Growth activity]
 - [ ] [Connection activity]
+
+### Habits
+
+(One checkbox per active habit from 30-habits/habits.md. The bolded text MUST match the habit's name field verbatim — the companion and close-day both match on that string.)
+
+- [ ] **Walk**
+- [ ] **Read 15m**
+- [ ] **Workout**
 
 ## Calendar
 - **HH:MM-HH:MM** — [Title] (attendees)
@@ -802,6 +898,14 @@ SORT priority ASC
 ```
 
 The `## Work Log`, `## Projects Touched`, `## Carrying Over`, and `## End of Day` sections are left empty — `/close-day` fills those in.
+
+**`status` frontmatter (the mode contract):** The note carries `status: planning | active | closed` in YAML frontmatter. This is the single signal the web companion reads to pick a mode — never infer the mode from which sections exist. On open-day:
+- **Creating from template:** write `status: planning` (the builder hasn't locked in a plan yet).
+- **Note already exists** with a later status (`active`/`closed`) — e.g. the builder re-runs open-day mid-day: **preserve the existing status**, don't reset it to `planning` (that would silently re-open a locked-in or closed day). Only `/reset-day` (or `open day -r`) clears the note back to `planning`.
+
+The companion advances the status from there: "Lock in →" sets `status: active`; `/close-day`'s evening "Done" sets `status: closed`.
+
+**Habits section:** Read habits from `$OBSIDIAN_VAULT_PATH/30-habits/habits.md`, parsing the Active list. Use each habit's `name` field for the bolded text in the `### Habits` section (one checkbox per active habit). If the file does not exist, ask the builder once whether to create it (offer the template), then write `30-habits/habits.md` and `30-habits/log.md` from the templates. The bolded habit names must match verbatim — `/close-day` and the CLI companion both match on that string.
 
 **Health frontmatter rules:**
 - The eight `sleep_*`, `exercise_min`, `steps`, `active_energy_kcal`, `hrv_ms` keys come from Step 2k. Use YAML `null` for any value Apple Health didn't provide for yesterday (e.g., `hrv_ms: null`).
@@ -834,6 +938,74 @@ Classification rules:
 Count the totals: e.g., `2 adopted, 0 modified, 1 replaced`
 
 **Do NOT block the morning flow for this.** If you're in a hurry, skip the tracker.
+
+### Step 8: Open the visual companion (browser sidekick for the rest of the day)
+
+**Skip this entire step** if any of these is true:
+- The builder said `open day -v` / `open day visual off` (one-shot CLI mode) or `open day -v forever` / `open day visual off forever`
+- `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
+- The companion binary cannot be found at either of the locations below, or you're on a surface that can't run a local server — the companion is optional; see `CLAUDE.md`
+
+When you skip, finish the morning ritual entirely in chat (Steps 3 and 4 in this skill already cover the chat-based draft + review of Top 3 / Bonus / etc.).
+
+**Resolving the binary path.** The install runs an editable pip install inside a venv at `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/`, so on most installs the `toolkit-companion` binary is **not on PATH** in a fresh shell. The venv binary dir differs by OS — `bin/` on macOS/Linux, `Scripts/` (with a `.exe`) on Windows. Resolve it with this platform-aware lookup before invoking — never assume PATH:
+
+```bash
+VENV="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv"
+TC="$VENV/bin/toolkit-companion"                      # macOS / Linux
+[ -x "$TC" ] || TC="$VENV/Scripts/toolkit-companion.exe"   # Windows (Git Bash)
+[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+[ -n "$TC" ] || { echo "companion not installed"; }
+```
+
+Use the resolved `"$TC"` in every command below. If all lookups fail, skip the rest of this step.
+
+When you don't skip:
+
+1. **Check whether the companion is running:**
+   ```bash
+   "$TC" status
+   ```
+   - Output `Running: pid <pid>, address <addr>` → parse the URL, continue to step 2.
+   - Output contains `Not running` or `stale pidfile` → **start it automatically** in the background:
+     ```bash
+     OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
+     sleep 2
+     "$TC" status
+     ```
+     If it's now running, parse the URL and continue to step 2. If it still fails, tell the builder: *"Companion couldn't start. Run `open day visual off` to stay in chat, or check the error."* Then skip the rest of this step.
+
+2. **Open the URL in the default browser:**
+   - macOS: `open <url-from-status>`
+   - Linux: `xdg-open <url-from-status>`
+   - Windows: `start <url-from-status>`
+
+3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now. **Always give a clickable link**: present the URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) as a Markdown link, never a bare IP.
+
+   > A tab opened at http://localhost:<port> — open it. Pick your Top 3, add anything else to the Bonus list, then click **Done — show Command Center** when you're ready.
+   >
+   > When you're done, say **done** here and I'll print a one-line summary. Or just go straight into your day — the daily note is being saved as you type. Type `open day visual off` if you'd rather skip the visual next time.
+
+4. **Wait for the builder's "done" signal.** Do not poll, do not print intermediate messages, do not summarize "what they should do next." Just stop. Resume only when they reply.
+
+5. **On "done":** read today's daily note (`$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`), extract `### My Top 3` and `### Bonus`, and print:
+
+   ```
+   ✅ Locked in for {today_pretty}:
+
+   Top 3:
+     1. <item>
+     2. <item>
+     3. <item>
+
+   Bonus ({N}):
+     • <item>
+     ...
+   ```
+
+   Habits section: if there are any, list them but don't ask for status — habits are tracked passively and checked at `/close-day`.
+
+   Keep the summary under 12 lines. Do not append commentary, suggestions, or coaching unless the builder asks.
 
 ### Day-of-Week Additions
 

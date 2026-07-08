@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NSLS Toolkit Companion</title>
+  <link rel="stylesheet" href="/static/tailwind.css">
+  <!-- htmx + Alpine are vendored locally (companion/static/) so the companion
+       works fully offline / behind firewalls that block unpkg. A blocked CDN
+       was silently leaving htmx undefined, so every button did nothing. The
+       onerror fallbacks only fire if the local file fails to load. -->
+  <script src="/static/htmx.min.js"
+          onerror="this.onerror=null;var s=document.createElement('script');s.src='https://unpkg.com/htmx.org@1.9.10';document.head.appendChild(s);"></script>
+  <script defer src="/static/alpine.min.js"
+          onerror="this.onerror=null;var s=document.createElement('script');s.defer=true;s.src='https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js';document.head.appendChild(s);"></script>
+</head>
+<body class="bg-stone-50 text-stone-900">
+  {% if test_mode %}<div class="nsls-test-bar">Test vault — practice data, your real day is untouched</div>{% endif %}
+  <div class="nsls-shell">
+    <nav class="nsls-nav">
+      <div class="nsls-nav-inner">
+        <a href="/" class="nsls-nav-link {{ 'nsls-nav-active' if active_tab == 'day' else '' }}">Day</a>
+        <span class="nsls-nav-item" x-data="{ soon: false }" @click.outside="soon = false">
+          <button type="button" class="nsls-nav-link" @click="soon = !soon">Week</button>
+          <span class="nsls-soon-pop" x-show="soon" x-cloak x-transition>Coming soon</span>
+        </span>
+        <a href="/streaks" class="nsls-nav-link {{ 'nsls-nav-active' if active_tab == 'streaks' else '' }}">Streaks</a>
+      </div>
+    </nav>
+    <main class="nsls-shell-main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <script>
+    (function () {
+      let es = null;
+      let reconnectDelay = 1000;        // backoff base
+      let lastReload = Date.now();
+      const RELOAD_DEBOUNCE_MS = 800;
+      let suppressNextReload = 0;       // timestamp until which SSE reloads are suppressed
+
+      // Suppress SSE reload after our own HTMX POSTs — the broadcast those
+      // writes trigger would clobber the view the user just interacted with.
+      document.body.addEventListener("htmx:beforeRequest", function (e) {
+        if (e.detail.requestConfig && e.detail.requestConfig.verb !== "get") {
+          suppressNextReload = Date.now() + 3000;
+        }
+      });
+      document.body.addEventListener("htmx:afterRequest", function (e) {
+        // Extend suppression after the response arrives — the SSE broadcast
+        // from our write may still be in-flight on the EventSource connection.
+        // Use max() so a slow (>2s) POST can only push the deadline later, never
+        // shorten the window beforeRequest set — otherwise our own broadcast
+        // arrives after suppression lapses and clobbers the view.
+        if (e.detail.requestConfig && e.detail.requestConfig.verb !== "get") {
+          suppressNextReload = Math.max(suppressNextReload, Date.now() + 1000);
+        }
+      });
+
+      function reloadMain(force) {
+        if (Date.now() - lastReload < RELOAD_DEBOUNCE_MS) return;
+        if (!force) {
+          // Skip SSE reload when any interactive wizard is active — HTMX
+          // partial swaps handle the UI updates, and a full main replace
+          // would blow away Alpine's step state, causing the screen to jump.
+          // (force=true — a server restart — overrides this: the server's
+          // state is authoritative and the tab is provably stale. Dirty
+          // textarea text is still preserved below.)
+          if (document.querySelector("[x-data*='coachMode']") ||
+              document.querySelector("[data-suppress-sse-reload]")) return;
+          // Skip SSE reload shortly after our own POST — the broadcast it
+          // triggers is from OUR write, not an external change.
+          if (Date.now() < suppressNextReload) return;
+        }
+        lastReload = Date.now();
+
+        // Never make the user lose what they're typing, and never show a scary
+        // confirm. Snapshot any in-progress (unsaved) textarea AND text-input
+        // values keyed by section, reload <main>, then restore and nudge htmx to
+        // persist. (Estimate / bonus / unplanned / Top 3 fields are <input type=text>.)
+        // (The fields also auto-save on their own debounce.)
+        const dirty = {};
+        // Unique per-field key: id when present, else tag + trigger + DOM
+        // position. hx-vals alone collides — bonus item 0 and unplanned item 0
+        // both carry {"index":"0"}, which would restore one field's text into
+        // the other. Both loops walk the same selector in the same order, so the
+        // positional index stays aligned across snapshot and restore.
+        const fieldKey = (t, i) =>
+          t.id || ((t.getAttribute("hx-vals") || t.name || t.tagName) + "#" + i);
+        document.querySelectorAll("main textarea, main input[type=text]").forEach((t, i) => {
+          if (t.value !== (t.defaultValue || "")) {
+            dirty[fieldKey(t, i)] = t.value;
+          }
+        });
+
+        // Extract only <main> from the response and replace the entire
+        // <main> element. Using innerHTML here would shove the full page
+        // (including <nav>) into main, producing a duplicated top menu.
+        htmx.ajax("GET", window.location.href, {
+          target: "main",
+          select: "main",
+          swap: "outerHTML",
+        }).then(function () {
+          if (!Object.keys(dirty).length) return;
+          document.querySelectorAll("main textarea, main input[type=text]").forEach((t, i) => {
+            const key = fieldKey(t, i);
+            if (dirty[key] !== undefined && t.value !== dirty[key]) {
+              t.value = dirty[key];
+              // Fire both events: textareas persist on `input`, while the
+              // estimate/bonus/unplanned inputs use hx-trigger="change" — a
+              // restored value must dispatch `change` too or it's shown but
+              // never written, and lost on the next refresh.
+              t.dispatchEvent(new Event("input", { bubbles: true }));
+              t.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+        });
+      }
+
+      // Tiny status pill shown while the SSE stream is down (e.g. the
+      // companion restarting). Without it, a stale tab looks fine but
+      // silently shows a pre-restart view.
+      function sseStatus(show) {
+        let pill = document.getElementById("toolkit-sse-status");
+        if (!pill) {
+          pill = document.createElement("div");
+          pill.id = "toolkit-sse-status";
+          pill.className = "fixed bottom-4 left-4 text-xs px-3 py-1.5 rounded-full shadow z-50";
+          pill.style.cssText += ";background:var(--nsls-darkblue,#1b2a4a);color:#fff;opacity:.92;display:none";
+          pill.textContent = "Reconnecting to the companion…";
+          document.body.appendChild(pill);
+        }
+        pill.style.display = show ? "block" : "none";
+      }
+
+      let dropped = false;   // saw an error since the last successful open
+      function connect() {
+        if (es) try { es.close(); } catch (_) {}
+        es = new EventSource("/events");
+        es.onopen = () => {
+          reconnectDelay = 1000;
+          sseStatus(false);
+          if (dropped) {
+            // Reconnected after a drop (usually a companion restart): the
+            // tab may have missed broadcasts — or the server itself changed
+            // — so force a re-render instead of trusting the stale view.
+            dropped = false;
+            reloadMain(true);
+          }
+        };
+        es.onmessage = (e) => {
+          const path = e.data;
+          if (path.startsWith("01-daily/") || path.startsWith("30-habits/") || path.startsWith("02-weekly/")) {
+            reloadMain();
+          }
+        };
+        es.onerror = () => {
+          dropped = true;
+          sseStatus(true);
+          try { es.close(); } catch (_) {}
+          setTimeout(connect, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 2, 30000);  // cap 30s
+        };
+      }
+
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+          // iOS drops SSE when the tab is backgrounded — refresh + reconnect.
+          reloadMain();
+          connect();
+        }
+      });
+
+      connect();
+
+      // Global toast for HTMX response errors. All POSTs in templates use:
+      //   hx-on:htmx:response-error="window.__toolkitErrorToast(event)"
+      window.__toolkitErrorToast = function (evt) {
+        const xhr = evt.detail && evt.detail.xhr;
+        const msg = (xhr && xhr.responseText) || "Save failed";
+        let toast = document.getElementById("toolkit-toast");
+        if (!toast) {
+          toast = document.createElement("div");
+          toast.id = "toolkit-toast";
+          toast.className = "fixed bottom-4 right-4 bg-red-700 text-white px-4 py-2 rounded shadow-lg z-50";
+          document.body.appendChild(toast);
+        }
+        toast.textContent = "⚠ " + msg.slice(0, 200);
+        toast.style.display = "block";
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => { toast.style.display = "none"; }, 4000);
+      };
+    })();
+  </script>
+</body>
+</html>

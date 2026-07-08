@@ -1,0 +1,7 @@
+{# "≈ Xh planned today" — lives in the card header OUTSIDE #task-table, so
+   estimate edits update it via an out-of-band swap (oob=true when rendered
+   standalone by the task routes). Always render the span, even when empty,
+   or the oob swap has no target to replace. #}
+{# Completed items contribute 0 — est is time REMAINING, and done = 0 left. #}
+{% set planned = (top_3 + bonus) | rejectattr('checked') | selectattr('est') | map(attribute='est') | sum %}
+<span id="planned-total" class="text-xs nsls-subtle"{% if oob %} hx-swap-oob="true"{% endif %}>{% if planned %}≈ <span class="font-medium">{{ '%g'|format(planned) }}h</span> planned today{% endif %}</span>

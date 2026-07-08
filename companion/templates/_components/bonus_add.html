@@ -1,0 +1,8 @@
+<div class="nsls-add">
+  <input type="text" name="text" value="" placeholder="Add a bonus item…"
+         hx-post="/add-bonus"
+         hx-trigger="keyup[key=='Enter'], change"
+         hx-target="#task-table" hx-swap="outerHTML" hx-sync="#task-table:replace"
+         hx-on:htmx:after-request="if(event.detail.successful){this.value=''}"
+         hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
+</div>

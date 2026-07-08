@@ -1,0 +1,18 @@
+{# The whole Command Center task table (Top 3 + Bonus). Controls swap this
+   entire <table> via hx-target="#task-table" — swapping a bare <tbody>
+   fragment triggers the browser table-parsing pitfall that collapsed the
+   layout after a click. #}
+{% if swap_oob %}{% with oob=true %}{% include "_components/planned_total.html" %}{% endwith %}{% endif %}
+<table class="nsls-tasktable" id="task-table">
+  <thead>
+    <tr>
+      <th class="tt-disc"></th>
+      <th class="tt-goal"></th>
+      <th class="tt-est"><span class="tt-est-stack">Estimated<br>remaining<br>time</span><span class="nsls-tip"><span class="ic">i</span><span class="pop"><b>Timeboxing.</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></th>
+      <th class="tt-prog">Progress</th>
+      <th class="tt-del"></th>
+    </tr>
+  </thead>
+  {% with section='top_3', items=top_3 %}{% include "_components/task_rows.html" %}{% endwith %}
+  {% with section='bonus', items=bonus, section_label='Bonus' %}{% include "_components/task_rows.html" %}{% endwith %}
+</table>

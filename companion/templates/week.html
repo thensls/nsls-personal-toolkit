@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% set active_tab = 'week' %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-1">Week — {{ week_of }}</h1>
+{% if mode_badge %}
+<p class="text-sm text-stone-500 mb-6">{{ mode_badge }}</p>
+{% else %}
+<p class="text-sm text-stone-500 mb-6">&nbsp;</p>
+{% endif %}
+
+{% if not week_md %}
+  <div class="bg-white rounded-lg shadow p-6 text-center">
+    <p class="text-stone-600">No weekly note yet.</p>
+    <p class="text-sm text-stone-500 mt-2">Run <code class="bg-stone-100 px-1 rounded">/open-week</code> in your terminal to create one.</p>
+  </div>
+{% elif mode == 'plan-week' %}
+  {% include "_components/week_plan.html" %}
+{% elif mode == 'week-review' %}
+  {% include "_components/week_review.html" %}
+{% elif mode == 'week-results' %}
+  {% include "_components/week_results.html" %}
+{% else %}
+  {% include "_components/week_command.html" %}
+{% endif %}
+{% endblock %}

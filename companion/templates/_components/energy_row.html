@@ -1,0 +1,10 @@
+<div id="energy-{{ when }}" class="flex items-center gap-3">
+  <span class="text-sm nsls-subtle w-44 shrink-0">{{ label }}</span>
+  <div class="flex gap-1">
+    {% for lvl, lbl in [("low", "Low"), ("medium", "Med"), ("high", "High")] %}
+    <button class="nsls-energy-btn {{ 'is-selected' if value == lvl else '' }}"
+            hx-post="/set-energy" hx-vals='{"level":"{{ lvl }}","when":"{{ when }}"}'
+            hx-target="#energy-{{ when }}" hx-swap="outerHTML">{{ lbl }}</button>
+    {% endfor %}
+  </div>
+</div>

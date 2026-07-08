@@ -1,0 +1,14 @@
+<li class="nsls-row" style="border-top:none; justify-content:space-between;" id="habit-{{ h.id }}">
+  <button hx-post="/tick"
+          hx-vals='{"habit_id":"{{ h.id }}","percent":{{ "0.0" if h.percent == 1.0 else "1.0" }}}'
+          hx-target="#habit-{{ h.id }}"
+          hx-swap="outerHTML"
+          class="flex items-center gap-2 text-left"
+          style="background:none;border:none;cursor:pointer;flex:1;">
+    <span class="nsls-habit-box {% if h.percent == 1.0 %}is-done{% elif h.percent == 0.5 %}is-partial{% endif %}">
+      {% if h.percent == 1.0 %}✓{% elif h.percent == 0.5 %}~{% endif %}
+    </span>
+    <span class="nsls-row-text {% if h.percent == 1.0 %}is-done{% endif %}" style="flex:none;">{{ h.emoji }} {{ h.name }}</span>
+  </button>
+  <span class="text-sm nsls-subtle">{{ h.streak_days }}d{% if h.status == 'at_risk' %} ⚠{% elif h.streak_days >= 7 %} 🔥{% endif %}</span>
+</li>

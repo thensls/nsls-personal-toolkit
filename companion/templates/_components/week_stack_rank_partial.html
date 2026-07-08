@@ -1,0 +1,61 @@
+<!-- Stack rank table partial — used by week_plan step 2 and set-rank HTMX swap -->
+<table class="w-full text-sm" x-data>
+  <thead>
+    <tr class="text-xs text-stone-500 border-b">
+      <th class="px-2 py-1 w-16"></th>
+      <th class="px-2 py-1 text-left w-8">#</th>
+      <th class="px-2 py-1 text-left">Project</th>
+      <th class="px-2 py-1 text-left">LOP</th>
+      <th class="px-2 py-1 text-center">Impact</th>
+      <th class="px-2 py-1 text-center">Effort</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in stack_rank %}
+    {% set proj_display = row.get('project', '') | replace('[[', '') | replace(']]', '') %}
+    <tr class="border-t" data-project="{{ row.get('project', '') }}">
+      <td class="px-2 py-1.5">
+        <div class="flex gap-1">
+          {% if not loop.first %}
+          <button class="w-6 h-6 text-xs rounded bg-stone-100 hover:bg-stone-200 text-stone-500"
+                  @click="
+                    let rows = [...$el.closest('tbody').querySelectorAll('tr')];
+                    let projects = rows.map(r => r.dataset.project);
+                    let idx = {{ loop.index0 }};
+                    [projects[idx-1], projects[idx]] = [projects[idx], projects[idx-1]];
+                    htmx.ajax('POST', '/week/set-rank', {
+                      target: '#stack-rank-area', swap: 'innerHTML',
+                      values: { week: '{{ week_of }}', order: projects.join(',') }
+                    });
+                  "
+                  title="Move up">&uarr;</button>
+          {% else %}
+          <span class="w-6 h-6"></span>
+          {% endif %}
+          {% if not loop.last %}
+          <button class="w-6 h-6 text-xs rounded bg-stone-100 hover:bg-stone-200 text-stone-500"
+                  @click="
+                    let rows = [...$el.closest('tbody').querySelectorAll('tr')];
+                    let projects = rows.map(r => r.dataset.project);
+                    let idx = {{ loop.index0 }};
+                    [projects[idx], projects[idx+1]] = [projects[idx+1], projects[idx]];
+                    htmx.ajax('POST', '/week/set-rank', {
+                      target: '#stack-rank-area', swap: 'innerHTML',
+                      values: { week: '{{ week_of }}', order: projects.join(',') }
+                    });
+                  "
+                  title="Move down">&darr;</button>
+          {% else %}
+          <span class="w-6 h-6"></span>
+          {% endif %}
+        </div>
+      </td>
+      <td class="px-2 py-1.5 text-stone-400 font-mono">{{ row.get('rank', loop.index) }}</td>
+      <td class="px-2 py-1.5 font-medium">{{ proj_display }}</td>
+      <td class="px-2 py-1.5 text-stone-600">{{ row.get('lop', '') }}</td>
+      <td class="px-2 py-1.5 text-center">{{ row.get('impact', '') }}</td>
+      <td class="px-2 py-1.5 text-center">{{ row.get('effort', '') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

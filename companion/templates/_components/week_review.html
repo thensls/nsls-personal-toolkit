@@ -1,0 +1,104 @@
+<!-- Week Review — close-week check-off surface -->
+<div class="max-w-2xl mx-auto space-y-4" data-suppress-sse-reload x-data="weekReview">
+
+<header class="bg-amber-50 border border-amber-200 p-4 rounded">
+  <h2 class="font-semibold">Week Review — {{ week_of }}</h2>
+  <p class="text-sm text-stone-600 mt-1">Mark your Top 3 as done, partial, or missed. Update project statuses below.</p>
+</header>
+
+<!-- Top 3 Tri-State -->
+<section class="bg-white rounded-lg shadow p-5">
+  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">This Week's Top 3</h2>
+  {% if top_3 and top_3|selectattr("text")|list %}
+  <ul class="space-y-3">
+    {% for item in top_3 %}
+      {% if item.text %}
+      <li class="flex items-center gap-3">
+        <div class="flex gap-1">
+          <button class="w-7 h-7 text-xs rounded-full border
+                    {% if item.status == 'missed' %}bg-stone-700 text-white border-stone-700{% else %}bg-white text-stone-400 border-stone-300 hover:bg-stone-100{% endif %}"
+                  hx-post="/week/set-priority-status"
+                  hx-vals='{"index":{{ loop.index0 }},"status":"missed","week":"{{ week_of }}"}'
+                  hx-swap="none"
+                  title="Missed">&#9675;</button>
+          <button class="w-7 h-7 text-xs rounded-full border
+                    {% if item.status == 'partial' %}bg-amber-600 text-white border-amber-600{% else %}bg-white text-stone-400 border-stone-300 hover:bg-stone-100{% endif %}"
+                  hx-post="/week/set-priority-status"
+                  hx-vals='{"index":{{ loop.index0 }},"status":"partial","week":"{{ week_of }}"}'
+                  hx-swap="none"
+                  title="Partial">&#9681;</button>
+          <button class="w-7 h-7 text-xs rounded-full border
+                    {% if item.status == 'done' %}bg-emerald-600 text-white border-emerald-600{% else %}bg-white text-stone-400 border-stone-300 hover:bg-stone-100{% endif %}"
+                  hx-post="/week/set-priority-status"
+                  hx-vals='{"index":{{ loop.index0 }},"status":"done","week":"{{ week_of }}"}'
+                  hx-swap="none"
+                  title="Done">&#9679;</button>
+        </div>
+        <span class="{% if item.status == 'done' %}line-through text-stone-400{% elif item.status == 'partial' %}text-amber-700{% endif %}">{{ item.text }}</span>
+      </li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm text-stone-500">No priorities set for this week.</p>
+  {% endif %}
+</section>
+
+<!-- Stack Rank Status -->
+{% if stack_rank %}
+<section class="bg-white rounded-lg shadow p-5">
+  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Stack Rank Status</h2>
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="text-xs text-stone-500 border-b">
+          <th class="px-2 py-1 text-left w-8">#</th>
+          <th class="px-2 py-1 text-left">Project</th>
+          <th class="px-2 py-1 text-left">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in stack_rank %}
+        <tr class="border-t">
+          <td class="px-2 py-1.5 text-stone-400 font-mono">{{ row.get('rank', loop.index) }}</td>
+          <td class="px-2 py-1.5 font-medium">{{ row.get('project', '') | replace('[[', '') | replace(']]', '') }}</td>
+          <td class="px-2 py-1.5">
+            {% set proj_name = row.get('project', '') %}
+            {% set st = row.get('status', '') %}
+            <select class="text-xs px-2 py-1 rounded border border-stone-200 bg-white
+                      {% if 'on-track' in st %}text-emerald-700
+                      {% elif 'needs-attention' in st %}text-amber-700
+                      {% elif 'stalled' in st %}text-red-700
+                      {% else %}text-stone-600{% endif %}"
+                    hx-post="/week/set-project-status"
+                    hx-vals='{"project":"{{ proj_name | replace("'", "\\'") }}","week":"{{ week_of }}"}'
+                    hx-swap="none"
+                    hx-trigger="change"
+                    name="status">
+              <option value="on-track" {% if 'on-track' in st %}selected{% endif %}>on-track</option>
+              <option value="needs-attention" {% if 'needs-attention' in st %}selected{% endif %}>needs-attention</option>
+              <option value="stalled" {% if 'stalled' in st %}selected{% endif %}>stalled</option>
+            </select>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+
+<!-- Brain Dump -->
+<section class="bg-white rounded-lg shadow p-5">
+  <h2 class="text-sm uppercase tracking-wider text-stone-500 mb-3">Brain Dump</h2>
+  <p class="text-xs text-stone-400 mb-2">End-of-week thoughts (auto-saves)</p>
+  <textarea class="w-full h-32 text-sm border border-stone-200 rounded p-3 focus:ring-1 focus:ring-blue-300 focus:outline-none resize-y"
+            name="content"
+            placeholder="Anything on your mind heading into the weekend..."
+            hx-post="/week/save-section"
+            hx-vals='{"section":"Brain Dump","week":"{{ week_of }}"}'
+            hx-trigger="input changed delay:1500ms"
+            hx-swap="none">{{ sections.get('Brain Dump', '') }}</textarea>
+</section>
+
+</div>

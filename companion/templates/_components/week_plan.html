@@ -1,0 +1,188 @@
+<!-- Week Plan wizard — 5-step Alpine flow for plan-week mode -->
+<div x-data="{ step: 1, selectedMode: '{{ week_mode }}' }" data-suppress-sse-reload
+     class="bg-white rounded-lg shadow p-6 max-w-2xl mx-auto">
+
+  <!-- Progress bar -->
+  <div class="flex gap-1 mb-3">
+    {% for i in range(1, 6) %}
+      <div class="flex-1 h-1 rounded" :class="step >= {{ i }} ? 'bg-blue-900' : 'bg-stone-200'"></div>
+    {% endfor %}
+  </div>
+  <div class="text-xs uppercase text-stone-500 mb-4">Step <span x-text="step"></span> of 5 — Plan Week</div>
+
+  <!-- Step 1: Last week in review (read-only) -->
+  <template x-if="step === 1">
+    <div>
+      <h3 class="font-semibold text-lg mb-3">Last week in review</h3>
+      {% if prev_top_3 %}
+      <div class="mb-4">
+        <h4 class="text-sm font-semibold text-stone-500 mb-2">Previous Top 3</h4>
+        <ul class="space-y-1 text-sm">
+          {% for item in prev_top_3 %}
+          <li class="flex items-start gap-2">
+            <span>{% if item.checked %}&#10003;{% else %}&#9744;{% endif %}</span>
+            <span class="{% if item.checked %}line-through text-stone-400{% endif %}">{{ item.text }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+
+      {% if prev_sections %}
+      {% for key in ['Priorities vs. Reality', 'Priorities vs Reality', 'Achievements', 'Learnings'] %}
+        {% if prev_sections.get(key) %}
+        <div class="mb-4">
+          <h4 class="text-sm font-semibold text-stone-500 mb-1">{{ key }}</h4>
+          <div class="text-sm text-stone-700 whitespace-pre-wrap bg-stone-50 p-3 rounded">{{ prev_sections[key] }}</div>
+        </div>
+        {% endif %}
+      {% endfor %}
+
+      {% set ai_key = "AI Suggested: Next Week's Top 3 (from weekly close)" %}
+      {% if prev_sections.get(ai_key) %}
+      <div class="mb-4">
+        <h4 class="text-sm font-semibold text-stone-500 mb-1">AI Suggested: Next Week</h4>
+        <div class="text-sm text-stone-700 whitespace-pre-wrap bg-stone-50 p-3 rounded">{{ prev_sections[ai_key] }}</div>
+      </div>
+      {% endif %}
+      {% else %}
+      <p class="text-sm text-stone-500 italic">No data from last week. Suggestions will appear here after your first <code>/close-week</code>.</p>
+      {% endif %}
+    </div>
+  </template>
+
+  <!-- Step 2: Stack rank with up/down buttons -->
+  <template x-if="step === 2">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Stack Rank</h3>
+      <p class="text-sm text-stone-600 mb-3">Reorder your projects by priority. Use the arrows to move items up or down.</p>
+      {% if stack_rank %}
+      <div id="stack-rank-area" hx-target="#stack-rank-area" hx-swap="innerHTML">
+        {% include "_components/week_stack_rank_partial.html" %}
+      </div>
+      {% else %}
+      <p class="text-sm text-stone-500 italic">No stack rank table found. The stack rank is written by <code>/open-week</code> during data collection.</p>
+      {% endif %}
+    </div>
+  </template>
+
+  <!-- Step 3: Week mode picker -->
+  <template x-if="step === 3">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Week Mode</h3>
+      <p class="text-sm text-stone-600 mb-4">How are you approaching this week?</p>
+      <div class="grid grid-cols-1 gap-3">
+        <button @click="selectedMode = 'push-to-build'"
+                :class="selectedMode === 'push-to-build' ? 'ring-2 ring-emerald-500 bg-emerald-50' : 'bg-stone-50 hover:bg-stone-100'"
+                class="text-left p-4 rounded-lg border transition"
+                hx-post="/week/set-mode"
+                hx-vals='{"mode":"push-to-build","week":"{{ week_of }}"}'
+                hx-swap="none">
+          <div class="font-semibold text-emerald-800">Push-to-build</div>
+          <p class="text-sm text-stone-600 mt-1">Advancing new capabilities. Building what doesn't exist yet. Expanding scope and ambition.</p>
+        </button>
+        <button @click="selectedMode = 'push-to-close'"
+                :class="selectedMode === 'push-to-close' ? 'ring-2 ring-amber-500 bg-amber-50' : 'bg-stone-50 hover:bg-stone-100'"
+                class="text-left p-4 rounded-lg border transition"
+                hx-post="/week/set-mode"
+                hx-vals='{"mode":"push-to-close","week":"{{ week_of }}"}'
+                hx-swap="none">
+          <div class="font-semibold text-amber-800">Push-to-close</div>
+          <p class="text-sm text-stone-600 mt-1">Finishing what's started. Shipping, closing loops, clearing the backlog. Completion over creation.</p>
+        </button>
+        <button @click="selectedMode = 'protect'"
+                :class="selectedMode === 'protect' ? 'ring-2 ring-violet-500 bg-violet-50' : 'bg-stone-50 hover:bg-stone-100'"
+                class="text-left p-4 rounded-lg border transition"
+                hx-post="/week/set-mode"
+                hx-vals='{"mode":"protect","week":"{{ week_of }}"}'
+                hx-swap="none">
+          <div class="font-semibold text-violet-800">Protect</div>
+          <p class="text-sm text-stone-600 mt-1">Guarding capacity. Fewer meetings, more recovery. Saying no to protect what matters.</p>
+        </button>
+      </div>
+    </div>
+  </template>
+
+  <!-- Step 4: Top 3 + Learning -->
+  <template x-if="step === 4">
+    <div>
+      <h3 class="font-semibold text-lg mb-2">Top 3 for the Week</h3>
+      <p class="text-sm text-stone-600 mb-3">What three things matter most this week?</p>
+      <ol class="space-y-2 mb-6">
+        {% for i in range(3) %}
+          {% set item = top_3_slots[i] if i < top_3_slots|length else {"text": "", "checked": false} %}
+        <li class="flex items-center gap-2">
+          <span class="text-stone-400 text-sm w-4">{{ i + 1 }}.</span>
+          <input type="text"
+                 value="{{ item.text }}"
+                 placeholder="Priority {{ i + 1 }}"
+                 hx-post="/week/set-top-3"
+                 hx-vals='{"index": "{{ i }}", "week": "{{ week_of }}"}'
+                 hx-trigger="change delay:300ms"
+                 name="text"
+                 class="flex-1 border rounded px-3 py-2 text-sm">
+        </li>
+        {% endfor %}
+      </ol>
+
+      {% if sections.get('Learning Plan') %}
+      <div class="border-t pt-4">
+        <h4 class="text-sm font-semibold text-stone-500 mb-2">Learning Plan</h4>
+        <div class="text-sm text-stone-700 whitespace-pre-wrap bg-stone-50 p-3 rounded">{{ sections['Learning Plan'] }}</div>
+      </div>
+      {% endif %}
+    </div>
+  </template>
+
+  <!-- Step 5: Summary + Lock in -->
+  <template x-if="step === 5">
+    <div>
+      <h3 class="font-semibold text-lg mb-3">Summary</h3>
+      <div class="space-y-3 text-sm">
+        <div class="bg-stone-50 p-3 rounded">
+          <div class="text-stone-500 text-xs uppercase mb-1">Mode</div>
+          <div class="font-semibold" x-text="selectedMode ? selectedMode.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : 'Not set'"></div>
+        </div>
+
+        {% if top_3_slots|selectattr("text")|list %}
+        <div class="bg-stone-50 p-3 rounded">
+          <div class="text-stone-500 text-xs uppercase mb-1">Top 3</div>
+          <ol class="list-decimal list-inside">
+            {% for item in top_3_slots %}
+              {% if item.text %}
+              <li>{{ item.text }}</li>
+              {% endif %}
+            {% endfor %}
+          </ol>
+        </div>
+        {% endif %}
+
+        {% if stack_rank %}
+        <div class="bg-stone-50 p-3 rounded">
+          <div class="text-stone-500 text-xs uppercase mb-1">Stack Rank (top 5)</div>
+          <ol class="list-decimal list-inside">
+            {% for row in stack_rank[:5] %}
+            <li>{{ row.get('project', '') | replace('[[', '') | replace(']]', '') }}</li>
+            {% endfor %}
+          </ol>
+        </div>
+        {% endif %}
+      </div>
+
+      <p class="text-sm text-stone-500 mt-4">Locking in sets your week plan as confirmed. You can always reopen by running <code>/open-week</code> again.</p>
+    </div>
+  </template>
+
+  <!-- Navigation -->
+  <div class="mt-6 flex justify-between gap-3">
+    <button @click="step--" :disabled="step <= 1"
+            class="px-4 py-2 border rounded disabled:opacity-30">Back</button>
+    <button @click="step++" x-show="step < 5"
+            class="px-4 py-2 bg-blue-900 text-white rounded">Next</button>
+    <button x-show="step >= 5"
+            hx-post="/week/lock-in"
+            hx-vals='{"week":"{{ week_of }}"}'
+            hx-select="main" hx-target="main" hx-swap="outerHTML"
+            class="px-4 py-2 bg-blue-900 text-white rounded">Lock in</button>
+  </div>
+</div>

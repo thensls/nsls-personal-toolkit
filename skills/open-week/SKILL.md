@@ -734,6 +734,55 @@ The weekly note must include a Learning Plan section after the Top 3:
 - **Goals:** [N] active, [N] inbox links pending
 ```
 
+### Step 5.5: Visual companion handoff
+
+**Resolving the binary path** (same lookup as open-day Step 8):
+```bash
+TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+[ -x "$TC" ] || TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/Scripts/toolkit-companion.exe"  # Windows
+[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+```
+
+**Skip this step entirely if any of these is true:**
+- `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
+- The companion binary cannot be found
+- The companion is not running and cannot be started
+- This is a backfill run (not the current week)
+
+**When visual_mode is on and the companion is running:**
+
+The weekly note was just written in Step 5 with `status: draft` in frontmatter. The companion will show the plan-week wizard.
+
+1. **Open the companion** at `<url>/week?week=YYYY-WNN` (the week being planned):
+   - macOS: `open "<url>/week?week=YYYY-WNN"`
+
+2. **Tell the builder:**
+
+   > A tab opened at `<url>/week`. Review the stack rank, pick your week mode, and set your Top 3. Click **Lock in** when you're ready.
+   >
+   > Say **done** here when you've locked in.
+
+3. **Wait for "done".** Do NOT proceed until the builder explicitly responds. Do NOT treat background hook notifications as user input — only real messages from the builder trigger the next step.
+
+4. **After "done":** Re-read the weekly note. The companion will have set `status: confirmed` via `/week/lock-in`. Extract the confirmed stack rank, mode, and Top 3. Print a brief summary:
+
+   ```
+   Locked in for YYYY-WNN:
+
+   Mode: [Push-to-build / Push-to-close / Protect]
+
+   Top 3:
+     1. <item>
+     2. <item>
+     3. <item>
+
+   Stack rank: [list top 5 projects]
+   ```
+
+   Keep it under 12 lines. Then proceed to Step 6.
+
+**When visual_mode is off:** The builder already reviewed and confirmed in Steps 3-4 via chat. Set `status: confirmed` in the weekly note frontmatter and proceed to Step 6.
+
 ### Step 6: Asana sync
 
 Update Asana to reflect the week plan:

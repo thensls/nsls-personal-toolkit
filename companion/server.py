@@ -1,0 +1,2449 @@
+"""Flask app factory for the NSLS toolkit companion."""
+
+import hashlib
+import math
+import queue
+import re
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from urllib.parse import urlparse
+
+from flask import Flask, Response, render_template, request, stream_with_context
+
+from companion.parsers import (
+    append_day_to_log,
+    parse_daily_note_sections,
+    parse_frontmatter,
+    parse_habits,
+    parse_log,
+    set_frontmatter,
+)
+from companion.safe_write import safe_modify
+from companion.streak import DayResult, compute_concern, status_for, streak_days
+from companion.testmode import is_test_vault
+from companion.week_parsers import (
+    parse_quick_notes,
+    parse_stack_rank_table,
+    parse_week_top_3,
+    parse_weekly_frontmatter,
+    parse_weekly_note_sections,
+    reorder_stack_rank,
+    set_project_status,
+    set_section_content,
+    set_week_top_3_item,
+    set_week_top_3_status,
+    set_weekly_frontmatter,
+    toggle_week_top_3,
+)
+from companion.validation import (
+    HABIT_ID_RE,
+    validate_habit_fields,
+    validate_save,
+    validate_toggle,
+)
+from companion.watcher import VaultWatcher
+
+
+def _serialize_habits(habits: dict) -> str:
+    """Write the habits dict back to canonical markdown format.
+
+    Active section first, then Archived. Each habit is a 5- or 6-line
+    block (id, name, emoji, target, frequency, optional archived_at).
+    """
+    out = ["# Daily Habits", ""]
+    out.append("## Active")
+    out.append("")
+    if not habits["active"]:
+        out.append("(none)")
+        out.append("")
+    else:
+        for h in habits["active"]:
+            out.append(f"- id: {h['id']}")
+            for field in ("name", "emoji", "target", "frequency"):
+                if field in h:
+                    out.append(f"  {field}: {h[field]}")
+            out.append("")
+    out.append("## Archived")
+    out.append("")
+    if not habits["archived"]:
+        out.append("(none yet)")
+        out.append("")
+    else:
+        for h in habits["archived"]:
+            out.append(f"- id: {h['id']}")
+            for field in ("name", "emoji", "target", "frequency", "archived_at"):
+                if field in h:
+                    out.append(f"  {field}: {h[field]}")
+            out.append("")
+    return "\n".join(out)
+
+
+# Per-task progress is stored as a trailing HTML comment (`<!--p:50-->`) so it
+# is invisible in rendered Obsidian but round-trips cleanly. 100% is also
+# represented by `[x]`; partials (25/50/75) keep `[ ]` plus the marker.
+_PROGRESS_RE = re.compile(r"\s*<!--\s*p:(\d{1,3})\s*-->\s*$")
+_VALID_PROGRESS = (0, 25, 50, 75, 100)
+
+
+def _strip_progress(text: str) -> tuple[str, int]:
+    """Split a trailing ``<!--p:NN-->`` marker off item text.
+
+    Returns (clean_text, progress). progress is 0 if no marker.
+    """
+    m = _PROGRESS_RE.search(text)
+    if m:
+        return text[: m.start()].rstrip(), int(m.group(1))
+    return text, 0
+
+
+# Per-task estimated hours (timeboxing) — trailing HTML comment `<!--e:1.5-->`,
+# invisible in rendered Obsidian, same round-trip trick as progress. Decimal
+# hours; stored as entered (trailing zeros trimmed). Not $-anchored so it can be
+# stripped regardless of whether the progress marker sits before or after it.
+_EST_RE = re.compile(r"\s*<!--\s*e:([0-9]*\.?[0-9]+)\s*-->")
+
+
+def _strip_est(text: str) -> tuple[str, float | None]:
+    """Remove every ``<!--e:X-->`` marker (anywhere) from item text.
+
+    Returns (clean_text, hours) with hours=None if no marker. Hand-edited
+    notes can carry duplicate markers; all are removed (so none leak into the
+    visible text) and the last one wins as the value.
+    """
+    hours: float | None = None
+    m = _EST_RE.search(text)
+    while m:
+        hours = float(m.group(1))
+        text = text[: m.start()] + text[m.end():]
+        m = _EST_RE.search(text)
+    return (text.strip(), hours) if hours is not None else (text, None)
+
+
+def _fmt_hours(hours: float) -> str:
+    """Compact hours string: 1.5 -> '1.5', 2.0 -> '2', 0.25 -> '0.25'."""
+    return f"{hours:g}"
+
+
+def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
+    """Extract `1. [x] Foo` / `1. [ ] Foo` / `1. Foo` items under a `### heading`.
+
+    Returns dicts shaped like ``{"text": str, "checked": bool, "progress": int,
+    "est": float | None, "raw_index": int}``.
+    `progress` is 0/25/50/75/100 (100 implied by `[x]`). Tolerates `[X]`.
+    Items without a checkbox are treated as unchecked.
+
+    ``raw_index`` is the item's position counting EVERY list row under the
+    heading (blank slots and dash rows included) — the same counting the
+    Nth-item mutators use. Empty rows are filtered from the returned list, so
+    positions in this list must never be used as write indexes: a blank
+    ``1. [ ]`` slot would shift every write onto the wrong row.
+    """
+    items: list[dict] = []
+    in_section = False
+    raw = -1
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(heading):
+            in_section = True
+            continue
+        if in_section and stripped.startswith("###"):
+            break
+        if not in_section:
+            continue
+        m = _LIST_ITEM_RE.match(line)
+        if not m:
+            continue
+        raw += 1
+        if not stripped[0].isdigit():
+            continue  # dash rows aren't shown, but still occupy a raw slot
+        after_num = m.group(2)
+        checked = False
+        if after_num.startswith("[ ]"):
+            text = after_num[3:].strip()
+        elif after_num[:3].lower() == "[x]":
+            checked = True
+            text = after_num[3:].strip()
+        else:
+            text = after_num
+        text, est = _strip_est(text)
+        text, prog = _strip_progress(text)
+        if text:
+            items.append({
+                "text": text,
+                "checked": checked,
+                "progress": 100 if checked else prog,
+                "est": est,
+                "raw_index": raw,
+            })
+    return items
+
+
+def _extract_numbered_checkbox_list_raw(section: str, heading: str) -> list[dict]:
+    """Like _extract_numbered_checkbox_list but includes empty items.
+
+    Used by plan-action to find cleared slots in the raw markdown.
+    """
+    items: list[dict] = []
+    in_section = False
+    for line in section.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(heading):
+            in_section = True
+            continue
+        if in_section and stripped.startswith("###"):
+            break
+        if in_section and stripped and stripped[0].isdigit():
+            after_num = stripped.split(".", 1)[-1].strip()
+            checked = False
+            if after_num.startswith("[ ]"):
+                text = after_num[3:].strip()
+            elif after_num[:3].lower() == "[x]":
+                checked = True
+                text = after_num[3:].strip()
+            else:
+                text = after_num
+            text, est = _strip_est(text)
+            text, _ = _strip_progress(text)
+            items.append({"text": text, "checked": checked, "est": est})
+    return items
+
+
+def _extract_top_3(morning_section: str) -> list[dict]:
+    return _extract_numbered_checkbox_list(morning_section, "### My Top 3")
+
+
+def _extract_bonus(morning_section: str) -> list[dict]:
+    return _extract_numbered_checkbox_list(morning_section, "### Bonus")
+
+
+def _extract_unplanned(morning_section: str) -> list[dict]:
+    return _extract_numbered_checkbox_list(morning_section, "### Unplanned")
+
+
+_ENERGY_RE = re.compile(r"^-\s*Energy:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+# Matches an Energy bullet whether or not it has a value (so we can replace
+# the empty `- Energy:` the daily-note template seeds, instead of duplicating).
+_ENERGY_LINE_RE = re.compile(r"^\s*-\s*Energy:", re.IGNORECASE)
+
+# The toolkit captures energy twice: morning in Morning Check-in (open-day),
+# evening in End of Day (close-day). Keep them distinct — never conflate.
+_ENERGY_SECTIONS = {"morning": "Morning Check-in", "evening": "End of Day"}
+
+
+def _extract_energy_for(daily_md: str, section_name: str) -> str:
+    """Read the ``- Energy: <value>`` value from a specific section.
+
+    Returns 'low' / 'medium' / 'high', or '' if absent or empty.
+    """
+    body = parse_daily_note_sections(daily_md).get(section_name, "")
+    m = _ENERGY_RE.search(body)
+    if m:
+        val = m.group(1).strip().lower()
+        if val in ("low", "medium", "high"):
+            return val
+    return ""
+
+
+def _set_energy_in_section(md: str, section_name: str, level: str) -> str:
+    """Set ``- Energy: <level>`` inside ``## <section_name>``.
+
+    Replaces an existing Energy bullet (empty or filled) within the section;
+    inserts one right after the heading if none exists; appends the section
+    if it's missing. Never creates a duplicate Energy line.
+    """
+    heading = f"## {section_name}"
+    lines = md.splitlines()
+    energy_line = f"- Energy: {level}"
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            start = i
+            continue
+        if start is not None and line.startswith("## ") and not line.startswith("### "):
+            end = i
+            break
+    if start is None:
+        return md.rstrip("\n") + f"\n\n{heading}\n{energy_line}\n"
+    for i in range(start + 1, end):
+        if _ENERGY_LINE_RE.match(lines[i]):
+            lines[i] = energy_line
+            return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+    lines.insert(start + 1, energy_line)
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+_AI_SUGGEST_HEADING_RE = re.compile(
+    r"^###\s*AI Suggested:\s*(.*?)\s*$", re.IGNORECASE
+)
+# Strip `**bold**` wrappers and `— rationale` / `- rationale` tails so the
+# visible suggestion is just the title. Rationale lives in the daily note for
+# reference; the Plan-Your-Day row stays tidy.
+_AI_ITEM_LEAD_RE = re.compile(r"^\s*\d+\.\s+(.*)$")
+
+
+def _clean_ai_item(raw: str) -> str:
+    text = raw.strip()
+    # Strip leading bold wrappers: **text** … → text …
+    m = re.match(r"^\*\*(.+?)\*\*(.*)$", text)
+    if m:
+        text = (m.group(1) + m.group(2)).strip()
+    # Drop em-dash / hyphen-led rationale tail
+    text = re.split(r"\s+[—–-]\s+", text, maxsplit=1)[0].strip()
+    # Drop any trailing markdown bold markers
+    text = text.strip("*").strip()
+    # Strip surrounding brackets (close-day template uses `[Item]` placeholders)
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1].strip()
+    return text
+
+
+def _extract_ai_suggestions(morning_section: str) -> list[dict]:
+    """Pull items from any `### AI Suggested: …` subsection of Morning Check-in.
+
+    Returns: list of {"text": str, "source": str} preserving discovery order.
+    Empty/template placeholders (`[Item 1]`, etc.) are filtered out so the
+    suggestions table doesn't surface scaffold text.
+    """
+    items: list[dict] = []
+    current_label: str | None = None
+    for raw_line in morning_section.splitlines():
+        stripped = raw_line.strip()
+        m = _AI_SUGGEST_HEADING_RE.match(stripped)
+        if m:
+            label = m.group(1)
+            # Compress verbose suffixes like " (strategic, …)" or " (from … close)"
+            label = re.split(r"\s*\(", label, maxsplit=1)[0].strip()
+            current_label = label or "Top 3"
+            continue
+        if stripped.startswith("### ") or stripped.startswith("## "):
+            current_label = None
+            continue
+        if current_label is None:
+            continue
+        list_m = _AI_ITEM_LEAD_RE.match(raw_line)
+        if not list_m:
+            continue
+        # Pull the carried time estimate (close-day appends <!--e:X--> with the
+        # remaining estimate) BEFORE cleaning — the marker must never surface
+        # as visible text, and it pre-fills the estimate when the item is taken.
+        raw_text, est = _strip_est(list_m.group(1))
+        cleaned = _clean_ai_item(raw_text)
+        if not cleaned:
+            continue
+        # Filter pure scaffold placeholders the close-day template leaves
+        # behind if /close-day didn't fill them.
+        if cleaned.lower().startswith(("item ", "highest-impact item", "task")):
+            continue
+        items.append({"text": cleaned, "source": f"AI: {current_label}", "est": est})
+    return items
+
+
+_SUGGESTION_TAG_RE = re.compile(r"^(optional\s+nsls:|optional:|\(pers\)|pers:)\s*", re.IGNORECASE)
+
+
+def _norm_suggestion(text: str) -> str:
+    """Normalize a suggestion for dedup: drop leading tags ("Optional NSLS:",
+    "(pers)"), a trailing parenthetical ("(~50% done)", "(from …)"), case, and
+    extra whitespace — so the same task surfaced from two sources collapses to
+    one key instead of showing twice."""
+    t = _SUGGESTION_TAG_RE.sub("", text.strip())
+    t = re.sub(r"\s*\([^)]*\)\s*$", "", t)          # trailing (...)
+    return re.sub(r"\s+", " ", t).strip().lower()
+
+
+def _extract_carryovers(vault_path: Path, today: str, lookback_days: int = 7) -> list[dict]:
+    """Find the most recent prior daily note (up to ``lookback_days`` back)
+    and return its unchecked Top 3 + Bonus items as carry-over suggestions.
+
+    Reads the SINGLE most-recent note rather than concatenating multiple days
+    — once a builder has closed Monday's note, Tuesday's open items should
+    drive the suggestions for Wednesday, not Monday's. If no note exists in
+    the lookback window, returns [].
+    """
+    try:
+        base = datetime.strptime(today, "%Y-%m-%d")
+    except ValueError:
+        return []
+    for offset in range(1, lookback_days + 1):
+        candidate = (base - timedelta(days=offset)).date().isoformat()
+        note_path = vault_path / "01-daily" / f"{candidate}.md"
+        if not note_path.exists():
+            continue
+        sections = parse_daily_note_sections(note_path.read_text(encoding="utf-8"))
+        morning = sections.get("Morning Check-in", "")
+        # Don't resurrect items the builder already deleted or completed in the
+        # prior note — they live in that note's `### Deleted` / `### Done`
+        # (companion-written) sections and must not carry over.
+        excluded = {
+            _norm_suggestion(x)
+            for x in (_extract_subsection_items(morning, "Deleted")
+                      | _extract_subsection_items(morning, "Done")
+                      | _extract_subsection_items(morning, "Dismissed"))
+        }
+        items = []
+        for it in _extract_top_3(morning) + _extract_bonus(morning):
+            if it["text"] and not it["checked"] and _norm_suggestion(it["text"]) not in excluded:
+                # Carry the remaining time estimate so taking the suggestion
+                # pre-fills tomorrow's estimate field.
+                items.append({"text": it["text"], "source": f"from {candidate}",
+                              "est": it.get("est")})
+        if items:
+            return items
+    return []
+
+
+def _extract_subsection_items(morning_section: str, heading: str) -> set[str]:
+    """Pull item texts from a `### <heading>` subsection in Morning Check-in.
+
+    `heading` is the bare title (e.g. "Done", "Deleted", "Deferred").
+    """
+    full = f"### {heading}"
+    items: set[str] = set()
+    in_section = False
+    for line in morning_section.splitlines():
+        stripped = line.strip()
+        if stripped == full:
+            in_section = True
+            continue
+        if in_section and stripped.startswith("###"):
+            break
+        if in_section and stripped.startswith("- "):
+            text = stripped[2:].strip()
+            if text:
+                items.add(text)
+    return items
+
+
+def _recent_dispositions(vault_path: Path, today: str, lookback_days: int = 7) -> set[str]:
+    """Normalized texts the builder marked Deleted/Done/Dismissed in the last
+    ``lookback_days`` of daily notes (today excluded — today's sets render as
+    live toggle state instead).
+
+    These are tombstones: a suggestion the builder killed on Tuesday must stay
+    dead on Thursday, even when close-day independently regenerates the same
+    idea from the same underlying signal. Deletion knowledge otherwise lives
+    only in one day's note, so it expired after a single day.
+    """
+    out: set[str] = set()
+    try:
+        base = datetime.strptime(today, "%Y-%m-%d")
+    except ValueError:
+        return out
+    for offset in range(1, lookback_days + 1):
+        candidate = (base - timedelta(days=offset)).date().isoformat()
+        note_path = vault_path / "01-daily" / f"{candidate}.md"
+        if not note_path.exists():
+            continue
+        morning = parse_daily_note_sections(
+            note_path.read_text(encoding="utf-8")
+        ).get("Morning Check-in", "")
+        for heading in ("Deleted", "Done", "Dismissed"):
+            out |= {_norm_suggestion(x)
+                    for x in _extract_subsection_items(morning, heading)}
+    return out
+
+
+def _build_plan_context(daily_md: str, vault_path: Path, today: str,
+                       priorities: list, bonus: list) -> dict:
+    """Build the Plan Your Day screen context: suggestions + carry-overs + taken state.
+
+    Suggestion source: when /close-day seeded `### AI Suggested: …` items, those
+    ARE the curated version of the carry-overs, so we show them *instead of* the
+    raw carry-overs — surfacing both showed every task twice (once reworded by
+    the AI, once raw), which is the duplication builders hit. Carry-overs are the
+    fallback only when there are no AI suggestions. Either way the list is
+    normalize-deduped so near-identical wording collapses to one row.
+    """
+    morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
+    ai_items = _extract_ai_suggestions(morning)
+    carryovers = _extract_carryovers(vault_path, today)
+    done = _extract_subsection_items(morning, "Done")
+    deleted = _extract_subsection_items(morning, "Deleted")
+    deferred = _extract_subsection_items(morning, "Deferred")
+    # Legacy notes used a single `### Dismissed` section for done+delete;
+    # treat those as Done so old items still render.
+    done |= _extract_subsection_items(morning, "Dismissed")
+
+    # Cross-day tombstones: anything deleted/done in the last week stays
+    # buried, even if close-day re-suggested it in today's AI sections.
+    tombstones = _recent_dispositions(vault_path, today)
+
+    seen: set[str] = set()
+    suggestions: list[dict] = []
+    for item in (ai_items if ai_items else carryovers):
+        key = _norm_suggestion(item["text"])
+        if key in seen or key in tombstones:
+            continue
+        seen.add(key)
+        suggestions.append(item)
+
+    priority_texts = {p["text"] for p in priorities if p.get("text")}
+    bonus_texts = {b["text"] for b in bonus if b.get("text")}
+
+    for s in suggestions:
+        if s["text"] in done:
+            s["taken"] = "done"
+        elif s["text"] in deleted:
+            s["taken"] = "deleted"
+        elif s["text"] in deferred:
+            s["taken"] = "deferred"
+        elif s["text"] in priority_texts:
+            s["taken"] = "pri"
+        elif s["text"] in bonus_texts:
+            s["taken"] = "bonus"
+        else:
+            s["taken"] = None
+
+    priorities_with_text = [p for p in priorities if p.get("text")]
+    bonus_with_text = [b for b in bonus if b.get("text")]
+    # Positional Top 3 slots (length 3, empties preserved) so the form renders
+    # slot i ↔ index i. Compacting (priorities_with_text) is what made a value
+    # typed in slot 3 reappear in slot 1 after a re-render.
+    raw_top3 = _extract_numbered_checkbox_list_raw(morning, "### My Top 3")
+    top3_slots = [(raw_top3[i]["text"] if i < len(raw_top3) else "") for i in range(3)]
+    top3_est = [(raw_top3[i].get("est") if i < len(raw_top3) else None) for i in range(3)]
+    return {
+        "suggestions": suggestions,
+        "priorities": priorities_with_text,
+        "top3_slots": top3_slots,
+        "top3_est": top3_est,
+        "bonus": bonus_with_text,
+    }
+
+
+def _add_to_subsection(md: str, heading: str, text: str) -> str:
+    """Append `text` as a `- ` item to `### <heading>` under `## Morning Check-in`.
+
+    Creates the subsection if it doesn't exist, placing it at the end of
+    Morning Check-in. `heading` is the bare title (e.g. "Done", "Deferred").
+    """
+    full = f"### {heading}"
+    lines = md.splitlines()
+    section_idx = None
+    morning_end = len(lines)
+    in_morning = False
+    for i, line in enumerate(lines):
+        if line.strip() == "## Morning Check-in":
+            in_morning = True
+            continue
+        if in_morning and line.startswith("## ") and not line.startswith("### "):
+            morning_end = i
+            break
+        if in_morning and line.strip() == full:
+            section_idx = i
+
+    if section_idx is not None:
+        insert_at = section_idx + 1
+        for j in range(section_idx + 1, morning_end):
+            if lines[j].startswith("### ") or lines[j].startswith("## "):
+                break
+            insert_at = j + 1
+        lines.insert(insert_at, f"- {text}")
+    else:
+        insert_at = morning_end
+        lines.insert(insert_at, "")
+        lines.insert(insert_at + 1, full)
+        lines.insert(insert_at + 2, f"- {text}")
+        lines.insert(insert_at + 3, "")
+
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _remove_from_subsection(md: str, heading: str, text: str) -> str:
+    """Remove `text` from the `### <heading>` subsection; drop the heading if empty."""
+    full = f"### {heading}"
+    lines = md.splitlines()
+    target = f"- {text}"
+    section_start = None
+    section_end = None
+    for i, line in enumerate(lines):
+        if line.strip() == full:
+            section_start = i
+        elif section_start is not None and (line.startswith("### ") or line.startswith("## ")):
+            section_end = i
+            break
+    if section_start is None:
+        return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+    if section_end is None:
+        section_end = len(lines)
+
+    target_idx = None
+    for i in range(section_start + 1, section_end):
+        if lines[i].strip() == target:
+            target_idx = i
+            break
+    if target_idx is None:
+        return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+    del lines[target_idx]
+    section_end -= 1
+
+    remaining = any(
+        lines[j].strip().startswith("- ")
+        for j in range(section_start + 1, section_end)
+    )
+    if not remaining:
+        del lines[section_start]
+        if section_start < len(lines) and lines[section_start].strip() == "":
+            del lines[section_start]
+        if section_start > 0 and lines[section_start - 1].strip() == "":
+            del lines[section_start - 1]
+
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+_LIST_ITEM_RE = re.compile(r"^(\s*(?:\d+\.|-)\s+)(.*)$")
+
+
+def _toggle_nth_checkbox(md: str, heading: str, index: int) -> str:
+    """Toggle the `[ ]` / `[x]` on the Nth (0-indexed) list item under `heading`.
+
+    Items under a level-3 heading like `### My Top 3` are list rows starting
+    with a number-and-period (`1. `) or a dash (`- `). The checkbox marker
+    `[ ]` / `[x]` may be present or absent — older /open-day templates seeded
+    Top 3 and Bonus as plain numbered lists. If the marker is absent we treat
+    the line as unchecked and inject `[x]` (the user just clicked to mark
+    done). Markerless lines still count toward the Nth-item index.
+    """
+    lines = md.splitlines()
+    in_section = False
+    seen = 0
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            in_section = True
+            continue
+        if in_section and line.startswith("### "):
+            break  # next subsection
+        if in_section and line.startswith("## "):
+            break  # next major section
+        if not in_section:
+            continue
+        m = _LIST_ITEM_RE.match(line)
+        if not m:
+            continue
+        prefix, rest = m.group(1), m.group(2)
+        if seen == index:
+            if rest.startswith("[ ]"):
+                lines[i] = prefix + "[x]" + rest[3:]
+            elif rest.startswith("[x]") or rest.startswith("[X]"):
+                lines[i] = prefix + "[ ]" + rest[3:]
+            else:
+                # No marker — inject as checked (user clicked to mark done).
+                lines[i] = prefix + "[x] " + rest
+            break
+        seen += 1
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _set_nth_progress(md: str, heading: str, index: int, level: int) -> str:
+    """Set progress (0/25/50/75/100) on the Nth list item under `heading`.
+
+    100 → `[x]` and no marker; 25/50/75 → `[ ]` + `<!--p:NN-->`; 0 → `[ ]`,
+    marker removed. Preserves the item's text.
+    """
+    lines = md.splitlines()
+    in_section = False
+    seen = 0
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            in_section = True
+            continue
+        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            break
+        if not in_section:
+            continue
+        m = _LIST_ITEM_RE.match(line)
+        if not m:
+            continue
+        if seen == index:
+            prefix, rest = m.group(1), m.group(2)
+            if rest.startswith("[ ]") or rest[:3].lower() == "[x]":
+                rest = rest[3:].lstrip()
+            rest, est = _strip_est(rest)          # preserve the time estimate
+            rest, _ = _strip_progress(rest)
+            box = "[x]" if level == 100 else "[ ]"
+            marker = f" <!--p:{level}-->" if 0 < level < 100 else ""
+            est_marker = f" <!--e:{_fmt_hours(est)}-->" if est else ""
+            lines[i] = f"{prefix}{box} {rest}{marker}{est_marker}".rstrip()
+            break
+        seen += 1
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _set_nth_est(md: str, heading: str, index: int, hours: float | None) -> str:
+    """Set/clear the ``<!--e:X-->`` estimate on the Nth item under `heading`.
+
+    Preserves the item's text, checkbox, and progress marker exactly — only the
+    estimate marker is swapped. ``hours`` None/0 removes the marker.
+    """
+    lines = md.splitlines()
+    in_section = False
+    seen = 0
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            in_section = True
+            continue
+        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            break
+        if not in_section:
+            continue
+        m = _LIST_ITEM_RE.match(line)
+        if not m:
+            continue
+        if seen == index:
+            prefix, rest = m.group(1), m.group(2)
+            rest, _ = _strip_est(rest)            # drop any existing estimate, keep the rest
+            est_marker = f" <!--e:{_fmt_hours(hours)}-->" if hours else ""
+            lines[i] = f"{prefix}{rest}{est_marker}".rstrip()
+            break
+        seen += 1
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _remove_nth_item(md: str, heading: str, index: int) -> str:
+    """Remove the Nth list item under `heading`, renumbering numbered rows."""
+    lines = md.splitlines()
+    in_section = False
+    seen = 0
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            in_section = True
+            continue
+        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            break
+        if not in_section:
+            continue
+        if _LIST_ITEM_RE.match(line):
+            if seen == index:
+                del lines[i]
+                ren = 0
+                for j in range(i, len(lines)):
+                    if lines[j].startswith("### ") or lines[j].startswith("## "):
+                        break
+                    pm = re.match(r"^(\s*)(\d+\.|-)\s+", lines[j])
+                    if pm:
+                        if pm.group(2) != "-":
+                            lines[j] = f"{ren + 1}. {lines[j][pm.end():]}"
+                        ren += 1
+                break
+            seen += 1
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _extract_carryover_texts(daily_md: str) -> set[str]:
+    """Texts of `- ` items in the top-level `## Carrying Over` section."""
+    out: set[str] = set()
+    in_section = False
+    for line in daily_md.splitlines():
+        if line.strip() == "## Carrying Over":
+            in_section = True
+            continue
+        if in_section and line.startswith("## ") and not line.startswith("### "):
+            break
+        if in_section and line.strip().startswith("- "):
+            t = line.strip()[2:].strip()
+            if t:
+                out.add(t)
+    return out
+
+
+def _add_carryover(md: str, text: str) -> str:
+    """Add `- text` to `## Carrying Over` (create the section if missing; no dup)."""
+    heading = "## Carrying Over"
+    item = f"- {text}"
+    lines = md.splitlines()
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            start = i
+            continue
+        if start is not None and line.startswith("## ") and not line.startswith("### "):
+            end = i
+            break
+    if start is None:
+        return md.rstrip("\n") + f"\n\n{heading}\n{item}\n"
+    for i in range(start + 1, end):
+        if lines[i].strip() == item:
+            return md  # already present
+    last = start
+    for i in range(start + 1, end):
+        if lines[i].strip():
+            last = i
+    lines.insert(last + 1, item)
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _remove_carryover(md: str, text: str) -> str:
+    """Remove `- text` from `## Carrying Over`."""
+    item = f"- {text}"
+    lines = md.splitlines()
+    in_section = False
+    for i, line in enumerate(lines):
+        if line.strip() == "## Carrying Over":
+            in_section = True
+            continue
+        if in_section and line.startswith("## ") and not line.startswith("### "):
+            break
+        if in_section and line.strip() == item:
+            del lines[i]
+            break
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+_DAILY_NOTE_SCAFFOLD = """---
+status: planning
+---
+# Daily Note
+
+## Morning Check-in
+
+### My Top 3
+1. [ ]
+2. [ ]
+3. [ ]
+
+### Bonus
+
+### Habits
+"""
+
+
+def _ensure_daily_note_scaffold(path: Path) -> None:
+    """Create today's daily note with empty Top 3 / Bonus slots if missing.
+
+    Idempotent — does nothing if the file already exists. Lets the companion
+    serve as the morning planning surface for users who haven't run /open-day
+    yet (or who prefer to plan visually).
+    """
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_DAILY_NOTE_SCAFFOLD, encoding="utf-8", newline="")
+
+
+def _count_section_list_rows(md: str, heading: str) -> int:
+    """Raw slot count under `heading`: every list row (numbered or dash,
+    blank or filled) — the same counting the Nth-item mutators use."""
+    in_section = False
+    count = 0
+    for line in md.splitlines():
+        if line.strip() == heading:
+            in_section = True
+            continue
+        if in_section and (line.startswith("### ") or line.startswith("## ")):
+            break
+        if in_section and _LIST_ITEM_RE.match(line):
+            count += 1
+    return count
+
+
+def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
+    """Replace the text of the Nth (0-indexed) item under `heading`, preserving
+    its `[ ]` / `[x]` checkbox marker. If fewer than N+1 items exist, append
+    blank items until index N is present, then set its text.
+
+    Items are numbered list rows (`1. `) or dash rows (`- `). Lines without a
+    marker get one injected (`[ ]`) so subsequent toggle clicks work.
+
+    The heading is resolved INSIDE ``## Morning Check-in`` when that section
+    exists — the readers (_extract_top_3/_extract_bonus/_extract_unplanned)
+    only look there, so writing to a same-named heading elsewhere in the note
+    (e.g. an `### Unplanned` a close pass left under `## End of Day`) makes
+    the write invisible: the UI re-renders empty and every retry overwrites
+    the same unseen row. If the heading is missing within Morning Check-in,
+    it is created at the END of Morning Check-in, not at the end of the note.
+    """
+    lines = md.splitlines()
+
+    # Bound the search to ## Morning Check-in when present.
+    bound_start, bound_end = 0, len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == "## Morning Check-in":
+            bound_start = i + 1
+            for j in range(bound_start, len(lines)):
+                if lines[j].startswith("## ") and not lines[j].startswith("### "):
+                    bound_end = j
+                    break
+            break
+
+    section_start = None
+    section_end = bound_end
+    for i in range(bound_start, bound_end):
+        line = lines[i]
+        if section_start is None:
+            if line.strip() == heading:
+                section_start = i
+            continue
+        if line.startswith("### ") or line.startswith("## "):
+            section_end = i
+            break
+
+    if section_start is None:
+        # Heading missing — create it at the end of Morning Check-in (or the
+        # end of the note when there's no Morning Check-in to anchor to).
+        # Honor `index`: emit blank rows for slots 0..index-1 so `text` lands
+        # at the requested position (matches the append branch's contract).
+        block = [heading]
+        block += [f"{n}. [ ] " for n in range(1, index + 1)]
+        block += [f"{index + 1}. [ ] {text}", ""]
+        if bound_end < len(lines):
+            insert_at = bound_end
+            # keep one blank line before the next `## ` section
+            new_lines = lines[:insert_at] + [""] + block if (insert_at and lines[insert_at - 1].strip()) else lines[:insert_at] + block
+            return "\n".join(new_lines + lines[insert_at:]) + ("\n" if md.endswith("\n") else "")
+        return md.rstrip("\n") + "\n\n" + "\n".join(block) + "\n"
+
+    # Walk items within the section
+    item_indices: list[int] = []
+    for i in range(section_start + 1, section_end):
+        if _LIST_ITEM_RE.match(lines[i]):
+            item_indices.append(i)
+
+    def _format_item(n: int, body_text: str) -> str:
+        return f"{n}. [ ] {body_text}"
+
+    if index < len(item_indices):
+        # Replace existing Nth item; preserve marker (or inject `[ ]` if missing)
+        target_line = lines[item_indices[index]]
+        m = _LIST_ITEM_RE.match(target_line)
+        prefix, rest = m.group(1), m.group(2)
+        has_box = rest[:3] in ("[ ]", "[x]", "[X]")
+        marker = rest[:3] if has_box else "[ ]"
+        body = rest[3:] if has_box else rest
+        existing_text = re.sub(r"<!--[pe]:.*?-->", "", body).strip()
+        # Preserve trailing progress/estimate markers ONLY when the title is
+        # unchanged (e.g. a checkbox toggle re-writing the same text). A genuine
+        # rename — or a cleared slot reused by a new task — must NOT inherit the
+        # previous task's progress/estimate, which would misstate its state.
+        if existing_text == text.strip():
+            markers = re.findall(r"<!--[pe]:.*?-->", body)
+            suffix = (" " + " ".join(markers)) if markers else ""
+        else:
+            suffix = ""
+        lines[item_indices[index]] = f"{prefix}{marker} {text}".rstrip() + suffix
+    else:
+        # Append blank items up to and including the target index
+        insertion_point = item_indices[-1] + 1 if item_indices else section_start + 1
+        new_lines = []
+        for n in range(len(item_indices), index + 1):
+            body = text if n == index else ""
+            new_lines.append(_format_item(n + 1, body).rstrip())
+        # Insert without trailing blank shift
+        lines[insertion_point:insertion_point] = new_lines
+
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
+def _replace_section_body(md: str, section_name: str, new_body: str) -> str:
+    """Replace the body of `## <section_name>` with new_body, preserving
+    surrounding sections. If section doesn't exist, append it at the end.
+    """
+    heading = f"## {section_name}"
+    lines = md.splitlines()
+    start = None
+    end = len(lines)
+    for i, line in enumerate(lines):
+        if line.strip() == heading:
+            start = i
+            continue
+        if start is not None and line.startswith("## ") and not line.startswith("### "):
+            end = i
+            break
+    new_block = [heading, "", new_body.rstrip(), ""]
+    if start is None:
+        return md.rstrip("\n") + "\n\n" + "\n".join(new_block) + "\n"
+    return "\n".join(lines[:start] + new_block + lines[end:]) + ("\n" if md.endswith("\n") else "")
+
+
+def _habit_state_for(app, habit_id: str, today: str, percent: float) -> dict:
+    """Build the dict expected by _components/habit_row.html for a single habit."""
+    habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+    log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
+    habits = (
+        parse_habits(habits_path.read_text(encoding="utf-8"))
+        if habits_path.exists()
+        else {"active": [], "archived": []}
+    )
+    log = parse_log(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
+
+    habit = next((h for h in habits["active"] if h["id"] == habit_id), None)
+    if habit is None:
+        return {
+            "id": habit_id, "name": "", "emoji": "", "percent": percent,
+            "streak_days": 0, "status": "ok",
+        }
+    habit_log = [
+        DayResult(d["date"], d["ticks"].get(habit_id, 0.0))
+        for d in log
+        if habit_id in d["ticks"]
+    ]
+    return {
+        "id": habit["id"],
+        "name": habit["name"],
+        "emoji": habit.get("emoji", ""),
+        "percent": percent,
+        "streak_days": streak_days(habit_log, today),
+        "status": status_for(compute_concern(habit_log, today)),
+    }
+
+
+def _detect_day_state(daily_md: str, top_3: list) -> str:
+    """Return one of 'coach-morning', 'command', 'coach-evening', 'results'.
+
+    Prefers the explicit ``status:`` frontmatter (planning|active|closed) when
+    present — that contract kills the section-presence fragility that flipped
+    Command Center → results mid-day. Falls back to the legacy inference when
+    ``status`` is absent or unrecognised, so notes written before this change
+    still open correctly.
+
+    Status mapping:
+      - closed   → 'results'
+      - active   → 'command', unless close-day has begun (an `## Insight
+                   Reflection` heading is present) → 'coach-evening'
+      - planning → 'coach-morning'
+
+    Legacy inference (no/unknown status):
+      - `## Insight Reflection` body has content → 'results' (day is closed).
+      - `## Insight Reflection` heading exists but body is empty → 'coach-evening'.
+      - Every RAW Top 3 slot is filled → 'command' (Command Center). Raw slots,
+        not the compacted list: extraction drops blank rows, so "all items have
+        text" was vacuously true once ONE slot was filled and the view jumped to
+        Command Center mid-planning. Planning must never leave Plan-your-day
+        until the explicit Done/lock-in click (or the plan is genuinely full).
+      - Else → 'coach-morning' (no note yet, or Top 3 missing/partially filled).
+    """
+    sections = parse_daily_note_sections(daily_md)
+    status = parse_frontmatter(daily_md).get("status", "")
+
+    if status == "closed":
+        return "results"
+    if status == "active":
+        # Command Center — unless the close pass has started (close-day injects
+        # an `## Insight Reflection` heading before the day is committed closed).
+        if "Insight Reflection" in sections:
+            return "coach-evening"
+        return "command"
+    if status == "planning":
+        return "coach-morning"
+
+    # No (or unrecognised) status → legacy section/Top-3 inference.
+    insight = sections.get("Insight Reflection", "").strip()
+    if insight:
+        return "results"
+    if "Insight Reflection" in sections:
+        return "coach-evening"
+    raw_top3 = _extract_numbered_checkbox_list_raw(
+        sections.get("Morning Check-in", ""), "### My Top 3"
+    )
+    if raw_top3 and all(it["text"] for it in raw_top3):
+        return "command"
+    return "coach-morning"
+
+
+def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str) -> dict:
+    """Assemble template context shared by all four day-tab modes.
+
+    ``today`` is the note date being served — via ``?date=`` it can be a past
+    day (close-day catching up on a day that wasn't closed same-day).
+    ``is_today`` lets templates drop the "Today —" framing for past dates.
+    """
+    is_today = today == date.today().isoformat()
+    try:
+        today_pretty = datetime.strptime(today, "%Y-%m-%d").strftime("%A, %B %-d, %Y")
+    except ValueError:
+        today_pretty = datetime.strptime(today, "%Y-%m-%d").strftime("%A, %B %d, %Y")
+
+    habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+    log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
+    habits = (
+        parse_habits(habits_path.read_text(encoding="utf-8"))
+        if habits_path.exists()
+        else {"active": [], "archived": []}
+    )
+    log = parse_log(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
+    today_log = next((r["ticks"] for r in log if r["date"] == today), {})
+
+    habits_today = []
+    for h in habits["active"]:
+        habit_log = [
+            DayResult(d["date"], d["ticks"].get(h["id"], 0.0))
+            for d in log
+            if h["id"] in d["ticks"]
+        ]
+        habits_today.append({
+            "id": h["id"],
+            "name": h["name"],
+            "emoji": h.get("emoji", ""),
+            "percent": today_log.get(h["id"], 0.0),
+            "streak_days": streak_days(habit_log, today),
+            "status": status_for(compute_concern(habit_log, today)),
+        })
+
+    # Stats for evening modes / results
+    top_3_done = sum(1 for t in top_3 if t.get("checked"))
+    habits_done = sum(1 for h in habits_today if h["percent"] >= 1.0)
+    stats = {
+        "top_3_done": top_3_done,
+        "top_3_total": len(top_3),
+        "habits_done": habits_done,
+        "habits_total": len(habits["active"]),
+        "focus_hours": 0,  # Phase 2 — focus blocks not yet tracked
+        "streak_days": max((h["streak_days"] for h in habits_today), default=0),
+    }
+
+    try:
+        step = int(request.args.get("step", 1))
+    except (TypeError, ValueError):
+        step = 1
+
+    # Coach Cards always renders 3 Top 3 + 3 Bonus input rows so the user
+    # can start typing even on a fresh vault (auto-save creates the note).
+    top_3_slots = list(top_3) + [{"text": "", "checked": False}] * max(0, 3 - len(top_3))
+    bonus_slots = list(bonus) + [{"text": "", "checked": False}] * max(0, 3 - len(bonus))
+
+    plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus)
+
+    # Unplanned items live under ### Unplanned in Morning Check-in
+    sections = parse_daily_note_sections(daily_md)
+    morning = sections.get("Morning Check-in", "")
+    unplanned = _extract_unplanned(morning)
+
+    # Annotate Top 3 / Bonus items with their raw row index (what the Nth-item
+    # mutators count — blank slots included) + marked-for-deletion state so the
+    # task_list partial can render progress + delete controls.
+    deleted_texts = _extract_subsection_items(morning, "Deleted")
+    for it in top_3 + bonus:
+        it["index"] = it["raw_index"]
+        it["deleted"] = it["text"] in deleted_texts
+
+    # Energy is captured twice: morning (Morning Check-in) and evening (End of Day).
+    morning_energy = _extract_energy_for(daily_md, "Morning Check-in")
+    evening_energy = _extract_energy_for(daily_md, "End of Day")
+
+    return {
+        "today": today,
+        "today_pretty": today_pretty,
+        "is_today": is_today,
+        "note_md": daily_md,
+        "top_3": top_3,
+        "top_3_slots": top_3_slots[:3],
+        "bonus": bonus,
+        "bonus_slots": bonus_slots[:3],
+        "bonus_text": "\n".join(b["text"] for b in bonus),
+        "unplanned": unplanned,
+        "morning_energy": morning_energy,
+        "evening_energy": evening_energy,
+        "habits_today": habits_today,
+        "active_habits": habits["active"],
+        "focus_blocks": [],  # Phase 2
+        "stats": stats,
+        "step": step,
+        "plan": plan,
+    }
+
+
+def _detect_week_state(weekly_md: str) -> str:
+    """Unified mode detection for weekly companion views.
+
+    Uses frontmatter ``status:`` field:
+      - closed    -> week-results (close-week completed)
+      - confirmed -> week-command (open-week completed, locked in)
+      - anything else (draft, editing, or missing) -> plan-week
+    """
+    fm = parse_weekly_frontmatter(weekly_md)
+    status = fm.get("status", "")
+    if status == "closed":
+        return "week-results"
+    if status == "confirmed":
+        return "week-command"
+    return "plan-week"
+
+
+def create_app(vault_path: str) -> Flask:
+    app = Flask(__name__)
+    app.config["VAULT_PATH"] = Path(vault_path)
+    # TEST mode is derived from the vault being served (a directory named
+    # `companion-test-vault`), never passed in separately — so the TEST marker
+    # is impossible to spoof off and can never lie about which data is real.
+    app.config["TEST_MODE"] = is_test_vault(vault_path)
+
+    @app.context_processor
+    def _inject_test_mode():
+        # Makes `test_mode` available to every template (base.html's TEST bar,
+        # day.html's TEST flag) without threading it through each render call.
+        return {"test_mode": app.config["TEST_MODE"]}
+    # Pick up template edits on the next request without a server restart. The
+    # server runs with debug=off (no auto-reloader), so without this a template
+    # change is invisible until the process is restarted — the recurring "stale
+    # server" gotcha. The per-request stat cost is negligible for a localhost,
+    # single-user tool. Static files (CSS/JS) are always re-read from disk;
+    # hard-refresh (Cmd+Shift+R) if the browser cached an old stylesheet.
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.jinja_env.auto_reload = True
+
+    @app.before_request
+    def _reject_cross_origin_posts():
+        """CSRF guard. The companion binds localhost, but any web page the
+        user visits can still form-POST to http://localhost:<port>/ and
+        mutate the vault. Browsers attach an Origin header to cross-site
+        POSTs — reject when it names a different host than the one we're
+        being addressed as. Same-origin browser posts match; non-browser
+        clients (curl, skills, tests) send no Origin and pass."""
+        if request.method != "POST":
+            return None
+        origin = request.headers.get("Origin")
+        if not origin:
+            return None
+        if urlparse(origin).netloc != request.host:
+            return ("cross-origin request rejected", 403)
+        return None
+
+    subscribers: list[queue.Queue] = []
+    last_hashes: dict[str, str] = {}  # relpath -> sha256[:16] of last broadcast
+
+    def _target_date() -> str:
+        """Return the target date from ?date= query param or form field, default today.
+
+        Accepts YYYY-MM-DD format. Invalid values fall back to today.
+        """
+        raw = request.values.get("date", "").strip()
+        if raw:
+            try:
+                date.fromisoformat(raw)
+                return raw
+            except ValueError:
+                pass
+        return date.today().isoformat()
+
+    @app.route("/")
+    def index():
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
+
+        # Extract sections from the Morning Check-in block
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus = _extract_bonus(morning)
+        insight_reflection_text = sections.get("Insight Reflection", "").strip()
+        gratitude_text = sections.get("Gratitude", "").strip()
+        daily_insight_text = sections.get("Daily Insight", "").strip()
+
+        # User override → respected; otherwise auto-detect
+        mode_override = request.args.get("mode")
+        closing = request.args.get("closing") == "1"
+        mode = mode_override or _detect_day_state(daily_md, top_3)
+        if closing and not mode_override:
+            # /close-day handshake: hard-force the closing Command Center
+            # view. Without this, a note still at `status: planning` (the
+            # builder never locked in) bounces to Plan-your-day mid-close.
+            # An already-closed day stays read-only on Results.
+            mode = "results" if mode == "results" else "command"
+
+        ctx = _build_day_context(app, daily_md, top_3, bonus, today)
+        ctx["insight_reflection_text"] = insight_reflection_text
+        ctx["gratitude_text"] = gratitude_text
+        ctx["daily_insight_text"] = daily_insight_text
+        ctx["mode"] = mode
+        # `?closing=1` (set by /close-day when it sends the user here to mark
+        # progress) swaps the Command Center's top "come back any time" banner
+        # for a bottom "type done to close your day" line.
+        ctx["closing"] = closing
+        # Day status drives the state-aware Command Center banner: `planning`
+        # still tells the user to type `done`; `active` means the day is open
+        # and the banner just invites them to mark progress (no stale "type
+        # done" instruction). Read straight from the note's frontmatter.
+        ctx["day_status"] = parse_frontmatter(daily_md).get("status", "")
+
+        return render_template("day.html", **ctx)
+
+    def _week_of() -> str:
+        """Return the week identifier from ?week= query param or derive from target date."""
+        week_param = request.values.get("week", "").strip()
+        if week_param:
+            return week_param
+        y, w, _ = date.fromisoformat(_target_date()).isocalendar()
+        return f"{y}-W{w:02d}"
+
+    @app.route("/week")
+    def week():
+        week_of = _week_of()
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        week_md = path.read_text(encoding="utf-8") if path.exists() else ""
+
+        mode_override = request.args.get("mode")
+        auto_mode = _detect_week_state(week_md)
+        # week-review override is respected UNLESS status: closed (auto-detect wins)
+        if mode_override == "week-review" and auto_mode != "week-results":
+            mode = "week-review"
+        else:
+            mode = mode_override or auto_mode
+
+        # Parse weekly note content
+        fm = parse_weekly_frontmatter(week_md)
+        sections = parse_weekly_note_sections(week_md)
+        stack_rank = parse_stack_rank_table(week_md)
+        top_3 = parse_week_top_3(week_md)
+
+        # Pad top_3 to 3 slots for the template
+        top_3_slots = list(top_3) + [{"text": "", "checked": False}] * max(0, 3 - len(top_3))
+
+        # Previous week data for plan-week step 1
+        prev_week_md = ""
+        prev_sections: dict = {}
+        prev_top_3: list = []
+        if mode == "plan-week":
+            # Try to find the previous week's note
+            try:
+                y = int(week_of[:4])
+                w = int(week_of.split("W")[1])
+                if w > 1:
+                    prev_key = f"{y}-W{w - 1:02d}"
+                else:
+                    prev_key = f"{y - 1}-W52"
+                prev_path = app.config["VAULT_PATH"] / "02-weekly" / f"{prev_key}.md"
+                if prev_path.exists():
+                    prev_week_md = prev_path.read_text(encoding="utf-8")
+                    prev_sections = parse_weekly_note_sections(prev_week_md)
+                    prev_top_3 = parse_week_top_3(prev_week_md)
+            except (ValueError, IndexError):
+                pass
+
+        # Mode badge text
+        week_mode = fm.get("mode", "")
+        mode_labels = {
+            "push-to-build": "Push-to-build",
+            "push-to-close": "Push-to-close",
+            "protect": "Protect",
+        }
+        mode_badge = mode_labels.get(week_mode, week_mode.replace("-", " ").title() if week_mode else "")
+
+        ctx = {
+            "week_md": week_md,
+            "week_of": week_of,
+            "mode": mode,
+            "fm": fm,
+            "sections": sections,
+            "stack_rank": stack_rank,
+            "top_3": top_3,
+            "top_3_slots": top_3_slots[:3],
+            "week_mode": week_mode,
+            "mode_badge": mode_badge,
+            "prev_week_md": prev_week_md,
+            "prev_sections": prev_sections,
+            "prev_top_3": prev_top_3,
+        }
+        return render_template("week.html", **ctx)
+
+    @app.route("/streaks")
+    def streaks():
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
+        habits = (
+            parse_habits(habits_path.read_text(encoding="utf-8"))
+            if habits_path.exists()
+            else {"active": [], "archived": []}
+        )
+        log = parse_log(log_path.read_text(encoding="utf-8")) if log_path.exists() else []
+
+        today = date.fromisoformat(_target_date())
+        rows = []
+        for h in habits["active"]:
+            habit_log = [
+                DayResult(d["date"], d["ticks"].get(h["id"], 0.0))
+                for d in log
+                if h["id"] in d["ticks"]
+            ]
+            cells = []
+            for i in range(29, -1, -1):
+                day = (today - timedelta(days=i)).isoformat()
+                pct = next(
+                    (d["ticks"].get(h["id"]) for d in log if d["date"] == day),
+                    None,
+                )
+                cells.append({"date": day, "percent": pct})
+            concern = compute_concern(habit_log, today.isoformat())
+            rows.append({
+                "habit": h,
+                "streak_days": streak_days(habit_log, today.isoformat()),
+                "concern": concern,
+                "status": status_for(concern),
+                "cells": cells,
+            })
+        return render_template("streaks.html", today=today.isoformat(), rows=rows)
+
+    @app.route("/lock-in", methods=["POST"])
+    def lock_in():
+        """Transition the view from Coach Cards to the next state.
+
+        This is the explicit save moment for the day's lifecycle status:
+        the morning "Lock in →" commits ``status: active`` and the evening
+        "Done" commits ``status: closed``. The status is the contract both the
+        web companion and the cowork artifact read to pick a mode, so we write
+        it once here rather than inferring it from section presence.
+        """
+        phase = request.form.get("phase", "morning")
+        target_mode = "command" if phase == "morning" else "results"
+        target_status = "active" if phase == "morning" else "closed"
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if note_path.exists():
+            safe_modify(note_path, lambda md: set_frontmatter(md, "status", target_status))
+            broadcast(f"01-daily/{today}.md")
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus = _extract_bonus(morning)
+
+        ctx = _build_day_context(app, daily_md, top_3, bonus, today)
+        ctx["insight_reflection_text"] = sections.get("Insight Reflection", "").strip()
+        ctx["gratitude_text"] = sections.get("Gratitude", "").strip()
+        ctx["daily_insight_text"] = sections.get("Daily Insight", "").strip()
+        ctx["mode"] = target_mode
+        return render_template("day.html", **ctx)
+
+    @app.route("/events")
+    def events():
+        if len(subscribers) >= 10:
+            return ("too many subscribers", 429)
+        q: queue.Queue = queue.Queue()
+        subscribers.append(q)
+
+        def stream():
+            try:
+                # Flush a greeting immediately. Without any bytes, werkzeug
+                # never sends the response headers while the generator blocks
+                # on q.get(), so the browser's EventSource never fires `open`
+                # — and the client's reconnected-after-restart reload (which
+                # rescues stale tabs) never triggers. An SSE comment line is
+                # invisible to onmessage.
+                yield ": connected\n\n"
+                while True:
+                    msg = q.get()
+                    yield f"data: {msg}\n\n"
+            finally:
+                try:
+                    subscribers.remove(q)
+                except ValueError:
+                    pass
+
+        return Response(stream_with_context(stream()), mimetype="text/event-stream")
+
+    def broadcast(relpath: str) -> None:
+        # Content-hash dedup: skip if the file's content hasn't changed since
+        # the last broadcast. Prevents iCloud-echo reload storms when the
+        # same write propagates back through sync.
+        full_path = app.config["VAULT_PATH"] / relpath
+        try:
+            data = full_path.read_bytes()
+        except FileNotFoundError:
+            return
+        digest = hashlib.sha256(data).hexdigest()[:16]
+        if last_hashes.get(relpath) == digest:
+            return
+        last_hashes[relpath] = digest
+        dead: list[queue.Queue] = []
+        for q in list(subscribers):
+            try:
+                q.put_nowait(relpath)
+            except queue.Full:
+                dead.append(q)
+        for q in dead:
+            try:
+                subscribers.remove(q)
+            except ValueError:
+                pass
+
+    app.config["BROADCAST"] = broadcast
+
+    @app.route("/tick", methods=["POST"])
+    def tick():
+        habit_id = request.form.get("habit_id", "").strip()
+        if not HABIT_ID_RE.fullmatch(habit_id):
+            return ("invalid habit_id", 400)
+        try:
+            percent = float(request.form.get("percent", ""))
+        except ValueError:
+            return ("invalid percent", 400)
+        if percent not in (0.0, 0.5, 1.0):
+            return ("percent must be 0.0 / 0.5 / 1.0", 400)
+
+        # Only ids declared in habits.md's Active list may enter log.md — a
+        # stray programmatic POST must not mint phantom habits (they'd grow
+        # streaks and corrupt close-day's Step 3.5 reconciliation).
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        habits = (
+            parse_habits(habits_path.read_text(encoding="utf-8"))
+            if habits_path.exists()
+            else {"active": [], "archived": []}
+        )
+        if not any(h["id"] == habit_id for h in habits["active"]):
+            return ("unknown habit_id — not an active habit in habits.md", 400)
+
+        today = _target_date()
+        log_path = app.config["VAULT_PATH"] / "30-habits" / "log.md"
+
+        def merge(existing: str) -> str:
+            rows = parse_log(existing)
+            today_ticks = next(
+                (r["ticks"] for r in rows if r["date"] == today), {}
+            )
+            today_ticks[habit_id] = percent
+            return append_day_to_log(existing, today, today_ticks)
+
+        safe_modify(log_path, merge)
+        broadcast("30-habits/log.md")
+        return render_template(
+            "_components/habit_row.html",
+            h=_habit_state_for(app, habit_id, today, percent),
+        )
+
+    @app.route("/toggle", methods=["POST"])
+    def toggle():
+        try:
+            section, index = validate_toggle(request.form)
+        except ValueError as e:
+            return (str(e), 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        heading = "### My Top 3" if section == "top_3" else "### Bonus"
+
+        def toggle_in_section(existing: str) -> str:
+            return _toggle_nth_checkbox(existing, heading, index)
+
+        safe_modify(note_path, toggle_in_section)
+        broadcast(f"01-daily/{today}.md")
+        return ("", 204)
+
+    @app.route("/save", methods=["POST"])
+    def save():
+        try:
+            section, content = validate_save(request.form)
+        except ValueError as e:
+            return (str(e), 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def replace_section(existing: str) -> str:
+            return _replace_section_body(existing, section, content)
+
+        safe_modify(note_path, replace_section)
+        broadcast(f"01-daily/{today}.md")
+        return ("", 204)
+
+    def _render_bonus_list(today: str, focus_add: bool = False):
+        """Re-render just the bonus list partial (id=bonus-list) for the
+        add/delete flows, leaving the Top 3 inputs untouched. When focus_add
+        is set, the partial includes a one-shot script that focuses the empty
+        'add' input after the swap, so the user can keep typing items without
+        Tab/Enter dumping focus onto the Reset button."""
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/bonus_list.html", plan=plan, focus_add=focus_add)
+
+    @app.route("/set-top-3", methods=["POST"])
+    def set_top_3():
+        # Save silently (204, no DOM swap) — re-rendering the form mid-typing
+        # destroyed focus and wiped the field the user had tabbed into.
+        return _set_morning_item("### My Top 3", "top_3", rerender_partial=False)
+
+    @app.route("/set-bonus", methods=["POST"])
+    def set_bonus():
+        # Existing bonus inputs save with hx-swap="none" and ignore this body;
+        # the trailing "add" input targets #bonus-list to surface a fresh slot.
+        resp = _set_morning_item("### Bonus", "bonus", rerender_partial=False)
+        if isinstance(resp, tuple) and resp[1] != 204:
+            return resp  # validation error — pass through
+        # Focus the fresh add slot only when the user added a brand-new item
+        # (the trailing add input, index == current count) so Tab/Enter keeps
+        # them typing instead of jumping to Reset. Editing an existing item
+        # (lower index) saves silently and shouldn't steal focus.
+        try:
+            idx = int(request.form.get("index", "-1"))
+        except (TypeError, ValueError):
+            idx = -1
+        bonus_count = len(_extract_bonus(
+            parse_daily_note_sections(
+                (app.config["VAULT_PATH"] / "01-daily" / f"{_target_date()}.md").read_text(encoding="utf-8")
+            ).get("Morning Check-in", "")
+        ))
+        # After the add, the item count is idx+1; focus if this was the add slot.
+        return _render_bonus_list(_target_date(), focus_add=(idx + 1 == bonus_count))
+
+    @app.route("/add-bonus", methods=["POST"])
+    def add_bonus():
+        """Append a new Bonus item from the Command Center and re-render the
+        Command Center's bonus task list (id=tasklist-bonus). Distinct from
+        /set-bonus, which re-renders the coach-morning plan partial."""
+        text = request.form.get("text", "").rstrip()
+        if not text:
+            return ("", 204)  # empty add — nothing to do
+        if "\n" in text or "\r" in text or len(text) > 256:
+            return ("text must be a single line ≤256 chars", 400)
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+
+        def update(existing: str) -> str:
+            # Append after the last RAW list row (blank slots included) —
+            # counting only non-empty items would overwrite the row after a
+            # blank slot instead of appending.
+            count = _count_section_list_rows(existing, "### Bonus")
+            return _set_nth_item_text(existing, "### Bonus", count, text)
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+        return _render_task_table(today)
+
+    @app.route("/delete-bonus", methods=["POST"])
+    def delete_bonus():
+        """Remove a bonus item by index and re-render the plan partial."""
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def remove(existing: str) -> str:
+            lines = existing.splitlines()
+            # Locate the bonus section's list-item line numbers in order.
+            in_section = False
+            item_lines: list[int] = []
+            for i, line in enumerate(lines):
+                if line.strip() == "### Bonus":
+                    in_section = True
+                    continue
+                if in_section and (line.startswith("### ") or line.startswith("## ")):
+                    break
+                if in_section and _LIST_ITEM_RE.match(line):
+                    item_lines.append(i)
+            if index < 0 or index >= len(item_lines):
+                return existing  # nothing to delete
+            del lines[item_lines[index]]
+            # Renumber ALL surviving numbered items in the section from 1 (the
+            # old loop started at the deletion point, leaving duplicate ordinals
+            # like "1. A / 1. C" when deleting anything but the first item).
+            in_section = False
+            n = 0
+            for j, line in enumerate(lines):
+                if line.strip() == "### Bonus":
+                    in_section = True
+                    continue
+                if in_section and (line.startswith("### ") or line.startswith("## ")):
+                    break
+                if in_section and _LIST_ITEM_RE.match(line):
+                    prefix_m = re.match(r"^(\s*)(\d+\.|-)\s+", line)
+                    if prefix_m and prefix_m.group(2) != "-":
+                        rest = line[prefix_m.end():]
+                        lines[j] = f"{n + 1}. {rest}"
+                    n += 1
+            return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
+
+        safe_modify(note_path, remove)
+        broadcast(f"01-daily/{today}.md")
+        return _render_bonus_list(today)
+
+    def _render_unplanned(today: str):
+        """Render the unplanned-section partial with fresh indices."""
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
+        morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
+        unplanned = _extract_unplanned(morning)
+        return render_template("_components/unplanned_section.html", unplanned=unplanned)
+
+    @app.route("/set-unplanned", methods=["POST"])
+    def set_unplanned():
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        if index < 0 or index > 99:
+            return ("index out of bounds", 400)
+        text = request.form.get("text", "").rstrip()
+        if "\n" in text or "\r" in text or len(text) > 256:
+            return ("text must be a single line ≤256 chars", 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+        safe_modify(note_path, lambda md: _set_nth_item_text(md, "### Unplanned", index, text))
+        broadcast(f"01-daily/{today}.md")
+        # Return the refreshed partial so the blank input's index advances and
+        # a new empty slot appears — prevents the stale-index overwrite bug.
+        return _render_unplanned(today)
+
+    @app.route("/delete-unplanned", methods=["POST"])
+    def delete_unplanned():
+        """Remove an unplanned item by index."""
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def remove(existing: str) -> str:
+            lines = existing.splitlines()
+            in_section = False
+            seen = 0
+            for i, line in enumerate(lines):
+                if line.strip() == "### Unplanned":
+                    in_section = True
+                    continue
+                if in_section and (line.startswith("### ") or line.startswith("## ")):
+                    break
+                if in_section and _LIST_ITEM_RE.match(line):
+                    if seen == index:
+                        del lines[i]
+                        # Renumber remaining items
+                        remaining_idx = 0
+                        for j in range(i, len(lines)):
+                            if lines[j].startswith("### ") or lines[j].startswith("## "):
+                                break
+                            m = _LIST_ITEM_RE.match(lines[j])
+                            if m:
+                                prefix_m = re.match(r"^(\s*)(\d+\.|-)\s+", lines[j])
+                                if prefix_m and prefix_m.group(2) != "-":
+                                    rest = lines[j][prefix_m.end():]
+                                    lines[j] = f"{remaining_idx + 1}. {rest}"
+                                remaining_idx += 1
+                        break
+                    seen += 1
+            return "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
+
+        safe_modify(note_path, remove)
+        broadcast(f"01-daily/{today}.md")
+        return _render_unplanned(today)
+
+    @app.route("/set-energy", methods=["POST"])
+    def set_energy():
+        """Set the energy level. ``when`` picks the section:
+        morning -> Morning Check-in, evening -> End of Day. Default morning
+        (the Command Center captures the day's energy)."""
+        level = request.form.get("level", "").strip().lower()
+        if level not in ("low", "medium", "high"):
+            return ("level must be low/medium/high", 400)
+        when = request.form.get("when", "morning").strip().lower()
+        section_name = _ENERGY_SECTIONS.get(when)
+        if section_name is None:
+            return ("when must be morning/evening", 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+
+        safe_modify(note_path, lambda md: _set_energy_in_section(md, section_name, level))
+        broadcast(f"01-daily/{today}.md")
+        # Re-render just this energy row so the selected level highlights instantly.
+        label = ("Energy — beginning of day" if when == "morning"
+                 else "Energy — end of day")
+        return render_template(
+            "_components/energy_row.html", when=when, label=label, value=level
+        )
+
+    _TASK_HEADINGS = {"top_3": "### My Top 3", "bonus": "### Bonus"}
+
+    def _render_task_table(today: str):
+        """Re-render the whole Command Center task table (Top 3 + Bonus).
+
+        Controls swap the entire <table id="task-table">. Returning a bare
+        <tbody> fragment made HTMX/the browser mangle the rows (table elements
+        parsed outside a <table> context get stripped), collapsing the layout
+        after the first click.
+        """
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
+        morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus = _extract_bonus(morning)
+        deleted = _extract_subsection_items(morning, "Deleted")
+        for it in top_3 + bonus:
+            it["index"] = it["raw_index"]
+            it["deleted"] = it["text"] in deleted
+        return render_template(
+            "_components/task_table.html", top_3=top_3, bonus=bonus,
+            swap_oob=True,  # also refresh the "≈ Xh planned today" header total
+        )
+
+    @app.route("/set-progress", methods=["POST"])
+    def set_progress():
+        section = request.form.get("section", "").strip()
+        heading = _TASK_HEADINGS.get(section)
+        if heading is None:
+            return ("invalid section", 400)
+        try:
+            index = int(request.form.get("index", ""))
+            level = int(request.form.get("level", ""))
+        except (TypeError, ValueError):
+            return ("invalid index/level", 400)
+        if index < 0:
+            return ("invalid index", 400)
+        if level not in _VALID_PROGRESS:
+            return (f"level must be one of {_VALID_PROGRESS}", 400)
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def update(md: str) -> str:
+            morning = parse_daily_note_sections(md).get("Morning Check-in", "")
+            items = (_extract_top_3(morning) if section == "top_3"
+                     else _extract_bonus(morning))
+            # `index` is a raw row index; look the item up by raw_index (the
+            # extracted list is compacted — blank rows are filtered out).
+            current = next((i for i in items if i["raw_index"] == index), None)
+            # Clicking the already-active level toggles it back to 0 (so 100% is
+            # un-clickable-off — fixes "I can't unclick 100").
+            target = 0 if (current is not None and current["progress"] == level) else level
+            return _set_nth_progress(md, heading, index, target)
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+        return _render_task_table(today)
+
+    @app.route("/set-estimate", methods=["POST"])
+    def set_estimate():
+        """Set/clear a task's estimated hours (timeboxing). Blank/0 clears it."""
+        section = request.form.get("section", "").strip()
+        heading = _TASK_HEADINGS.get(section)
+        if heading is None:
+            return ("invalid section", 400)
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        if index < 0:
+            return ("invalid index", 400)
+        raw = (request.form.get("hours", "") or "").strip()
+        if raw in ("", "-"):
+            hours: float | None = None
+        else:
+            try:
+                hours = float(raw)
+            except ValueError:
+                return ("hours must be a number", 400)
+            # float() accepts "nan"/"inf"; NaN passes every comparison below
+            # and would write an unparseable <!--e:nan--> marker.
+            if not math.isfinite(hours) or hours < 0 or hours > 24:
+                return ("hours must be between 0 and 24", 400)
+            if hours == 0:
+                hours = None
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+        safe_modify(note_path, lambda md: _set_nth_est(md, heading, index, hours))
+        broadcast(f"01-daily/{today}.md")
+        return _render_task_table(today)
+
+    @app.route("/delete-task", methods=["POST"])
+    def delete_task():
+        """Toggle a reversible 'marked for deletion' flag on the Nth task.
+
+        Does NOT remove the row — clicking ✕ turns it red (marked); clicking
+        again un-marks it. The item stays visible so a mis-click is recoverable.
+        close-day skips items left in `### Deleted`. Progress and deletion are
+        independent — an item can carry a % AND be marked for deletion.
+        """
+        section = request.form.get("section", "").strip()
+        heading = _TASK_HEADINGS.get(section)
+        if heading is None:
+            return ("invalid section", 400)
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        if index < 0:
+            return ("invalid index", 400)
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+
+        def update(md: str) -> str:
+            morning = parse_daily_note_sections(md).get("Morning Check-in", "")
+            items = (_extract_top_3(morning) if section == "top_3"
+                     else _extract_bonus(morning))
+            item = next((i for i in items if i["raw_index"] == index), None)
+            if item is None:
+                return md
+            text = item["text"]
+            if text in _extract_subsection_items(morning, "Deleted"):
+                return _remove_from_subsection(md, "Deleted", text)
+            return _add_to_subsection(md, "Deleted", text)
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+        return _render_task_table(today)
+
+    @app.route("/add-bonus-slot", methods=["POST"])
+    def add_bonus_slot():
+        """Re-render the plan partial — the template always shows one empty
+        slot at the end, so this is effectively a no-op that just re-renders."""
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/plan_your_day.html", plan=plan)
+
+    @app.route("/reset-plan", methods=["POST"])
+    def reset_plan():
+        """Reset Top 3, Bonus, Dismissed, and Deferred back to empty scaffold."""
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("no note to reset", 404)
+
+        def reset(existing: str) -> str:
+            # Clear Top 3 items
+            for heading in ("### My Top 3", "### Bonus", "### Done", "### Deleted",
+                            "### Deferred", "### Dismissed", "### Unplanned"):
+                lines = existing.splitlines()
+                section_start = None
+                section_end = len(lines)
+                for i, line in enumerate(lines):
+                    if line.strip() == heading:
+                        section_start = i
+                        continue
+                    if section_start is not None and (line.startswith("### ") or line.startswith("## ")):
+                        section_end = i
+                        break
+                if section_start is not None:
+                    if heading == "### My Top 3":
+                        replacement = [heading, "1. [ ]", "2. [ ]", "3. [ ]", ""]
+                    elif heading == "### Bonus":
+                        replacement = [heading, ""]
+                    else:  # Dismissed / Deferred — remove entirely
+                        replacement = []
+                    existing = "\n".join(lines[:section_start] + replacement + lines[section_end:])
+                    if not existing.endswith("\n"):
+                        existing += "\n"
+            # Resetting the plan returns the day to the morning planning state.
+            existing = set_frontmatter(existing, "status", "planning")
+            return existing
+
+        safe_modify(note_path, reset)
+        broadcast(f"01-daily/{today}.md")
+
+        daily_md = note_path.read_text(encoding="utf-8")
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/plan_your_day.html", plan=plan)
+
+    @app.route("/empty")
+    def empty():
+        """Return an empty body. Used as the target of Cancel buttons that
+        want to clear a slot without server-side state changes."""
+        return ""
+
+    @app.route("/plan-action", methods=["POST"])
+    def plan_action():
+        """Handle a Plan-Your-Day suggestion-row action: pri / bonus / done.
+
+        Returns the freshly-rendered plan_your_day.html partial for HTMX swap.
+        """
+        action = (request.form.get("action") or "").strip().lower()
+        text = (request.form.get("text") or "").strip()
+        if action not in {"pri", "bonus", "done", "delete", "defer"}:
+            return ("invalid action", 400)
+        if not text or "\n" in text or "\r" in text or len(text) > 256:
+            return ("invalid text", 400)
+        # Carried time estimate (suggestion rows pass the prior day's remaining
+        # estimate) — pre-fills the taken item's estimate field.
+        est_raw = (request.form.get("est") or "").strip()
+        est: float | None = None
+        if est_raw:
+            try:
+                est = float(est_raw)
+            except ValueError:
+                return ("est must be a number", 400)
+            if not math.isfinite(est) or est <= 0 or est > 24:
+                est = None  # bad carried value — take the item, drop the estimate
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+
+        def update(existing: str) -> str:
+            sections = parse_daily_note_sections(existing)
+            morning = sections.get("Morning Check-in", "")
+            top_3 = _extract_top_3(morning)
+            bonus_items = _extract_bonus(morning)
+
+            # Done / Delete / Defer are mutually-exclusive dispositions, each in
+            # its own subsection. Clicking the active one untoggles it; clicking
+            # a different one moves the item (clears the others first).
+            DISPOSITIONS = {"done": "Done", "delete": "Deleted", "defer": "Deferred"}
+            if action in DISPOSITIONS:
+                m = parse_daily_note_sections(existing).get("Morning Check-in", "")
+                current = {
+                    act: text in _extract_subsection_items(m, head)
+                    for act, head in DISPOSITIONS.items()
+                }
+                # Legacy: items in `### Dismissed` count as Done.
+                if text in _extract_subsection_items(m, "Dismissed"):
+                    existing = _remove_from_subsection(existing, "Dismissed", text)
+                    current["done"] = True
+                if current[action]:
+                    # Untoggle: remove from its section.
+                    return _remove_from_subsection(existing, DISPOSITIONS[action], text)
+                # Clear any other disposition, then set this one.
+                for act, head in DISPOSITIONS.items():
+                    if current[act]:
+                        existing = _remove_from_subsection(existing, head, text)
+                # A dispositioned item is no longer a live priority — vacate any
+                # Top 3 / Bonus slot it occupies so it doesn't show in both.
+                for i, t in enumerate(top_3):
+                    if t.get("text") == text:
+                        existing = _set_nth_item_text(existing, "### My Top 3", i, "")
+                for i, b in enumerate(bonus_items):
+                    if b.get("text") == text:
+                        existing = _set_nth_item_text(existing, "### Bonus", i, "")
+                return _add_to_subsection(existing, DISPOSITIONS[action], text)
+
+            # If the suggestion already sits in Top 3 / Bonus and the user
+            # clicked the same column again, treat it as "untake" — clear it.
+            for i, t in enumerate(top_3):
+                if t.get("text") == text:
+                    if action == "pri":
+                        return _set_nth_item_text(existing, "### My Top 3", i, "")
+                    existing = _set_nth_item_text(existing, "### My Top 3", i, "")
+                    break
+            for i, b in enumerate(bonus_items):
+                if b.get("text") == text:
+                    if action == "bonus":
+                        return _set_nth_item_text(existing, "### Bonus", i, "")
+                    existing = _set_nth_item_text(existing, "### Bonus", i, "")
+                    break
+
+            # Re-read state after any clears so we pick the right empty slot.
+            sections = parse_daily_note_sections(existing)
+            morning = sections.get("Morning Check-in", "")
+            top_3 = _extract_top_3(morning)
+            bonus_items = _extract_bonus(morning)
+
+            def _place(md: str, heading: str, i: int) -> str:
+                """Write the item text and its carried estimate at slot i."""
+                md = _set_nth_item_text(md, heading, i, text)
+                return _set_nth_est(md, heading, i, est) if est else md
+
+            if action == "pri":
+                # Use _extract_numbered_checkbox_list with empty items to find
+                # the first empty slot in the raw markdown (not the filtered
+                # list which skips blanks and would miss cleared slots).
+                raw_items = _extract_numbered_checkbox_list_raw(morning, "### My Top 3")
+                for i in range(min(3, len(raw_items))):
+                    if not raw_items[i].get("text"):
+                        return _place(existing, "### My Top 3", i)
+                # All 3 slots occupied — try appending if < 3 raw items
+                if len(raw_items) < 3:
+                    return _place(existing, "### My Top 3", len(raw_items))
+                return existing  # Top 3 full; client respects the disabled attr.
+            if action == "bonus":
+                for i, b in enumerate(bonus_items):
+                    if not b.get("text"):
+                        return _place(existing, "### Bonus", i)
+                return _place(existing, "### Bonus", len(bonus_items))
+            return existing
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+
+        # Re-render the partial with fresh state for HTMX swap.
+        daily_md = note_path.read_text(encoding="utf-8")
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/plan_your_day.html", plan=plan)
+
+    def _set_morning_item(heading: str, broadcast_label: str, rerender_partial: bool = False):
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        if index < 0 or index > 9:
+            return ("index out of bounds", 400)
+        text = request.form.get("text", "").rstrip()
+        if "\n" in text or "\r" in text or len(text) > 256:
+            return ("text must be a single line ≤256 chars", 400)
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+
+        def update(existing: str) -> str:
+            return _set_nth_item_text(existing, heading, index, text)
+
+        safe_modify(note_path, update)
+        broadcast(f"01-daily/{today}.md")
+        if not rerender_partial:
+            return ("", 204)
+
+        # Return the freshly-rendered plan_your_day partial so the input
+        # indices advance and a new empty Bonus slot appears as items pile up.
+        daily_md = note_path.read_text(encoding="utf-8")
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        top_3 = _extract_top_3(morning)
+        bonus_items = _extract_bonus(morning)
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
+        return render_template("_components/plan_your_day.html", plan=plan)
+
+    def _get_active_habits():
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        if habits_path.exists():
+            return parse_habits(habits_path.read_text(encoding="utf-8"))["active"]
+        return []
+
+    @app.route("/add-habit-form")
+    def add_habit_form():
+        return render_template("_components/add_habit_form.html",
+                               habits=_get_active_habits())
+
+    @app.route("/manage-habits")
+    def manage_habits():
+        return render_template("_components/add_habit_form.html",
+                               habits=_get_active_habits())
+
+    @app.route("/habit", methods=["POST"])
+    def add_habit():
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        existing_md = habits_path.read_text(encoding="utf-8") if habits_path.exists() else ""
+        existing_ids: set[str] = set()
+        if existing_md:
+            parsed = parse_habits(existing_md)
+            existing_ids = {h["id"] for h in parsed["active"]} | {h["id"] for h in parsed["archived"]}
+
+        try:
+            fields = validate_habit_fields(request.form, existing_ids=existing_ids)
+        except ValueError as e:
+            return (str(e), 400)
+
+        new_entry = (
+            f"\n- id: {fields['id']}\n"
+            f"  name: {fields['name']}\n"
+        )
+        if fields.get("emoji"):
+            new_entry += f"  emoji: {fields['emoji']}\n"
+        new_entry += f"  target: {fields['target']}\n"
+        new_entry += f"  frequency: {fields['frequency']}\n\n"  # trailing blank separates habits and pushes ## Archived off the last field
+
+        def insert(existing: str) -> str:
+            md = existing or "# Daily Habits\n\n## Active\n\n## Archived\n"
+            # Replace the "(none yet — add habits …)" placeholder if present so
+            # the first habit doesn't sit awkwardly underneath it.
+            md = re.sub(
+                r"## Active\n+\(none yet[^\n]*\)\n+",
+                "## Active\n",
+                md,
+                count=1,
+            )
+            if "## Active\n" not in md:
+                # Defensive: badly-shaped habits.md — append a heading.
+                md = md.rstrip("\n") + "\n\n## Active\n"
+            return md.replace("## Active\n", "## Active\n" + new_entry, 1)
+
+        try:
+            safe_modify(habits_path, insert)
+        except ValueError as e:
+            return (str(e), 400)
+        broadcast("30-habits/habits.md")
+        # Return the manage view with success message + updated habit list.
+        return render_template(
+            "_components/add_habit_form.html",
+            habits=_get_active_habits(),
+            success_message=f'Added "{fields["name"]}" to your habits.',
+        )
+
+    @app.route("/habit/archive", methods=["POST"])
+    def archive_habit():
+        habit_id = request.form.get("habit_id", "").strip()
+        if not HABIT_ID_RE.fullmatch(habit_id):
+            return ("invalid habit_id", 400)
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        if not habits_path.exists():
+            return ("", 404)
+        found = [False]
+
+        def archive(existing: str) -> str:
+            habits = parse_habits(existing)
+            active = habits["active"]
+            target = next((h for h in active if h["id"] == habit_id), None)
+            if target is None:
+                return existing  # signal not-found via found[0]
+            found[0] = True
+            target["archived_at"] = date.today().isoformat()
+            habits["active"] = [h for h in active if h["id"] != habit_id]
+            habits["archived"].append(target)
+            return _serialize_habits(habits)
+
+        safe_modify(habits_path, archive)
+        if not found[0]:
+            return ("habit not found", 404)
+        broadcast("30-habits/habits.md")
+        return render_template(
+            "_components/add_habit_form.html",
+            habits=_get_active_habits(),
+        )
+
+    @app.route("/habit/rename", methods=["POST"])
+    def habit_rename():
+        """Rename a habit, preserving its ID, streak, and log history."""
+        habit_id = request.form.get("habit_id", "").strip()
+        new_name = request.form.get("new_name", "").strip()
+        if not HABIT_ID_RE.fullmatch(habit_id):
+            return ("invalid habit_id", 400)
+        if not new_name or "\n" in new_name or "\r" in new_name:
+            return ("invalid new_name", 400)
+
+        habits_path = app.config["VAULT_PATH"] / "30-habits" / "habits.md"
+        if not habits_path.exists():
+            return ("", 404)
+        found = [False]
+
+        def rename(existing: str) -> str:
+            habits = parse_habits(existing)
+            target = next((h for h in habits["active"] if h["id"] == habit_id), None)
+            if target is None:
+                return existing
+            found[0] = True
+            target["name"] = new_name
+            return _serialize_habits(habits)
+
+        safe_modify(habits_path, rename)
+        if not found[0]:
+            return ("habit not found", 404)
+        broadcast("30-habits/habits.md")
+        return render_template(
+            "_components/add_habit_form.html",
+            habits=_get_active_habits(),
+        )
+
+    # ------------------------------------------------------------------
+    # Week POST routes
+    # ------------------------------------------------------------------
+
+    @app.route("/week/set-rank", methods=["POST"])
+    def week_set_rank():
+        """Reorder the stack rank table. Accepts JSON {"order": [...]} or
+        form field ``order`` as comma-separated project names."""
+        week_of = _week_of()
+        data = request.get_json(silent=True) or {}
+        order = data.get("order") or [
+            s.strip() for s in request.form.get("order", "").split(",") if s.strip()
+        ]
+        if not order:
+            return ("missing order", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return reorder_stack_rank(existing, order)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+
+        # Re-read and return the updated stack rank partial
+        week_md = path.read_text(encoding="utf-8")
+        stack_rank = parse_stack_rank_table(week_md)
+        return render_template("_components/week_stack_rank_partial.html",
+                               stack_rank=stack_rank, week_of=week_of)
+
+    @app.route("/week/set-mode", methods=["POST"])
+    def week_set_mode():
+        """Set the week mode (push-to-build / push-to-close / protect)."""
+        week_of = _week_of()
+        mode_val = request.form.get("mode", "").strip()
+        if mode_val not in ("push-to-build", "push-to-close", "protect"):
+            return ("invalid mode", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_weekly_frontmatter(existing, "mode", mode_val)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/set-top-3", methods=["POST"])
+    def week_set_top_3():
+        """Set a weekly Top 3 item by index."""
+        week_of = _week_of()
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        if index < 0 or index > 9:
+            return ("index out of bounds", 400)
+        text = request.form.get("text", "").rstrip()
+        if "\n" in text or "\r" in text or len(text) > 256:
+            return ("text must be a single line <= 256 chars", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_week_top_3_item(existing, index, text)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/toggle", methods=["POST"])
+    def week_toggle():
+        """Toggle a weekly Top 3 checkbox."""
+        week_of = _week_of()
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return toggle_week_top_3(existing, index)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/lock-in", methods=["POST"])
+    def week_lock_in():
+        """Set status: confirmed and transition to week-command mode."""
+        week_of = _week_of()
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_weekly_frontmatter(existing, "status", "confirmed")
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+
+        # Re-render the full week view in command mode
+        week_md = path.read_text(encoding="utf-8")
+        fm = parse_weekly_frontmatter(week_md)
+        sections = parse_weekly_note_sections(week_md)
+        stack_rank = parse_stack_rank_table(week_md)
+        top_3 = parse_week_top_3(week_md)
+        top_3_slots = list(top_3) + [{"text": "", "checked": False}] * max(0, 3 - len(top_3))
+        week_mode = fm.get("mode", "")
+        mode_labels = {
+            "push-to-build": "Push-to-build",
+            "push-to-close": "Push-to-close",
+            "protect": "Protect",
+        }
+        mode_badge = mode_labels.get(week_mode, "")
+        return render_template("week.html",
+                               week_md=week_md, week_of=week_of,
+                               mode="week-command", fm=fm, sections=sections,
+                               stack_rank=stack_rank, top_3=top_3,
+                               top_3_slots=top_3_slots[:3],
+                               week_mode=week_mode, mode_badge=mode_badge,
+                               prev_week_md="", prev_sections={}, prev_top_3=[])
+
+    @app.route("/week/set-priority-status", methods=["POST"])
+    def week_set_priority_status():
+        """Set a weekly Top 3 item to done/partial/missed (tri-state)."""
+        week_of = _week_of()
+        try:
+            index = int(request.form.get("index", ""))
+        except (TypeError, ValueError):
+            return ("invalid index", 400)
+        status_val = request.form.get("status", "").strip()
+        if status_val not in ("done", "partial", "missed"):
+            return ("status must be done/partial/missed", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_week_top_3_status(existing, index, status_val)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/set-project-status", methods=["POST"])
+    def week_set_project_status():
+        """Set a stack rank project status (on-track/needs-attention/stalled)."""
+        week_of = _week_of()
+        project = request.form.get("project", "").strip()
+        status_val = request.form.get("status", "").strip()
+        if not project:
+            return ("missing project", 400)
+        if status_val not in ("on-track", "needs-attention", "stalled"):
+            return ("status must be on-track/needs-attention/stalled", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_project_status(existing, project, status_val)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    @app.route("/week/save-section", methods=["POST"])
+    def week_save_section():
+        """Save content to a ### section in the weekly note (e.g. Brain Dump)."""
+        week_of = _week_of()
+        section = request.form.get("section", "").strip()
+        content = request.form.get("content", "")
+        if not section or len(section) > 64:
+            return ("invalid section name", 400)
+        path = app.config["VAULT_PATH"] / "02-weekly" / f"{week_of}.md"
+        if not path.exists():
+            return ("weekly note not found", 404)
+
+        def update(existing: str) -> str:
+            return set_section_content(existing, section, content)
+
+        safe_modify(path, update)
+        broadcast(f"02-weekly/{week_of}.md")
+        return ("", 204)
+
+    watcher = VaultWatcher(vault_path, on_change=broadcast)
+    watcher.start()
+    app.config["WATCHER"] = watcher
+
+    return app

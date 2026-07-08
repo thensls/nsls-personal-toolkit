@@ -1,0 +1,58 @@
+<tbody id="tasklist-{{ section }}">
+  {% if section_label %}
+  <tr><td colspan="5" class="tt-section">{{ section_label }}</td></tr>
+  {% endif %}
+  {% set rows = items | selectattr("text") | list %}
+  {% if rows %}
+    {% for item in rows %}
+    <tr>
+      <td class="tt-disc">
+        <span class="nsls-disc
+          {%- if item.deleted %} nsls-disc--deleted
+          {%- elif item.progress >= 100 %} nsls-disc--done
+          {%- elif item.progress > 0 %} nsls-disc--partial{% endif %}"
+          {% if item.progress > 0 and item.progress < 100 and not item.deleted %}style="--p: {{ item.progress }}"{% endif %}></span>
+      </td>
+      <td class="tt-goal">
+        <span class="nsls-row-text {% if item.progress >= 100 %}is-done{% elif item.deleted %}is-deleted{% endif %}">{{ item.text }}</span>
+      </td>
+      <td class="tt-est">
+        <span class="nsls-est">
+          {# Done ⇒ 0h remaining (display only — untoggling 100% restores the file's estimate) #}
+          <input type="text" inputmode="decimal" name="hours" autocomplete="off"
+                 value="{{ '0' if item.progress >= 100 else ('%g'|format(item.est) if item.est else '') }}" placeholder="—"
+                 aria-label="Estimated hours" title="Estimated hours (timeboxing)"
+                 hx-post="/set-estimate"
+                 hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
+                 hx-trigger="change, keyup[key=='Enter']"
+                 hx-target="#task-table" hx-swap="outerHTML" hx-sync="#task-table:replace"
+                 hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
+          <span class="u">h</span>
+        </span>
+      </td>
+      <td class="tt-prog">
+        <div class="nsls-seg">
+          {% for lvl in [0, 25, 50, 75, 100] %}
+          <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl %}is-current{% elif lvl < item.progress %}is-below{% endif %}"
+                  hx-post="/set-progress"
+                  hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
+                  hx-target="#task-table" hx-swap="outerHTML" hx-sync="#task-table:replace"
+                  title="{{ lvl }}%{% if lvl == 0 %} — didn't get to it{% elif lvl == 100 %} — done{% endif %}">{{ lvl }}</button>
+          {% endfor %}
+        </div>
+      </td>
+      <td class="tt-del">
+        <button class="nsls-del {{ 'is-deleted' if item.deleted else '' }}"
+                hx-post="/delete-task"
+                hx-vals='{"section":"{{ section }}","index":{{ item.index }}}'
+                hx-target="#task-table" hx-swap="outerHTML" hx-sync="#task-table:replace"
+                title="{{ 'Marked for deletion — click to undo' if item.deleted else 'Mark for deletion' }}">✕</button>
+      </td>
+    </tr>
+    {% endfor %}
+  {% else %}
+    <tr><td colspan="5" class="text-sm nsls-subtle" style="padding:0.55rem 0">
+      {% if section == 'top_3' %}No priorities set yet. <a href="/?mode=coach-morning" style="color: var(--nsls-teal); text-decoration: underline;">Plan your day →</a>{% else %}No bonus items yet.{% endif %}
+    </td></tr>
+  {% endif %}
+</tbody>

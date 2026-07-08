@@ -1,4 +1,12 @@
 .env
+.claude/settings.local.json
 __pycache__/
 *.pyc
+*.egg-info/
 .toolkit-state.json
+.companion.pid
+.companion-test.pid
+.superpowers/
+
+# Throwaway vault for `open day -t` / `close day -t` — never real data.
+companion-test-vault/

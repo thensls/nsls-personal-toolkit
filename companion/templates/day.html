@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% set active_tab = 'day' %}
+{% block content %}
+{# Pin every request from this page to the note date being served. hx-vals is
+   inherited, so all HTMX posts (progress, estimates, habits, energy, save,
+   lock-in…) carry date={{ today }} — closing a past day via ?date= can never
+   write into today's note. #}
+<div hx-vals='{"date": "{{ today }}"}'>
+{% if mode == 'coach-morning' %}
+  {% include "_components/coach_morning.html" %}
+{% elif mode == 'coach-evening' %}
+  {% include "_components/coach_evening.html" %}
+{% elif mode == 'results' %}
+  {% include "_components/results.html" %}
+{% else %}
+<h1 class="text-2xl nsls-h1 mb-1">{% if is_today %}Today — {% endif %}{{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h1>
+<p class="text-sm nsls-subtle mb-4">Command Center{% if not is_today %} — closing out a past day{% endif %}</p>
+
+{% include "_components/command_banner.html" %}
+
+<div class="space-y-2 mb-6">
+  {% with when='morning', label='Energy — beginning of day', value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
+</div>
+
+<section class="nsls-card">
+  <div class="flex items-baseline justify-between mb-3">
+    <h2 class="nsls-card-title">Top 3</h2>
+    {% include "_components/planned_total.html" %}
+  </div>
+  {% include "_components/task_table.html" %}
+  {% include "_components/bonus_add.html" %}
+  <p class="text-xs nsls-subtle mt-3">Anything under 100% carries forward to tomorrow. 0 = didn't get to it. ✕ marks for deletion (reversible).</p>
+</section>
+
+<section class="nsls-card">
+  <h2 class="nsls-card-title mb-2">Unplanned wins</h2>
+  <p class="text-xs nsls-subtle mb-2">Add anything you did that wasn't on the plan.</p>
+  {% include "_components/unplanned_section.html" %}
+</section>
+
+<section class="nsls-card">
+  <div class="flex justify-between items-center mb-3">
+    <h2 class="nsls-card-title">Habits today</h2>
+    <button hx-get="/manage-habits" hx-target="#habit-form-slot" hx-swap="innerHTML"
+            class="nsls-btn-ghost text-sm">Manage habits</button>
+  </div>
+  <div id="habit-form-slot"></div>
+  {% if habits_today %}
+  <ul class="space-y-2">
+    {% for h in habits_today %}
+      {% include "_components/habit_row.html" %}
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="text-sm nsls-subtle">No habits yet. Click Manage habits to add some.</p>
+  {% endif %}
+</section>
+
+<section class="nsls-card">
+  <h2 class="nsls-card-title mb-2">Gratitude <span class="normal-case nsls-subtle">(optional)</span></h2>
+  <textarea rows="2" class="nsls-textarea"
+            hx-post="/save" hx-trigger="input changed delay:1500ms"
+            hx-vals='{"section":"Gratitude"}' name="content"
+            hx-swap="none"
+            placeholder="One thing you're grateful for today...">{{ gratitude_text }}</textarea>
+</section>
+
+<section class="nsls-card">
+  <h2 class="nsls-card-title mb-2">Insight <span class="normal-case nsls-subtle">(optional)</span></h2>
+  <textarea rows="2" class="nsls-textarea"
+            hx-post="/save" hx-trigger="input changed delay:1500ms"
+            hx-vals='{"section":"Daily Insight"}' name="content"
+            hx-swap="none"
+            placeholder="What did you notice about yourself today?">{{ daily_insight_text }}</textarea>
+</section>
+
+<section class="nsls-card">
+  <h2 class="nsls-card-title mb-3">Energy — end of day</h2>
+  {% with when='evening', label='How did you end the day?', value=evening_energy %}{% include "_components/energy_row.html" %}{% endwith %}
+</section>
+
+<div class="mt-6">{% include "_components/command_banner.html" %}</div>
+
+{% endif %}
+</div>
+{% endblock %}

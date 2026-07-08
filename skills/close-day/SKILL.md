@@ -5,7 +5,9 @@ description: >-
   Fathom meeting summaries, sent email, sent Slack messages, and Claude session
   context to generate a daily note and update project session logs. Trigger
   phrases: close day, end of day, daily summary, wrap up, what did I do today,
-  close out the day, daily close, eod
+  close out the day, daily close, eod, close day -t. Add `-t` (`close day -t`) to
+  run against a throwaway test vault so real daily notes are untouched; add `-b`
+  to bypass the visual companion and close in chat.
 ---
 
 # Daily Close
@@ -40,11 +42,102 @@ Also read `${OBSIDIAN_VAULT_PATH}/50-reference/builder-profile.md` for role/cate
 
 ---
 
+## Output Discipline
+
+**The user must never see raw Bash command output.** The CLI renders Bash tool calls and their output directly — you cannot hide them after the fact. So the rule is: **do not run Bash commands that produce multi-line output.** Instead:
+
+- **Read files with the Read tool**, not `cat` or `grep` in Bash. Read tool output is collapsible; Bash output is not.
+- **Use MCP tools** (Google Calendar, Asana, Fathom, Slack) instead of Bash for API calls.
+- **If you must use Bash** (e.g., for Familiar data, file existence checks), write a single command that computes the summary internally and `echo`s only the one-line result:
+  ```bash
+  echo "Familiar: $(find $DIR -name '*.md' | wc -l | tr -d ' ') captures across $(ls -d $DIR/session-* 2>/dev/null | wc -l | tr -d ' ') sessions"
+  ```
+  NOT a command that dumps 50+ lines of app counts, timestamps, or file contents.
+- **Never `cat` a file in Bash.** Use the Read tool.
+- **Never run a Bash command whose output exceeds 3 lines** without `-v` mode.
+
+If the user invokes with `-v` (e.g., `/close-day -v`), full verbose output is fine — show everything.
+
 ## Step-by-step Execution
 
 ### Step 0: Determine the date
 
 Default to today (`date +%Y-%m-%d`). Override by passing the date as an argument: `/close-day 2026-03-21`.
+
+**Test-mode flag (`-t`):** if the invocation includes `-t` (e.g. `close day -t`), run the **entire skill against a throwaway test vault** so your real daily notes are never touched. The whole system keys off one variable, `$OBSIDIAN_VAULT_PATH` — so test mode is just: **before anything else, point that variable at the test vault.** Resolve the companion binary (the `"$TC"` lookup in Step 0.5) and run:
+
+```bash
+export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)" || { echo "Test-vault setup failed — aborting so test mode never touches real notes."; return 1 2>/dev/null || exit 1; }
+[ -n "$OBSIDIAN_VAULT_PATH" ] || { echo "Test-vault path empty — aborting to protect real notes."; return 1 2>/dev/null || exit 1; }
+```
+
+**The guard is load-bearing:** if `"$TC"` can't be resolved or `test-vault` fails, `OBSIDIAN_VAULT_PATH` would otherwise stay pointed at the **real** vault and the run would close real notes. In test mode, a failed setup must **abort** — never fall through to Step 0.5's chat fallback against the real vault.
+
+`test-vault` creates + seeds the vault (`~/.claude/local-plugins/nsls-personal-toolkit/companion-test-vault/`, gitignored) and prints its path; it never overwrites existing notes. Every downstream step then reads and writes the test vault, and the companion shows a gold **TEST** banner. Pair with `open day -t` (plan into the test vault first) and `reset-day -t` (clear it).
+
+**No collision with your real companion.** The test server is a separate instance on its own port (**7788**, vs the real **7777**) with its own pidfile (`.companion-test.pid`). In Step 0.5, when in test mode use the `--test` flag (`"$TC" status --test`) and never `"$TC" stop` without it — that would hit the real companion. If the test companion isn't already running, Step 0.5's start-if-needed step brings it up (against the test vault); if it still can't start, close-day simply closes in chat against the test vault.
+
+The close routes through the **CLI companion** by default (Step 0.5 starts it if needed and sends you there to finalize), or runs in **chat** when you pass `-b` / `visual_mode: off` / aren't on a CLI surface. The companion only works where Bash can run a local server; anywhere it can't, Step 0.5's graceful fallback closes the day in chat.
+
+### Step 0.5: Check the visual companion
+
+**Resolving the binary path** (same lookup as open-day Step 8):
+```bash
+TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
+[ -x "$TC" ] || TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/Scripts/toolkit-companion.exe"  # Windows
+[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+```
+
+**The companion is ON by default, and close-day routes you to it.** Skip this step (close as a pure CLI ritual, straight to Step 0.6) ONLY when the builder passed **`-b`** (bypass the companion this run — close in chat), OR `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. **Note:** in close-day `-v` means *verbose* (see Output Discipline), NOT visual-off — the flag to close without the companion is **`-b`**.
+
+**Assume there's more to mark — do NOT guess the day is already done.** The builder may have ticked progress through the day, but the close is exactly when they finalize it (end-of-day energy, last wins, gratitude/insight). So by default **send them to the Command Center to review before you synthesize** — and **start the companion if it isn't already running** (close-day may be the first thing run today). Only if they *tell* you it's already updated, or pass `-b`, do you skip straight to the close.
+
+**Past dates get the companion too.** When the date from Step 0 isn't today (the builder is catching up on a day they never closed — common), still drive the companion: the `?date=YYYY-MM-DD` param scopes the whole page to that day's note, and every edit made there writes ONLY that date's note — today's note is untouched. Do NOT fall back to a chat-only close just because the date is in the past.
+
+**Always give a clickable localhost link.** Present the URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) as a Markdown link, every time — never a raw IP. Closing without a link to click is a bug.
+
+1. **Resolve `"$TC"`** (above). If it can't be found, or you're not on a surface that can run a local server, **skip silently** and close in chat.
+2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Not running`, start it in the background, then re-check:
+   ```bash
+   # serve auto-detects the test vault from OBSIDIAN_VAULT_PATH and starts the
+   # test instance (port 7788, its own pidfile) — no flag needed on serve.
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
+   sleep 2
+   # Re-check at the SAME scope you started. In test mode you MUST pass --test —
+   # plain `status` reads the REAL companion's pidfile and will wrongly report
+   # "Not running", forcing a needless chat fallback.
+   "$TC" status          # in test mode: "$TC" status --test
+   ```
+   If it still won't start, **skip silently** and close in chat. Parse the address from the status output.
+3. **Read the target date's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/<target-date>.md` (Step 0's date, default today). If it doesn't exist, skip this step.
+4. **Open the Command Center in closing mode**, scoped to the target date: build the URL as `/?date=<target-date>&closing=1` (`open "<url>"` on macOS; `start`/`xdg-open` on Windows/Linux). `?closing=1` forces the Command Center's end-of-day state (even if the note was never locked in); `?date=` pins the page — and every write from it — to that day's note. Give the builder the link + this prompt (adapt "day's open" phrasing when closing a past day):
+
+   > Your day's open at http://localhost:<port>/?date=<target-date>&closing=1 — **open it and mark off where you landed**: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**.)
+
+5. **Wait for the builder to say "done".** Do NOT proceed until they explicitly respond. Do NOT treat background hook notifications (like "Record skill usage event completed") as user input — only a real message from the builder ("done", "continue", "go", "ready", or similar) advances.
+
+6. After they say done, re-read the target date's daily note to pick up their changes, then proceed to Step 1 — synthesizing **for the target date only**.
+
+### Step 0.6: Read the day's captured signal
+
+Read the **target date's** daily note (`$OBSIDIAN_VAULT_PATH/01-daily/<target-date>.md` — Step 0's date, which is today by default but a past date when catching up) and pull in everything the builder recorded during the day — whether they used the companion or filled the note by hand. **This is a read; the skill never authors the companion-written sections.** In CLI-only use these sections are simply absent, and this step degrades with no behavior change.
+
+**(a) Top 3 / Bonus completion** — from `## Morning Check-in` → `### My Top 3` and `### Bonus`:
+- `[x]`, or a trailing `<!--p:100-->` → **done (100%)**
+- a trailing `<!--p:NN-->` marker where NN is 25/50/75 → **partial, NN%** (line still shows `[ ]`; the marker is an HTML comment, invisible in rendered Obsidian)
+- `[ ]` with no marker → **not started**
+- text also listed under `## Carrying Over` → the builder chose to **carry it forward**
+
+**(b) Unplanned wins** — from `### Unplanned` under Morning Check-in. These are things the builder did that weren't on the plan and **wants credit for**. Fold them into the synthesized `## Work Log` and consider them for Achievements — they are real outputs, not noise.
+
+**(c) Builder's own insight** — from `## Daily Insight` (the in-the-moment note the builder jotted, distinct from the close-day-authored `## Insight Reflection`). Use it as a **primary input** when writing the Insight Reflection in Step 3 — don't ignore or overwrite the builder's own read of the day; build on it.
+
+Use all of the above to:
+1. **Report a brief "Priorities vs. Reality" read** in the Step 4 summary — each Top 3 item with its outcome (done / NN% / not started / carried), plus any Unplanned wins.
+2. **Seed Carrying Over** — any Top 3 **or Bonus** item that is <100%, **plus any item the builder moved to `### Deferred`** (defer = "not today, but keep it" — explicitly *not* a delete), that isn't already under `## Carrying Over` is a carry-over candidate; add it so it resurfaces in tomorrow's `/open-day`. Skip **only** items the builder **deleted** (`### Deleted`). **Preserve the time estimate:** if the item carries an `<!--e:X-->` marker (estimated *remaining* time — the builder may have updated it during the day), append that exact marker to the carry-over line (e.g. `- Reply to vendor thread <!--e:0.5-->`). The companion reads it to pre-fill tomorrow's estimate field; dropping it loses the builder's timeboxing data.
+3. **Feed the Work Log and Insight Reflection** (b) and (c) above.
+
+`<!--p:NN-->` markers and the `### Unplanned` / `### Done` / `### Deleted` / `### Deferred` / `## Daily Insight` sections are companion-written — read them, never author them from the skill. In CLI-only mode they simply won't be present. **Never create a `### Unplanned` (or `### Done`/`### Deleted`/`### Deferred`) heading anywhere else in the note — especially not under `## End of Day`.** The companion reads these only from inside `## Morning Check-in`; a same-named heading elsewhere makes builder input invisible (this happened: an End-of-Day `### Unplanned` swallowed unplanned wins silently).
 
 ### Step 1: Collect data (run in parallel where possible)
 
@@ -64,8 +157,8 @@ Extract: meeting title, start/end time, attendees (if `condenseEventDetails=fals
 
 | Classification | Detection rules | Examples |
 |---|---|---|
-| **Real meeting** | Has attendees other than Kevin (`attendees` array with 2+ entries, or 1 entry that isn't Kevin) AND has a conferenceUrl or Zoom/Meet link | NSLS Coach Feedback Discussion, Gary / Kevin — FOL, All Staff Meeting |
-| **Solo block** | No attendees (Kevin is sole organizer, no `attendees` array), OR description contains "from /open-day", "Priority #N from /open-day", "Vitality block", "Growth block" | Focus: William reply, Prep: Gary FOL, Walk, Learn: Agentic harnesses |
+| **Real meeting** | Has attendees other than the builder (`attendees` array with 2+ entries, or 1 entry that isn't the builder) AND has a conferenceUrl or Zoom/Meet link | NSLS Coach Feedback Discussion, Gary / Kevin — FOL, All Staff Meeting |
+| **Solo block** | No attendees (the builder is sole organizer, no `attendees` array), OR description contains "from /open-day", "Priority #N from /open-day", "Vitality block", "Growth block" | Focus: William reply, Prep: Gary FOL, Walk, Learn: Agentic harnesses |
 
 Solo blocks created by `/open-day` are work time, not meetings. They typically appear as gray or colored blocks on the calendar with titles starting with "Focus:", "Prep:", "Walk", "Learn:", or "Review:".
 
@@ -77,7 +170,7 @@ The **meeting count** and **meeting time** metrics should include:
 
 And should EXCLUDE:
 - Solo calendar blocks (focus/prep/walk/learn/vitality/growth)
-- Calendar events where Kevin is the only participant
+- Calendar events where the builder is the only participant
 
 **1b. Familiar — screen activity, time tracking, and work categorization**
 
@@ -95,32 +188,46 @@ If no builder profile exists, fall back to the **Executive / SLT preset** catego
 **Phase 1: Collect raw data (run in parallel with Fathom)**
 
 ```bash
-# Step 1: Get top-level app counts
-grep -h "^app:" $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+# IMPORTANT: Use bash (not zsh) for these commands, or prefix with
+# setopt +o nomatch 2>/dev/null; to prevent zsh glob errors when
+# no sessions exist for the target date. All globs here use 2>/dev/null
+# but zsh errors BEFORE the command runs if the glob itself has no matches.
+# The safest approach: run these inside bash -c '...' or use ls + xargs
+# instead of shell globbing.
 
-# Step 2: Break down Chrome by window title
-awk '/^app: Google Chrome/{found=1} found && /^window_title_raw:/{print; found=0}' \
-  $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+FDIR="$HOME/familiar/stills-markdown"
+SESSIONS=$(ls -d "$FDIR"/session-YYYY-MM-DDT* 2>/dev/null)
+if [ -z "$SESSIONS" ]; then
+  echo "NO_FAMILIAR_DATA"
+else
+  # Step 1: Get top-level app counts
+  find $FDIR -path "*/session-YYYY-MM-DDT*/*.md" -exec grep -h "^app:" {} + 2>/dev/null \
+    | sort | uniq -c | sort -rn
 
-# Step 3: Break down Slack by window title (channel/DM names)
-awk '/^app: Slack/{found=1} found && /^window_title_raw:/{print; found=0}' \
-  $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+  # Step 2: Break down Chrome by window title
+  find $FDIR -path "*/session-YYYY-MM-DDT*/*.md" -exec awk \
+    '/^app: Google Chrome/{found=1} found && /^window_title_raw:/{print; found=0}' {} + 2>/dev/null \
+    | sort | uniq -c | sort -rn
 
-# Step 4: Break down Warp by window title (Claude Code session names)
-awk '/^app: Warp/{found=1} found && /^window_title_raw:/{print; found=0}' \
-  $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/*.md 2>/dev/null \
-  | sort | uniq -c | sort -rn
+  # Step 3: Break down Slack by window title
+  find $FDIR -path "*/session-YYYY-MM-DDT*/*.md" -exec awk \
+    '/^app: Slack/{found=1} found && /^window_title_raw:/{print; found=0}' {} + 2>/dev/null \
+    | sort | uniq -c | sort -rn
 
-# Step 5: Session timestamps for time calculation
-for s in $HOME/familiar/stills-markdown/session-YYYY-MM-DDT*/; do
-  first=$(ls "$s"*.md 2>/dev/null | head -1 | xargs basename | sed 's/.md//')
-  last=$(ls "$s"*.md 2>/dev/null | tail -1 | xargs basename | sed 's/.md//')
-  count=$(ls "$s"*.md 2>/dev/null | wc -l | tr -d ' ')
-  echo "$first|$last|$count"
-done
+  # Step 4: Break down Warp by window title
+  find $FDIR -path "*/session-YYYY-MM-DDT*/*.md" -exec awk \
+    '/^app: Warp/{found=1} found && /^window_title_raw:/{print; found=0}' {} + 2>/dev/null \
+    | sort | uniq -c | sort -rn
+
+  # Step 5: Session timestamps for time calculation
+  for s in $FDIR/session-YYYY-MM-DDT*/; do
+    [ -d "$s" ] || continue
+    first=$(ls "$s"*.md 2>/dev/null | head -1 | xargs basename | sed 's/.md//')
+    last=$(ls "$s"*.md 2>/dev/null | tail -1 | xargs basename | sed 's/.md//')
+    count=$(ls "$s"*.md 2>/dev/null | wc -l | tr -d ' ')
+    echo "$first|$last|$count"
+  done
+fi
 ```
 
 **Phase 2: Calculate active work time**
@@ -140,7 +247,7 @@ Total active: 13.6 hours
 
 **Phase 3: Categorize captures into work categories (after Fathom completes)**
 
-Every capture gets assigned to exactly one **work category** based on app + window title. The categories represent Kevin's functional roles:
+Every capture gets assigned to exactly one **work category** based on app + window title. The categories represent the builder's functional roles:
 
 | Work Category | What maps here |
 |---|---|
@@ -178,7 +285,7 @@ Zoom window titles just say "Zoom Meeting" and Google Meet shows the meeting nam
    - Titles containing "marketing", "campaign", "brand", "content" → **Marketing / Sales**
    - Titles containing "board", "investor", "strategy", "all-hands", "SLT" → **Management / People**
    - Titles containing "standup", "sync" → check Fathom summary for topic, default to **Product Management**
-3. Zoom/Meet captures that don't match any Fathom meeting → **Meetings (unmatched)** — show separately so Kevin can mentally assign them.
+3. Zoom/Meet captures that don't match any Fathom meeting → **Meetings (unmatched)** — show separately so the builder can mentally assign them.
 
 **Chrome window title → category mapping:**
 
@@ -238,86 +345,38 @@ The "Doing vs. Orchestrating" line is a quick summary:
 - **Orchestrating** = Management / People + Meetings + Marketing / Sales
 - **Supporting** = Admin / Ops + Learning / Research + Product Management
 
-This gives Kevin a fast read on how much time he spent building things himself vs. directing others vs. overhead.
+This gives the builder a fast read on how much time they spent building things themselves vs. directing others vs. overhead.
 
-The **"Meeting time"** line is an orthogonal metric — it cross-cuts all categories. A 1:1 with Chris counts as both "Management / People" time AND meeting time. This tells Kevin how much of his day was synchronous vs. async, regardless of topic.
+The **"Meeting time"** line is an orthogonal metric — it cross-cuts all categories. A 1:1 with Chris counts as both "Management / People" time AND meeting time. This tells the builder how much of their day was synchronous vs. async, regardless of topic.
 
 **What counts as a meeting (include in count + hours):**
-- Calendar events with attendees other than Kevin (detected via `attendees` array)
+- Calendar events with attendees other than the builder (detected via `attendees` array)
 - Impromptu meetings found in Fathom but NOT on the calendar (detected by comparing Fathom meeting times against calendar event times — no overlap = impromptu)
 
 **What does NOT count as a meeting (exclude from count + hours):**
 - Solo calendar blocks created by `/open-day`: titles starting with "Focus:", "Prep:", "Walk", "Learn:", "Review:", or descriptions containing "from /open-day", "Vitality block", "Growth block"
-- Calendar events where Kevin is the sole attendee/organizer (no other participants)
+- Calendar events where the builder is the sole attendee/organizer (no other participants)
 - These are work time — they go into the Time Allocation categories (Coding/Building, Admin/Ops, etc.) but not the meeting metric
 
 **Label:** Use `**Meeting time: ~Xh across N meetings**` (not "Meeting time (calendar)") since the count includes both calendar and Fathom-only meetings. If impromptu meetings are included, note them: `— includes N impromptu`.
 
 **1c. Fathom — meeting summaries and action items**
 
-> **IMPORTANT — API URL:** Use ONLY `https://api.fathom.ai/external/v1/meetings`. The domain `api.fathom.video` does NOT exist and will cause a DNS error. Do not try it, do not add it as a first attempt, do not use it as a fallback. One URL. Always.
+Use the Fathom MCP tools (no API key or Python script needed):
 
-Fetch today's meetings from Fathom using a focused Python script:
-
-```bash
-PYTHONPATH=/tmp/pptx_deps python3.12 -c "
-import httpx, json, os, sys
-from pathlib import Path
-
-# Get API key
-key = os.environ.get('FATHOM_API_KEY', '')
-if not key:
-    env_file = Path.home() / 'nsls-skills/slt-ops/slt-bot/.env'
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            if line.startswith('FATHOM_API_KEY='):
-                key = line.split('=', 1)[1].strip().strip('\"\'')
-                break
-if not key:
-    print('NO_API_KEY'); sys.exit(0)
-
-TARGET_DATE = '$DATE'  # will be replaced by skill
-headers = {'X-Api-Key': key}
-url = f'https://api.fathom.ai/external/v1/meetings?include_summary=true&include_action_items=true&created_after={TARGET_DATE}T00:00:00Z&created_before={TARGET_DATE}T23:59:59Z'
-meetings = []
-cursor = None
-
-while True:
-    page_url = url + (f'&cursor={cursor}' if cursor else '')
-    resp = httpx.get(page_url, headers=headers, timeout=30)
-    if resp.status_code != 200: break
-    data = resp.json()
-    items = data.get('items') or (data if isinstance(data, list) else [])
-    meetings.extend(items)
-    cursor = data.get('next_cursor') if isinstance(data, dict) else None
-    if not cursor: break
-
-todays = meetings  # already date-scoped by API params
-
-for m in sorted(todays, key=lambda x: x.get('scheduled_start_time', '')):
-    title = m.get('title', 'Unknown')
-    start = m.get('scheduled_start_time', '')
-    end = m.get('scheduled_end_time', '')
-    summary = (m.get('default_summary') or {}).get('markdown_formatted', '')
-    actions = [a.get('description', '') for a in (m.get('action_items') or [])]
-    attendees = [inv.get('name', '') for inv in (m.get('calendar_invitees') or []) if inv.get('name')]
-    fathom_url = m.get('url', '')
-
-    print(f'### {title}')
-    print(f'**Time:** {start[11:16]}–{end[11:16] if end else \"?\"}')
-    if attendees: print(f'**With:** {', '.join(attendees)}')
-    if fathom_url: print(f'**Fathom:** {fathom_url}')
-    if summary:
-        # Extract just key takeaways, not full summary
-        for line in summary.split('\n'):
-            if line.strip().startswith('- [**') or line.strip().startswith('- **'):
-                print(line.strip())
-    if actions:
-        print('**Action items:**')
-        for a in actions: print(f'  - {a}')
-    print()
-"
 ```
+mcp__claude_ai_Fathom__list_meetings(
+  created_after="YYYY-MM-DDT00:00:00Z",
+  created_before="YYYY-MM-DDT23:59:59Z",
+  include_summary=true,
+  include_action_items=true,
+  max_pages=3
+)
+```
+
+For each meeting returned, extract: title, time, attendees, summary key points, action items, and fathom URL. If `list_meetings` returns no results, skip this section.
+
+If you need the full transcript for a specific meeting (e.g., to extract decisions or detailed context), use `get_meeting_summary(recording_id=<id>)`. Fetch at most 3 transcripts to keep the context manageable.
 
 **Fathom API is now date-scoped** — uses `created_after` and `created_before` params to fetch only the target day's meetings. This is fast (< 5 seconds) instead of paginating through all meetings since 2023.
 
@@ -330,7 +389,7 @@ gmail_search_messages(
   maxResults=30
 )
 ```
-Extract: who Kevin emailed, subject, and the snippet (which captures his reply). Look for approvals, decisions, delegations, and follow-ups.
+Extract: who the builder emailed, subject, and the snippet (which captures their reply). Look for approvals, decisions, delegations, and follow-ups.
 
 **1e. Sent Slack — conversations and coordination**
 
@@ -347,7 +406,7 @@ Your Slack user ID is in `${SLACK_USER_ID}` from `.env`. Extract: who he message
 
 **1e-pre. Slack follow-up scan (today only)**
 
-> Ported from `nsls-personal-toolkit` PR #12 (Chelsea, "Add Slack follow-up scan to /open-day and /close-day") on 2026-05-27. Catches commitments Kevin made and incoming asks left pending — so they roll into Carrying Over instead of evaporating overnight. The plain Sent-Slack scan in 1e only sees outbound messages; this step adds the inbound side.
+> Ported from `nsls-personal-toolkit` PR #12 (Chelsea, "Add Slack follow-up scan to /open-day and /close-day") on 2026-05-27. Catches commitments the builder made and incoming asks left pending — so they roll into Carrying Over instead of evaporating overnight. The plain Sent-Slack scan in 1e only sees outbound messages; this step adds the inbound side.
 
 **Two parallel queries scoped to today (`on:YYYY-MM-DD`):**
 
@@ -362,7 +421,7 @@ Your Slack user ID is in `${SLACK_USER_ID}` from `.env`. Extract: who he message
    ```
    Filter for: "I'll", "I will", "I can", "let me", "going to", "I'll put on the calendar", "I'll send", "I'll draft", "by EOD", "by Friday", "happy to", "let's do it", "yes" (when in response to a proposed action).
 
-2. **Today's incoming asks** — find threads where someone asked Kevin something and he didn't reply, OR where his reply was a commitment that wasn't acted on by EOD.
+2. **Today's incoming asks** — find threads where someone asked the builder something and they didn't reply, OR where their reply was a commitment that wasn't acted on by EOD.
    ```
    slack_search_public_and_private(
      query="to:<@${SLACK_USER_ID}> on:YYYY-MM-DD",
@@ -371,7 +430,7 @@ Your Slack user ID is in `${SLACK_USER_ID}` from `.env`. Extract: who he message
      include_context=true
    )
    ```
-   For each result, use the context (or `slack_read_channel` with `limit=5` on that channel/DM) to determine the conversation state: did Kevin respond? Was the response substantive or a deferral?
+   For each result, use the context (or `slack_read_channel` with `limit=5` on that channel/DM) to determine the conversation state: did the builder respond? Was the response substantive or a deferral?
 
 **Cross-reference against today's data:**
 - Commitments visible in **Sent Email** (1d) or **Claude session context** (1f) → mark as "kept"
@@ -390,10 +449,10 @@ Your Slack user ID is in `${SLACK_USER_ID}` from `.env`. Extract: who he message
 Also create P2 Asana tasks for each "open" item via Step 7c (carry-over task creation) with the description noting the Slack source and permalink.
 
 **Rules:**
-- Skip Kevin's own bot DMs (SLT EA Bot, Signal) unless they contain a person-facing commitment
+- Skip the builder's own bot DMs (SLT EA Bot, Signal) unless they contain a person-facing commitment
 - Skip "ok", "thanks", "got it", reactions
 - Suppress items that already appear in today's Asana tasks created by other steps
-- Limit to 8 entries — beyond that, surface a "and N more" line and let Kevin triage
+- Limit to 8 entries — beyond that, surface a "and N more" line and let the builder triage
 
 **1f. Claude session context**
 
@@ -403,10 +462,14 @@ Review the current conversation for:
 - Projects touched (match against known project mappings from `/log` skill)
 - Open items and next steps
 
-Also check if any other Claude Code sessions ran today by scanning:
+Also check if any other Claude Code sessions ran today by scanning (the
+project-dir name encodes the home path, which differs per OS — list the dirs
+first and match, don't assume the macOS `-Users-<name>` form):
 ```bash
-ls -la ~/.claude/projects/-Users-k/*.jsonl | grep "$(date +%b\ %d)" 2>/dev/null
+ls -t ~/.claude/projects/ | head -5   # find the dir(s) for this machine's home path
+ls -la ~/.claude/projects/<matching-dir>/*.jsonl | grep "$(date +%b\ %d)" 2>/dev/null
 ```
+If nothing matches (fresh install, different layout), skip this signal silently.
 
 **1f-bis. Apple Health — personal-goal execution + sleep**
 
@@ -417,7 +480,7 @@ mcp__apple-health__apple_health_daily(date="YYYY-MM-DD")                 # targe
 mcp__apple-health__apple_health_daily(date="YYYY-MM-DD+1")               # day after — pulls the sleep that happened during the target night
 ```
 
-**Sleep semantics (read carefully):** Apple Health keys sleep by the date you wake up. So sleep that happened on the night of the target date appears in the `(target + 1)` record, NOT the target record. By Kevin's rule, **last night's sleep belongs on today's note** — i.e., sleep during the target night belongs on the FOLLOWING day's note next to the Energy line.
+**Sleep semantics (read carefully):** Apple Health keys sleep by the date you wake up. So sleep that happened on the night of the target date appears in the `(target + 1)` record, NOT the target record. By the builder's rule, **last night's sleep belongs on today's note** — i.e., sleep during the target night belongs on the FOLLOWING day's note next to the Energy line.
 
 When close-day runs the day after the target (the common case), the `(target+1)` data is available and close-day writes the sleep summary into the following day's `## Morning Check-in` section, on a new line above `- Energy:`:
 
@@ -448,7 +511,7 @@ Distinguish "didn't do it" from "did it but didn't log it on the Watch." An unlo
 
 Run in parallel with other data collection. Two calls:
 
-**Call 1: Get all incomplete tasks assigned to Kevin**
+**Call 1: Get all incomplete tasks assigned to the builder**
 ```
 mcp__claude_ai_Asana__get_my_tasks(
   completed_since="now",
@@ -475,17 +538,17 @@ From the results, extract three lists:
 2. **Due today** — tasks with `due_on` = today's date
 3. **Upcoming** — tasks due in the next 3 days (context, not displayed unless relevant)
 
-Include the overdue and due-today lists in the daily note's `## Asana` section. These inform the Carrying Over section and help Kevin see what slipped.
+Include the overdue and due-today lists in the daily note's `## Asana` section. These inform the Carrying Over section and help the builder see what slipped.
 
-**Filtering:** Skip auto-generated noise like "It's time to update your goal(s)" — only include real tasks Kevin created or was assigned.
+**Filtering:** Skip auto-generated noise like "It's time to update your goal(s)" — only include real tasks the builder created or was assigned.
 
 **1h. SLT Meeting Actions — open items from the SLT knowledge base**
 
-Pull Kevin's open Meeting Actions from the SLT Meeting Intelligence base. These are action items committed to in SLT meetings, tracked separately from Asana. Many have no due date but are time-sensitive (retreat prep, offsite logistics, quarterly deliverables).
+Pull the builder's open Meeting Actions from the SLT Meeting Intelligence base. These are action items committed to in SLT meetings, tracked separately from Asana. Many have no due date but are time-sensitive (retreat prep, offsite logistics, quarterly deliverables).
 
 - **Base:** `${SLT_BASE_ID}`
 - **Table:** `tblasgjUjadHCqzrg` (Meeting Actions)
-- **Auth:** `AIRTABLE_API_KEY` env var (already exported in Kevin's shell)
+- **Auth:** `AIRTABLE_API_KEY` env var (already exported in the builder's shell)
 
 **CRITICAL — query pattern gotchas:**
 - `{assignee_name}` in `filterByFormula` **silently fails** with `INVALID_FILTER_BY_FORMULA: Unknown field names: assignee_name`. The display name in Airtable differs from our schema doc.
@@ -521,7 +584,8 @@ while True:
     offset = data.get('offset')
     if not offset: break
 
-kevin = [r for r in all_records if 'Kevin' in (r.get('fields', {}).get('fldmpu3lN0lrgrdSa') or '')]
+# Filter to the builder's actions by first name (see builder-profile.md), e.g. 'Kevin':
+mine = [r for r in all_records if BUILDER_FIRST_NAME in (r.get('fields', {}).get('fldmpu3lN0lrgrdSa') or '')]
 # Classify by due_date: overdue / due today / upcoming / no date
 # Emit record ID alongside each for Step 7d matching.
 "
@@ -555,7 +619,7 @@ kevin = [r for r in all_records if 'Kevin' in (r.get('fields', {}).get('fldmpu3l
 
 **1i. Task Evidence Detection — find what you finished but haven't checked off**
 
-After Steps 1a–1g are collected, cross-reference Kevin's open Asana tasks and any SLT Meeting Actions against evidence of completion or significant progress. **This step detects — it does not write.** Confirmations happen in Step 7.
+After Steps 1a–1g are collected, cross-reference the builder's open Asana tasks and any SLT Meeting Actions against evidence of completion or significant progress. **This step detects — it does not write.** Confirmations happen in Step 7.
 
 **Sources to scan (use data already collected above):**
 
@@ -563,17 +627,17 @@ After Steps 1a–1g are collected, cross-reference Kevin's open Asana tasks and 
 |---|---|
 | **Obsidian session logs** | Scan `## What Was Done` sections of all `*/sessions/$DATE.md` files found under `20-projects/` |
 | **Familiar window titles** | High capture count (≥30) on a window title related to the task — indicates substantial work time |
-| **Slack sent messages (1e)** | Kevin's outbound messages mentioning the task or deliverable with completion language ("done", "sent", "finished", "shared", "pushed", "complete") |
+| **Slack sent messages (1e)** | The builder's outbound messages mentioning the task or deliverable with completion language ("done", "sent", "finished", "shared", "pushed", "complete") |
 | **Fathom meeting notes (1c)** | Action items from meetings confirmed complete, or attendee acknowledged receiving a deliverable |
 | **Claude/Warp session context (1f)** | Session title or working directory matching the task's project |
-| **Sent email (1d)** | Kevin sent the artifact the task was asking for (attachment, link, approval) |
+| **Sent email (1d)** | The builder sent the artifact the task was asking for (attachment, link, approval) |
 
 **Evidence scoring:**
 
 | Signal | Classification |
 |---|---|
 | Obsidian session log lists it in `## What Was Done` | ✅ Completed |
-| Slack: Kevin said "done", "sent", "finished", etc. about this specific task | ✅ Completed |
+| Slack: the builder said "done", "sent", "finished", etc. about this specific task | ✅ Completed |
 | Sent email delivers the artifact the task described | ✅ Completed |
 | Fathom: deliverable confirmed received or action marked done | ✅ Completed |
 | Familiar: 30–49 captures on task-related window title | 🔶 Significant progress |
@@ -590,7 +654,7 @@ find "$VAULT/20-projects" -path "*/sessions/$DATE.md" 2>/dev/null | while read f
 done
 ```
 
-**Output format (show Kevin before Step 2):**
+**Output format (show the builder before Step 2):**
 
 ```
 ## Task Evidence Check
@@ -606,7 +670,7 @@ Do you want me to mark the ✅ items complete in Asana (and SLT if applicable)?
 I'll show you the exact changes before writing anything.
 ```
 
-**Pass-through to Step 7:** The confirmed list feeds Step 7a (mark complete) and 7d (SLT sync). Step 7 still presents the full plan to Kevin before any writes.
+**Pass-through to Step 7:** The confirmed list feeds Step 7a (mark complete) and 7d (SLT sync). Step 7 still presents the full plan to the builder before any writes.
 
 ### Step 2: Identify projects touched
 
@@ -628,7 +692,7 @@ Use the project mappings from `~/.claude/skills/log/SKILL.md` as the source of t
 
 ### Step 3: Draft the daily note
 
-Generate in this format (matching Kevin's existing `01-daily/` structure):
+Generate in this format (matching the builder's existing `01-daily/` structure):
 
 ```markdown
 ---
@@ -653,6 +717,12 @@ goal_<slug>_moved: [true | false]   # one line per active personal goal — see 
 [Paragraph 1 — primary pattern: what the data reveals that you might not have noticed. One concrete data point must anchor it. Max 3 sentences.]
 
 [Paragraph 2 — second dimension or implication: what this pattern might mean going forward, or a second non-obvious angle. Max 3 sentences. Omit if there's nothing genuinely interesting to add.]
+
+## Gratitude
+
+(Ask the builder for one thing they're grateful for from today. Optional — skip if user has nothing to write.)
+
+[gratitude line]
 
 ## Personal Goals Activity
 
@@ -686,7 +756,7 @@ Doing vs. Orchestrating: [X%] hands-on building, [X%] managing/meeting, [X%] adm
 [For each meeting from Calendar + Fathom:]
 - **HH:MM–HH:MM** — [Title] (with [attendees])
   - [Key takeaway from Fathom summary, 1-2 bullets max]
-  - Action: [any action items assigned to Kevin]
+  - Action: [any action items assigned to the builder]
 
 ## Work Log
 [From Claude sessions + Familiar + sent email + sent Slack:]
@@ -703,7 +773,7 @@ Doing vs. Orchestrating: [X%] hands-on building, [X%] managing/meeting, [X%] adm
 **Due today:**
 - [ ] [Task name] — [project if any]
 
-## SLT Meeting Actions ([N] open, Kevin-owned)
+## SLT Meeting Actions ([N] open, builder-owned)
 Source: `${SLT_BASE_ID}/tblasgjUjadHCqzrg` — pulled fresh this evening.
 
 **Overdue:**
@@ -733,17 +803,17 @@ Source: `${SLT_BASE_ID}/tblasgjUjadHCqzrg` — pulled fresh this evening.
 ## End of Day
 - Energy:
 
-### AI Suggested: Tomorrow's Top 3 (strategic, high-leverage, Kevin-only)
-1. **[Highest-impact item]** — [Why only Kevin can do this. What it blocks or unlocks.]
+### AI Suggested: Tomorrow's Top 3 (strategic, high-leverage, builder-only)
+1. **[Highest-impact item]** — [Why only the builder can do this. What it blocks or unlocks.]
 2. **[Second item]** — [Strategic rationale.]
 3. **[Third item]** — [Strategic rationale.]
 
 ### AI Suggested: Delegate These
-1. **[Task]** → [Person] — [Why they're the right owner. What Kevin's role becomes (review/approve).]
+1. **[Task]** → [Person] — [Why they're the right owner. What the builder's role becomes (review/approve).]
 2. **[Task]** → [Person] — [Rationale.]
 3. **[Task]** → [Person] — [Rationale.]
 
-### My Top 3 (Kevin fills in)
+### My Top 3 (builder fills in)
 1.
 2.
 3.
@@ -752,14 +822,15 @@ Source: `${SLT_BASE_ID}/tblasgjUjadHCqzrg` — pulled fresh this evening.
 **Rules:**
 - Keep the Work Log to concrete outputs, not activities. "Imported 40-file board knowledge base to Obsidian" not "worked on Obsidian."
 - Meeting bullets come from Fathom summaries — pull only the 1-2 most important takeaways, not the full summary.
-- **Time Allocation** is the new primary time view. It shows work categories (Coding/Building, Management/People, etc.) with estimated hours, percentages, and top tools. The "Doing vs. Orchestrating" summary line gives Kevin a fast read on CEO time allocation. See Step 1b Phase 4 for the full format and category definitions.
+- **Time Allocation** is the new primary time view. It shows work categories (Coding/Building, Management/People, etc.) with estimated hours, percentages, and top tools. The "Doing vs. Orchestrating" summary line gives the builder a fast read on their time allocation. See Step 1b Phase 4 for the full format and category definitions.
 - **Time Distribution** still appears below Time Allocation as a flat tool-level breakdown. Uses categorized captures, not raw app names. Chrome captures are broken down by window title into meaningful categories (Gmail, YouTube, Airtable, Google Docs, etc.) and presented as flat peers alongside Slack, Warp, Obsidian, etc. Never show "Google Chrome: X%" — that's useless. Round to whole numbers. Only show categories with ≥1% of total captures. Always **exclude personal finance** captures from the report and totals.
-- The `## Morning Check-in` section from Kevin's template is NOT auto-generated — that's for the start of day.
+- The `## Morning Check-in` section from the builder's template is NOT auto-generated — that's for the start of day.
 - **Sent Email:** Include approvals, decisions, and delegations as Work Log bullets. Skip routine replies that don't represent a decision or action.
-- **Sent Slack:** Summarize by conversation thread/topic, not individual messages. Skip trivial messages ("ok", "thanks", single emoji). Focus on decisions, coordination, and substantive discussions. Group DMs with personal contacts (family) should be noted briefly or omitted — Kevin can decide. Flag any coaching/leadership conversations as those are often important context.
-- **AI Suggested Top 3:** Generate 3 strategic priorities for tomorrow based on carry-overs, meeting action items, deadlines, and Asana. Filter for items that are (a) high-impact/high-leverage, (b) fit Kevin's unique skills as CEO — relationship decisions, strategic judgment calls, cross-team visibility, contract/legal calls. Explain *why* each is Kevin-only and what it blocks/unlocks.
-- **AI Suggested Delegate:** Generate 3 important items someone else could own. Name the person and why they're the right fit. Kevin's role becomes review/approve, not execute. Look for: operational tasks with a clear domain owner, first-draft work where Kevin adds value in editing not creating, technical setup that doesn't require strategic judgment.
-- **My Top 3:** Always left blank for Kevin to fill in manually after reviewing the AI suggestions. Kevin may adopt, modify, or completely replace the AI suggestions.
+- **Sent Slack:** Summarize by conversation thread/topic, not individual messages. Skip trivial messages ("ok", "thanks", single emoji). Focus on decisions, coordination, and substantive discussions. Group DMs with personal contacts (family) should be noted briefly or omitted — the builder can decide. Flag any coaching/leadership conversations as those are often important context.
+- **Never re-suggest what the builder killed.** Before writing the AI Suggested sections, read the `### Deleted` / `### Done` / `### Dismissed` subsections from the **last 7 days** of daily notes. Do not suggest anything that matches one of those items — match on *meaning*, not exact wording (the companion also drops exact/normalized matches, but a paraphrase only you can catch). A builder who deleted "Give 3 Breaths a real project home" on Tuesday must not see it re-suggested Thursday because the same underlying signal still exists.
+- **AI Suggested Top 3:** Generate 3 strategic priorities for tomorrow based on carry-overs, meeting action items, deadlines, and Asana. Filter for items that are (a) high-impact/high-leverage, (b) fit the builder's unique seat — relationship decisions, strategic judgment calls, cross-team visibility, contract/legal calls. Explain *why* each is builder-only and what it blocks/unlocks. **When a suggestion derives from an incomplete item that had a time estimate, append its `<!--e:X-->` marker (remaining hours as of close) to the suggestion line** — the companion strips it from display and pre-fills the estimate field when the builder takes the item.
+- **AI Suggested Delegate:** Generate 3 important items someone else could own. Name the person and why they're the right fit. The builder's role becomes review/approve, not execute. Look for: operational tasks with a clear domain owner, first-draft work where the builder adds value in editing not creating, technical setup that doesn't require strategic judgment.
+- **My Top 3:** Always left blank for the builder to fill in manually after reviewing the AI suggestions. The builder may adopt, modify, or completely replace the AI suggestions.
 
 **Generating the Insight Reflection:**
 
@@ -770,9 +841,9 @@ Dimensions to check (choose the most non-obvious):
 | Dimension | Question |
 |---|---|
 | **Plan vs. reality gap** | What was on Asana / carried over vs. what actually got done? What slipped, and is there a pattern? |
-| **Doing vs. Orchestrating skew** | Does the actual time split match what Kevin thinks he's doing? Is there a surprise in the ratio? |
+| **Doing vs. Orchestrating skew** | Does the actual time split match what the builder thinks they're doing? Is there a surprise in the ratio? |
 | **Hidden theme** | Is there a thread connecting meetings, work, and decisions that doesn't appear on any single list? |
-| **Unrecorded completions** | Did Task Evidence Detection surface things Kevin finished but didn't track? What does that say about how he works? |
+| **Unrecorded completions** | Did Task Evidence Detection surface things the builder finished but didn't track? What does that say about how they work? |
 | **Negative space** | What was conspicuously absent today that usually shows up? What didn't happen that should have? |
 | **Energy distribution** | Did the highest-stake work happen at peak hours, or was it squeezed into leftover time? |
 
@@ -780,11 +851,41 @@ Dimensions to check (choose the most non-obvious):
 - Must be non-obvious — don't restate what's already in the Work Log
 - Must be anchored to a specific number, person, task name, or time (not abstract)
 - Declarative framing: "The slide deck consumed 4.3x more time than contracted work" not "It's interesting that..."
-- "We" or second-person framing where appropriate — Kevin should feel seen, not lectured
+- "We" or second-person framing where appropriate — the builder should feel seen, not lectured
 - Omit the second paragraph if there's no second insight that clears the bar. One sharp insight beats two generic ones.
 - **Never summarize the day.** That's what the rest of the note is for.
 
-### Step 4: Present draft to Kevin
+### Step 3.5: Reconcile habits to log.md
+
+**Run this step after the draft is confirmed in Step 4 (not before).** The user may edit habit checkboxes during the review, so reconciliation must use the final state.
+
+Append today's results to `30-habits/log.md` in the format:
+
+`YYYY-MM-DD · habit_id:percent · habit_id:percent`
+
+Reconciliation rules (apply in order):
+
+1. **Read existing log.md row for today** (if any). Call this `log_ticks` (a dict `{habit_id: percent}`).
+2. **Read daily-note checkboxes** under `## Morning Check-in` → `### Habits`. Use the parser semantics: `[x]` = 1.0, `[/]` or `[~]` = 0.5, `[ ]` = 0.0. Call this `note_ticks`. **If `### Habits` doesn't exist in the daily note** (e.g., user skipped `/open-day`), treat `note_ticks` as empty — do not create the section, just use `log_ticks` as-is.
+3. **For each active habit, merge — taking the MAX of the two values.** This gives canonical priority to log.md (companion ticks survive even if the user didn't update the checkbox in the daily note), while still letting users tick checkboxes in Obsidian or the CLI if log.md hasn't been touched for that habit today.
+4. **Write the merged row back to log.md**, idempotent on the date — if a row for today already exists, replace it. **Only ids that exist in habits.md may appear in the row** — never invent an id from a note checkbox or ritual line that isn't a declared habit; unknown ids grow phantom streaks and corrupt future reconciliation. (Preserve unknown ids already present in the existing row rather than silently deleting data — but flag them to the builder.)
+5. **Update the daily-note `### Habits` checkboxes to reflect the merged result** — checked (`[x]`) for 1.0, partial (`[/]`) for 0.5, unchecked (`[ ]`) for 0.0. **Only if `### Habits` exists** — don't create it for users who didn't run `/open-day`.
+
+This MAX-merge resolves the two-writer problem without needing mtime comparison: a tap in the companion never gets undone by close-day running afterwards, and a manual checkbox tick never gets undone by close-day if the companion was already at 1.0. Resetting a habit to 0.0 mid-day requires editing log.md directly.
+
+### Streak rule reference
+
+When describing habit streaks in Insight Reflection prompts, follow this rule:
+
+Walk a habit's recent log backwards from yesterday until a 100% day is found (or the log is exhausted). Along the way, partial days (50%) add 0.5 to a "concern counter"; missed days (0%) add 1.0. A 100% day clears the counter back to 0 and stops the walk.
+
+**Calendar days with no log row count as misses** — log.md only gets a row when something was ticked, so the walk must run over calendar days, not log rows (three ticks spread over a month is NOT a 3-day streak). Today itself is never a miss (the day isn't over). The streak-days badge counts only *active* days (full or partial ticks) inside the unbroken chain — miss days are tolerated by the concern counter but don't add to the count. Implemented in `companion/streak.py` (`_fill_gap_misses`); keep both in sync.
+
+Status thresholds: 0–0.5 → OK. 1.0 → one miss recorded, streak still alive. 1.5 → at risk. 2.0 or more → reset.
+
+When a habit is at risk, name it explicitly: *"Workout is at risk — one full day clears it."* When a habit just reset, acknowledge it without judgment: *"Walking streak reset; tomorrow restarts the count."*
+
+### Step 4: Present draft to user
 
 Show the full daily note draft. Ask:
 - "Anything to add or correct?"
@@ -846,7 +947,7 @@ The skill scans today's evidence against open ledger patterns and renders **at m
 
 Write to: `${OBSIDIAN_VAULT_PATH}/01-daily/YYYY-MM-DD.md`
 
-**If the file already exists** (Kevin started it in the morning with priorities), **merge** — keep the existing Morning Check-in section and append/update the generated sections below it.
+**If the file already exists** (the builder started it in the morning with priorities), **merge** — keep the existing Morning Check-in section and append/update the generated sections below it.
 
 **5a. Health + goal frontmatter (write/merge) — Goal tracking frontmatter**
 
@@ -876,6 +977,8 @@ Write these keys from the **target-date** Apple Health pulled in Step 1f-bis (`a
 
 If Apple Health returned an error for the target date (no data synced yet), still ensure the frontmatter block exists, write the goal keys from whatever evidence exists (workouts, morning cue), and leave the numeric health keys you couldn't source as `null` rather than dropping the block.
 
+**Set `status: closed` in the note's YAML frontmatter** as part of this write. `status` (`planning | active | closed`) is the single signal the web companion reads to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
+
 ### Step 6: Update project session logs
 
 For each project touched, check if a session log exists for today:
@@ -893,7 +996,7 @@ This step does three things: marks finished tasks done, adds progress notes to i
 
 **7a. Complete finished tasks**
 
-Cross-reference the day's Work Log against Kevin's open Asana tasks (fetched in Step 1g). For each Asana task that was clearly completed today, mark it done:
+Cross-reference the day's Work Log against the builder's open Asana tasks (fetched in Step 1g). For each Asana task that was clearly completed today, mark it done:
 
 ```
 mcp__claude_ai_Asana__update_tasks(
@@ -905,7 +1008,7 @@ mcp__claude_ai_Asana__update_tasks(
 
 **7b. Comment on in-progress tasks**
 
-For Asana tasks that Kevin worked on but didn't finish, add a progress comment:
+For Asana tasks that the builder worked on but didn't finish, add a progress comment:
 
 ```
 mcp__claude_ai_asana__add_comment(
@@ -941,17 +1044,17 @@ Then confirm with `mcp__claude_ai_Asana__create_task_confirm` using workspace `$
 
 **Priority inference rules:**
 - Commitments made to external parties (board, partners, candidates) → P1
-- Meeting action items Kevin owns with a stated deadline → use that deadline, infer priority from urgency
+- Meeting action items the builder owns with a stated deadline → use that deadline, infer priority from urgency
 - Contract/legal/hiring items → P1-P2 (time-sensitive by nature)
 - Internal tooling, automation, documentation → P2-P3
 - "Would be nice to" or "explore" language → P3
 - If a carry-over item was also carry-over from a previous day → bump priority up one level
 
 **Rules for Asana write-back:**
-- **Only create tasks for actionable items Kevin owns.** Skip items that are someone else's action (e.g., "Davo sends proposal").
+- **Only create tasks for actionable items the builder owns.** Skip items that are someone else's action (e.g., "Davo sends proposal").
 - **Don't duplicate.** Before creating, search Asana for similar task names. If a match exists, skip (or comment on it instead).
-- **Include source context** in the description so Kevin knows where the task came from.
-- **Present the full Asana sync plan to Kevin** before executing. Show three columns:
+- **Include source context** in the description so the builder knows where the task came from.
+- **Present the full Asana sync plan to the builder** before executing. Show three columns:
 
 ```
 ✅ Complete (2):
@@ -967,11 +1070,36 @@ Then confirm with `mcp__claude_ai_Asana__create_task_confirm` using workspace `$
   - "Create GitHub repo for Red's feedback bot" — P3, due 3/31
 ```
 
-Kevin approves, modifies, or skips before any Asana writes happen.
+The builder approves, modifies, or skips before any Asana writes happen.
 
 **7d. SLT Meeting Actions — comment, complete, and advance status**
 
-The SLT knowledge base has its own action tracking. Meeting Actions are first-class here — not just reflections of Asana tasks. Step 7d writes back three kinds of updates:
+**🛑 HARD GATE — check BEFORE doing anything in this step.** Run these checks in order:
+
+1. Read `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If frontmatter does NOT contain `slt_member: true`, **skip 7d entirely and continue to 7e.** Do not read `AIRTABLE_API_KEY`, do not probe the base, do not run any Bash command referencing the key.
+2. If `builder-profile.md` is missing, fall back to grep'ing `$OBSIDIAN_VAULT_PATH/10-strategy/operating-memo.md` for "SLT" — but the explicit profile field is the canonical signal, and a missing profile should be treated as `slt_member: false`.
+3. Only if the gate above passes: verify `$AIRTABLE_API_KEY` is non-empty. If empty, skip with a one-line note ("SLT integration enabled in profile but `AIRTABLE_API_KEY` is empty — run `/personal-setup`").
+4. Only then: probe the SLT base `appHDEHQA4bvlWwQq` for 200. Skip silently on any other status.
+5. When making the call, use `source .env` — never inline `export KEY=value`. See `CLAUDE.md` "Handling Secrets."
+
+New builders should be set up via `/obsidian-setup` Question 6 to populate `slt_member` correctly.
+
+The SLT knowledge base has its own action tracking. Meeting Actions are first-class — not just reflections of Asana tasks. Step 7d closes the loop between daily-workflow completions and the SLT base when {user} marks SLT-shadowed tasks done.
+
+**Fetch open SLT actions inline** (skip if already cached from earlier in the run):
+
+```
+Airtable REST API:
+Base: appHDEHQA4bvlWwQq
+Table: tblasgjUjadHCqzrg (Meeting Actions)
+filterByFormula: AND(NOT({fldJleDMJFfcj5gPN}='Completed'),NOT({fldJleDMJFfcj5gPN}='Not doing'))
+fields[]: fldJleDMJFfcj5gPN, fldo7xzjuXIneaw5J, fldkqhlQRTug3A1ui, fldiPWq8q3NXyNXil, fldmpu3lN0lrgrdSa
+returnFieldsByFieldId: true
+```
+
+Filter to {user}'s actions Python-side — `filterByFormula` on `{assignee_name}` is unreliable (see MEMORY.md Airtable gotchas).
+
+Step 7d writes back three kinds of updates:
 
 **(i) Mark Meeting Actions complete** — when evidence shows the action is done
 
@@ -1005,14 +1133,14 @@ If a completed Asana task's description contains `Source: SLT Meeting` or an exp
 
 1. **Preferred — Asana task notes convention.** `/open-day` Step 4a writes an exact line in the form `SLT record: recXXX` into the Asana task description when shadowing an SLT action. Parse the completed Asana task's `notes` (or `html_notes`) field for the regex `SLT record:\s*(rec[A-Za-z0-9]+)`. Case-sensitive match on the prefix. This is deterministic — no text fuzzing required.
 2. **Step 1h carry-forward.** Record IDs pulled alongside actions in the morning/evening fetch let you match by action description directly against the in-memory list, skipping a second API call.
-3. **Fallback — text-match.** If neither above resolves, fuzzy-match the Asana task name against open Meeting Action `action_description` values from Step 1h. Surface matches for Kevin's approval; never write automatically on a fuzzy hit.
+3. **Fallback — text-match.** If neither above resolves, fuzzy-match the Asana task name against open Meeting Action `action_description` values from Step 1h. Surface matches for the builder's approval; never write automatically on a fuzzy hit.
 
-**Presentation to Kevin (before writing):**
+**Presentation to the builder (before writing):**
 
 ```
 🧠 SLT Airtable sync plan:
 ✅ Complete (2):
-  - rec123... "Order Thu lunch via Katie's sheet" — Slack: Kevin confirmed in Huddle thread
+  - rec123... "Order Thu lunch via Katie's sheet" — Slack: builder confirmed in Huddle thread
   - recABC... "Bring wired setup for offsite tech" — Familiar: 30+ caps on SLT prep doc
 
 🔄 Advance to In Progress (1):
@@ -1021,7 +1149,7 @@ If a completed Asana task's description contains `Source: SLT Meeting` or an exp
 No Asana-triggered SLT writes today.
 ```
 
-Kevin approves before any Airtable writes fire. This ensures completing a task in the daily workflow closes the loop in the SLT knowledge base — and surfaces the 40-item open backlog that Asana otherwise misses.
+The builder approves before any Airtable writes fire. This ensures completing a task in the daily workflow closes the loop in the SLT knowledge base — and surfaces the 40-item open backlog that Asana otherwise misses.
 
 **7e. Brain Dump Routing**
 
@@ -1031,12 +1159,12 @@ For each item, classify and propose a route:
 
 | Classification | Criteria | Action |
 |---|---|---|
-| **Task** | Actionable, owned by Kevin, completable in 1-2 sessions | Create Asana task with priority/due date |
+| **Task** | Actionable, owned by the builder, completable in 1-2 sessions | Create Asana task with priority/due date |
 | **Project idea** | Bigger than a task, needs dedicated planning and a note | Suggest creating Obsidian project note or adding to-do to an existing project |
 | **Decision** | A fork to resolve before other work can proceed | Surface in tomorrow's AI Suggested Top 3 |
 | **Learning / research** | Link, article, tech to explore, skill to build | Add to `40-learning/_inbox.md` |
 | **Parking lot** | Interesting but not now, no clear owner or timing | Add to `50-reference/parking-lot.md` |
-| **Concern / question** | Something on Kevin's mind that isn't actionable yet | Surface in tomorrow's Morning Check-in |
+| **Concern / question** | Something on the builder's mind that isn't actionable yet | Surface in tomorrow's Morning Check-in |
 
 **Present a triage table before writing anything:**
 
@@ -1052,7 +1180,7 @@ For each item, classify and propose a route:
 Approve to route, or tell me which to change/skip.
 ```
 
-After Kevin confirms, execute: create Asana tasks for Task items (using `create_task_preview` → `create_task_confirm`), append to Obsidian files for Project/Learning/Parking lot items. Decisions surface in Step 8 (tomorrow's note).
+After the builder confirms, execute: create Asana tasks for Task items (using `create_task_preview` → `create_task_confirm`), append to Obsidian files for Project/Learning/Parking lot items. Decisions surface in Step 8 (tomorrow's note).
 
 **Do not create Asana tasks for items that are already in Asana or already in today's Carrying Over section.** Deduplicate before proposing.
 
@@ -1100,20 +1228,26 @@ SORT priority ASC
 - Energy:
 ```
 
-This seeds the next day with the AI-suggested priorities so Kevin sees them first thing in the morning. He overwrites "My Top 3" with his actual priorities during `/open-day` or manually.
+This seeds the next day with the AI-suggested priorities so the builder sees them first thing in the morning. They overwrite "My Top 3" with his actual priorities during `/open-day` or manually.
 
-If the file already exists (Kevin or `/open-day` already created it), do NOT overwrite. Instead, check if it has the AI suggestion sections. If not, insert them after `## Morning Check-in`.
+If the file already exists (user or `/open-day` already created it), do NOT overwrite. Instead, check if it has the AI suggestion sections (`### AI Suggested: …`). If not, insert them as `###` subsections **inside** `## Morning Check-in` — specifically, between the `## Morning Check-in` heading and the `### My Top 3` heading (or at the end of the section if `### My Top 3` doesn't exist yet). The companion's parser only reads AI suggestions from within `## Morning Check-in`, so placing them anywhere else makes them invisible.
 
 ### Step 9: Confirm
 
 Report: "Daily note written to `01-daily/YYYY-MM-DD.md`. Seeded tomorrow's note at `01-daily/YYYY-MM-DD+1.md`. Updated session logs for: [project list]. Asana: [N] completed, [N] updated, [N] created."
 
----
+### Step 10: Offer to open tomorrow
+
+Right after the confirm, offer to roll straight into tomorrow's plan — everything is fresh in context (carry-overs, what got deleted, tomorrow's seeded AI suggestions), so opening now is cheaper and better-informed than a cold `/open-day` later:
+
+> Want to open tomorrow now? Say **`open day`** and I'll plan it while the carry-overs are fresh — or leave it and run `/open-day` in the morning.
+
+If the builder says `open day` (or "yes"/"open it"), run the **`/open-day`** skill for tomorrow. Preserve the current mode: if this was a test-mode close (`-t`), open tomorrow with `-t` too (same test vault); otherwise open the real day. Don't auto-run it — wait for their go.
 
 ## Performance Notes
 
-- **Familiar scanning is fast** — grepping frontmatter across 1000+ files takes < 2 seconds. Do NOT read OCR content unless Kevin asks for specific recall.
-- **Fathom API is slow** — full paginated fetch can take 30-60 seconds. If Kevin ran `/close-day` already today, skip re-fetching.
+- **Familiar scanning is fast** — grepping frontmatter across 1000+ files takes < 2 seconds. Do NOT read OCR content unless the builder asks for specific recall.
+- **Fathom API is slow** — full paginated fetch can take 30-60 seconds. If the builder ran `/close-day` already today, skip re-fetching.
 - **Calendar is instant** — MCP tool returns in < 1 second.
 - **Asana is fast** — MCP tools return in < 2 seconds.
 - **The 7-day retention** — Familiar auto-cleans stills after 7 days (`storageAutoCleanupRetentionDays: 7`). Daily notes capture the signal before the raw data expires.
