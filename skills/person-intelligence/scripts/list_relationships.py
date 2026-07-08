@@ -45,6 +45,26 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import load_dotenv_local  # noqa: E402,F401  — load .env into os.environ for cron/non-interactive runs
 import resolve_user  # noqa: E402
 
+SIGNAL_EXCLUDE = {
+    n.strip() for n in os.environ.get("SIGNAL_EXCLUDE", "Cory Capoccia").split(",") if n.strip()
+}
+
+
+def is_signal_eligible(name, email, tracking_reason):
+    """True when a tracked person plausibly has NSLS Signal Quick Notes.
+
+    Signal is coaching/context only; this only decides whether to ATTEMPT a
+    fetch. A no-match still degrades to empty in fetch_signal.py.
+    """
+    email = (email or "").strip().lower()
+    if not email.endswith("@nsls.org"):
+        return False
+    if tracking_reason == "key_relationship_external":
+        return False
+    if name in SIGNAL_EXCLUDE:
+        return False
+    return True
+
 
 def parse_key_relationships(raw):
     """Parse KEY_RELATIONSHIPS env var. Accepts comma or newline separators."""
@@ -186,6 +206,12 @@ def main():
                     "tracking_reason": "key_relationship_external",
                 }
             )
+
+    # Tag all relationships with signal_eligible before output.
+    for rel in relationships:
+        rel["signal_eligible"] = is_signal_eligible(
+            rel.get("name", ""), rel.get("email", ""), rel.get("tracking_reason", "")
+        )
 
     output = {
         "operating_user": operating_user_block,

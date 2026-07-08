@@ -265,6 +265,38 @@ def test_no_airtable_dependency():
         fixture.unlink()
 
 
+def test_signal_eligible_rule():
+    """Test is_signal_eligible function with various inputs."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("list_relationships", LIST_RELATIONSHIPS)
+    lr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lr)
+
+    # direct report with nsls email -> eligible
+    assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True
+    # SLT peer with nsls email -> eligible
+    assert lr.is_signal_eligible("Adam Stone", "astone@nsls.org", "peer") is True
+    # board member on the exclude list -> not eligible
+    assert lr.is_signal_eligible("Cory Capoccia", "ccapoccia@nsls.org", "key_relationship") is False
+    # external (no nsls email) -> not eligible
+    assert lr.is_signal_eligible("Red External", "", "key_relationship_external") is False
+    # non-nsls email -> not eligible
+    assert lr.is_signal_eligible("Gmail Person", "x@gmail.com", "key_relationship") is False
+
+
+def test_relationships_carry_signal_eligible():
+    """Test that emitted relationship dicts include signal_eligible key."""
+    fixture = make_fixture()
+    try:
+        stdout, _, code = run({"OPERATING_USER_EMAIL": "test@example.com"}, fixture)
+        assert code == 0
+        data = json.loads(stdout)
+        for rel in data["relationships"]:
+            assert "signal_eligible" in rel
+    finally:
+        fixture.unlink()
+
+
 if __name__ == "__main__":
     print("Running list_relationships.py tests")
     test_direct_reports_only()
