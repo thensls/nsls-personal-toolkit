@@ -141,23 +141,31 @@ def slugify(name: str) -> str:
     return name.lower().replace("'", "").replace(".", "").replace(" ", "-")
 
 
-def list_reports() -> list[dict]:
-    """Direct reports (tracking_reason == direct_report) via list_relationships.py."""
+def _relationships_json():
+    """Run list_relationships.py and return its parsed JSON (seam for tests)."""
     env = dict(os.environ)
-    env.setdefault(
-        "OPERATING_USER_EMAIL",
-        env.get("BUILDER_EMAIL", ""),
-    )
+    env.setdefault("OPERATING_USER_EMAIL", env.get("BUILDER_EMAIL", ""))
     out = subprocess.check_output(
         ["python3.12", str(SCRIPT_DIR / "list_relationships.py")],
         env=env, text=True, stderr=subprocess.DEVNULL,
     )
-    data = json.loads(out)
-    reports = []
-    for r in data.get("relationships", []):
-        if r.get("tracking_reason") == "direct_report":
-            reports.append({"name": r["name"], "slug": slugify(r["name"])})
-    return reports
+    return json.loads(out)
+
+
+def list_reports() -> list[dict]:
+    """Direct reports only (back-compat)."""
+    data = _relationships_json()
+    return [{"name": r["name"], "slug": slugify(r["name"])}
+            for r in data.get("relationships", [])
+            if r.get("tracking_reason") == "direct_report"]
+
+
+def list_signal_slugs() -> list[dict]:
+    """Every signal_eligible relationship (the broadened set)."""
+    data = _relationships_json()
+    return [{"name": r["name"], "slug": slugify(r["name"])}
+            for r in data.get("relationships", [])
+            if r.get("signal_eligible")]
 
 
 # --- cache safety -----------------------------------------------------------
@@ -273,6 +281,8 @@ def normalize(slug: str, bundle: dict, weeks: int) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--list-reports", action="store_true")
+    ap.add_argument("--list-signal", action="store_true",
+                    help="Print all signal_eligible slugs (broadened set) as JSON.")
     ap.add_argument("--slug")
     ap.add_argument("--weeks", type=int, default=12)
     ap.add_argument("--fetch", action="store_true",
@@ -285,6 +295,10 @@ def main() -> None:
 
     if args.list_reports:
         print(json.dumps(list_reports(), indent=2))
+        return
+
+    if args.list_signal:
+        print(json.dumps(list_signal_slugs(), indent=2))
         return
 
     if args.team_summary:
