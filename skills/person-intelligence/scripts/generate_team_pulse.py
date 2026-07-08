@@ -40,6 +40,11 @@ quotes over adjectives. Short sentences.
 Each section should only appear if the data supports it. Skip empty sections.
 "Cadence Integrity" always renders.
 
+For each person covered in the digest, include:
+- Support: one line — the single highest-leverage move this cycle (remove
+  [friction] / celebrate [win]), drawn from the person's "How to support"
+  block when present.
+
 Format the output as Obsidian-flavored markdown. Use the template structure
 provided. Do NOT include YAML frontmatter — the caller adds that.
 """
@@ -81,6 +86,17 @@ def latest_journal_entry(profile_text, max_chars=1200):
     return text[:max_chars]
 
 
+def extract_support_section(profile_text, max_chars=800):
+    """Return the '## How to Support' section body, or None."""
+    m = re.search(r"^## How to Support[^\n]*\n", profile_text, re.MULTILINE)
+    if not m:
+        return None
+    after = profile_text[m.end():]
+    nxt = re.search(r"^## ", after, re.MULTILINE)
+    body = (after[:nxt.start()] if nxt else after).strip()
+    return body[:max_chars] or None
+
+
 def load_profile_data(vault_path, name):
     """Load a profile's frontmatter + latest journal entry."""
     path = vault_path / "30-people" / f"{name}.md"
@@ -93,6 +109,7 @@ def load_profile_data(vault_path, name):
     return {
         "frontmatter": parse_frontmatter(text),
         "latest_journal": latest_journal_entry(text),
+        "text": text,
     }
 
 
@@ -126,6 +143,8 @@ def build_pulse_input(manifest, vault_path):
             entry["health_score"] = fm.get("health_score")
             entry["health_last_assessed"] = fm.get("health_last_assessed")
             entry["latest_journal"] = profile["latest_journal"]
+            entry["how_to_support"] = extract_support_section(profile["text"]) \
+                if profile.get("text") else None
         relationships.append(entry)
 
     return {
@@ -156,6 +175,8 @@ def build_user_prompt(pulse_input, template):
             lines.append(f"  - Latest journal entry:")
             for jl in r["latest_journal"].split("\n")[:8]:
                 lines.append(f"    > {jl}")
+        if r.get("how_to_support"):
+            lines.append(f"  - How to support:\n{r['how_to_support']}")
         lines.append("")
 
     lines.append("\n## Template to follow\n")
