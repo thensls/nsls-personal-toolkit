@@ -262,6 +262,11 @@ def build_user_prompt(data):
             sections.append("- Recurring friction (themes — de-personalize if sensitive):")
             for f in fr[:8]:
                 sections.append(f"  - [{f.get('week','')}] {f.get('text','')} ({f.get('category','')})")
+        gr = signal.get("growth") or []
+        if gr:
+            sections.append("- Growth signals (their own aspirations / learning):")
+            for g in gr[:8]:
+                sections.append(f"  - [{g.get('week','')}] {g.get('text','')}")
         goals = signal.get("goals") or []
         if goals:
             sections.append("- Goal health:")
@@ -275,17 +280,29 @@ def build_user_prompt(data):
         dropped = signal.get("sensitive_dropped") or []
         if dropped:
             sections.append(f"- ({len(dropped)} item(s) withheld by the sensitivity pre-filter — do not attempt to recover them)")
+        relation = {
+            "direct_report": "direct report", "manager": "your manager",
+            "peer": "SLT peer", "key_relationship": "key relationship",
+        }.get(data.get("relationship_type", "peer"), "colleague")
+        latest_week = (signal.get("submitted_weeks") or ["recent"])[0]
         sections.append(
-            "\nUsing ONLY the distilled signal above, produce a `## Signal Read` section with these lines:\n"
-            "- **Sentiment:** trajectory in plain words (e.g. 'steady; dipped wk of X, recovered'). No raw score dump.\n"
+            f"\nUsing ONLY the distilled signal above, produce a `## Signal Read` section. "
+            f"Begin it with this exact provenance line:\n"
+            f"*Signal source: {relation} — Quick Notes through {latest_week}.*\n"
+            "Then these lines:\n"
+            "- **Sentiment:** trajectory in plain words. No raw score dump.\n"
             "- **Recent wins:** 1-3, named + week.\n"
             "- **Recurring friction (themes):** theme + streak weeks; de-personalize anything sensitive.\n"
             "- **Goal health:** counts + any flagged.\n"
             "- **Submission cadence:** weekly, or a gap of N weeks.\n"
             "Then, if the signal shows evidence relevant to an ACTIVE coaching goal, emit a "
-            "`<!-- DIGEST: Signal evidence for [goal] — [observation] -->` comment so the biweekly "
-            "review can surface it for approval. NEVER write directly into Coaching Goals; it is "
-            "user-curated. NEVER include comp, health, family, or personnel-status content."
+            "`<!-- DIGEST: Signal evidence for [goal] — [observation] -->` comment. NEVER write "
+            "directly into Coaching Goals. NEVER include comp, health, family, or personnel content."
+        )
+        sections.append(
+            "Also let this distilled signal inform 'What Energizes/Concerns Them' and any "
+            "relational-patterns narrative where it genuinely adds insight — do not silo it to "
+            "Signal Read. Same sensitivity rubric applies."
         )
 
     # --- Existing profiles ---
@@ -342,6 +359,25 @@ def build_user_prompt(data):
 
     # --- Confirmed projects list ---
     confirmed_list = [p['project'] for p in confirmed]
+
+    # --- How to Support (advisory) ---
+    if (data.get("meeting_summaries") or data.get("signal")):
+        nm = data.get("person_name", "them")
+        srcs = []
+        if data.get("signal"): srcs.append("their Signal Quick Notes (wins/friction/goals above)")
+        if data.get("meeting_summaries"): srcs.append("the meeting evidence above")
+        sections.append(
+            f"\n## Instruction: emit a `## How to Support {nm}` section (advisory)\n"
+            f"Draw on {' and '.join(srcs)}. Prefer Signal (their own words) when present. "
+            f"Start the section with the HTML comment `<!-- advisory: regenerated each sweep -->` "
+            f"then three bolded buckets, each with 1-3 concrete, observable actions the operating "
+            f"user can take:\n"
+            f"- **Remove friction:** the top friction to clear for {nm}.\n"
+            f"- **Celebrate wins:** specific wins worth naming/recognizing.\n"
+            f"- **Support growth:** growth or aspiration signals to back.\n"
+            f"This section is ADVISORY context — it must NOT modify or duplicate the user-curated "
+            f"`## Coaching Goals`. Omit any bucket with no real evidence. Same sensitivity rubric."
+        )
 
     # --- Final instructions ---
     sections.append(f"""
