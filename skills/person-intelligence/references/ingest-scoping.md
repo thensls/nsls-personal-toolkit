@@ -43,12 +43,11 @@ For each person the sweep tracks, three sources fire in parallel.
 
 - Any tracked person who is `signal_eligible` — NSLS email, not board/external
   (determined by `list_relationships.py`)
-- **Shareable-tier fields only**: sentiment, wins, friction, growth. **Never** raw
+- **Shareable-tier fields only**: sentiment, wins, friction, growth, goal health. **Never** raw
   work-journal narration (`narration_raw`, `entry_text`)
 - Default exclusion: `SIGNAL_EXCLUDE={"Cory Capoccia"}` (override in `.env` if
   needed)
-- **Provenance**: Quick Notes sourced from the Signal dashboard; cached raw, distilled
-  into normalized fields before synthesis
+- **Provenance**: The synthesizer prepends a transparency line to `## Signal Read` of the form `*Signal source: {relation} — Quick Notes through {week}.*` (where {relation} = direct report / SLT peer / key relationship), so it's explicit whose relation/words are surfaced — important now that scope includes non-reports
 - **Never contributes to scoring.** `health_score` reads Fathom-meeting evidence
   only; Signal feeds `## Signal Read` + advisory `## How to Support` sections
   and relationship context — coaching, not the number.
