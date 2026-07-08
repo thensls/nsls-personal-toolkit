@@ -156,9 +156,18 @@ def list_fathom_meetings_since(email, since_date):
 
 
 def plan_signal(rel, signal_available):
-    """Set signal_ingest_planned + signal_slug on a relationship dict. Pure/testable."""
-    eligible = bool(rel.get("signal_eligible"))
-    rel["signal_ingest_planned"] = bool(signal_available) and eligible
+    """Set signal_ingest_planned + signal_slug on a relationship dict. Pure/testable.
+
+    Computes signal_eligible if the caller didn't already tag it (the biweekly
+    sweep builds relationship dicts inline and does not run list_relationships.main()).
+    """
+    eligible = rel.get("signal_eligible")
+    if eligible is None:
+        eligible = list_relationships.is_signal_eligible(
+            rel.get("name", ""), rel.get("email", ""), rel.get("tracking_reason", "")
+        )
+        rel["signal_eligible"] = eligible
+    rel["signal_ingest_planned"] = bool(signal_available) and bool(eligible)
     if rel["signal_ingest_planned"]:
         rel["signal_slug"] = (
             rel["name"].lower().replace("'", "").replace(".", "").replace(" ", "-")
@@ -270,9 +279,12 @@ def build_manifest(vault_path, cache_dir):
     fathom_available = bool(os.environ.get("FATHOM_API_KEY"))
     slack_available = not os.environ.get("SKIP_SLACK_INGEST")
     gmail_available = not os.environ.get("SKIP_GMAIL_INGEST")
-    # Signal: direct reports only, and only when opted in. The orchestrator runs
-    # `fetch_signal.py --fetch --slug <signal_slug>` for each rel where
-    # signal_ingest_planned is true and folds the result into the synthesize payload.
+    # Signal: gated by eligibility (see list_relationships.is_signal_eligible), not
+    # relationship type, and only when opted in. plan_signal() computes eligibility
+    # on this inline sweep path since list_relationships.main() never runs here.
+    # The orchestrator runs `fetch_signal.py --fetch --slug <signal_slug>` for each
+    # rel where signal_ingest_planned is true and folds the result into the
+    # synthesize payload.
     signal_available = os.environ.get("SIGNAL_INGEST") == "1"
 
     for i, rel in enumerate(rel_set, 1):

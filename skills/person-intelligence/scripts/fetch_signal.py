@@ -18,7 +18,11 @@ Two responsibilities:
 
 Modes:
   --list-reports                 Print direct-report slugs (JSON) from list_relationships.py
+  --list-signal                  Print all signal_eligible slugs (broadened set) as JSON
   --slug X [--weeks N]           Normalize: read raw MCP bundle from stdin, cache it, emit normalized JSON
+  --fetch --slug X               Token-direct: pull person/history/goals from the Signal API (no MCP, no stdin)
+  --team-summary [--manager X] [--week YYYY-MM-DD]
+                                  Token-direct: pull the weekly team summary (the manager's team pulse)
 
 Input bundle (stdin, --slug mode):
   {"slug": "...",

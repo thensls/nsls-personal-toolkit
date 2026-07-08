@@ -19,3 +19,16 @@ def test_gate_uses_eligibility_not_direct_report_only():
     rel2 = {"name": "Cory Capoccia", "email": "ccapoccia@nsls.org",
             "tracking_reason": "key_relationship", "signal_eligible": False}
     assert bws.plan_signal(rel2, signal_available=True)["signal_ingest_planned"] is False
+
+
+def test_plan_signal_computes_eligibility_when_untagged():
+    bws = _load("biweekly_sweep")
+    # sweep-path dict: no signal_eligible key set (build_manifest builds inline)
+    rel = {"name": "Adam Stone", "email": "astone@nsls.org", "tracking_reason": "peer"}
+    out = bws.plan_signal(rel, signal_available=True)
+    assert out["signal_ingest_planned"] is True
+    assert out["signal_slug"] == "adam-stone"
+    assert out["signal_eligible"] is True
+    # ineligible external, untagged
+    rel2 = {"name": "Ext", "email": "", "tracking_reason": "key_relationship_external"}
+    assert bws.plan_signal(rel2, signal_available=True)["signal_ingest_planned"] is False
