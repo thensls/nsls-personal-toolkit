@@ -909,11 +909,16 @@ def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
         target_line = lines[item_indices[index]]
         m = _LIST_ITEM_RE.match(target_line)
         prefix, rest = m.group(1), m.group(2)
+        # Preserve any trailing progress/estimate markers (<!--p:..-->/<!--e:..-->)
+        # so renaming a task (set-top-3 / set-bonus / plan-action) doesn't wipe
+        # its saved progress or remaining-time estimate.
+        markers = re.findall(r"<!--[pe]:.*?-->", rest)
+        suffix = (" " + " ".join(markers)) if markers else ""
         if rest.startswith("[ ]") or rest.startswith("[x]") or rest.startswith("[X]"):
             marker = rest[:3]
-            lines[item_indices[index]] = f"{prefix}{marker} {text}".rstrip()
+            lines[item_indices[index]] = f"{prefix}{marker} {text}".rstrip() + suffix
         else:
-            lines[item_indices[index]] = f"{prefix}[ ] {text}".rstrip()
+            lines[item_indices[index]] = f"{prefix}[ ] {text}".rstrip() + suffix
     else:
         # Append blank items up to and including the target index
         insertion_point = item_indices[-1] + 1 if item_indices else section_start + 1

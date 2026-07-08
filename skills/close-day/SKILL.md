@@ -67,8 +67,11 @@ Default to today (`date +%Y-%m-%d`). Override by passing the date as an argument
 **Test-mode flag (`-t`):** if the invocation includes `-t` (e.g. `close day -t`), run the **entire skill against a throwaway test vault** so your real daily notes are never touched. The whole system keys off one variable, `$OBSIDIAN_VAULT_PATH` — so test mode is just: **before anything else, point that variable at the test vault.** Resolve the companion binary (the `"$TC"` lookup in Step 0.5) and run:
 
 ```bash
-export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
+export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)" || { echo "Test-vault setup failed — aborting so test mode never touches real notes."; return 1 2>/dev/null || exit 1; }
+[ -n "$OBSIDIAN_VAULT_PATH" ] || { echo "Test-vault path empty — aborting to protect real notes."; return 1 2>/dev/null || exit 1; }
 ```
+
+**The guard is load-bearing:** if `"$TC"` can't be resolved or `test-vault` fails, `OBSIDIAN_VAULT_PATH` would otherwise stay pointed at the **real** vault and the run would close real notes. In test mode, a failed setup must **abort** — never fall through to Step 0.5's chat fallback against the real vault.
 
 `test-vault` creates + seeds the vault (`~/.claude/local-plugins/nsls-personal-toolkit/companion-test-vault/`, gitignored) and prints its path; it never overwrites existing notes. Every downstream step then reads and writes the test vault, and the companion shows a gold **TEST** banner. Pair with `open day -t` (plan into the test vault first) and `reset-day -t` (clear it).
 
