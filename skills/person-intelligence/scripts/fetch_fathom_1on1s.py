@@ -249,10 +249,19 @@ def fetch_transcript(api_key: str, recording_id) -> list[dict]:
     url = f"{FATHOM_BASE}/recordings/{recording_id}/transcript"
     headers = {"X-Api-Key": api_key}
 
-    for attempt in range(3):
-        resp = httpx.get(url, headers=headers, timeout=30)
+    resp = None
+    for attempt in range(6):
+        try:
+            resp = httpx.get(url, headers=headers, timeout=30)
+        except (httpx.TimeoutException, httpx.TransportError) as e:
+            wait = min(60, 2**attempt * 3)
+            print(f"  Transcript network error (attempt {attempt+1}): "
+                  f"{type(e).__name__}; retrying in {wait}s...", file=sys.stderr)
+            time.sleep(wait)
+            resp = None
+            continue
         if resp.status_code == 429:
-            wait = 2**attempt * 3
+            wait = min(60, 2**attempt * 5)  # 5,10,20,40,60,60
             print(
                 f"  Rate limited (transcript), waiting {wait}s...", file=sys.stderr
             )
@@ -262,6 +271,14 @@ def fetch_transcript(api_key: str, recording_id) -> list[dict]:
             return []
         resp.raise_for_status()
         break
+
+    # Exhausted retries (still rate-limited / never got a 2xx): degrade gracefully
+    # rather than crashing the whole run and truncating output. The caller keeps
+    # every other meeting; this one just lands with an empty transcript.
+    if resp is None or resp.status_code != 200:
+        print(f"  Giving up on transcript for {recording_id} after retries "
+              f"(last status {getattr(resp, 'status_code', 'none')}).", file=sys.stderr)
+        return []
 
     data = resp.json()
     if isinstance(data, list):
@@ -450,8 +467,10 @@ def main():
             if (m.get("scheduled_start_time") or "")[:10] >= args.after
         ]
 
-    # Sort by date
-    meetings.sort(key=lambda x: x.get("scheduled_start_time", ""))
+    # Sort by date, most recent first — so if transcript fetching degrades under
+    # rate-limiting, the meetings that drop are the oldest, and the freshest
+    # (most relevant for a relationship read) are fetched first.
+    meetings.sort(key=lambda x: x.get("scheduled_start_time", ""), reverse=True)
 
     if args.list and not args.fetch_all and not args.date:
         # List-only mode: human-readable to stderr. With --json, also emit one
