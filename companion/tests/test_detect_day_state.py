@@ -87,6 +87,22 @@ class TestLegacyInference:
         md = "## Morning Check-in\n\n### My Top 3\n1. [ ] task\n"
         assert _detect_day_state(md, _top3()) == "command"
 
+    def test_partially_filled_top3_stays_coach_morning(self):
+        """One filled slot among blanks must NOT flip to Command Center —
+        extraction drops blank rows, so the old all-have-text check was
+        vacuously true after the first slot and the view jumped mid-planning
+        (2026-07-08, Davo). Only a genuinely full Top 3 implies command."""
+        md = "## Morning Check-in\n\n### My Top 3\n1. [ ] first task\n2. [ ]\n3. [ ]\n"
+        assert _detect_day_state(md, [{"text": "first task", "checked": False}]) == "coach-morning"
+
+    def test_two_of_three_filled_stays_coach_morning(self):
+        md = "## Morning Check-in\n\n### My Top 3\n1. [ ] a\n2. [ ] b\n3. [ ]\n"
+        assert _detect_day_state(md, _top3(2)) == "coach-morning"
+
+    def test_all_raw_slots_filled_returns_command(self):
+        md = "## Morning Check-in\n\n### My Top 3\n1. [ ] a\n2. [ ] b\n3. [ ] c\n"
+        assert _detect_day_state(md, _top3()) == "command"
+
     def test_no_top3_returns_coach_morning(self):
         md = "## Morning Check-in\n"
         assert _detect_day_state(md, []) == "coach-morning"
@@ -99,3 +115,51 @@ class TestLegacyInference:
         # back to the legacy inference so we never render a blank mode.
         md = "---\nstatus: bogus\n---\n\n## Insight Reflection\nGreat day.\n"
         assert _detect_day_state(md, _top3()) == "results"
+
+
+# ---------------------------------------------------------------------------
+# end-to-end: planning edits must never leave Plan-your-day
+# ---------------------------------------------------------------------------
+
+import pytest
+from datetime import date
+from companion.server import create_app
+
+
+@pytest.fixture
+def client_no_status(tmp_path):
+    """A note WITHOUT status frontmatter (e.g. written by an older /open-day)
+    — the case where the legacy inference is in charge."""
+    vault = tmp_path / "vault"
+    (vault / "01-daily").mkdir(parents=True)
+    habits = vault / "30-habits"
+    habits.mkdir(parents=True)
+    (habits / "habits.md").write_text("# Daily Habits\n\n## Active\n\n- id: walk\n  name: Walk\n")
+    (habits / "log.md").write_text("# Daily habit log\n")
+    (vault / "01-daily" / f"{date.today().isoformat()}.md").write_text(
+        "# Daily Note\n\n## Morning Check-in\n\n### My Top 3\n"
+        "1. [ ]\n2. [ ]\n3. [ ]\n\n### Bonus\n\n### Habits\n- [ ] **Walk**\n"
+    )
+    app = create_app(vault_path=str(vault))
+    app.config["TESTING"] = True
+    try:
+        yield app.test_client()
+    finally:
+        app.config["WATCHER"].stop()
+
+
+def test_filling_one_slot_keeps_plan_your_day(client_no_status):
+    c = client_no_status
+    assert 'id="task-table"' not in c.get("/").get_data(as_text=True)
+    c.post("/set-top-3", data={"index": "0", "text": "first priority"})
+    html = c.get("/").get_data(as_text=True)
+    assert 'id="task-table"' not in html      # still NOT Command Center
+    assert "Plan your day" in html
+
+
+def test_lock_in_still_advances_to_command(client_no_status):
+    c = client_no_status
+    c.post("/set-top-3", data={"index": "0", "text": "first priority"})
+    html = c.post("/lock-in", data={"phase": "morning"}).get_data(as_text=True)
+    assert 'id="task-table"' in html          # explicit Done → Command Center
+    assert 'id="task-table"' in c.get("/").get_data(as_text=True)  # sticks

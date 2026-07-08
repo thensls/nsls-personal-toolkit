@@ -998,8 +998,12 @@ def _detect_day_state(daily_md: str, top_3: list) -> str:
     Legacy inference (no/unknown status):
       - `## Insight Reflection` body has content → 'results' (day is closed).
       - `## Insight Reflection` heading exists but body is empty → 'coach-evening'.
-      - Top 3 has items and all have text → 'command' (Command Center).
-      - Else → 'coach-morning' (no note yet, or Top 3 missing/empty).
+      - Every RAW Top 3 slot is filled → 'command' (Command Center). Raw slots,
+        not the compacted list: extraction drops blank rows, so "all items have
+        text" was vacuously true once ONE slot was filled and the view jumped to
+        Command Center mid-planning. Planning must never leave Plan-your-day
+        until the explicit Done/lock-in click (or the plan is genuinely full).
+      - Else → 'coach-morning' (no note yet, or Top 3 missing/partially filled).
     """
     sections = parse_daily_note_sections(daily_md)
     status = parse_frontmatter(daily_md).get("status", "")
@@ -1021,7 +1025,10 @@ def _detect_day_state(daily_md: str, top_3: list) -> str:
         return "results"
     if "Insight Reflection" in sections:
         return "coach-evening"
-    if top_3 and all(item.get("text") for item in top_3):
+    raw_top3 = _extract_numbered_checkbox_list_raw(
+        sections.get("Morning Check-in", ""), "### My Top 3"
+    )
+    if raw_top3 and all(it["text"] for it in raw_top3):
         return "command"
     return "coach-morning"
 

@@ -188,7 +188,10 @@ def test_task_controls_return_full_table(client_with_today, route, data):
 # filtered from display — while the mutators count every raw row, so with a
 # blank `1. [ ]` slot a click on "second" wrote its marker onto the blank row.)
 
-BLANK_SLOT_NOTE = """# Daily Note
+BLANK_SLOT_NOTE = """---
+status: active
+---
+# Daily Note
 
 ## Morning Check-in
 
