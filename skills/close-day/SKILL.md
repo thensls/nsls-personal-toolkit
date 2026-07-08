@@ -99,9 +99,14 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 1. **Resolve `"$TC"`** (above). If it can't be found, or you're not on a surface that can run a local server, **skip silently** and close in chat.
 2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Not running`, start it in the background, then re-check:
    ```bash
+   # serve auto-detects the test vault from OBSIDIAN_VAULT_PATH and starts the
+   # test instance (port 7788, its own pidfile) — no flag needed on serve.
    OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
    sleep 2
-   "$TC" status   # in test mode: "$TC" status --test — plain status reports the REAL companion
+   # Re-check at the SAME scope you started. In test mode you MUST pass --test —
+   # plain `status` reads the REAL companion's pidfile and will wrongly report
+   # "Not running", forcing a needless chat fallback.
+   "$TC" status          # in test mode: "$TC" status --test
    ```
    If it still won't start, **skip silently** and close in chat. Parse the address from the status output.
 3. **Read the target date's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/<target-date>.md` (Step 0's date, default today). If it doesn't exist, skip this step.
