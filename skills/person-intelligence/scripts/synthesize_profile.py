@@ -329,6 +329,29 @@ def build_user_prompt(data):
             "Signal Read. Same sensitivity rubric applies."
         )
 
+    # --- How to Support (advisory) ---
+    # Placed here (right after Signal, before the large existing-profile block) so
+    # the model reliably emits it. When it lived at the tail, a long existing
+    # profile crowded it out and the section silently went missing.
+    if (data.get("meeting_summaries") or data.get("signal")):
+        nm = data.get("person_name", "them")
+        srcs = []
+        if data.get("signal"): srcs.append("their Signal Quick Notes (wins/friction/growth/goals above)")
+        if data.get("meeting_summaries"): srcs.append("the meeting evidence above")
+        sections.append(
+            f"\n## Instruction (REQUIRED OUTPUT SECTION): emit a `## How to Support {nm}` section (advisory)\n"
+            f"Draw on {' and '.join(srcs)}. Prefer Signal (their own words) when present. "
+            f"Start the section with the HTML comment `<!-- advisory: regenerated each sweep -->` "
+            f"then three bolded buckets, each with 1-3 concrete, observable actions the operating "
+            f"user can take:\n"
+            f"- **Remove friction:** the top friction to clear for {nm}.\n"
+            f"- **Celebrate wins:** specific wins worth naming/recognizing.\n"
+            f"- **Support growth:** growth or aspiration signals to back.\n"
+            f"This section is ADVISORY context — it must NOT modify or duplicate the user-curated "
+            f"`## Coaching Goals`. Omit any bucket with no real evidence. Same sensitivity rubric. "
+            f"Do not skip this section."
+        )
+
     # --- Existing profiles ---
     existing = data.get("existing_profile")
     if existing:
@@ -383,25 +406,6 @@ def build_user_prompt(data):
 
     # --- Confirmed projects list ---
     confirmed_list = [p['project'] for p in confirmed]
-
-    # --- How to Support (advisory) ---
-    if (data.get("meeting_summaries") or data.get("signal")):
-        nm = data.get("person_name", "them")
-        srcs = []
-        if data.get("signal"): srcs.append("their Signal Quick Notes (wins/friction/goals above)")
-        if data.get("meeting_summaries"): srcs.append("the meeting evidence above")
-        sections.append(
-            f"\n## Instruction: emit a `## How to Support {nm}` section (advisory)\n"
-            f"Draw on {' and '.join(srcs)}. Prefer Signal (their own words) when present. "
-            f"Start the section with the HTML comment `<!-- advisory: regenerated each sweep -->` "
-            f"then three bolded buckets, each with 1-3 concrete, observable actions the operating "
-            f"user can take:\n"
-            f"- **Remove friction:** the top friction to clear for {nm}.\n"
-            f"- **Celebrate wins:** specific wins worth naming/recognizing.\n"
-            f"- **Support growth:** growth or aspiration signals to back.\n"
-            f"This section is ADVISORY context — it must NOT modify or duplicate the user-curated "
-            f"`## Coaching Goals`. Omit any bucket with no real evidence. Same sensitivity rubric."
-        )
 
     # --- Final instructions ---
     sections.append(f"""
@@ -724,6 +728,47 @@ def postprocess(raw_profile, data):
     return result
 
 
+def generate_how_to_support(client, data):
+    """Focused fallback: generate ONLY the `## How to Support` section when the main
+    synthesis omitted it (LLM occasionally drops it on very long profiles). Returns
+    the section markdown, or '' on failure. Makes the advisory section reliable
+    regardless of prompt size / model variance."""
+    name = data["person_name"]
+    signal = data.get("signal") or {}
+    meetings = data.get("meeting_summaries") or []
+    parts = [
+        f"Produce ONLY a `## How to Support {name}` section — no other text.",
+        "Start with the line `<!-- advisory: regenerated each sweep -->`, then three "
+        "bolded buckets, each with 1-3 concrete, observable actions the operating user can take:",
+        "- **Remove friction:** the top friction to clear\n"
+        "- **Celebrate wins:** specific wins worth naming/recognizing\n"
+        "- **Support growth:** growth or aspiration signals to back",
+        "Advisory only — do NOT reference or modify any Coaching Goals. Omit a bucket with "
+        "no real evidence. Never include comp, health, family, or personnel-status content.",
+    ]
+    if signal.get("wins") or signal.get("friction") or signal.get("growth"):
+        parts.append("\nSignal (their own words):")
+        for k in ("wins", "friction", "growth"):
+            for it in (signal.get(k) or [])[:6]:
+                parts.append(f"- [{k}] {it.get('text', '')}")
+    if meetings:
+        parts.append("\nRecent meetings:")
+        for m in sorted(meetings, key=lambda m: m.get("date", ""), reverse=True)[:6]:
+            parts.append(f"### {m.get('date', '')} — {m.get('title', '')}\n{m.get('summary', '')[:1500]}")
+    prompt = "\n".join(parts)[:60_000]
+    try:
+        msg = client.messages.create(
+            model="claude-sonnet-4-6", max_tokens=1200,
+            system="You write one concise, advisory coaching section. Output only the requested markdown section.",
+            messages=[{"role": "user", "content": prompt}],
+        )
+        txt = msg.content[0].text.strip()
+        return txt if txt.startswith("## How to Support") else ""
+    except Exception as e:
+        print(f"How-to-Support fallback failed: {e}", file=sys.stderr)
+        return ""
+
+
 def main():
     # Read JSON from stdin
     try:
@@ -794,6 +839,20 @@ def main():
 
     # Post-process
     final = postprocess(raw_profile, data)
+
+    # Deterministic guarantee: the model can drop the ## How to Support section on
+    # very long profiles. If it's missing but we have evidence, generate it via a
+    # focused follow-up call and splice it in before ## Personal (else append).
+    if "## How to Support" not in final and (data.get("signal") or data.get("meeting_summaries")):
+        section = generate_how_to_support(client, data)
+        if section:
+            print("How-to-Support missing from main synthesis; added via focused fallback.", file=sys.stderr)
+            anchor = final.find("\n## Personal")
+            if anchor == -1:
+                final = final.rstrip() + "\n\n" + section + "\n"
+            else:
+                final = final[:anchor] + "\n\n" + section + "\n" + final[anchor:]
+
     print(f"Final profile: {len(final)} chars", file=sys.stderr)
 
     # Output to stdout
