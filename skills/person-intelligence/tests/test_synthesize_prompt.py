@@ -35,3 +35,40 @@ def test_no_support_section_without_any_evidence():
             "meeting_summaries": [], "signal": None}
     prompt = sp.build_user_prompt(data)
     assert "## How to Support" not in prompt
+
+
+def test_how_to_support_survives_many_large_meetings():
+    """Regression: with a big meeting set + large existing profile, the prompt
+    must stay within MAX_PROMPT_CHARS AND keep the ## How to Support directive
+    (previously it fell off the truncated tail)."""
+    sp = _load()
+    big_summary = "word " * 3000  # ~15k chars each
+    meetings = [{"date": f"2026-06-{d:02d}", "title": f"SLT Huddle {d}", "summary": big_summary}
+                for d in range(1, 16)]  # 15 meetings, ~225k chars unbounded
+    data = {"person_name": "Chelsea Byers", "relationship_type": "direct_report",
+            "meeting_summaries": meetings,
+            "existing_profile": "## Kevin's Private Note\n\n" + ("keep " * 8000),
+            "signal": {"wins": [{"week": "2026-06-29", "text": "shipped"}],
+                       "friction": [], "growth": [{"week": "2026-06-29", "text": "learning"}],
+                       "sentiment": {}, "goals": [], "submitted_weeks": ["2026-06-29"]}}
+    prompt = sp.build_user_prompt(data)
+    assert len(prompt) <= sp.MAX_PROMPT_CHARS, f"prompt {len(prompt)} exceeds cap"
+    assert "## How to Support Chelsea Byers" in prompt
+    # older meetings trimmed, most-recent kept
+    assert "of 15 meetings" in prompt
+
+
+def test_meeting_budget_keeps_most_recent_prefix():
+    """break (not continue): once a meeting overflows the budget we stop, keeping a
+    most-recent contiguous prefix — we must not skip a newer meeting to fit an older."""
+    sp = _load()
+    meetings = [
+        {"date": "2026-07-03", "title": "NEWEST", "summary": "a" * 20000},
+        {"date": "2026-07-01", "title": "MIDDLE", "summary": "b" * 40000},
+        {"date": "2026-06-01", "title": "OLDEST", "summary": "c" * 5000},
+    ]
+    data = {"person_name": "X", "relationship_type": "peer",
+            "meeting_summaries": meetings, "signal": None}
+    prompt = sp.build_user_prompt(data)
+    assert "NEWEST" in prompt
+    assert "OLDEST" not in prompt  # would only appear if we skipped MIDDLE (the bug)
