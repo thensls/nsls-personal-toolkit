@@ -35,3 +35,24 @@ def test_no_support_section_without_any_evidence():
             "meeting_summaries": [], "signal": None}
     prompt = sp.build_user_prompt(data)
     assert "## How to Support" not in prompt
+
+
+def test_how_to_support_survives_many_large_meetings():
+    """Regression: with a big meeting set + large existing profile, the prompt
+    must stay within MAX_PROMPT_CHARS AND keep the ## How to Support directive
+    (previously it fell off the truncated tail)."""
+    sp = _load()
+    big_summary = "word " * 3000  # ~15k chars each
+    meetings = [{"date": f"2026-06-{d:02d}", "title": f"SLT Huddle {d}", "summary": big_summary}
+                for d in range(1, 16)]  # 15 meetings, ~225k chars unbounded
+    data = {"person_name": "Chelsea Byers", "relationship_type": "direct_report",
+            "meeting_summaries": meetings,
+            "existing_profile": "## Kevin's Private Note\n\n" + ("keep " * 8000),
+            "signal": {"wins": [{"week": "2026-06-29", "text": "shipped"}],
+                       "friction": [], "growth": [{"week": "2026-06-29", "text": "learning"}],
+                       "sentiment": {}, "goals": [], "submitted_weeks": ["2026-06-29"]}}
+    prompt = sp.build_user_prompt(data)
+    assert len(prompt) <= sp.MAX_PROMPT_CHARS, f"prompt {len(prompt)} exceeds cap"
+    assert "## How to Support Chelsea Byers" in prompt
+    # older meetings trimmed, most-recent kept
+    assert "of 15 meetings" in prompt
