@@ -34,6 +34,11 @@ VALID_RELATIONSHIP_TYPES = ("direct_report", "peer", "manager", "key_relationshi
 
 MAX_PROMPT_CHARS = 100_000
 
+# Cap on the meeting-summaries section so it can't crowd out the downstream
+# instructions (Signal Read, ## How to Support) or existing-profile sections via
+# MAX_PROMPT_CHARS tail-truncation. Most-recent meetings are kept.
+MEETING_SUMMARIES_BUDGET_CHARS = 48_000
+
 # Section headings the synthesizer is allowed to generate. Anything else
 # encountered in an existing profile is treated as human-authored and preserved
 # verbatim through extraction + re-injection rather than via LLM instruction.
@@ -158,10 +163,28 @@ def build_user_prompt(data):
     sections.append("")
 
     # --- Meeting summaries ---
+    # Bound this section's size. It's the largest, most variable input; left
+    # unbounded it pushes the whole prompt past MAX_PROMPT_CHARS and the tail
+    # truncation silently drops the downstream instructions (Signal Read, and
+    # especially the ## How to Support directive) and any custom existing-profile
+    # sections. Keep the most-recent meetings within a char budget so those
+    # always survive.
     meetings = data.get("meeting_summaries") or []
     if meetings:
-        sections.append(f"## Meeting Summaries ({len(meetings)} meetings)")
-        for m in meetings:
+        by_recent = sorted(meetings, key=lambda m: m.get("date", ""), reverse=True)
+        kept, used = [], 0
+        for m in by_recent:
+            chunk = len(m.get("summary", "")) + len(m.get("title", "")) + 40
+            if kept and used + chunk > MEETING_SUMMARIES_BUDGET_CHARS:
+                continue
+            kept.append(m)
+            used += chunk
+        dropped = len(meetings) - len(kept)
+        header = f"## Meeting Summaries ({len(kept)} of {len(meetings)} meetings)"
+        if dropped:
+            header += f"\n*({dropped} older meeting(s) omitted to fit the context budget; most recent kept.)*"
+        sections.append(header)
+        for m in sorted(kept, key=lambda m: m.get("date", "")):  # chronological within kept
             sections.append(f"### {m.get('date', 'unknown date')} — {m.get('title', 'untitled')}")
             sections.append(m.get("summary", ""))
             sections.append("")
