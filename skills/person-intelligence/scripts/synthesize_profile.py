@@ -176,7 +176,7 @@ def build_user_prompt(data):
         for m in by_recent:
             chunk = len(m.get("summary", "")) + len(m.get("title", "")) + 40
             if kept and used + chunk > MEETING_SUMMARIES_BUDGET_CHARS:
-                continue
+                break  # stop at the first that doesn't fit — keep a most-recent prefix
             kept.append(m)
             used += chunk
         dropped = len(meetings) - len(kept)
@@ -763,7 +763,14 @@ def generate_how_to_support(client, data):
             messages=[{"role": "user", "content": prompt}],
         )
         txt = msg.content[0].text.strip()
-        return txt if txt.startswith("## How to Support") else ""
+        # The model may (correctly) lead with the advisory comment before the
+        # heading, or add a little preamble. Anchor on whichever of the advisory
+        # comment / heading appears first and return from there; reject if neither.
+        h = txt.find("## How to Support")
+        if h == -1:
+            return ""
+        adv = txt.find("<!-- advisory:")
+        return txt[adv:] if 0 <= adv < h else txt[h:]
     except Exception as e:
         print(f"How-to-Support fallback failed: {e}", file=sys.stderr)
         return ""

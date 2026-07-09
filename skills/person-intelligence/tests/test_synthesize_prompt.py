@@ -56,3 +56,19 @@ def test_how_to_support_survives_many_large_meetings():
     assert "## How to Support Chelsea Byers" in prompt
     # older meetings trimmed, most-recent kept
     assert "of 15 meetings" in prompt
+
+
+def test_meeting_budget_keeps_most_recent_prefix():
+    """break (not continue): once a meeting overflows the budget we stop, keeping a
+    most-recent contiguous prefix — we must not skip a newer meeting to fit an older."""
+    sp = _load()
+    meetings = [
+        {"date": "2026-07-03", "title": "NEWEST", "summary": "a" * 20000},
+        {"date": "2026-07-01", "title": "MIDDLE", "summary": "b" * 40000},
+        {"date": "2026-06-01", "title": "OLDEST", "summary": "c" * 5000},
+    ]
+    data = {"person_name": "X", "relationship_type": "peer",
+            "meeting_summaries": meetings, "signal": None}
+    prompt = sp.build_user_prompt(data)
+    assert "NEWEST" in prompt
+    assert "OLDEST" not in prompt  # would only appear if we skipped MIDDLE (the bug)
