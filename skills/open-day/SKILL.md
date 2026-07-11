@@ -980,11 +980,13 @@ When you don't skip:
    - Linux: `xdg-open <url-from-status>`
    - Windows: `start <url-from-status>`
 
-3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now. **Always give a clickable link**: present the URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) as a Markdown link, never a bare IP.
+3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now. **Always give a clickable link**: present the URL as `http://localhost:<port>` as a Markdown link, never a bare IP.
 
-   > A tab opened at http://localhost:<port> — open it. Pick your Top 3, add anything else to the Bonus list, then click **Done — show Command Center** when you're ready.
+   > A tab opened at http://localhost:<port> — **open it in your web browser (Chrome/Safari), not the app's embedded panel.** Edits made in the Claude Code desktop "panel"/side view don't save. If the page won't load, use http://127.0.0.1:<port> instead. Then pick your Top 3, add anything else to the Bonus list, and click **Done — show Command Center** when you're ready.
    >
    > When you're done, say **done** here and I'll print a one-line summary. Or just go straight into your day — the daily note is being saved as you type. Type `open day visual off` if you'd rather skip the visual next time.
+
+   **Why this matters (say it if they report edits not saving):** the companion must run in a real browser tab. If a builder opens it as the desktop app's embedded panel, its writes never reach the local server and vanish silently — the companion now shows an orange warning banner in that case. The fix is always the same: open `http://127.0.0.1:<port>` in an actual browser window. Prefer `127.0.0.1` over `localhost` in troubleshooting — some machines resolve `localhost` to IPv6, which the IPv4-only server refuses.
 
 4. **Wait for the builder's "done" signal.** Do not poll, do not print intermediate messages, do not summarize "what they should do next." Just stop. Resume only when they reply.
 

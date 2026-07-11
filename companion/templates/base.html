@@ -190,6 +190,46 @@
         clearTimeout(toast._timer);
         toast._timer = setTimeout(() => { toast.style.display = "none"; }, 4000);
       };
+
+      // ---- Embedded-panel guard --------------------------------------------
+      // When the companion is opened as a Claude Code desktop "panel" (an
+      // embedded webview) instead of a real browser tab, its writes never
+      // reach the local server — edits vanish silently. We can't always tell
+      // the surface apart up front, so we warn on two signals:
+      //   1. framing — we're inside an <iframe> (cross-origin access throws,
+      //      which itself means embedded), OR
+      //   2. behavior — an HTMX request physically failed to reach the server
+      //      (htmx:sendError: connection refused / blocked), which is exactly
+      //      what a swallowed write looks like.
+      // The banner points at the 127.0.0.1 URL (not localhost) because some
+      // machines resolve localhost to IPv6 first, which the IPv4-only server
+      // refuses — 127.0.0.1 always connects.
+      function browserUrl() {
+        var port = window.location.port || "7777";
+        return "http://127.0.0.1:" + port + "/";
+      }
+      function showPanelWarning() {
+        if (document.getElementById("toolkit-embed-warn")) return;
+        var url = browserUrl();
+        var bar = document.createElement("div");
+        bar.id = "toolkit-embed-warn";
+        bar.style.cssText =
+          "position:fixed;top:0;left:0;right:0;z-index:9999;padding:10px 16px;" +
+          "background:#b45309;color:#fff;font-size:13px;line-height:1.4;text-align:center;" +
+          "box-shadow:0 2px 8px rgba(0,0,0,.25)";
+        bar.innerHTML =
+          "⚠ <b>Your edits may not be saving.</b> This looks like the app's embedded " +
+          "panel. Open the companion in a real browser tab instead: " +
+          '<a href="' + url + '" target="_blank" rel="noopener" ' +
+          'style="color:#fff;text-decoration:underline;font-weight:600">' + url + "</a>";
+        document.body.prepend(bar);
+        // Nudge page content down so the fixed bar doesn't cover the nav.
+        document.body.style.paddingTop = "44px";
+      }
+      var framed = false;
+      try { framed = window.self !== window.top; } catch (_) { framed = true; }
+      if (framed) showPanelWarning();
+      document.body.addEventListener("htmx:sendError", showPanelWarning);
     })();
   </script>
 </body>

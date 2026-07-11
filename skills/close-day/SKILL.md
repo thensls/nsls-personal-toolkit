@@ -96,6 +96,8 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 
 **Always give a clickable localhost link.** Present the URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) as a Markdown link, every time — never a raw IP. Closing without a link to click is a bug.
 
+**Real browser, not the app panel.** Tell the builder to open the link in an actual browser tab (Chrome/Safari), **not** the Claude Code desktop "panel"/embedded view — edits made in the panel don't reach the local server and are lost silently (the companion shows an orange warning banner when it detects this). If the page won't load, use `http://127.0.0.1:<port>` — some machines resolve `localhost` to IPv6, which the IPv4-only server refuses.
+
 1. **Resolve `"$TC"`** (above). If it can't be found, or you're not on a surface that can run a local server, **skip silently** and close in chat.
 2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Not running`, start it in the background, then re-check:
    ```bash
@@ -112,7 +114,7 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 3. **Read the target date's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/<target-date>.md` (Step 0's date, default today). If it doesn't exist, skip this step.
 4. **Open the Command Center in closing mode**, scoped to the target date: build the URL as `/?date=<target-date>&closing=1` (`open "<url>"` on macOS; `start`/`xdg-open` on Windows/Linux). `?closing=1` forces the Command Center's end-of-day state (even if the note was never locked in); `?date=` pins the page — and every write from it — to that day's note. Give the builder the link + this prompt (adapt "day's open" phrasing when closing a past day):
 
-   > Your day's open at http://localhost:<port>/?date=<target-date>&closing=1 — **open it and mark off where you landed**: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**.)
+   > Your day's open at http://localhost:<port>/?date=<target-date>&closing=1 — **open it in your web browser (Chrome/Safari), not the app's embedded panel** (panel edits don't save). Mark off where you landed: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**. Page won't load? Try http://127.0.0.1:<port>/?date=<target-date>&closing=1.)
 
 5. **Wait for the builder to say "done".** Do NOT proceed until they explicitly respond. Do NOT treat background hook notifications (like "Record skill usage event completed") as user input — only a real message from the builder ("done", "continue", "go", "ready", or similar) advances.
 
