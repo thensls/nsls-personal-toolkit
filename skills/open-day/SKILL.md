@@ -56,7 +56,7 @@ When `visual_mode` is **on** (the default):
   3. **Reasonable, generated** — only if there's nothing real (fresh user, no prior close, e.g. first run or after a reset on an empty week): generate 3 sensible suggestions from what you DO know — the builder profile (role, projects in `20-projects/`, operating memo), this week's stack rank, today's calendar. Mark them plainly (e.g. a one-line note "suggested from your role/projects — no prior close-day to pull from"). Keep them realistic, not filler. This guarantees the companion always has something to react to — important for new users and testing.
 - **Skip Steps 3, 4, 4a, 5** — the companion handles priority selection, not chat.
 - **Step 8**: Open the visual companion and stop. Print exactly: *"Continue in the browser at <url>. Pick your Top 3, review suggestions, then click Done. Say 'done' here when you're ready."* **Then stop. Do not print coaching, suggestions, or commentary.**
-- **On "done"**: Re-read the daily note, extract Top 3 + Bonus + habits, print a brief summary (under 12 lines). No coaching unless asked.
+- **On "done"**: Re-read the daily note, extract Top 3 + Bonus + habits, print a brief summary (under 12 lines). No coaching unless asked. Then arm the all-day close listener (Step 8.6) so the builder can close their day by clicking the Command Center's "I'm done" button — no terminal needed.
 
 When `visual_mode` is **off**:
 - Run the full chat flow (Steps 1-7), present suggestions in chat, accept the builder's edits in chat, and write the daily note from chat. **Skip Step 8.**
@@ -1014,6 +1014,14 @@ When you don't skip:
    Habits section: if there are any, list them but don't ask for status — habits are tracked passively and checked at `/close-day`.
 
    Keep the summary under 12 lines. Do not append commentary, suggestions, or coaching unless the builder asks.
+
+6. **Arm the all-day close listener** (right after the summary — this is what lets the builder close their whole day by clicking, never returning to the terminal). Start as a **background task** (Monitor / run_in_background — never a blocking foreground Bash call):
+
+   ```bash
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --timeout 43200
+   ```
+
+   The Command Center's banner shows an **"I'm done — close my day"** button all day. When the builder clicks it, this listener fires (`STATUS close-ready <date>`) — **immediately run the `/close-day` skill for that date**, preserving mode (`-t` open → `close day -t`; real → real). Then close-day's own flow takes over (it clears `close_ready` when it writes the note). If the listener times out (12h) or errors, do nothing — the builder can still run `close day` by hand. If background tasks aren't available on this surface, skip arming it silently.
 
 ### Day-of-Week Additions
 

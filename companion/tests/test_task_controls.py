@@ -308,11 +308,10 @@ def test_command_center_renders_task_controls(client_with_today):
     assert "tasklist-top_3" in html and "tasklist-bonus" in html
     assert "/set-progress" in html and "/delete-task" in html
     assert "/carry-task" not in html          # carry column removed
-    # Default (non-closing) Command Center shows the top "come back any time"
-    # banner, not the closing "close your day" line.
-    assert "back here any time" in html
-    assert "close your day" not in html
-    assert "return to the terminal" in html.lower()
+    # Default (non-closing) Command Center on an unlocked note nudges toward
+    # Plan-your-day — and never tells the builder to return to the terminal.
+    assert "isn't locked in yet" in html
+    assert "return to the terminal" not in html.lower()
     # Both energy rows show on the Command Center now: beginning-of-day at top,
     # end-of-day near Insight so it can be captured before close-day runs.
     assert "energy-morning" in html
@@ -386,3 +385,20 @@ def test_results_view_without_closing_note_has_no_card(client_with_today):
                     + "\n## Insight Reflection\n\nGood focus.\n")
     html = client.get("/").get_data(as_text=True)
     assert "Day closed — from Claude" not in html
+
+
+def test_active_day_banner_offers_close_button(client_with_today):
+    """The normal (locked-in) Command Center carries the I'm-done button all
+    day, so closing never requires the terminal. close_ready flips it to the
+    closing spinner."""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("---\nstatus: active\n---\n" + note.read_text())
+    html = client.get("/").get_data(as_text=True)
+    assert "Claude's logged your plan" in html
+    assert "/close-ready" in html and "I'm done — close my day" in html
+    assert "close day" not in html  # no type-this-in-the-terminal copy
+    client.post("/close-ready")
+    html = client.get("/").get_data(as_text=True)
+    assert "Claude is closing your day" in html and "nsls-spinner" in html
+    assert "I'm done — close my day" not in html
