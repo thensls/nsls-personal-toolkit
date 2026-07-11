@@ -720,6 +720,10 @@ goal_<slug>_moved: [true | false]   # one line per active personal goal — see 
 ---
 # YYYY-MM-DD — [Day of Week]
 
+## Closing Note
+
+[2-3 sentences MAX, written FOR the companion's day-closed card — the builder reads this on the web page instead of the chat. Plain language, no headers/bullets/markdown structure. Cover: what landed today (the one-line win), what carries to tomorrow, and one short coaching or momentum line. Do NOT summarize mechanics ("I updated your note") — speak to the builder about their day.]
+
 ## Insight Reflection
 
 [Paragraph 1 — primary pattern: what the data reveals that you might not have noticed. One concrete data point must anchor it. Max 3 sentences.]
@@ -985,7 +989,7 @@ Write these keys from the **target-date** Apple Health pulled in Step 1f-bis (`a
 
 If Apple Health returned an error for the target date (no data synced yet), still ensure the frontmatter block exists, write the goal keys from whatever evidence exists (workouts, morning cue), and leave the numeric health keys you couldn't source as `null` rather than dropping the block.
 
-**Set `status: closed` in the note's YAML frontmatter** as part of this write. `status` (`planning | active | closed`) is the single signal the web companion reads to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
+**Set `status: closed` in the note's YAML frontmatter** as part of this write — and make this the LAST thing that changes: write the full note content (including `## Closing Note`) in the same write or before it, because the status flip is what makes the builder's open browser tab re-render into the Results view, and the Closing Note must already be there when it does. Also REMOVE any `close_ready:` key in the same write (it was the I'm-done click signal; leaving it would make the next close's listener fire instantly). `status` (`planning | active | closed`) is the single signal the web companion reads to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
 
 ### Step 6: Update project session logs
 

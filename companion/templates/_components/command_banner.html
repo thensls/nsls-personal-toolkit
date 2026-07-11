@@ -3,7 +3,9 @@
 {% if closing %}
 <div class="nsls-banner">
   {% if close_ready %}
-  <span class="font-medium">✓ Close underway.</span> Claude picked up your day — you can return to the terminal.
+  <span class="nsls-spinner" aria-hidden="true"></span><span class="font-medium">Claude is closing your day…</span>
+  This page will show your closing summary when it's done.
+  <span class="nsls-subtle">(Taking more than a few minutes? Check the Claude chat.)</span>
   {% else %}
   <span class="font-medium">Almost done.</span> Mark any last progress above, then
   <button class="nsls-btn-gold" style="margin:0 .35rem" hx-post="/close-ready"

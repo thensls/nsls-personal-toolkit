@@ -350,9 +350,10 @@ def test_close_ready_sets_flag_not_status(client_with_today):
     fm = parse_frontmatter(_note(vault))
     assert fm.get("close_ready") == "1"
     assert fm.get("status") != "closed"
-    # closing view now shows the acknowledged banner state
+    # closing view now shows the waiting-for-Claude banner state
     html = client.get("/?closing=1").get_data(as_text=True)
-    assert "Close underway" in html
+    assert "Claude is closing your day" in html
+    assert "nsls-spinner" in html
     assert "I'm done — close my day" not in html
 
 
@@ -361,3 +362,27 @@ def test_closing_banner_offers_done_button(client_with_today):
     html = client.get("/?closing=1").get_data(as_text=True)
     assert "/close-ready" in html
     assert "I'm done — close my day" in html
+
+
+def test_results_view_shows_claude_closing_note(client_with_today):
+    """A closed day with a ## Closing Note renders Claude's summary card on
+    the Results view, with the return-to-chat pointer — the builder never has
+    to go back to the terminal to see how the close landed."""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("---\nstatus: closed\n---\n" + note.read_text()
+                    + "\n## Closing Note\n\nSolid day — 2 of 3 landed. Vendor thread carries to tomorrow at 0.5h. Protect the morning block.\n"
+                    + "\n## Insight Reflection\n\nGood focus.\n")
+    html = client.get("/").get_data(as_text=True)
+    assert "Day closed — from Claude" in html
+    assert "Solid day — 2 of 3 landed" in html
+    assert "Return to the Claude chat to continue the conversation" in html
+
+
+def test_results_view_without_closing_note_has_no_card(client_with_today):
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("---\nstatus: closed\n---\n" + note.read_text()
+                    + "\n## Insight Reflection\n\nGood focus.\n")
+    html = client.get("/").get_data(as_text=True)
+    assert "Day closed — from Claude" not in html

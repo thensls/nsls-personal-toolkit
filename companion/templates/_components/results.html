@@ -3,6 +3,14 @@
     <h2 class="font-semibold"><span class="nsls-closed-flag">Day closed</span> · {{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h2>
   </header>
 
+  {% if closing_note_text %}
+  <section class="nsls-card" style="border-left:4px solid var(--nsls-gold)">
+    <h3 class="nsls-card-title mb-2">🔒 Day closed — from Claude</h3>
+    <p class="whitespace-pre-wrap">{{ closing_note_text }}</p>
+    <p class="text-xs nsls-subtle mt-3">Want to keep going? Return to the Claude chat to continue the conversation.</p>
+  </section>
+  {% endif %}
+
   <section class="nsls-card">
     <h3 class="nsls-card-title mb-3">Stats</h3>
     <div class="grid grid-cols-4 gap-3 text-sm">

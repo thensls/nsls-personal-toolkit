@@ -1231,6 +1231,9 @@ def create_app(vault_path: str) -> Flask:
         insight_reflection_text = sections.get("Insight Reflection", "").strip()
         gratitude_text = sections.get("Gratitude", "").strip()
         daily_insight_text = sections.get("Daily Insight", "").strip()
+        # 2-3 sentences close-day writes FOR the companion's day-closed card,
+        # so the builder gets Claude's summary without returning to the chat.
+        closing_note_text = sections.get("Closing Note", "").strip()
 
         # User override → respected; otherwise auto-detect
         mode_override = request.args.get("mode")
@@ -1247,6 +1250,7 @@ def create_app(vault_path: str) -> Flask:
         ctx["insight_reflection_text"] = insight_reflection_text
         ctx["gratitude_text"] = gratitude_text
         ctx["daily_insight_text"] = daily_insight_text
+        ctx["closing_note_text"] = closing_note_text
         ctx["mode"] = mode
         # `?closing=1` (set by /close-day when it sends the user here to mark
         # progress) swaps the Command Center's top "come back any time" banner
@@ -1281,9 +1285,12 @@ def create_app(vault_path: str) -> Flask:
         safe_modify(note_path, lambda md: set_frontmatter(md, "close_ready", "1"))
         broadcast(f"01-daily/{today}.md")
         # Replaces the whole clicked banner (hx-target="closest .nsls-banner");
-        # the twin banner instance catches up on the next SSE re-render.
-        return ('<div class="nsls-banner"><span class="font-medium">✓ Close underway.</span>'
-                " Claude picked up your day — you can return to the terminal.</div>")
+        # the twin banner instance catches up on the next SSE re-render. Keep
+        # this markup in sync with command_banner.html's close_ready branch.
+        return ('<div class="nsls-banner"><span class="nsls-spinner" aria-hidden="true"></span>'
+                '<span class="font-medium">Claude is closing your day…</span> '
+                "This page will show your closing summary when it's done. "
+                '<span class="nsls-subtle">(Taking more than a few minutes? Check the Claude chat.)</span></div>')
 
     def _week_of() -> str:
         """Return the week identifier from ?week= query param or derive from target date."""
@@ -1429,6 +1436,7 @@ def create_app(vault_path: str) -> Flask:
         ctx["insight_reflection_text"] = sections.get("Insight Reflection", "").strip()
         ctx["gratitude_text"] = sections.get("Gratitude", "").strip()
         ctx["daily_insight_text"] = sections.get("Daily Insight", "").strip()
+        ctx["closing_note_text"] = sections.get("Closing Note", "").strip()
         ctx["mode"] = target_mode
         return render_template("day.html", **ctx)
 
