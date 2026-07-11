@@ -988,7 +988,13 @@ When you don't skip:
 
    **Why this matters (say it if they report edits not saving):** the companion must run in a real browser tab. If a builder opens it as the desktop app's embedded panel, its writes never reach the local server and vanish silently — the companion now shows an orange warning banner in that case. The fix is always the same: open `http://127.0.0.1:<port>` in an actual browser window. Prefer `127.0.0.1` over `localhost` in troubleshooting — some machines resolve `localhost` to IPv6, which the IPv4-only server refuses.
 
-4. **Wait for the builder's "done" signal.** Do not poll, do not print intermediate messages, do not summarize "what they should do next." Just stop. Resume only when they reply.
+4. **Wait for the builder's "done" signal — and listen for the click.** Before stopping, start the click-listener as a **background task** (Monitor / run_in_background — NEVER a blocking foreground Bash call, whose timeout can kill the session):
+
+   ```bash
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until active --timeout 7200
+   ```
+
+   It exits with `STATUS active <date>` the moment the builder clicks **Done — show Command Center** in the browser (the click flips the note's `status:` to active; this is the same-machine "webhook" — no typing needed). When it fires, treat it exactly as the builder saying "done" and continue to step 5. A typed "done" still works and wins if it comes first — stop the watcher then. If background tasks aren't available on this surface, skip the listener and just wait for the typed "done". Do not poll manually, do not print intermediate messages. Just stop until one of the two signals arrives.
 
 5. **On "done":** read today's daily note (`$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`), extract `### My Top 3` and `### Bonus`, and print:
 

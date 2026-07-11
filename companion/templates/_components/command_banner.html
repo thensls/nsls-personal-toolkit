@@ -2,8 +2,15 @@
    Command Center so the builder always knows what to do, wherever they scroll. #}
 {% if closing %}
 <div class="nsls-banner">
-  <span class="font-medium">Almost done.</span> Mark any last progress above, then type
-  <code>done</code> in Claude Code to close your day.
+  {% if close_ready %}
+  <span class="font-medium">✓ Close underway.</span> Claude picked up your day — you can return to the terminal.
+  {% else %}
+  <span class="font-medium">Almost done.</span> Mark any last progress above, then
+  <button class="nsls-btn-gold" style="margin:0 .35rem" hx-post="/close-ready"
+          hx-target="closest .nsls-banner" hx-swap="outerHTML"
+          hx-on:htmx:response-error="window.__toolkitErrorToast(event)">I'm done — close my day</button>
+  — or type <code>done</code> in Claude Code to close your day.
+  {% endif %}
 </div>
 {% elif day_status == 'active' %}
 {% include "_components/day_open_banner.html" %}

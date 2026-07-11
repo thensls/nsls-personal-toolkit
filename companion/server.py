@@ -1256,9 +1256,34 @@ def create_app(vault_path: str) -> Flask:
         # still tells the user to type `done`; `active` means the day is open
         # and the banner just invites them to mark progress (no stale "type
         # done" instruction). Read straight from the note's frontmatter.
-        ctx["day_status"] = parse_frontmatter(daily_md).get("status", "")
+        fm = parse_frontmatter(daily_md)
+        ctx["day_status"] = fm.get("status", "")
+        # The closing banner's "I'm done" button sets close_ready; once set,
+        # both banner instances render the acknowledged state.
+        ctx["close_ready"] = fm.get("close_ready") in ("1", "true", "yes")
 
         return render_template("day.html", **ctx)
+
+    @app.route("/close-ready", methods=["POST"])
+    def close_ready():
+        """The closing banner's 'I'm done — close my day' button.
+
+        Records that the builder finished marking their day WITHOUT claiming
+        the day closed — ``status`` stays as-is ('closed' is the close pass's
+        to set once it has synthesized). The `toolkit-companion wait-done
+        --until close-ready` listener watches this key, so the chat session
+        auto-resumes on the click instead of waiting for a typed "done".
+        """
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+        safe_modify(note_path, lambda md: set_frontmatter(md, "close_ready", "1"))
+        broadcast(f"01-daily/{today}.md")
+        # Replaces the whole clicked banner (hx-target="closest .nsls-banner");
+        # the twin banner instance catches up on the next SSE re-render.
+        return ('<div class="nsls-banner"><span class="font-medium">✓ Close underway.</span>'
+                " Claude picked up your day — you can return to the terminal.</div>")
 
     def _week_of() -> str:
         """Return the week identifier from ?week= query param or derive from target date."""

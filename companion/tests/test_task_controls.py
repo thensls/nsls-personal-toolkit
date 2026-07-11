@@ -336,3 +336,28 @@ def test_evening_energy_appears_once_set(client_with_today):
     note.write_text(note.read_text() + "\n## End of Day\n- Energy: high\n")
     html = client.get("/?mode=command").get_data(as_text=True)
     assert "energy-evening" in html
+
+
+# --- /close-ready: the closing banner's "I'm done" click ---
+
+def test_close_ready_sets_flag_not_status(client_with_today):
+    """The button records close_ready WITHOUT closing the day — 'closed' is
+    the close pass's to set after synthesis."""
+    client, vault = client_with_today
+    from companion.parsers import parse_frontmatter
+    resp = client.post("/close-ready")
+    assert resp.status_code == 200
+    fm = parse_frontmatter(_note(vault))
+    assert fm.get("close_ready") == "1"
+    assert fm.get("status") != "closed"
+    # closing view now shows the acknowledged banner state
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "Close underway" in html
+    assert "I'm done — close my day" not in html
+
+
+def test_closing_banner_offers_done_button(client_with_today):
+    client, _ = client_with_today
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "/close-ready" in html
+    assert "I'm done — close my day" in html

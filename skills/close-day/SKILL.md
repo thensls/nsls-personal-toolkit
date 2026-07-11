@@ -116,7 +116,13 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 
    > Your day's open at http://localhost:<port>/?date=<target-date>&closing=1 — **open it in your web browser (Chrome/Safari), not the app's embedded panel** (panel edits don't save). Mark off where you landed: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**. Page won't load? Try http://127.0.0.1:<port>/?date=<target-date>&closing=1.)
 
-5. **Wait for the builder to say "done".** Do NOT proceed until they explicitly respond. Do NOT treat background hook notifications (like "Record skill usage event completed") as user input — only a real message from the builder ("done", "continue", "go", "ready", or similar) advances.
+5. **Wait for the builder to say "done" — and listen for the click.** Before stopping, start the click-listener as a **background task** (Monitor / run_in_background — NEVER a blocking foreground Bash call, whose timeout can kill the session):
+
+   ```bash
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --date <target-date> --timeout 7200
+   ```
+
+   It exits with `STATUS close-ready <date>` the moment the builder clicks **I'm done — close my day** in the closing banner (the click sets `close_ready: 1` in the note's frontmatter — the same-machine "webhook", no typing needed; `status` stays untouched, `closed` remains this skill's to set). When it fires, treat it exactly as the builder saying "done" and proceed. When you later rewrite the note's frontmatter (Step 5a), REMOVE the `close_ready` key so a future re-close waits fresh. A typed "done" still works and wins if it comes first — stop the watcher then. If background tasks aren't available on this surface, skip the listener and wait for the typed "done". Either way: do NOT proceed on anything else — background hook notifications (like "Record skill usage event completed") are NOT user input; only the wait-done signal or a real message from the builder ("done", "continue", "go", "ready", or similar) advances.
 
 6. After they say done, re-read the target date's daily note to pick up their changes, then proceed to Step 1 — synthesizing **for the target date only**.
 
