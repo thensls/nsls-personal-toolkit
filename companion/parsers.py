@@ -125,8 +125,11 @@ def set_frontmatter(md: str, key: str, value: str) -> str:
         return f"---\n{key}: {value}\n---\n\n{md}"
     block = md[3:end]
     after = md[end + 4:]  # skip \n---
-    # Check if key already exists in block
-    pattern = re.compile(rf"^(\s*{re.escape(key)}\s*:\s*)(.*)$", re.MULTILINE)
+    # Check if key already exists in block. Anchor the key directly at line
+    # start — a leading \s* would swallow the newline BEFORE the key when the
+    # key is the block's first line, gluing "status: x" onto the opening "---"
+    # and breaking the frontmatter for every parser (incl. Obsidian).
+    pattern = re.compile(rf"^({re.escape(key)}\s*:\s*)(.*)$", re.MULTILINE)
     m = pattern.search(block)
     if m:
         block = block[:m.start()] + f"{key}: {value}" + block[m.end():]
