@@ -1122,10 +1122,17 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     morning_energy = _extract_energy_for(daily_md, "Morning Check-in")
     evening_energy = _extract_energy_for(daily_md, "End of Day")
 
+    # Banner state, computed here so EVERY day.html render carries it — the
+    # /lock-in response used to omit day_status, so the banner fell into its
+    # "not locked in" branch right after the builder locked in.
+    fm = parse_frontmatter(daily_md)
     return {
         "today": today,
         "today_pretty": today_pretty,
         "is_today": is_today,
+        "day_status": fm.get("status", ""),
+        "close_ready": fm.get("close_ready") in ("1", "true", "yes"),
+        "closing": False,  # index() overrides from ?closing=1
         "note_md": daily_md,
         "top_3": top_3,
         "top_3_slots": top_3_slots[:3],
@@ -1256,15 +1263,7 @@ def create_app(vault_path: str) -> Flask:
         # progress) swaps the Command Center's top "come back any time" banner
         # for a bottom "type done to close your day" line.
         ctx["closing"] = closing
-        # Day status drives the state-aware Command Center banner: `planning`
-        # still tells the user to type `done`; `active` means the day is open
-        # and the banner just invites them to mark progress (no stale "type
-        # done" instruction). Read straight from the note's frontmatter.
-        fm = parse_frontmatter(daily_md)
-        ctx["day_status"] = fm.get("status", "")
-        # The closing banner's "I'm done" button sets close_ready; once set,
-        # both banner instances render the acknowledged state.
-        ctx["close_ready"] = fm.get("close_ready") in ("1", "true", "yes")
+        # day_status / close_ready come from _build_day_context.
 
         return render_template("day.html", **ctx)
 
