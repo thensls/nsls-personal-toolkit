@@ -112,6 +112,12 @@ If the user invokes with `-v` (e.g., `/open-day -v`), full verbose output is fin
 date +%Y-%m-%d
 ```
 
+**Always echo the date you're opening** in your first line ("Opening **Monday, 2026-07-13**…") so a wrong day is caught immediately.
+
+### Step 1.4: Pending-close scan (honor a click made days ago)
+
+Before planning today, scan the last ~5 daily notes for any with `close_ready: 1` **and** `status:` not `closed` — a day the builder clicked "I'm done — close my day" but no session ever processed (the live listener only survives its own session; the flag is the durable signal). If you find one, **run `/close-day <that-date>` first** (it clears `close_ready` as it writes), then continue opening today. This is what makes "I closed it Friday, opened Monday" work without losing the close.
+
 ### Step 1.5: Auto-run yesterday's /close-day if it didn't run
 
 `/close-day` is a separate ritual from `/open-day` — it intentionally closes the workday and produces the plan-vs-actual reflection that makes today's Top 3 honest instead of performative. `/open-day` does not subsume it. **But if it didn't run last night, /open-day runs it automatically before continuing — no prompt, no skip.**
@@ -847,6 +853,18 @@ hrv_ms: 61
 ### AI Suggested: Delegate These
 [preserved from close-day seed if it existed]
 
+<!-- AI-Suggested item format — write each item as a PLAIN numbered line:
+       1. <item text> <!--e:0.75-->
+     • NEVER a checkbox (`1. [ ] text`) — these are suggestions, not tasks;
+       a leaked `[ ]` shows in the companion's suggestion title and rides
+       along when the item is taken.
+     • The optional `<!--e:X-->` estimate marker is the ONLY thing that may
+       trail the text; the companion reads it as data (never shows it in the
+       title) and uses it to pre-fill the estimate when the item is taken.
+     • Keep the builder's own text verbatim (including a leading `P ` personal
+       marker) — don't restyle or strip it. -->
+
+
 ### My Top 3
 1. [ ] [Priority #1 description] — [[project-slug]] *(week rank: N)*
 2. [ ] [Priority #2 description] — [[project-slug]] *(week rank: N)*
@@ -991,7 +1009,7 @@ When you don't skip:
 4. **Wait for the builder's "done" signal — and listen for the click.** Before stopping, start the click-listener as a **background task** (Monitor / run_in_background — NEVER a blocking foreground Bash call, whose timeout can kill the session):
 
    ```bash
-   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until active --timeout 7200
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until active --timeout 86400
    ```
 
    It exits with `STATUS active <date>` the moment the builder clicks **Done — show Command Center** in the browser (the click flips the note's `status:` to active; this is the same-machine "webhook" — no typing needed). When it fires, treat it exactly as the builder saying "done" and continue to step 5. A typed "done" still works and wins if it comes first — stop the watcher then. If background tasks aren't available on this surface, skip the listener and just wait for the typed "done". Do not poll manually, do not print intermediate messages. Just stop until one of the two signals arrives.
@@ -1018,7 +1036,7 @@ When you don't skip:
 6. **Arm the all-day close listener** (right after the summary — this is what lets the builder close their whole day by clicking, never returning to the terminal). Start as a **background task** (Monitor / run_in_background — never a blocking foreground Bash call):
 
    ```bash
-   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --timeout 43200
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --timeout 86400
    ```
 
    The Command Center's banner shows an **"I'm done — close my day"** button all day. When the builder clicks it, this listener fires (`STATUS close-ready <date>`) — **immediately run the `/close-day` skill for that date**, preserving mode (`-t` open → `close day -t`; real → real). Then close-day's own flow takes over (it clears `close_ready` when it writes the note). If the listener times out (12h) or errors, do nothing — the builder can still run `close day` by hand. If background tasks aren't available on this surface, skip arming it silently.

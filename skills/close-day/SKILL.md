@@ -62,7 +62,9 @@ If the user invokes with `-v` (e.g., `/close-day -v`), full verbose output is fi
 
 ### Step 0: Determine the date
 
-Default to today (`date +%Y-%m-%d`). Override by passing the date as an argument: `/close-day 2026-03-21`.
+Default to today (`date +%Y-%m-%d`). Override by passing the date as an argument: `/close-day 2026-03-21`. **Always echo the date you're closing** in your first line ("Closing **Monday, 2026-07-13**…") so a wrong day is obvious immediately.
+
+**Pending-close scan (honors a click made days ago).** The Command Center's "I'm done — close my day" button persists `close_ready: 1` into that day's note — a durable signal, unlike the live background listener (which only survives the current session). So before closing today, scan the last ~5 daily notes for any with `close_ready: 1` **and** `status:` not `closed`: that's a day the builder clicked closed but no session ever processed. If you find one (and no explicit date arg was given), close THAT date instead — the click is honored whenever a session next runs, even 3 days later. If several, take the oldest first and mention the others. `close-day` clears `close_ready` when it writes the note, so a day is only ever caught once.
 
 **Test-mode flag (`-t`):** if the invocation includes `-t` (e.g. `close day -t`), run the **entire skill against a throwaway test vault** so your real daily notes are never touched. The whole system keys off one variable, `$OBSIDIAN_VAULT_PATH` — so test mode is just: **before anything else, point that variable at the test vault.** Resolve the companion binary (the `"$TC"` lookup in Step 0.5) and run:
 
@@ -119,7 +121,7 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 5. **Wait for the builder to say "done" — and listen for the click.** Before stopping, start the click-listener as a **background task** (Monitor / run_in_background — NEVER a blocking foreground Bash call, whose timeout can kill the session):
 
    ```bash
-   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --date <target-date> --timeout 7200
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --date <target-date> --timeout 86400
    ```
 
    It exits with `STATUS close-ready <date>` the moment the builder clicks **I'm done — close my day** in the closing banner (the click sets `close_ready: 1` in the note's frontmatter — the same-machine "webhook", no typing needed; `status` stays untouched, `closed` remains this skill's to set). When it fires, treat it exactly as the builder saying "done" and proceed. When you later rewrite the note's frontmatter (Step 5a), REMOVE the `close_ready` key so a future re-close waits fresh. A typed "done" still works and wins if it comes first — stop the watcher then. If background tasks aren't available on this surface, skip the listener and wait for the typed "done". Either way: do NOT proceed on anything else — background hook notifications (like "Record skill usage event completed") are NOT user input; only the wait-done signal or a real message from the builder ("done", "continue", "go", "ready", or similar) advances.

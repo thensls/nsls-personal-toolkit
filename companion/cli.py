@@ -253,31 +253,56 @@ def wait_for_status(vault_path, date_str, target, timeout, poll=1.0):
     Returns the matched signal string on success, or None on timeout. Polls
     the FILE, not the server, so it keeps working across companion restarts
     and needs no network.
+
+    **Fires only on a TRANSITION into the target, never a pre-existing
+    signal.** A stale ``close_ready: 1`` left by an earlier incomplete close
+    used to make this return instantly at arm time (misread as a "clock jump
+    fires it early"). The timeout uses the monotonic clock, so a wall-clock
+    jump can never trip it early.
     """
     import time as _time
     from companion.parsers import parse_frontmatter
 
     note = Path(vault_path) / "01-daily" / f"{date_str}.md"
 
-    def frontmatter() -> dict:
+    def signals() -> tuple[str, bool]:
         try:
-            return parse_frontmatter(note.read_text(encoding="utf-8"))
+            fm = parse_frontmatter(note.read_text(encoding="utf-8"))
         except (FileNotFoundError, OSError):
-            return {}
+            return "", False
+        return fm.get("status", ""), fm.get("close_ready") in ("1", "true", "yes")
 
-    initial = frontmatter().get("status", "")
+    def matched(status: str, ready: bool):
+        if target == "closed":
+            return status if status == "closed" else None
+        if target == "active":
+            return status if status == "active" else None
+        if target == "close-ready":
+            if ready:
+                return "close-ready"
+            if status == "closed":
+                return "closed"
+            return None
+        return None  # 'any' handled separately below
+
+    status0, ready0 = signals()
+    # If the target is ALREADY satisfied at arm time, don't fire — wait for
+    # the next transition. (A genuinely already-closed day is the one
+    # exception for 'closed', where there's nothing further to wait for.)
+    baseline = matched(status0, ready0)
+    already_closed = target in ("closed", "close-ready") and status0 == "closed"
     deadline = _time.monotonic() + timeout if timeout > 0 else None
     while True:
-        fm = frontmatter()
-        status = fm.get("status", "")
+        status, ready = signals()
         if target == "any":
-            if status != initial:
+            if status != status0:
                 return status
-        elif target == "close-ready":
-            if fm.get("close_ready") in ("1", "true", "yes") or status == "closed":
-                return status if status == "closed" else "close-ready"
-        elif status == target:
-            return status
+        elif already_closed:
+            return "closed"
+        else:
+            hit = matched(status, ready)
+            if hit is not None and matched(status0, ready0) is None:
+                return hit
         if deadline is not None and _time.monotonic() >= deadline:
             return None
         _time.sleep(poll)
@@ -292,8 +317,12 @@ def wait_for_status(vault_path, date_str, target, timeout, poll=1.0):
               help="Signal to wait for: 'active' = morning Lock-in click, "
                    "'close-ready' = the closing banner's I'm-done click, "
                    "'closed' = day fully closed, 'any' = any status change.")
-@click.option("--timeout", default=7200, type=int,
-              help="Give up after N seconds (0 = wait forever). Default 2h.")
+@click.option("--timeout", default=86400, type=int,
+              help="Give up after N seconds (0 = wait forever). Default 24h. "
+                   "NOTE: a live listener only lasts as long as the Claude "
+                   "session; the durable path is the close_ready flag the "
+                   "click persists, which open-day/close-day honor on their "
+                   "next run — see the pending-close scan in those skills.")
 @click.option("--vault", default=None,
               help="Override vault path (defaults to OBSIDIAN_VAULT_PATH)")
 def wait_done(date_str, target, timeout, vault):

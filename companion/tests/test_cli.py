@@ -144,3 +144,58 @@ def test_wait_for_status_close_ready_also_fires_on_closed(tmp_path):
     from companion.cli import wait_for_status
     _write_note(tmp_path, "2026-07-11", "closed")
     assert wait_for_status(tmp_path, "2026-07-11", "close-ready", timeout=2, poll=0.05) == "closed"
+
+
+def test_wait_close_ready_does_not_fire_on_stale_flag(tmp_path):
+    """A close_ready:1 already present at arm time must NOT fire instantly —
+    that stale-flag instant-return was misread as a 'clock jump' (2026-07-13,
+    Davo). It should wait for the next real transition."""
+    from companion.cli import wait_for_status
+    (tmp_path / "01-daily").mkdir(parents=True)
+    (tmp_path / "01-daily" / "2026-07-11.md").write_text(
+        "---\nstatus: active\nclose_ready: 1\n---\n# n\n", encoding="utf-8")
+    # target already satisfied at arm → should time out, not fire
+    assert wait_for_status(tmp_path, "2026-07-11", "close-ready", timeout=0.3, poll=0.05) is None
+
+
+def test_wait_close_ready_fires_on_fresh_transition(tmp_path):
+    import threading, time
+    from companion.cli import wait_for_status
+    (tmp_path / "01-daily").mkdir(parents=True)
+    note = tmp_path / "01-daily" / "2026-07-11.md"
+    note.write_text("---\nstatus: active\n---\n# n\n", encoding="utf-8")
+
+    def click():
+        time.sleep(0.2)
+        note.write_text("---\nstatus: active\nclose_ready: 1\n---\n# n\n", encoding="utf-8")
+
+    t = threading.Thread(target=click); t.start()
+    got = wait_for_status(tmp_path, "2026-07-11", "close-ready", timeout=5, poll=0.05)
+    t.join()
+    assert got == "close-ready"
+
+
+def test_wait_close_ready_already_closed_returns_immediately(tmp_path):
+    """A genuinely already-closed day has nothing left to wait for."""
+    from companion.cli import wait_for_status
+    (tmp_path / "01-daily").mkdir(parents=True)
+    (tmp_path / "01-daily" / "2026-07-11.md").write_text(
+        "---\nstatus: closed\n---\n# n\n", encoding="utf-8")
+    assert wait_for_status(tmp_path, "2026-07-11", "close-ready", timeout=2, poll=0.05) == "closed"
+
+
+def test_wait_active_fires_on_planning_to_active(tmp_path):
+    import threading, time
+    from companion.cli import wait_for_status
+    (tmp_path / "01-daily").mkdir(parents=True)
+    note = tmp_path / "01-daily" / "2026-07-11.md"
+    note.write_text("---\nstatus: planning\n---\n# n\n", encoding="utf-8")
+
+    def lock():
+        time.sleep(0.2)
+        note.write_text("---\nstatus: active\n---\n# n\n", encoding="utf-8")
+
+    t = threading.Thread(target=lock); t.start()
+    got = wait_for_status(tmp_path, "2026-07-11", "active", timeout=5, poll=0.05)
+    t.join()
+    assert got == "active"

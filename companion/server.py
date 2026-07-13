@@ -284,6 +284,11 @@ _AI_ITEM_LEAD_RE = re.compile(r"^\s*\d+\.\s+(.*)$")
 
 def _clean_ai_item(raw: str) -> str:
     text = raw.strip()
+    # Strip a leading checkbox — an AI-suggested line is NOT a task, but
+    # open-day sometimes writes it as `1. [ ] text`; without this the "[ ]"
+    # leaks into the displayed suggestion title (and rides along if taken).
+    if text[:3] in ("[ ]", "[x]", "[X]"):
+        text = text[3:].strip()
     # Strip leading bold wrappers: **text** … → text …
     m = re.match(r"^\*\*(.+?)\*\*(.*)$", text)
     if m:
