@@ -241,3 +241,21 @@ def test_habit_rename_preserves_id(client_with_today):
     habits = (vault / "30-habits" / "habits.md").read_text()
     assert "name: Morning Walk" in habits
     assert "id: walk" in habits  # id unchanged → log history intact
+
+
+# --- AI-suggested titles must never leak a checkbox or the estimate marker ---
+
+def test_ai_suggestion_strips_leaked_checkbox_and_estimate():
+    """open-day sometimes writes suggestions as '1. [ ] text <!--e:X-->';
+    neither the checkbox nor the estimate may show in the title (2026-07-13,
+    Davo). The estimate is returned as data instead."""
+    from companion.server import _extract_ai_suggestions
+    md = ("### AI Suggested: Top 3\n"
+          "1. [ ] P 3b metrics board <!--e:0.75-->\n"
+          "2. [x] Ship the thing\n"
+          "3. **Bold item** — rationale tail <!--e:0.5-->\n")
+    items = _extract_ai_suggestions(md)
+    assert items[0]["text"] == "P 3b metrics board" and items[0]["est"] == 0.75
+    assert items[1]["text"] == "Ship the thing"
+    assert items[2]["text"] == "Bold item" and items[2]["est"] == 0.5
+    assert all("[" not in i["text"] and "<!--" not in i["text"] for i in items)
