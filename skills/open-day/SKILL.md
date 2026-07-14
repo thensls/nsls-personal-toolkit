@@ -48,7 +48,7 @@ There are two ways the ritual can run: with the **CLI companion** (the local Fla
 
 When `visual_mode` is **on** (the default):
 - **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary** (not installed, or you're not on a surface that can run a local server), **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
-- **Step 1.5 only**: Auto-run yesterday's close-day if needed (same as CLI mode).
+- **Step 1.5 only**: If yesterday wasn't closed, route to the companion link and wait for the click/typed "done" (same as CLI mode) — never auto-synthesize.
 - **Step 2**: Collect ALL data (calendar, Asana, carry-overs, AI suggestions, stack rank, free time, habits, learning, PRs, SLT). Run Bash commands in the background or silently — **do not show raw Bash output to the user**. Present ONE condensed summary line per data source (e.g., "3 meetings today · 6 open Asana · 2 carry-overs · AI suggestions seeded").
 - **Step 6**: Write the daily note with **empty Top 3 and Bonus slots** (`1. [ ]`, `2. [ ]`, `3. [ ]`). Include habits, calendar, and the standard template. **Do NOT fill in Top 3 — that's the companion's job.** BUT the companion needs suggestions to show, so **always write an `### AI Suggested: Top 3` section** (3 items) and `### AI Suggested: Delegate These`, in priority order:
   1. **Real, from the last close-day** — if today's note already has them (close-day seeded them) or the most recent prior close-day wrote next-day suggestions, use those verbatim.
@@ -114,13 +114,13 @@ date +%Y-%m-%d
 
 **Always echo the date you're opening** in your first line ("Opening **Monday, 2026-07-13**…") so a wrong day is caught immediately.
 
-### Step 1.4: Pending-close scan (honor a click made days ago)
+### Step 1.4: Pending-close scan (surface a click made days ago — don't auto-close on it)
 
-Before planning today, scan the last ~5 daily notes for any with `close_ready: 1` **and** `status:` not `closed` — a day the builder clicked "I'm done — close my day" but no session ever processed (the live listener only survives its own session; the flag is the durable signal). If you find one, **run `/close-day <that-date>` first** (it clears `close_ready` as it writes), then continue opening today. This is what makes "I closed it Friday, opened Monday" work without losing the close.
+Before planning today, scan the last ~5 daily notes for any with `close_ready: 1` **and** `status:` not `closed` — a day the builder clicked "I'm done — close my day" but no session ever processed. **A `close_ready: 1` left over from a previous session is stale — it is NOT consent to synthesize now.** The builder's context has moved on since that click; the note may have changed; they may want another look. So do NOT run `/close-day <that-date>` automatically. Instead, treat the date exactly like a missing close: route it through Step 1.5's companion-confirm flow (mention that they clicked done back then, so it's probably a quick review-and-reclick).
 
-### Step 1.5: Auto-run yesterday's /close-day if it didn't run
+### Step 1.5: Yesterday's /close-day didn't run — route to the companion, wait for the click
 
-`/close-day` is a separate ritual from `/open-day` — it intentionally closes the workday and produces the plan-vs-actual reflection that makes today's Top 3 honest instead of performative. `/open-day` does not subsume it. **But if it didn't run last night, /open-day runs it automatically before continuing — no prompt, no skip.**
+`/close-day` is a separate ritual from `/open-day` — it intentionally closes the workday and produces the plan-vs-actual reflection that makes today's Top 3 honest instead of performative. `/open-day` does not subsume it. When it didn't run last night, /open-day surfaces that and hands the builder the companion link — **but the builder's click (or typed "done") is ALWAYS the gate. Never run the synthesis unprompted.**
 
 **Check:**
 ```bash
@@ -132,13 +132,22 @@ fi
 
 (The `## Insight Reflection` header is only written by `/close-day`, so its presence is the reliable signal that yesterday was processed.)
 
-**If MISSING — auto-invoke close-day, no prompt:**
+**If MISSING — send the builder to the companion, then wait:**
 
-1. Tell {user} in one line: "Yesterday's /close-day didn't run — running it now before opening today."
-2. Invoke the close-day skill with yesterday's date (`/close-day $YESTERDAY`). Wait for completion.
-3. Continue to Step 2.
+1. Tell {user} in one line that yesterday wasn't closed. Do NOT auto-invoke the close-day synthesis — not even if yesterday's frontmatter already has `close_ready: 1` (that's a stale click from a previous session, not fresh consent; only a click that fires the listener armed below, or a typed "done", counts).
+2. **Start/verify the companion** if it isn't running — same binary resolution and start-if-needed flow as Step 8. If the companion can't run on this surface, fall back to asking in chat: "Close yesterday now, or skip it?" and act on the answer.
+3. **Give the clickable link scoped to yesterday**: `http://localhost:<port>/?date=$YESTERDAY&closing=1` (Markdown link, never a raw IP). Prompt:
 
-The auto-run is the point: morning routine self-heals when the evening ritual was skipped. Builders who want to skip close-day entirely should remove this step from their fork rather than gate it with a prompt.
+   > Yesterday ({YESTERDAY}) was never closed. Check this link to make sure your progress is reported — http://localhost:<port>/?date=$YESTERDAY&closing=1 — then click **"I'm done — close my day"**. Or say **done** here (or **skip it** to open today without closing yesterday).
+
+4. **Arm the listener as a background task** (Monitor / run_in_background — never a blocking foreground Bash call):
+
+   ```bash
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --date $YESTERDAY --timeout 86400
+   ```
+
+5. **Only when the click fires** (`STATUS close-ready <date>`) **or the builder types "done" / "close yesterday"**: run the close-day synthesis for `$YESTERDAY`, wait for completion, then continue to Step 2.
+6. **If the builder says "skip it"** (or similar): stop the listener, leave yesterday unclosed, and continue to Step 2. They can `close day <date>` later.
 
 **Edge case — double-run protection:** If close-day fails or partially writes Insight Reflection, the next /open-day will see the header present and skip. If you suspect a partial state (e.g., header present but the section is empty), surface it explicitly before re-running.
 

@@ -64,7 +64,7 @@ If the user invokes with `-v` (e.g., `/close-day -v`), full verbose output is fi
 
 Default to today (`date +%Y-%m-%d`). Override by passing the date as an argument: `/close-day 2026-03-21`. **Always echo the date you're closing** in your first line ("Closing **Monday, 2026-07-13**…") so a wrong day is obvious immediately.
 
-**Pending-close scan (honors a click made days ago).** The Command Center's "I'm done — close my day" button persists `close_ready: 1` into that day's note — a durable signal, unlike the live background listener (which only survives the current session). So before closing today, scan the last ~5 daily notes for any with `close_ready: 1` **and** `status:` not `closed`: that's a day the builder clicked closed but no session ever processed. If you find one (and no explicit date arg was given), close THAT date instead — the click is honored whenever a session next runs, even 3 days later. If several, take the oldest first and mention the others. `close-day` clears `close_ready` when it writes the note, so a day is only ever caught once.
+**Pending-close scan (honors a click made days ago).** The Command Center's "I'm done — close my day" button persists `close_ready: 1` into that day's note — a durable signal, unlike the live background listener (which only survives the current session). So before closing today, scan the last ~5 daily notes for any with `close_ready: 1` **and** `status:` not `closed`: that's a day the builder clicked closed but no session ever processed. If you find one (and no explicit date arg was given), target THAT date instead — the stale flag picks the *date*, but it is NOT fresh consent to synthesize: still route through Step 0.5's companion link and wait for a fresh click or typed "done" (see the hard rule there). If several, take the oldest first and mention the others. `close-day` clears `close_ready` when it writes the note, so a day is only ever caught once.
 
 **Test-mode flag (`-t`):** if the invocation includes `-t` (e.g. `close day -t`), run the **entire skill against a throwaway test vault** so your real daily notes are never touched. The whole system keys off one variable, `$OBSIDIAN_VAULT_PATH` — so test mode is just: **before anything else, point that variable at the test vault.** Resolve the companion binary (the `"$TC"` lookup in Step 0.5) and run:
 
@@ -82,6 +82,8 @@ export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)" || { echo "Test-vault setup fai
 The close routes through the **CLI companion** by default (Step 0.5 starts it if needed and sends you there to finalize), or runs in **chat** when you pass `-b` / `visual_mode: off` / aren't on a CLI surface. The companion only works where Bash can run a local server; anywhere it can't, Step 0.5's graceful fallback closes the day in chat.
 
 ### Step 0.5: Check the visual companion
+
+**HARD RULE — fresh confirmation, every time.** Never synthesize/close without a fresh builder confirmation *this session*: either the companion click (via the `wait-done` listener armed below) or a typed "done". A `close_ready: 1` already present in the frontmatter from a previous session is **stale** — do not treat it as consent; send the builder to the companion link and wait. (A stale flag may still pick *which date* to close — see the pending-close scan — but never *whether* to synthesize it.)
 
 **Resolving the binary path** (same lookup as open-day Step 8):
 ```bash
