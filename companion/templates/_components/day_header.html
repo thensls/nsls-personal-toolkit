@@ -1,0 +1,6 @@
+{# Weekday + full date, shown at the top of EVERY day-tab mode so the builder
+   always knows which day the page is for. `today_pretty` is derived from the
+   ?date= being served (server.py _build_day_context), so a past day reads its
+   own date, not the wall-clock today. The "Today —" prefix is dropped for past
+   days. Keep this the single source of the day heading. #}
+<h1 class="text-2xl nsls-h1 mb-1">{% if is_today %}Today — {% endif %}{{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h1>

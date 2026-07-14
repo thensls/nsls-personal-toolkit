@@ -1,3 +1,7 @@
+<div class="max-w-2xl mx-auto mb-4">
+  {% include "_components/day_header.html" %}
+  <p class="text-sm nsls-subtle">Evening reflection</p>
+</div>
 <div x-data="{ step: {{ step or 1 }} }" data-suppress-sse-reload class="nsls-card max-w-2xl mx-auto">
   <div class="flex gap-1 mb-3">
     {% for i in range(1, 4) %}
