@@ -50,13 +50,25 @@ When `visual_mode` is **on** (the default):
 - **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary** (not installed, or you're not on a surface that can run a local server), **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
 - **Step 1.5 only**: If yesterday wasn't closed, route to the companion link and wait for the click/typed "done" (same as CLI mode) — never auto-synthesize.
 - **Step 2**: Collect ALL data (calendar, Asana, carry-overs, AI suggestions, stack rank, free time, habits, learning, PRs, SLT). Run Bash commands in the background or silently — **do not show raw Bash output to the user**. Present ONE condensed summary line per data source (e.g., "3 meetings today · 6 open Asana · 2 carry-overs · AI suggestions seeded").
-- **Step 6**: Write the daily note with **empty Top 3 and Bonus slots** (`1. [ ]`, `2. [ ]`, `3. [ ]`). Include habits, calendar, and the standard template. **Do NOT fill in Top 3 — that's the companion's job.** BUT the companion needs suggestions to show, so **always write an `### AI Suggested: Top 3` section** (3 items) and `### AI Suggested: Delegate These`, in priority order:
+- **Step 6**: Write the daily note with **empty Top 3 slots AND an empty Bonus section** (`1. [ ]`, `2. [ ]`, `3. [ ]` for Top 3; nothing under `### Bonus`). Include habits, calendar, and the standard template. **Do NOT fill in Top 3 or Bonus — that's the companion's job.** Everything the AI knows about (carry-overs, close-day seeds, generated ideas) goes into the **candidate pool** — the `### AI Suggested: …` sections the companion renders as the "Suggestions & carry-overs" grid, where every row has a one-click **Top 3 / Bonus / Defer / Delete** control.
+
+  **Seeding default — everything is a priority candidate (see the Seeding Principle below):** put ALL carry-overs and suggestions into the candidate pool. **Never pre-place anything in `### Bonus`** — an item sitting in the Bonus list can only be promoted by copy/paste, whereas a candidate in the grid demotes to Bonus/Defer/Delete with one click. So the honest default is: everything up for grabs in the priority columns; the builder triages *down*.
+
+  Write an **`### AI Suggested: Top 3` section** — but it is the AI's *top picks*, not a cap: list the 3 strongest first, then include **every other carry-over and candidate below them in the same pool** (a second `### AI Suggested: …` subsection is fine — the grid merges them). Source, in priority order:
   1. **Real, from the last close-day** — if today's note already has them (close-day seeded them) or the most recent prior close-day wrote next-day suggestions, use those verbatim.
-  2. **Real, from carry-overs** — else, pull unfinished items from recent daily notes' `## Carrying Over` / incomplete Top 3.
+  2. **Real, from carry-overs** — pull unfinished items from recent daily notes' `## Carrying Over` / incomplete Top 3 **into the candidate pool** (NOT into `### Bonus`).
   3. **Reasonable, generated** — only if there's nothing real (fresh user, no prior close, e.g. first run or after a reset on an empty week): generate 3 sensible suggestions from what you DO know — the builder profile (role, projects in `20-projects/`, operating memo), this week's stack rank, today's calendar. Mark them plainly (e.g. a one-line note "suggested from your role/projects — no prior close-day to pull from"). Keep them realistic, not filler. This guarantees the companion always has something to react to — important for new users and testing.
 - **Skip Steps 3, 4, 4a, 5** — the companion handles priority selection, not chat.
 - **Step 8**: Open the visual companion and stop. Print exactly: *"Continue in the browser at <url>. Pick your Top 3, review suggestions, then click Done. Say 'done' here when you're ready."* **Then stop. Do not print coaching, suggestions, or commentary.**
 - **On "done"**: Re-read the daily note, extract Top 3 + Bonus + habits, print a brief summary (under 12 lines). No coaching unless asked. Then arm the all-day close listener (Step 8.6) so the builder can close their day by clicking the Command Center's "I'm done" button — no terminal needed.
+
+### Seeding Principle: everything is a priority candidate by default
+
+When open-day seeds a new day, **every carry-over, every AI suggestion, every candidate item lands in the priority-candidate pool** (the companion's "Suggestions & carry-overs" grid) — NOT pre-bucketed into the Bonus list.
+
+Why: the effort is **asymmetric**. In the companion, taking an item that sits in the priority pool and sending it to **Bonus / Defer / Delete is one click**. But moving an item that's already in the **Bonus list up into priority requires copy/paste** — there's no one-click promote. So defaulting everything into the priority pool gives the builder maximum control: they triage *down* with one click instead of promoting *up* by hand. Pre-sorting "old boring things" into Bonus inverts that and makes the builder do the expensive move.
+
+Concretely: seed all candidates into `### AI Suggested: …` (plain lines, the grid renders them with a Top 3 checkbox), and **leave `### Bonus` empty**. Bonus is a *destination the builder demotes into*, never a place the AI dumps a pile. This holds in companion mode; in chat mode (visual off) present everything as one flat candidate list to pick from, not a pre-split priority/bonus pair.
 
 When `visual_mode` is **off**:
 - Run the full chat flow (Steps 1-7), present suggestions in chat, accept the builder's edits in chat, and write the daily note from chat. **Skip Step 8.**
@@ -217,7 +229,9 @@ Extract the `## Carrying Over` section plus any unfinished `### My Top 3` / `###
 
 **Dedupe before presenting.** Carry-overs and the AI-suggested items often describe the *same task in different words* (close-day reworded a carry-over). Collapse those to a single suggestion — prefer the AI/curated wording — so the builder never sees the same task twice. Match on meaning, not just exact string.
 
-**Preserve time estimates.** Carried items may end with an `<!--e:X-->` marker — the estimated *remaining* hours as of last close (the builder may have revised it). When a carried item lands in today's `### My Top 3` / `### Bonus`, keep that exact marker on the line (never show it as visible text — it's an HTML comment the companion reads to pre-fill the estimate field). When presenting suggestions in chat, mention the estimate as "~Xh left".
+**Carry-overs are candidates, not commitments.** Per the Seeding Principle, place every carry-over into the **candidate pool** (`### AI Suggested: …`), never directly into `### My Top 3` or `### Bonus`. The builder decides in the companion where each lands (one-click Top 3 / Bonus / Defer / Delete). Leaving `### Bonus` empty is deliberate — a carry-over pre-dropped into Bonus can only be promoted by copy/paste.
+
+**Preserve time estimates.** Carried items may end with an `<!--e:X-->` marker — the estimated *remaining* hours as of last close (the builder may have revised it). When a carried item lands in the candidate pool, keep that exact marker on the line (never show it as visible text — it's an HTML comment the companion reads to pre-fill the estimate field). When presenting suggestions in chat, mention the estimate as "~Xh left".
 
 **2d. This week's plan (if it exists)**
 
@@ -892,11 +906,15 @@ hrv_ms: 61
 
 ### Bonus
 
-(nice-to-have items if there's time today — typically 1-3 items)
+<!-- Seed this EMPTY. Per the Seeding Principle, every carry-over and
+     suggestion goes into the `### AI Suggested: …` candidate pool above (where
+     the companion grid gives each a one-click Top 3 / Bonus / Defer / Delete),
+     NOT here. Bonus is a destination the builder demotes into with one click —
+     never a pile the AI pre-fills, because a Bonus-list item can only be
+     promoted to priority by copy/paste. (In chat/visual-off mode you may fill
+     Bonus from the builder's own choices during the review, but don't pre-sort
+     candidates into it.) -->
 
-1. [ ] [Bonus item 1]
-2. [ ] [Bonus item 2]
-3. [ ] [Bonus item 3]
 
 ### Vitality
 - [ ] [Movement activity]
