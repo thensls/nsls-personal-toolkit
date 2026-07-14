@@ -356,6 +356,55 @@ def test_close_ready_sets_flag_not_status(client_with_today):
     assert "I'm done — close my day" not in html
 
 
+def test_close_ready_writes_click_timestamp(client_with_today):
+    """The click stamps close_ready_at so the spinner can later go stale."""
+    client, vault = client_with_today
+    from companion.parsers import parse_frontmatter
+    client.post("/close-ready")
+    fm = parse_frontmatter(_note(vault))
+    assert fm.get("close_ready") == "1"
+    assert fm.get("close_ready_at")  # a timestamp was recorded
+
+
+def test_close_ready_goes_stale_after_window(client_with_today):
+    """The exact repro: a click was recorded but no Claude close ever picked it
+    up. Past the staleness window the page must STOP claiming Claude is closing
+    and calmly tell the builder to nudge it — never spin forever."""
+    from datetime import datetime, timezone, timedelta
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    old = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    note.write_text(f"---\nstatus: active\nclose_ready: 1\nclose_ready_at: \"{old}\"\n---\n"
+                    + note.read_text())
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "Claude is closing your day" not in html
+    assert "nsls-spinner" not in html
+    assert "Marked done" in html
+    assert "close day" in html  # nudge to type it in chat
+
+
+def test_close_ready_without_timestamp_is_stale(client_with_today):
+    """A close_ready flag left by a previous session (no timestamp) is stale —
+    it must not resurrect the 'Claude is closing' spinner on a fresh page load."""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("---\nstatus: active\nclose_ready: 1\n---\n" + note.read_text())
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "Claude is closing your day" not in html
+    assert "Marked done" in html
+
+
+def test_close_ready_fresh_click_still_spins(client_with_today):
+    """A just-happened click is optimistic: show the spinner (a listener may be
+    live) — but with a self-heal timer so it can't spin past the window."""
+    client, _ = client_with_today
+    client.post("/close-ready")
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "Claude is closing your day" in html
+    assert "nsls-spinner" in html
+    assert "__closeSpinnerTimer" in html  # self-heal timer armed
+
+
 def test_closing_banner_offers_done_button(client_with_today):
     client, _ = client_with_today
     html = client.get("/?closing=1").get_data(as_text=True)

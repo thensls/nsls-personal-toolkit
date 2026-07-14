@@ -4,7 +4,7 @@ import hashlib
 import math
 import queue
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -1047,6 +1047,48 @@ def _detect_day_state(daily_md: str, top_3: list) -> str:
     return "coach-morning"
 
 
+# How long the "Claude is closing your day…" spinner is allowed to promise an
+# in-flight close before the UI stops asserting it. The click sets close_ready:1
+# but nothing proves a Claude wait-done listener is actually attached — if none
+# is (e.g. the earlier one timed out), the flag would otherwise spin forever.
+# A real close-day synthesis clears close_ready and flips status:closed well
+# within this window; past it, the honest state is "marked done — nudge Claude".
+CLOSE_READY_STALE_SECONDS = 300  # 5 min — matches the banner's "more than a few minutes" copy
+
+
+def _close_ready_freshness(fm: dict) -> tuple[bool, bool, int]:
+    """Interpret the close_ready flag honestly.
+
+    Returns ``(close_ready, stale, recheck_ms)``:
+      - ``close_ready``  — the I'm-done click flag is set.
+      - ``stale``        — the flag is set but no close completed within
+        CLOSE_READY_STALE_SECONDS of the click (or the click carried no
+        timestamp at all — e.g. a flag left by a previous session). When
+        stale, the UI must stop claiming Claude is actively closing.
+      - ``recheck_ms``   — ms until the flag goes stale, so a continuously-open
+        tab can self-heal to the calm state without a manual reload (0 when
+        not applicable).
+    """
+    close_ready = fm.get("close_ready") in ("1", "true", "yes")
+    if not close_ready:
+        return False, False, 0
+    raw = fm.get("close_ready_at", "").strip()
+    if not raw:
+        # Flag with no timestamp: can't prove it's a fresh, attended click
+        # (predates this field, or a prior session left it) — treat as stale.
+        return True, True, 0
+    try:
+        started = datetime.fromisoformat(raw)
+    except ValueError:
+        return True, True, 0
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    if elapsed >= CLOSE_READY_STALE_SECONDS:
+        return True, True, 0
+    return True, False, int((CLOSE_READY_STALE_SECONDS - elapsed) * 1000) + 1000
+
+
 def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str) -> dict:
     """Assemble template context shared by all four day-tab modes.
 
@@ -1131,12 +1173,17 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     # /lock-in response used to omit day_status, so the banner fell into its
     # "not locked in" branch right after the builder locked in.
     fm = parse_frontmatter(daily_md)
+    close_ready, close_ready_stale, close_ready_recheck_ms = _close_ready_freshness(fm)
     return {
         "today": today,
         "today_pretty": today_pretty,
         "is_today": is_today,
         "day_status": fm.get("status", ""),
-        "close_ready": fm.get("close_ready") in ("1", "true", "yes"),
+        "close_ready": close_ready,
+        # close_ready alone means "builder clicked done" — NOT "a close is
+        # running". When stale, the banner drops the spinner for a calm nudge.
+        "close_ready_stale": close_ready_stale,
+        "close_ready_recheck_ms": close_ready_recheck_ms,
         "closing": False,  # index() overrides from ?closing=1
         "note_md": daily_md,
         "top_3": top_3,
@@ -1286,15 +1333,33 @@ def create_app(vault_path: str) -> Flask:
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         if not note_path.exists():
             return ("today's note not found", 404)
-        safe_modify(note_path, lambda md: set_frontmatter(md, "close_ready", "1"))
+        # Stamp WHEN the click happened so the spinner can't over-promise
+        # forever: if no close completes within CLOSE_READY_STALE_SECONDS, the
+        # next render falls back to the calm "nudge Claude" state.
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        def _mark(md: str) -> str:
+            md = set_frontmatter(md, "close_ready", "1")
+            return set_frontmatter(md, "close_ready_at", f'"{now_iso}"')
+
+        safe_modify(note_path, _mark)
         broadcast(f"01-daily/{today}.md")
         # Replaces the whole clicked banner (hx-target="closest .nsls-banner");
         # the twin banner instance catches up on the next SSE re-render. Keep
         # this markup in sync with command_banner.html's close_ready branch.
-        return ('<div class="nsls-banner"><span class="nsls-spinner" aria-hidden="true"></span>'
-                '<span class="font-medium">Claude is closing your day…</span> '
-                "This page will show your closing summary when it's done. "
-                '<span class="nsls-subtle">(Taking more than a few minutes? Check the Claude chat.)</span></div>')
+        # The inline timer self-heals a tab left open on the spinner: if no
+        # close lands within the window, it re-renders into the calm state.
+        recheck_ms = CLOSE_READY_STALE_SECONDS * 1000 + 1000
+        return (
+            '<div class="nsls-banner"><span class="nsls-spinner" aria-hidden="true"></span>'
+            '<span class="font-medium">Claude is closing your day…</span> '
+            "This page will show your closing summary when it's done. "
+            '<span class="nsls-subtle">(Taking more than a few minutes? Check the Claude chat.)</span>'
+            "<script>(function(){if(window.__closeSpinnerTimer)clearTimeout(window.__closeSpinnerTimer);"
+            "window.__closeSpinnerTimer=setTimeout(function(){window.__closeSpinnerTimer=null;"
+            "if(window.__toolkitReloadMain)window.__toolkitReloadMain(true);else location.reload();},"
+            f"{recheck_ms});}})();</script></div>"
+        )
 
     def _week_of() -> str:
         """Return the week identifier from ?week= query param or derive from target date."""

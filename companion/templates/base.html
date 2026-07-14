@@ -173,6 +173,11 @@
 
       connect();
 
+      // Expose the smart re-render (preserves dirty fields, no scary confirm)
+      // so injected partials — e.g. the closing-spinner self-heal timer — can
+      // refresh <main> to pick up the server's honest current state.
+      window.__toolkitReloadMain = reloadMain;
+
       // Global toast for HTMX response errors. All POSTs in templates use:
       //   hx-on:htmx:response-error="window.__toolkitErrorToast(event)"
       window.__toolkitErrorToast = function (evt) {

@@ -1,12 +1,8 @@
-{# Normal open-day state of the Command Center. close_ready flips both
-   banner instances to the closing spinner (same state as the ?closing=1
-   branch in command_banner.html — keep the copy in sync). #}
+{# Normal open-day state of the Command Center. close_ready flips both banner
+   instances to the closing status (shared _components/closing_status.html —
+   same honest fresh-vs-stale logic as command_banner.html's ?closing=1 path). #}
 {% if close_ready %}
-<div class="nsls-banner">
-  <span class="nsls-spinner" aria-hidden="true"></span><span class="font-medium">Claude is closing your day…</span>
-  This page will show your closing summary when it's done.
-  <span class="nsls-subtle">(Taking more than a few minutes? Check the Claude chat.)</span>
-</div>
+{% include "_components/closing_status.html" %}
 {% else %}
 <div class="nsls-banner">
   <span class="font-medium">Got it — Claude's logged your plan.</span> Mark your progress here as you go.
