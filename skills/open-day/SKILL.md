@@ -84,9 +84,18 @@ Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env` or `$OBSIDI
 - **Workspace GID:** `$ASANA_WORKSPACE_GID`
 - **User GID:** `$ASANA_USER_GID`
 
+## Date Discipline
+
+Sessions span midnight. A "today" or "yesterday" computed earlier in the session rots silently — this has repeatedly pointed the builder at the wrong day's page. Four rules, all load-bearing:
+
+1. **Never trust a cached date.** Re-run `date +%Y-%m-%d` at every decision point that touches a date — before printing any companion link, before arming any wait-done listener, before writing any note. Never reuse a `$TODAY`/`$YESTERDAY` computed earlier in the conversation.
+2. **No relative date words in user-facing output.** Every link and chat line names the absolute date + weekday: "close **Monday, July 13** — http://localhost:7777/?date=2026-07-13&closing=1" — never bare "yesterday"/"today". A stale-date error is then instantly visible to the builder.
+3. **Re-validate listeners on fire.** A wait-done listener armed on day N can fire on a later day. When one fires, re-run `date` and trust the `<date>` in the `STATUS ... <date>` payload — re-check which date the event is actually about before acting; never assume it's the day you armed it.
+4. **Timezone pinning.** Day boundaries depend on timezone. Read `timezone:` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`; if the field is absent, surface the gap and prompt once to pin it (e.g. "Your profile has no `timezone:` — your calendar suggests America/New_York; want me to pin that?"). An unpinned timezone makes "today" ambiguous near midnight — don't silently rely on the default.
+
 ## Timezone
 
-Read timezone from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (the `timezone` field). Default to `America/Denver` if not set.
+Read timezone from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (the `timezone` field). If it's not set, fall back to `America/Denver` for this run — but per Date Discipline #4, tell the builder the field is missing and offer to pin it (the fallback may not match their actual day boundary).
 
 ## Output Discipline
 
@@ -112,7 +121,7 @@ If the user invokes with `-v` (e.g., `/open-day -v`), full verbose output is fin
 date +%Y-%m-%d
 ```
 
-**Always echo the date you're opening** in your first line ("Opening **Monday, 2026-07-13**…") so a wrong day is caught immediately.
+**Always echo the date you're opening** in your first line ("Opening **Monday, 2026-07-13**…") so a wrong day is caught immediately. Run this command fresh — never reuse a date computed earlier in the session (Date Discipline #1; sessions span midnight).
 
 ### Step 1.4: Pending-close scan (surface a click made days ago — don't auto-close on it)
 
@@ -134,19 +143,19 @@ fi
 
 **If MISSING — send the builder to the companion, then wait:**
 
-1. Tell {user} in one line that yesterday wasn't closed. Do NOT auto-invoke the close-day synthesis — not even if yesterday's frontmatter already has `close_ready: 1` (that's a stale click from a previous session, not fresh consent; only a click that fires the listener armed below, or a typed "done", counts).
-2. **Start/verify the companion** if it isn't running — same binary resolution and start-if-needed flow as Step 8. If the companion can't run on this surface, fall back to asking in chat: "Close yesterday now, or skip it?" and act on the answer.
-3. **Give the clickable link scoped to yesterday**: `http://localhost:<port>/?date=$YESTERDAY&closing=1` (Markdown link, never a raw IP). Prompt:
+1. Tell {user} in one line that the day wasn't closed — **naming the absolute date + weekday, never bare "yesterday"** (Date Discipline #2). Do NOT auto-invoke the close-day synthesis — not even if that day's frontmatter already has `close_ready: 1` (that's a stale click from a previous session, not fresh consent; only a click that fires the listener armed below, or a typed "done", counts).
+2. **Start/verify the companion** if it isn't running — same binary resolution and start-if-needed flow as Step 8. If the companion can't run on this surface, fall back to asking in chat: "Close Monday, July 13 now, or skip it?" (absolute date) and act on the answer.
+3. **Recompute `$YESTERDAY` fresh right now** (Date Discipline #1 — the value from the Check above may predate a midnight rollover), then **give the clickable link scoped to that date**: `http://localhost:<port>/?date=$YESTERDAY&closing=1` (Markdown link, never a raw IP). Prompt (substituting the real weekday + date):
 
-   > Yesterday ({YESTERDAY}) was never closed. Check this link to make sure your progress is reported — http://localhost:<port>/?date=$YESTERDAY&closing=1 — then click **"I'm done — close my day"**. Or say **done** here (or **skip it** to open today without closing yesterday).
+   > **Monday, July 13 (2026-07-13)** was never closed. Check this link to make sure your progress is reported — http://localhost:<port>/?date=2026-07-13&closing=1 — then click **"I'm done — close my day"**. Or say **done** here (or **skip it** to open today without closing it).
 
-4. **Arm the listener as a background task** (Monitor / run_in_background — never a blocking foreground Bash call):
+4. **Arm the listener as a background task** (Monitor / run_in_background — never a blocking foreground Bash call), using that same freshly computed date:
 
    ```bash
    OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --date $YESTERDAY --timeout 86400
    ```
 
-5. **Only when the click fires** (`STATUS close-ready <date>`) **or the builder types "done" / "close yesterday"**: run the close-day synthesis for `$YESTERDAY`, wait for completion, then continue to Step 2.
+5. **Only when the click fires** (`STATUS close-ready <date>`) **or the builder types "done" / "close yesterday"**: re-run `date` and take the target date from the `STATUS` payload (Date Discipline #3 — the listener may fire on a later day than it was armed), run the close-day synthesis for that date, wait for completion, then continue to Step 2.
 6. **If the builder says "skip it"** (or similar): stop the listener, leave yesterday unclosed, and continue to Step 2. They can `close day <date>` later.
 
 **Edge case — double-run protection:** If close-day fails or partially writes Insight Reflection, the next /open-day will see the header present and skip. If you suspect a partial state (e.g., header present but the section is empty), surface it explicitly before re-running.
@@ -1021,7 +1030,7 @@ When you don't skip:
    OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until active --timeout 86400
    ```
 
-   It exits with `STATUS active <date>` the moment the builder clicks **Done — show Command Center** in the browser (the click flips the note's `status:` to active; this is the same-machine "webhook" — no typing needed). When it fires, treat it exactly as the builder saying "done" and continue to step 5. A typed "done" still works and wins if it comes first — stop the watcher then. If background tasks aren't available on this surface, skip the listener and just wait for the typed "done". Do not poll manually, do not print intermediate messages. Just stop until one of the two signals arrives.
+   It exits with `STATUS active <date>` the moment the builder clicks **Done — show Command Center** in the browser (the click flips the note's `status:` to active; this is the same-machine "webhook" — no typing needed). When it fires, re-run `date` and use the `<date>` from the payload (Date Discipline #3), treat it exactly as the builder saying "done", and continue to step 5. A typed "done" still works and wins if it comes first — stop the watcher then. If background tasks aren't available on this surface, skip the listener and just wait for the typed "done". Do not poll manually, do not print intermediate messages. Just stop until one of the two signals arrives.
 
 5. **On "done":** read today's daily note (`$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`), extract `### My Top 3` and `### Bonus`, and print:
 
@@ -1048,7 +1057,7 @@ When you don't skip:
    OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --timeout 86400
    ```
 
-   The Command Center's banner shows an **"I'm done — close my day"** button all day. When the builder clicks it, this listener fires (`STATUS close-ready <date>`) — **immediately run the `/close-day` skill for that date**, preserving mode (`-t` open → `close day -t`; real → real). Then close-day's own flow takes over (it clears `close_ready` when it writes the note). If the listener times out (12h) or errors, do nothing — the builder can still run `close day` by hand. If background tasks aren't available on this surface, skip arming it silently.
+   The Command Center's banner shows an **"I'm done — close my day"** button all day. When the builder clicks it, this listener fires (`STATUS close-ready <date>`) — first re-run `date` and take the target date from the `STATUS` payload, not from memory (Date Discipline #3: this listener routinely fires hours after arming, sometimes across midnight), then **immediately run the `/close-day` skill for that payload date**, preserving mode (`-t` open → `close day -t`; real → real). Then close-day's own flow takes over (it clears `close_ready` when it writes the note). If the listener times out (12h) or errors, do nothing — the builder can still run `close day` by hand. If background tasks aren't available on this surface, skip arming it silently.
 
 ### Day-of-Week Additions
 
