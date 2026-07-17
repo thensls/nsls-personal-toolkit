@@ -30,8 +30,27 @@ git -C "$OBSIDIAN_VAULT_PATH/60-nsls-knowledge" config user.email <you>@nsls.org
 ```
 
 Prerequisites (both are quick adds — ask Kevin):
-- Your `@nsls.org` email is in `kb_authors.txt` (same directory as this skill).
+- Your `@nsls.org` email is in `_data/kb_authors.txt` **in the KB repo** (`thensls/nsls-knowledge`). Kevin adds it with one commit there; you pick it up automatically on your next harvest — no toolkit update needed.
 - Your GitHub account is a collaborator on `thensls/nsls-knowledge`.
+
+## Verify your setup (no harvest)
+
+Before your first real harvest — or anytime you're unsure it's landing in the shared KB —
+run the setup check. It reads only, writes nothing, and does **not** run a harvest:
+
+Easiest: just tell Claude **"verify my harvest setup"** (Step 0 runs the check and stops).
+Or run it directly — the script lives next to this SKILL.md, at whichever path the toolkit is
+installed:
+
+```bash
+bash ~/.claude/local-plugins/nsls-personal-toolkit/skills/harvest-meeting/references/verify-setup.sh \
+  2>/dev/null || bash ~/.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/references/verify-setup.sh
+```
+
+It prints a **ROUTE** verdict: `COMPANY KB ✓` means harvest will push to `thensls/nsls-knowledge`;
+`LOCAL KB ⚠` means it will silently write to your private local KB instead — and tells you exactly
+what to fix. This is the only check that matters: harvest writes via `git push`, so there is **no
+gateway URL or token to verify** (the kb-gateway only powers the bot + kb.nsls.org read path).
 
 ## Modes
 
@@ -43,17 +62,27 @@ Prerequisites (both are quick adds — ask Kevin):
 
 ## Allowlist → routing (not a write gate)
 
-`kb_authors.txt` (same directory as this SKILL.md) lists SLT members. It no longer gates
-whether you can write — it decides **where** writes go:
+The SLT allowlist lists who writes to the shared KB. It no longer gates whether you can write —
+it decides **where** writes go:
 
 - **On the allowlist** → company KB (`thensls/nsls-knowledge`), committed and pushed to `main`.
 - **Not on the allowlist** → a self-contained **local KB** (`60-nsls-knowledge-local` in your
   vault), committed locally and never pushed. First run scaffolds it from an org-level seed.
 
-Identity is resolved cwd-independently in Step 0 (same logic as before). Everyone gets a
-working harvest; SLT membership only changes the destination.
+**Where the allowlist lives (source of truth):** `_data/kb_authors.txt` **inside the KB repo**
+(`thensls/nsls-knowledge`). Step 0 reads it live from `origin/main` (a fetch + `git show`, the
+working tree untouched), so adding a member is **one commit to the KB repo** and every writer
+picks it up on their next harvest — no toolkit release, no per-machine update. A copy also ships
+with the toolkit as an offline / first-run fallback only, and may lag the KB-repo source.
+
+Identity is resolved cwd-independently in Step 0. Everyone gets a working harvest; SLT membership
+only changes the destination.
 
 ## Step 0: Mode dispatch + allowlist routing
+
+**Verify-only mode:** if the user asked to *verify / check* their setup (not run a harvest),
+run `bash references/verify-setup.sh`, report its ROUTE verdict, and STOP — do not proceed to
+Step 1 or fetch any meeting.
 
 Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`).
 
@@ -72,18 +101,47 @@ writer if **any** candidate is in the allowlist.
 PYTHONPATH=/tmp/pptx_deps python3.12 -c "
 import os, subprocess, sys, pathlib, re
 
-# Locate the allowlist (handle both repo-clone and plugin-install paths)
-candidates_paths = [
+# --- Load the SLT allowlist ---
+# Source of truth is _data/kb_authors.txt IN the KB repo (thensls/nsls-knowledge): adding a
+# member is ONE commit there, picked up by every writer on their next harvest (no toolkit
+# release). Read live from origin/main (fetch + git show; working tree untouched) so a
+# just-added member routes correctly on their very next run. The copy shipped with the toolkit
+# is an offline / first-run (pre-clone) fallback only and may lag the KB-repo source.
+kb_dir = pathlib.Path(os.environ.get('OBSIDIAN_VAULT_PATH', '')) / '60-nsls-knowledge'
+
+def live_allowlist(kb_dir):
+    if not (kb_dir / '.git').exists():
+        return None
+    try:
+        subprocess.run(['git', '-C', str(kb_dir), 'fetch', '-q', 'origin', 'main'],
+                       check=True, stderr=subprocess.DEVNULL, timeout=30)
+        text = subprocess.check_output(
+            ['git', '-C', str(kb_dir), 'show', 'origin/main:_data/kb_authors.txt'],
+            text=True, stderr=subprocess.DEVNULL)
+        return text, str(kb_dir) + '/_data/kb_authors.txt @origin/main'
+    except Exception:
+        return None
+
+shipped_paths = [
+    pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
     pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
     pathlib.Path.home() / '.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
 ]
 # HARVEST_AUTHORS_FILE lets verification runs point at a temp allowlist.
 override = os.environ.get('HARVEST_AUTHORS_FILE')
-authors_file = pathlib.Path(override) if override and pathlib.Path(override).exists() else next((p for p in candidates_paths if p.exists()), None)
-if not authors_file:
-    print('FATAL: kb_authors.txt not found in any known path')
-    sys.exit(2)
-authors = {line.strip() for line in authors_file.read_text().splitlines()
+if override and pathlib.Path(override).exists():
+    authors_text, authors_src = pathlib.Path(override).read_text(), override
+else:
+    live = live_allowlist(kb_dir)
+    if live:
+        authors_text, authors_src = live
+    else:
+        shipped = next((p for p in shipped_paths if p.exists()), None)
+        if not shipped:
+            print('FATAL: kb_authors.txt not found (no KB clone, no shipped copy)')
+            sys.exit(2)
+        authors_text, authors_src = shipped.read_text(), str(shipped)
+authors = {line.strip() for line in authors_text.splitlines()
            if line.strip() and not line.startswith('#')}
 
 def git_email(*scope):
@@ -103,7 +161,6 @@ def env_file_email(path, *keys):
         if m: return m.group(1).strip()
     return ''
 
-kb_dir = pathlib.Path(os.environ.get('OBSIDIAN_VAULT_PATH', '')) / '60-nsls-knowledge'
 toolkit_dir = pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit'
 
 # .env candidates — local-plugins symlink path first (canonical), then repo path
@@ -129,7 +186,7 @@ print('emails_checked: ' + ' | '.join(f'{s}={e or \"-\"}' for s, e in scopes))
 print(f'slt_writer: {is_slt}')
 if is_slt:
     print(f'matched_via: {matched[0][0]} ({matched[0][1]})')
-print(f'authors_file: {authors_file}')
+print(f'authors_file: {authors_src}')
 
 # Detect 'looks-like-SLT-misconfigured': any detected email is @nsls.org but none
 # matched the allowlist. Usually means the allowlist is stale OR there's a typo.
@@ -186,7 +243,8 @@ the resolved target so a future silent misroute is debuggable):
     local KB: <kb_dir>
 
     If you ARE on SLT and should be writing to the company KB, ping Kevin to add you to
-    skills/harvest-meeting/kb_authors.txt and tick Members.is_slt = true, then re-run.
+    _data/kb_authors.txt in the KB repo (thensls/nsls-knowledge) — one commit, no re-install;
+    just re-run your next harvest.
     If you have an @nsls.org typo, fix it in the appropriate git scope or your toolkit .env.
     Otherwise this is expected — your harvest goes to your local KB.
   ```
