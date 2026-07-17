@@ -18,7 +18,15 @@ Pulls decisions, project definitions, and state changes from recorded meetings, 
 > **This setup applies only to SLT members writing to the company KB.** Non-SLT users need
 > no setup — the local KB is scaffolded automatically on first run.
 
-One-time setup for a new SLT writer:
+**Easiest — one command** (clones the repo, sets your commit identity, checks the allowlist,
+then verifies; idempotent, safe to re-run). Or just tell Claude *"set up my harvest"*:
+
+```bash
+bash references/setup.sh          # auto-detects your @nsls.org email
+bash references/setup.sh you@nsls.org   # or pass it explicitly
+```
+
+<details><summary>What it does by hand (if you'd rather do it manually)</summary>
 
 ```bash
 # 1. Clone the repo (nsls-knowledge) INTO the folder the skill expects (60-nsls-knowledge)
@@ -28,6 +36,7 @@ git clone https://github.com/thensls/nsls-knowledge.git "$OBSIDIAN_VAULT_PATH/60
 #    attributed to you AND the SLT writer gate matches via the kb-repo scope (Step 0).
 git -C "$OBSIDIAN_VAULT_PATH/60-nsls-knowledge" config user.email <you>@nsls.org
 ```
+</details>
 
 Prerequisites (both are quick adds — ask Kevin):
 - Your `@nsls.org` email is in `_data/kb_authors.txt` **in the KB repo** (`thensls/nsls-knowledge`). Kevin adds it with one commit there; you pick it up automatically on your next harvest — no toolkit update needed.
@@ -80,9 +89,11 @@ only changes the destination.
 
 ## Step 0: Mode dispatch + allowlist routing
 
-**Verify-only mode:** if the user asked to *verify / check* their setup (not run a harvest),
-run `bash references/verify-setup.sh`, report its ROUTE verdict, and STOP — do not proceed to
-Step 1 or fetch any meeting.
+**Setup / verify-only modes:** if the user asked to *set up* their harvest, run
+`bash references/setup.sh` (clones, sets identity, checks allowlist, then verifies), report the
+result, and STOP. If they asked to *verify / check* their setup, run
+`bash references/verify-setup.sh`, report its ROUTE verdict, and STOP. In both cases do not
+proceed to Step 1 or fetch any meeting.
 
 Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`).
 
