@@ -1,10 +1,10 @@
 ---
 date: 2026-07-17
 slug: harvest-verify-live-allowlist
-last_commit: dfe40ab53d9ccb6aa5a2d62085fc8743cacb463e
-commit_range: dfe40ab
+last_commit: 432bfc2
+commit_range: dfe40ab..432bfc2
 skills_changed: [harvest-meeting]
-files_changed: 3
+files_changed: 4
 cost_to_adopt: "2 min"
 breaking: false
 ---
@@ -29,6 +29,10 @@ instant: it's a single commit to the KB repo, picked up on your next harvest —
   gate: your git identity vs the SLT allowlist, that the KB clone exists, and that you have push
   access. It deliberately does **not** check any `kb-gateway` URL or token — harvest writes via
   `git push`, not through the gateway (the gateway only powers the bot + kb.nsls.org read path).
+- **One-command onboarding** (`references/setup.sh`, or say "set up my harvest") — for a new SLT
+  writer: clones the KB repo into your vault, sets the clone's commit identity to your @nsls.org
+  email (auto-detected), checks whether you're on the allowlist, and runs the verify check.
+  Idempotent — existing writers can re-run it as a health check.
 - **The SLT allowlist is now read live from the KB repo.** It lives at `_data/kb_authors.txt` in
   `thensls/nsls-knowledge`, and Step 0 reads it from `origin/main` (a fetch + `git show`, working
   tree untouched). Adding a writer is one commit there — everyone picks it up on their next
@@ -72,10 +76,13 @@ won't conflict.
 
 ## Manual Steps
 
-None for existing writers. Optional sanity check after pulling:
+None for existing writers. After pulling:
 
-- [ ] Run `bash skills/harvest-meeting/references/verify-setup.sh` (or say "verify my harvest
-      setup") and confirm it prints `COMPANY KB ✓`.
+- [ ] **New SLT writer?** Run `bash skills/harvest-meeting/references/setup.sh` (or say "set up my
+      harvest") — it clones the KB repo, sets your identity, and verifies in one go.
+- [ ] **Already set up?** Optional sanity check: `bash skills/harvest-meeting/references/verify-setup.sh`
+      (or "verify my harvest setup") and confirm it prints `COMPANY KB ✓`.
 
 ## Commits Included
 - `dfe40ab` — harvest-meeting: self-serve setup verification + live allowlist from KB repo
+- `432bfc2` — harvest-meeting: one-command setup.sh for new SLT writers
