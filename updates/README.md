@@ -8,6 +8,7 @@ Each release has a per-file detail page describing the change, its cost to adopt
 
 ---
 
+- **2026-07-17** — [Harvest: one-command setup check + live SLT allowlist](2026-07-17-harvest-verify-live-allowlist.md) — 2 min. Say "verify my harvest setup" to confirm your harvest lands in the shared KB (not a silent local copy); it checks the real git-push write gate, not any gateway. Being added as an SLT writer is now one commit to the KB repo, picked up on your next harvest.
 - **2026-06-11** — [Coaching from your seat — /role-coach goes org-wide](2026-06-11-role-coach.md) — 15 min. A coach that knows your role: diffs what you said you'd do against what you did, cites every claim, and never nags the same advice twice. ICs coach against their own Quick Notes (self scope — nobody else's); managers their team; execs org-wide. Wired into the daily/weekly cadence, every piece opt-out-able.
 - **2026-06-04** — [Day-specific goal cues in your morning planner](2026-06-04-weekly-schedule-cues.md) — 2 min. `/open-day` now reads a per-goal `weekly_schedule` and tells you today's exact session (easy vs. hard) instead of a flat weekly action, with an effective-date guard so a plan won't nag you to go hard during a recovery or ramp-in week. Backward-compatible.
 - **2026-06-03** — [Harvest meetings into the NSLS Knowledge Base](2026-06-03-kb-harvest-pipeline.md) — 15 min. New `/harvest-meeting` skill turns strategic meetings into gated KB entries; `/close-day` and `/close-week` harvest and audit automatically; `/personal-setup` auto-configures the KB clone for SLT.
