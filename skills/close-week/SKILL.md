@@ -216,6 +216,8 @@ Plus the weekly summary line matching the builder's `time_tracking_mode`:
 - `deep-vs-meetings`: "Deep work ratio: X% focused, X% collaboration, X% meetings/admin"
 - `department-balance`: "Department focus: X% [primary], X% [secondary], X% other"
 
+**Capture the weekly total as `work_hours_total`** (a number, hours) for the frontmatter in Step 5. This is *total work time* — the bold **Week** total after adding any off-screen/in-person/travel hours that Familiar can't see (per the builder's total-work-time convention), **not** just screen-active hours. If the week had significant uncaptured in-person work, add it by hand and note the adjustment in the Time Allocation prose. This feeds the "Total weekly work hours" chart in `03-meta/weekly-health-trends.md`.
+
 **Priorities vs. Reality:** Pull Monday's Top 3 from the daily note. For each, assess:
 - **Done** — clear evidence in Work Log
 - **Partial** — worked on but not finished (note what remains)
@@ -528,6 +530,8 @@ Write Output A to `02-weekly/YYYY-[W]WW.md`. Include the AI-Suggested Next Week 
 **Also write Output B (Quick Notes) into the weekly note** as a `### Quick Notes` section at the end, after the AI-Suggested sections. This allows the visual companion to display a copy-to-clipboard block so the builder can paste directly into their Coach journal without scrolling through chat. Format the section as plain text (no markdown formatting inside it).
 
 Set `status: closed` in the weekly note frontmatter. This signals the companion to switch to `week-results` mode, which shows the read-only results dashboard with the Quick Notes copy button.
+
+Also write `work_hours_total: <number>` into the frontmatter (from Step 2's Time Allocation total). This is read by the "Total weekly work hours" chart in `03-meta/weekly-health-trends.md`; omit the key only if the week has no defensible total (e.g., no Familiar data and no in-person estimate) rather than writing a guess.
 
 If the companion is running, tell the builder:
 > Weekly note written. The companion has your quick notes ready to copy at `<url>/week`.
