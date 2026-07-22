@@ -111,7 +111,23 @@ echo ""
 read -p "Install the web companion (browser-based UI)? [Y/n] " yn
 if [[ "${yn:-y}" =~ ^[Yy] ]]; then
   if [ -n "$PY" ]; then
-    (cd "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion" && "$PY" -m pip install -e . -q)
+    COMPANION_DIR="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion"
+    VENV_DIR="$COMPANION_DIR/.venv"
+    # Create the venv the rest of this block already assumes exists (it resolves
+    # companion/.venv/bin/toolkit-companion below). Without it, `pip install -e .`
+    # on an externally-managed (PEP-668/Homebrew) Python errors with
+    # "externally-managed-environment", -q hides it, and the companion silently
+    # never builds — every /open-day then falls back to plain chat.
+    if [ ! -x "$VENV_DIR/bin/python" ] && [ ! -x "$VENV_DIR/Scripts/python.exe" ]; then
+      "$PY" -m venv "$VENV_DIR"
+    fi
+    if [ "$OS_CLASS" = "windows" ]; then
+      VENV_PY="$VENV_DIR/Scripts/python.exe"
+    else
+      VENV_PY="$VENV_DIR/bin/python"
+    fi
+    [ -x "$VENV_PY" ] || VENV_PY="$PY"
+    (cd "$COMPANION_DIR" && "$VENV_PY" -m pip install -e . -q)
     echo "✓ Installed nsls-toolkit-companion CLI"
 
     if [ "$OS_CLASS" = "windows" ]; then

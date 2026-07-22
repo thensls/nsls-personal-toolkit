@@ -579,7 +579,7 @@ Pull the builder's open Meeting Actions from the SLT Meeting Intelligence base. 
 - This is the same pattern documented in the MEMORY.md Airtable gotchas section — field IDs in formulas don't work; schema doc names may drift from display names.
 
 ```bash
-PYTHONPATH=/tmp/pptx_deps python3.12 -c "
+python3 -c "
 import httpx, os, urllib.parse
 
 key = os.environ['AIRTABLE_API_KEY']

@@ -367,30 +367,40 @@ Create `$OBSIDIAN_VAULT_PATH/.obsidian/plugins/templater-obsidian/` directory an
 
 This auto-applies the daily note template when a note is created in `01-daily/`.
 
-## Step 7: Manual Steps Checklist
+## Step 7: Turn on Obsidian (guided, one step at a time)
 
-After creating all files, present this checklist to the builder:
+**Do NOT paste this as a checklist.** These are actions in the Obsidian app, and
+a wall of six numbered steps is exactly where a non-technical builder stalls.
+Walk them through it **one action at a time** — say what to click, wait for them
+to confirm, then give the next one. Keep each turn to a single instruction.
 
-> I've set up your vault structure, templates, and configuration files. Now open Obsidian and do these steps:
->
-> 1. **Open the vault** — Launch Obsidian > "Open folder as vault" > select `$OBSIDIAN_VAULT_PATH`
-> 2. **Enable community plugins** — Settings (gear icon) > Community Plugins > Turn on community plugins > click "Turn on"
-> 3. **Install plugins** — Settings > Community Plugins > Browse. Install these 8 plugins:
->    - **Templater** — template engine with date/logic support
->    - **Calendar** — calendar sidebar, click a date to create daily notes
->    - **Dataview** — query your notes like a database (powers the project dashboards)
->    - **Table Editor** — edit markdown tables visually
->    - **Kanban** — drag-and-drop kanban boards from markdown
->    - **Omnisearch** — fast full-text search across your vault
->    - **Smart Connections** — AI-powered related notes (needs API key)
->    - **Tasks** — checkbox task tracking with due dates and queries
-> 4. **Enable each plugin** — After installing, go back to Community Plugins and toggle each one on
-> 5. **Restart Obsidian** — Close and reopen to pick up the Templater config
-> 6. **Test** — Click today's date in the Calendar sidebar. It should create a daily note in `01-daily/` with the template applied.
->
-> **Optional:**
-> - Smart Connections needs an API key (OpenAI or Anthropic) — set it in Settings > Smart Connections if you want AI-related notes
-> - Meld Encrypt — install if you want to encrypt sensitive journal entries
+Lead-in (one line): "Your vault, templates, and config are written. Now let's
+turn on Obsidian together — I'll give you one step at a time."
+
+Then, one message each, waiting for a "done" between:
+
+1. **Open the vault.** "Launch Obsidian → 'Open folder as vault' → pick
+   `$OBSIDIAN_VAULT_PATH`. Tell me when it's open."
+2. **Turn on community plugins.** "Click the gear (Settings) → Community Plugins
+   → 'Turn on community plugins'. Done?"
+3. **Install the plugins.** "Still in Community Plugins, click Browse. Search for
+   and install these one by one — tell me when they're all in:
+   Templater, Calendar, Dataview, Table Editor, Kanban, Omnisearch, Smart
+   Connections, Tasks." (If they want to know what each does, offer the list —
+   don't front-load it.)
+4. **Enable them.** "Back on the Community Plugins screen, toggle each of those 8
+   on. Say done when they're all green."
+5. **Restart Obsidian.** "Quit and reopen Obsidian so Templater loads. Back?"
+6. **Test it.** "Click today's date in the Calendar sidebar — a daily note
+   should appear in `01-daily/` with the template filled in. See it?"
+
+If any step doesn't behave, troubleshoot that one before moving on — don't march
+ahead. Only after step 6 confirms, continue.
+
+**Offer, don't require (ask only if they seem interested):**
+- Smart Connections needs an OpenAI/Anthropic API key for AI-related notes —
+  offer to help set it in Settings → Smart Connections later.
+- Meld Encrypt — mention only if they ask about encrypting journal entries.
 
 ## Step 8: Create First Project
 

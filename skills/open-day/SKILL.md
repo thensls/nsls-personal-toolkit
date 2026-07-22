@@ -146,12 +146,19 @@ Before planning today, scan the last ~5 daily notes for any with `close_ready: 1
 **Check:**
 ```bash
 YESTERDAY=$(date -v-1d +%Y-%m-%d 2>/dev/null || date -d 'yesterday' +%Y-%m-%d)
-if ! grep -q "^## Insight Reflection" "$OBSIDIAN_VAULT_PATH/01-daily/$YESTERDAY.md" 2>/dev/null; then
-  echo "MISSING"
+YDAY_NOTE="$OBSIDIAN_VAULT_PATH/01-daily/$YESTERDAY.md"
+if [ ! -f "$YDAY_NOTE" ]; then
+  echo "ABSENT"          # no note for yesterday at all — nothing to close
+elif ! grep -q "^## Insight Reflection" "$YDAY_NOTE"; then
+  echo "MISSING"         # note exists but was never closed
 fi
 ```
 
-(The `## Insight Reflection` header is only written by `/close-day`, so its presence is the reliable signal that yesterday was processed.)
+Two distinct states — do NOT conflate them:
+- **ABSENT** (no note for yesterday) — a fresh vault, a day off, or a first-ever run. There is nothing to close. **Skip silently and continue to Step 2.** (This was a bug: the old check swallowed the file-not-found and treated absent as MISSING, so a brand-new user's very first `/open-day` detoured into closing an empty day.)
+- **MISSING** (note present, but no `## Insight Reflection`) — yesterday was worked but never closed. Auto-run close-day below.
+
+(The `## Insight Reflection` header is only written by `/close-day`, so its presence is the reliable signal that a *present* note was processed.)
 
 **If MISSING — send the builder to the companion, then wait:**
 
@@ -389,7 +396,7 @@ Run the gate now, in order:
 - Safe default: filter on `{status}` only, return fields by ID with `returnFieldsByFieldId=true`, then Python-filter by assignee name.
 
 ```bash
-PYTHONPATH=/tmp/pptx_deps python3.12 -c "
+python3 -c "
 import httpx, os, urllib.parse
 
 key = os.environ['AIRTABLE_API_KEY']
@@ -531,10 +538,10 @@ After displaying today's meetings, collect the names of all attendees who are NS
 # First make sure the action cache is fresh — extract from current profiles
 OPERATING_USER_EMAIL=$(grep '^OPERATING_USER_EMAIL=' ~/.claude/local-plugins/nsls-personal-toolkit/.env | cut -d= -f2 | tr -d '"') \
 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
-python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/extract_coaching_actions.py 2>/dev/null
+python3 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/extract_coaching_actions.py 2>/dev/null
 
 # Then surface up to 3 actions, prioritized by today's calendar
-echo "$ATTENDEE_NAMES" | python3.12 \
+echo "$ATTENDEE_NAMES" | python3 \
   ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_actions_for_day.py \
   --people-stdin
 ```
@@ -574,12 +581,12 @@ celebrate a win, develop toward a goal, remove a friction. Same `$ATTENDEE_NAMES
 
 ```bash
 SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
-echo "$ATTENDEE_NAMES" | python3.12 \
+echo "$ATTENDEE_NAMES" | python3 \
   ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_management_for_day.py \
   --people-stdin --weeks 4
 
 # Loops to close with people you're seeing today (durable ledger, Phase 4):
-SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3 \
   ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/loop_ledger.py \
   --for "$ATTENDEE_NAMES"
 ```
@@ -959,7 +966,9 @@ The `## Work Log`, `## Projects Touched`, `## Carrying Over`, and `## End of Day
 
 The companion advances the status from there: "Lock in →" sets `status: active`; `/close-day`'s evening "Done" sets `status: closed`.
 
-**Habits section:** Read habits from `$OBSIDIAN_VAULT_PATH/30-habits/habits.md`, parsing the Active list. Use each habit's `name` field for the bolded text in the `### Habits` section (one checkbox per active habit). If the file does not exist, ask the builder once whether to create it (offer the template), then write `30-habits/habits.md` and `30-habits/log.md` from the templates. The bolded habit names must match verbatim — `/close-day` and the CLI companion both match on that string.
+**Habits section:** Read habits from `$OBSIDIAN_VAULT_PATH/30-habits/habits.md`, parsing the Active list. Use each habit's `name` field for the bolded text in the `### Habits` section (one checkbox per active habit). If the file does not exist, ask the builder once whether to create it, then seed it as described below. The bolded habit names must match verbatim — `/close-day` and the CLI companion both match on that string.
+
+**Do not hand-author the habits files.** `habits.md`/`log.md` have a single owner and a single format: the companion's `ensure_vault_structure` seeds them from `templates/habits.md.template` and `templates/log.md.template` (the companion runs this on every startup; it never overwrites existing files). If the files are missing here (e.g. companion not installed yet), seed them by copying those exact templates verbatim — never invent a "simpler" inline structure, which is what caused the earlier format drift. The canonical shape is `## Active` / `## Archived` with `- id:` / `name:` / `frequency:` entries.
 
 **Health frontmatter rules:**
 - The eight `sleep_*`, `exercise_min`, `steps`, `active_energy_kcal`, `hrv_ms` keys come from Step 2k. Use YAML `null` for any value Apple Health didn't provide for yesterday (e.g., `hrv_ms: null`).
