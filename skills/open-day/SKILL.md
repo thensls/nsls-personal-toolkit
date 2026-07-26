@@ -48,15 +48,27 @@ There are two ways the ritual can run: with the **CLI companion** (the local Fla
 
 When `visual_mode` is **on** (the default):
 - **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary** (not installed, or you're not on a surface that can run a local server), **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
-- **Step 1.5 only**: Auto-run yesterday's close-day if needed (same as CLI mode).
+- **Step 1.5 only**: If yesterday wasn't closed, route to the companion link and wait for the click/typed "done" (same as CLI mode) — never auto-synthesize.
 - **Step 2**: Collect ALL data (calendar, Asana, carry-overs, AI suggestions, stack rank, free time, habits, learning, PRs, SLT). Run Bash commands in the background or silently — **do not show raw Bash output to the user**. Present ONE condensed summary line per data source (e.g., "3 meetings today · 6 open Asana · 2 carry-overs · AI suggestions seeded").
-- **Step 6**: Write the daily note with **empty Top 3 and Bonus slots** (`1. [ ]`, `2. [ ]`, `3. [ ]`). Include habits, calendar, and the standard template. **Do NOT fill in Top 3 — that's the companion's job.** BUT the companion needs suggestions to show, so **always write an `### AI Suggested: Top 3` section** (3 items) and `### AI Suggested: Delegate These`, in priority order:
+- **Step 6**: Write the daily note with **empty Top 3 slots AND an empty Bonus section** (`1. [ ]`, `2. [ ]`, `3. [ ]` for Top 3; nothing under `### Bonus`). Include habits, calendar, and the standard template. **Do NOT fill in Top 3 or Bonus — that's the companion's job.** Everything the AI knows about (carry-overs, close-day seeds, generated ideas) goes into the **candidate pool** — the `### AI Suggested: …` sections the companion renders as the "Suggestions & carry-overs" grid, where every row has a one-click **Top 3 / Bonus / Defer / Delete** control.
+
+  **Seeding default — everything is a priority candidate (see the Seeding Principle below):** put ALL carry-overs and suggestions into the candidate pool. **Never pre-place anything in `### Bonus`** — an item sitting in the Bonus list can only be promoted by copy/paste, whereas a candidate in the grid demotes to Bonus/Defer/Delete with one click. So the honest default is: everything up for grabs in the priority columns; the builder triages *down*.
+
+  Write an **`### AI Suggested: Top 3` section** — but it is the AI's *top picks*, not a cap: list the 3 strongest first, then include **every other carry-over and candidate below them in the same pool** (a second `### AI Suggested: …` subsection is fine — the grid merges them). Source, in priority order:
   1. **Real, from the last close-day** — if today's note already has them (close-day seeded them) or the most recent prior close-day wrote next-day suggestions, use those verbatim.
-  2. **Real, from carry-overs** — else, pull unfinished items from recent daily notes' `## Carrying Over` / incomplete Top 3.
+  2. **Real, from carry-overs** — pull unfinished items from recent daily notes' `## Carrying Over` / incomplete Top 3 **into the candidate pool** (NOT into `### Bonus`).
   3. **Reasonable, generated** — only if there's nothing real (fresh user, no prior close, e.g. first run or after a reset on an empty week): generate 3 sensible suggestions from what you DO know — the builder profile (role, projects in `20-projects/`, operating memo), this week's stack rank, today's calendar. Mark them plainly (e.g. a one-line note "suggested from your role/projects — no prior close-day to pull from"). Keep them realistic, not filler. This guarantees the companion always has something to react to — important for new users and testing.
 - **Skip Steps 3, 4, 4a, 5** — the companion handles priority selection, not chat.
 - **Step 8**: Open the visual companion and stop. Print exactly: *"Continue in the browser at <url>. Pick your Top 3, review suggestions, then click Done. Say 'done' here when you're ready."* **Then stop. Do not print coaching, suggestions, or commentary.**
-- **On "done"**: Re-read the daily note, extract Top 3 + Bonus + habits, print a brief summary (under 12 lines). No coaching unless asked.
+- **On "done"**: Re-read the daily note, extract Top 3 + Bonus + habits, print a brief summary (under 12 lines). No coaching unless asked. Then arm the all-day close listener (Step 8.6) so the builder can close their day by clicking the Command Center's "I'm done" button — no terminal needed.
+
+### Seeding Principle: everything is a priority candidate by default
+
+When open-day seeds a new day, **every carry-over, every AI suggestion, every candidate item lands in the priority-candidate pool** (the companion's "Suggestions & carry-overs" grid) — NOT pre-bucketed into the Bonus list.
+
+Why: the effort is **asymmetric**. In the companion, taking an item that sits in the priority pool and sending it to **Bonus / Defer / Delete is one click**. But moving an item that's already in the **Bonus list up into priority requires copy/paste** — there's no one-click promote. So defaulting everything into the priority pool gives the builder maximum control: they triage *down* with one click instead of promoting *up* by hand. Pre-sorting "old boring things" into Bonus inverts that and makes the builder do the expensive move.
+
+Concretely: seed all candidates into `### AI Suggested: …` (plain lines, the grid renders them with a Top 3 checkbox), and **leave `### Bonus` empty**. Bonus is a *destination the builder demotes into*, never a place the AI dumps a pile. This holds in companion mode; in chat mode (visual off) present everything as one flat candidate list to pick from, not a pre-split priority/bonus pair.
 
 When `visual_mode` is **off**:
 - Run the full chat flow (Steps 1-7), present suggestions in chat, accept the builder's edits in chat, and write the daily note from chat. **Skip Step 8.**
@@ -84,9 +96,18 @@ Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env` or `$OBSIDI
 - **Workspace GID:** `$ASANA_WORKSPACE_GID`
 - **User GID:** `$ASANA_USER_GID`
 
+## Date Discipline
+
+Sessions span midnight. A "today" or "yesterday" computed earlier in the session rots silently — this has repeatedly pointed the builder at the wrong day's page. Four rules, all load-bearing:
+
+1. **Never trust a cached date.** Re-run `date +%Y-%m-%d` at every decision point that touches a date — before printing any companion link, before arming any wait-done listener, before writing any note. Never reuse a `$TODAY`/`$YESTERDAY` computed earlier in the conversation.
+2. **No relative date words in user-facing output.** Every link and chat line names the absolute date + weekday: "close **Monday, July 13** — http://localhost:7777/?date=2026-07-13&closing=1" — never bare "yesterday"/"today". A stale-date error is then instantly visible to the builder.
+3. **Re-validate listeners on fire.** A wait-done listener armed on day N can fire on a later day. When one fires, re-run `date` and trust the `<date>` in the `STATUS ... <date>` payload — re-check which date the event is actually about before acting; never assume it's the day you armed it.
+4. **Timezone pinning.** Day boundaries depend on timezone. Read `timezone:` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`; if the field is absent, surface the gap and prompt once to pin it (e.g. "Your profile has no `timezone:` — your calendar suggests America/New_York; want me to pin that?"). An unpinned timezone makes "today" ambiguous near midnight — don't silently rely on the default.
+
 ## Timezone
 
-Read timezone from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (the `timezone` field). Default to `America/Denver` if not set.
+Read timezone from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (the `timezone` field). If it's not set, fall back to `America/Denver` for this run — but per Date Discipline #4, tell the builder the field is missing and offer to pin it (the fallback may not match their actual day boundary).
 
 ## Output Discipline
 
@@ -112,27 +133,49 @@ If the user invokes with `-v` (e.g., `/open-day -v`), full verbose output is fin
 date +%Y-%m-%d
 ```
 
-### Step 1.5: Auto-run yesterday's /close-day if it didn't run
+**Always echo the date you're opening** in your first line ("Opening **Monday, 2026-07-13**…") so a wrong day is caught immediately. Run this command fresh — never reuse a date computed earlier in the session (Date Discipline #1; sessions span midnight).
 
-`/close-day` is a separate ritual from `/open-day` — it intentionally closes the workday and produces the plan-vs-actual reflection that makes today's Top 3 honest instead of performative. `/open-day` does not subsume it. **But if it didn't run last night, /open-day runs it automatically before continuing — no prompt, no skip.**
+### Step 1.4: Pending-close scan (surface a click made days ago — don't auto-close on it)
+
+Before planning today, scan the last ~5 daily notes for any with `close_ready: 1` **and** `status:` not `closed` — a day the builder clicked "I'm done — close my day" but no session ever processed. **A `close_ready: 1` left over from a previous session is stale — it is NOT consent to synthesize now.** The builder's context has moved on since that click; the note may have changed; they may want another look. So do NOT run `/close-day <that-date>` automatically. Instead, treat the date exactly like a missing close: route it through Step 1.5's companion-confirm flow (mention that they clicked done back then, so it's probably a quick review-and-reclick).
+
+### Step 1.5: Yesterday's /close-day didn't run — route to the companion, wait for the click
+
+`/close-day` is a separate ritual from `/open-day` — it intentionally closes the workday and produces the plan-vs-actual reflection that makes today's Top 3 honest instead of performative. `/open-day` does not subsume it. When it didn't run last night, /open-day surfaces that and hands the builder the companion link — **but the builder's click (or typed "done") is ALWAYS the gate. Never run the synthesis unprompted.**
 
 **Check:**
 ```bash
 YESTERDAY=$(date -v-1d +%Y-%m-%d 2>/dev/null || date -d 'yesterday' +%Y-%m-%d)
-if ! grep -q "^## Insight Reflection" "$OBSIDIAN_VAULT_PATH/01-daily/$YESTERDAY.md" 2>/dev/null; then
-  echo "MISSING"
+YDAY_NOTE="$OBSIDIAN_VAULT_PATH/01-daily/$YESTERDAY.md"
+if [ ! -f "$YDAY_NOTE" ]; then
+  echo "ABSENT"          # no note for yesterday at all — nothing to close
+elif ! grep -q "^## Insight Reflection" "$YDAY_NOTE"; then
+  echo "MISSING"         # note exists but was never closed
 fi
 ```
 
-(The `## Insight Reflection` header is only written by `/close-day`, so its presence is the reliable signal that yesterday was processed.)
+Two distinct states — do NOT conflate them:
+- **ABSENT** (no note for yesterday) — a fresh vault, a day off, or a first-ever run. There is nothing to close. **Skip silently and continue to Step 2.** (This was a bug: the old check swallowed the file-not-found and treated absent as MISSING, so a brand-new user's very first `/open-day` detoured into closing an empty day.)
+- **MISSING** (note present, but no `## Insight Reflection`) — yesterday was worked but never closed. Auto-run close-day below.
 
-**If MISSING — auto-invoke close-day, no prompt:**
+(The `## Insight Reflection` header is only written by `/close-day`, so its presence is the reliable signal that a *present* note was processed.)
 
-1. Tell {user} in one line: "Yesterday's /close-day didn't run — running it now before opening today."
-2. Invoke the close-day skill with yesterday's date (`/close-day $YESTERDAY`). Wait for completion.
-3. Continue to Step 2.
+**If MISSING — send the builder to the companion, then wait:**
 
-The auto-run is the point: morning routine self-heals when the evening ritual was skipped. Builders who want to skip close-day entirely should remove this step from their fork rather than gate it with a prompt.
+1. Tell {user} in one line that the day wasn't closed — **naming the absolute date + weekday, never bare "yesterday"** (Date Discipline #2). Do NOT auto-invoke the close-day synthesis — not even if that day's frontmatter already has `close_ready: 1` (that's a stale click from a previous session, not fresh consent; only a click that fires the listener armed below, or a typed "done", counts).
+2. **Start/verify the companion** if it isn't running — same binary resolution and start-if-needed flow as Step 8. If the companion can't run on this surface, fall back to asking in chat: "Close Monday, July 13 now, or skip it?" (absolute date) and act on the answer.
+3. **Recompute `$YESTERDAY` fresh right now** (Date Discipline #1 — the value from the Check above may predate a midnight rollover), then **give the clickable link scoped to that date**: `http://localhost:<port>/?date=$YESTERDAY&closing=1` (Markdown link, never a raw IP). Prompt (substituting the real weekday + date):
+
+   > **Monday, July 13 (2026-07-13)** was never closed. Check this link to make sure your progress is reported — http://localhost:<port>/?date=2026-07-13&closing=1 — then click **"I'm done — close my day"**. Or say **done** here (or **skip it** to open today without closing it).
+
+4. **Arm the listener as a background task** (Monitor / run_in_background — never a blocking foreground Bash call), using that same freshly computed date:
+
+   ```bash
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --date $YESTERDAY --timeout 86400
+   ```
+
+5. **Only when the click fires** (`STATUS close-ready <date>`) **or the builder types "done" / "close yesterday"**: re-run `date` and take the target date from the `STATUS` payload (Date Discipline #3 — the listener may fire on a later day than it was armed), run the close-day synthesis for that date, wait for completion, then continue to Step 2.
+6. **If the builder says "skip it"** (or similar): stop the listener, leave yesterday unclosed, and continue to Step 2. They can `close day <date>` later.
 
 **Edge case — double-run protection:** If close-day fails or partially writes Insight Reflection, the next /open-day will see the header present and skip. If you suspect a partial state (e.g., header present but the section is empty), surface it explicitly before re-running.
 
@@ -193,7 +236,9 @@ Extract the `## Carrying Over` section plus any unfinished `### My Top 3` / `###
 
 **Dedupe before presenting.** Carry-overs and the AI-suggested items often describe the *same task in different words* (close-day reworded a carry-over). Collapse those to a single suggestion — prefer the AI/curated wording — so the builder never sees the same task twice. Match on meaning, not just exact string.
 
-**Preserve time estimates.** Carried items may end with an `<!--e:X-->` marker — the estimated *remaining* hours as of last close (the builder may have revised it). When a carried item lands in today's `### My Top 3` / `### Bonus`, keep that exact marker on the line (never show it as visible text — it's an HTML comment the companion reads to pre-fill the estimate field). When presenting suggestions in chat, mention the estimate as "~Xh left".
+**Carry-overs are candidates, not commitments.** Per the Seeding Principle, place every carry-over into the **candidate pool** (`### AI Suggested: …`), never directly into `### My Top 3` or `### Bonus`. The builder decides in the companion where each lands (one-click Top 3 / Bonus / Defer / Delete). Leaving `### Bonus` empty is deliberate — a carry-over pre-dropped into Bonus can only be promoted by copy/paste.
+
+**Preserve time estimates.** Carried items may end with an `<!--e:X-->` marker — the estimated *remaining* hours as of last close (the builder may have revised it). When a carried item lands in the candidate pool, keep that exact marker on the line (never show it as visible text — it's an HTML comment the companion reads to pre-fill the estimate field). When presenting suggestions in chat, mention the estimate as "~Xh left".
 
 **2d. This week's plan (if it exists)**
 
@@ -351,7 +396,7 @@ Run the gate now, in order:
 - Safe default: filter on `{status}` only, return fields by ID with `returnFieldsByFieldId=true`, then Python-filter by assignee name.
 
 ```bash
-PYTHONPATH=/tmp/pptx_deps python3.12 -c "
+python3 -c "
 import httpx, os, urllib.parse
 
 key = os.environ['AIRTABLE_API_KEY']
@@ -493,10 +538,10 @@ After displaying today's meetings, collect the names of all attendees who are NS
 # First make sure the action cache is fresh — extract from current profiles
 OPERATING_USER_EMAIL=$(grep '^OPERATING_USER_EMAIL=' ~/.claude/local-plugins/nsls-personal-toolkit/.env | cut -d= -f2 | tr -d '"') \
 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
-python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/extract_coaching_actions.py 2>/dev/null
+python3 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/extract_coaching_actions.py 2>/dev/null
 
 # Then surface up to 3 actions, prioritized by today's calendar
-echo "$ATTENDEE_NAMES" | python3.12 \
+echo "$ATTENDEE_NAMES" | python3 \
   ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_actions_for_day.py \
   --people-stdin
 ```
@@ -536,12 +581,12 @@ celebrate a win, develop toward a goal, remove a friction. Same `$ATTENDEE_NAMES
 
 ```bash
 SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" \
-echo "$ATTENDEE_NAMES" | python3.12 \
+echo "$ATTENDEE_NAMES" | python3 \
   ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/surface_management_for_day.py \
   --people-stdin --weeks 4
 
 # Loops to close with people you're seeing today (durable ledger, Phase 4):
-SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3.12 \
+SIGNAL_INGEST=1 OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3 \
   ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/loop_ledger.py \
   --for "$ATTENDEE_NAMES"
 ```
@@ -847,6 +892,18 @@ hrv_ms: 61
 ### AI Suggested: Delegate These
 [preserved from close-day seed if it existed]
 
+<!-- AI-Suggested item format — write each item as a PLAIN numbered line:
+       1. <item text> <!--e:0.75-->
+     • NEVER a checkbox (`1. [ ] text`) — these are suggestions, not tasks;
+       a leaked `[ ]` shows in the companion's suggestion title and rides
+       along when the item is taken.
+     • The optional `<!--e:X-->` estimate marker is the ONLY thing that may
+       trail the text; the companion reads it as data (never shows it in the
+       title) and uses it to pre-fill the estimate when the item is taken.
+     • Keep the builder's own text verbatim (including a leading `P ` personal
+       marker) — don't restyle or strip it. -->
+
+
 ### My Top 3
 1. [ ] [Priority #1 description] — [[project-slug]] *(week rank: N)*
 2. [ ] [Priority #2 description] — [[project-slug]] *(week rank: N)*
@@ -856,11 +913,15 @@ hrv_ms: 61
 
 ### Bonus
 
-(nice-to-have items if there's time today — typically 1-3 items)
+<!-- Seed this EMPTY. Per the Seeding Principle, every carry-over and
+     suggestion goes into the `### AI Suggested: …` candidate pool above (where
+     the companion grid gives each a one-click Top 3 / Bonus / Defer / Delete),
+     NOT here. Bonus is a destination the builder demotes into with one click —
+     never a pile the AI pre-fills, because a Bonus-list item can only be
+     promoted to priority by copy/paste. (In chat/visual-off mode you may fill
+     Bonus from the builder's own choices during the review, but don't pre-sort
+     candidates into it.) -->
 
-1. [ ] [Bonus item 1]
-2. [ ] [Bonus item 2]
-3. [ ] [Bonus item 3]
 
 ### Vitality
 - [ ] [Movement activity]
@@ -905,7 +966,9 @@ The `## Work Log`, `## Projects Touched`, `## Carrying Over`, and `## End of Day
 
 The companion advances the status from there: "Lock in →" sets `status: active`; `/close-day`'s evening "Done" sets `status: closed`.
 
-**Habits section:** Read habits from `$OBSIDIAN_VAULT_PATH/30-habits/habits.md`, parsing the Active list. Use each habit's `name` field for the bolded text in the `### Habits` section (one checkbox per active habit). If the file does not exist, ask the builder once whether to create it (offer the template), then write `30-habits/habits.md` and `30-habits/log.md` from the templates. The bolded habit names must match verbatim — `/close-day` and the CLI companion both match on that string.
+**Habits section:** Read habits from `$OBSIDIAN_VAULT_PATH/30-habits/habits.md`, parsing the Active list. Use each habit's `name` field for the bolded text in the `### Habits` section (one checkbox per active habit). If the file does not exist, ask the builder once whether to create it, then seed it as described below. The bolded habit names must match verbatim — `/close-day` and the CLI companion both match on that string.
+
+**Do not hand-author the habits files.** `habits.md`/`log.md` have a single owner and a single format: the companion's `ensure_vault_structure` seeds them from `templates/habits.md.template` and `templates/log.md.template` (the companion runs this on every startup; it never overwrites existing files). If the files are missing here (e.g. companion not installed yet), seed them by copying those exact templates verbatim — never invent a "simpler" inline structure, which is what caused the earlier format drift. The canonical shape is `## Active` / `## Archived` with `- id:` / `name:` / `frequency:` entries.
 
 **Health frontmatter rules:**
 - The eight `sleep_*`, `exercise_min`, `steps`, `active_energy_kcal`, `hrv_ms` keys come from Step 2k. Use YAML `null` for any value Apple Health didn't provide for yesterday (e.g., `hrv_ms: null`).
@@ -980,13 +1043,21 @@ When you don't skip:
    - Linux: `xdg-open <url-from-status>`
    - Windows: `start <url-from-status>`
 
-3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now. **Always give a clickable link**: present the URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) as a Markdown link, never a bare IP.
+3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now. **Always give a clickable link**: present the URL as `http://localhost:<port>` as a Markdown link, never a bare IP.
 
-   > A tab opened at http://localhost:<port> — open it. Pick your Top 3, add anything else to the Bonus list, then click **Done — show Command Center** when you're ready.
+   > A tab opened at http://localhost:<port> — **open it in your web browser (Chrome/Safari), not the app's embedded panel.** Edits made in the Claude Code desktop "panel"/side view don't save. If the page won't load, use http://127.0.0.1:<port> instead. Then pick your Top 3, add anything else to the Bonus list, and click **Done — show Command Center** when you're ready.
    >
    > When you're done, say **done** here and I'll print a one-line summary. Or just go straight into your day — the daily note is being saved as you type. Type `open day visual off` if you'd rather skip the visual next time.
 
-4. **Wait for the builder's "done" signal.** Do not poll, do not print intermediate messages, do not summarize "what they should do next." Just stop. Resume only when they reply.
+   **Why this matters (say it if they report edits not saving):** the companion must run in a real browser tab. If a builder opens it as the desktop app's embedded panel, its writes never reach the local server and vanish silently — the companion now shows an orange warning banner in that case. The fix is always the same: open `http://127.0.0.1:<port>` in an actual browser window. Prefer `127.0.0.1` over `localhost` in troubleshooting — some machines resolve `localhost` to IPv6, which the IPv4-only server refuses.
+
+4. **Wait for the builder's "done" signal — and listen for the click.** Before stopping, start the click-listener as a **background task** (Monitor / run_in_background — NEVER a blocking foreground Bash call, whose timeout can kill the session):
+
+   ```bash
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until active --timeout 86400
+   ```
+
+   It exits with `STATUS active <date>` the moment the builder clicks **Done — show Command Center** in the browser (the click flips the note's `status:` to active; this is the same-machine "webhook" — no typing needed). When it fires, re-run `date` and use the `<date>` from the payload (Date Discipline #3), treat it exactly as the builder saying "done", and continue to step 5. A typed "done" still works and wins if it comes first — stop the watcher then. If background tasks aren't available on this surface, skip the listener and just wait for the typed "done". Do not poll manually, do not print intermediate messages. Just stop until one of the two signals arrives.
 
 5. **On "done":** read today's daily note (`$OBSIDIAN_VAULT_PATH/01-daily/$(date +%Y-%m-%d).md`), extract `### My Top 3` and `### Bonus`, and print:
 
@@ -1006,6 +1077,14 @@ When you don't skip:
    Habits section: if there are any, list them but don't ask for status — habits are tracked passively and checked at `/close-day`.
 
    Keep the summary under 12 lines. Do not append commentary, suggestions, or coaching unless the builder asks.
+
+6. **Arm the all-day close listener** (right after the summary — this is what lets the builder close their whole day by clicking, never returning to the terminal). Start as a **background task** (Monitor / run_in_background — never a blocking foreground Bash call):
+
+   ```bash
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --timeout 86400
+   ```
+
+   The Command Center's banner shows an **"I'm done — close my day"** button all day. When the builder clicks it, this listener fires (`STATUS close-ready <date>`) — first re-run `date` and take the target date from the `STATUS` payload, not from memory (Date Discipline #3: this listener routinely fires hours after arming, sometimes across midnight), then **immediately run the `/close-day` skill for that payload date**, preserving mode (`-t` open → `close day -t`; real → real). Then close-day's own flow takes over (it clears `close_ready` when it writes the note). If the listener times out (12h) or errors, do nothing — the builder can still run `close day` by hand. If background tasks aren't available on this surface, skip arming it silently.
 
 ### Day-of-Week Additions
 

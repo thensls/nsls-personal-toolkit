@@ -4,7 +4,7 @@ import hashlib
 import math
 import queue
 import re
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -284,6 +284,11 @@ _AI_ITEM_LEAD_RE = re.compile(r"^\s*\d+\.\s+(.*)$")
 
 def _clean_ai_item(raw: str) -> str:
     text = raw.strip()
+    # Strip a leading checkbox — an AI-suggested line is NOT a task, but
+    # open-day sometimes writes it as `1. [ ] text`; without this the "[ ]"
+    # leaks into the displayed suggestion title (and rides along if taken).
+    if text[:3] in ("[ ]", "[x]", "[X]"):
+        text = text[3:].strip()
     # Strip leading bold wrappers: **text** … → text …
     m = re.match(r"^\*\*(.+?)\*\*(.*)$", text)
     if m:
@@ -1042,6 +1047,48 @@ def _detect_day_state(daily_md: str, top_3: list) -> str:
     return "coach-morning"
 
 
+# How long the "Claude is closing your day…" spinner is allowed to promise an
+# in-flight close before the UI stops asserting it. The click sets close_ready:1
+# but nothing proves a Claude wait-done listener is actually attached — if none
+# is (e.g. the earlier one timed out), the flag would otherwise spin forever.
+# A real close-day synthesis clears close_ready and flips status:closed well
+# within this window; past it, the honest state is "marked done — nudge Claude".
+CLOSE_READY_STALE_SECONDS = 300  # 5 min — matches the banner's "more than a few minutes" copy
+
+
+def _close_ready_freshness(fm: dict) -> tuple[bool, bool, int]:
+    """Interpret the close_ready flag honestly.
+
+    Returns ``(close_ready, stale, recheck_ms)``:
+      - ``close_ready``  — the I'm-done click flag is set.
+      - ``stale``        — the flag is set but no close completed within
+        CLOSE_READY_STALE_SECONDS of the click (or the click carried no
+        timestamp at all — e.g. a flag left by a previous session). When
+        stale, the UI must stop claiming Claude is actively closing.
+      - ``recheck_ms``   — ms until the flag goes stale, so a continuously-open
+        tab can self-heal to the calm state without a manual reload (0 when
+        not applicable).
+    """
+    close_ready = fm.get("close_ready") in ("1", "true", "yes")
+    if not close_ready:
+        return False, False, 0
+    raw = fm.get("close_ready_at", "").strip()
+    if not raw:
+        # Flag with no timestamp: can't prove it's a fresh, attended click
+        # (predates this field, or a prior session left it) — treat as stale.
+        return True, True, 0
+    try:
+        started = datetime.fromisoformat(raw)
+    except ValueError:
+        return True, True, 0
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    if elapsed >= CLOSE_READY_STALE_SECONDS:
+        return True, True, 0
+    return True, False, int((CLOSE_READY_STALE_SECONDS - elapsed) * 1000) + 1000
+
+
 def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str) -> dict:
     """Assemble template context shared by all four day-tab modes.
 
@@ -1122,10 +1169,22 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     morning_energy = _extract_energy_for(daily_md, "Morning Check-in")
     evening_energy = _extract_energy_for(daily_md, "End of Day")
 
+    # Banner state, computed here so EVERY day.html render carries it — the
+    # /lock-in response used to omit day_status, so the banner fell into its
+    # "not locked in" branch right after the builder locked in.
+    fm = parse_frontmatter(daily_md)
+    close_ready, close_ready_stale, close_ready_recheck_ms = _close_ready_freshness(fm)
     return {
         "today": today,
         "today_pretty": today_pretty,
         "is_today": is_today,
+        "day_status": fm.get("status", ""),
+        "close_ready": close_ready,
+        # close_ready alone means "builder clicked done" — NOT "a close is
+        # running". When stale, the banner drops the spinner for a calm nudge.
+        "close_ready_stale": close_ready_stale,
+        "close_ready_recheck_ms": close_ready_recheck_ms,
+        "closing": False,  # index() overrides from ?closing=1
         "note_md": daily_md,
         "top_3": top_3,
         "top_3_slots": top_3_slots[:3],
@@ -1231,6 +1290,9 @@ def create_app(vault_path: str) -> Flask:
         insight_reflection_text = sections.get("Insight Reflection", "").strip()
         gratitude_text = sections.get("Gratitude", "").strip()
         daily_insight_text = sections.get("Daily Insight", "").strip()
+        # 2-3 sentences close-day writes FOR the companion's day-closed card,
+        # so the builder gets Claude's summary without returning to the chat.
+        closing_note_text = sections.get("Closing Note", "").strip()
 
         # User override → respected; otherwise auto-detect
         mode_override = request.args.get("mode")
@@ -1247,18 +1309,57 @@ def create_app(vault_path: str) -> Flask:
         ctx["insight_reflection_text"] = insight_reflection_text
         ctx["gratitude_text"] = gratitude_text
         ctx["daily_insight_text"] = daily_insight_text
+        ctx["closing_note_text"] = closing_note_text
         ctx["mode"] = mode
         # `?closing=1` (set by /close-day when it sends the user here to mark
         # progress) swaps the Command Center's top "come back any time" banner
         # for a bottom "type done to close your day" line.
         ctx["closing"] = closing
-        # Day status drives the state-aware Command Center banner: `planning`
-        # still tells the user to type `done`; `active` means the day is open
-        # and the banner just invites them to mark progress (no stale "type
-        # done" instruction). Read straight from the note's frontmatter.
-        ctx["day_status"] = parse_frontmatter(daily_md).get("status", "")
+        # day_status / close_ready come from _build_day_context.
 
         return render_template("day.html", **ctx)
+
+    @app.route("/close-ready", methods=["POST"])
+    def close_ready():
+        """The closing banner's 'I'm done — close my day' button.
+
+        Records that the builder finished marking their day WITHOUT claiming
+        the day closed — ``status`` stays as-is ('closed' is the close pass's
+        to set once it has synthesized). The `toolkit-companion wait-done
+        --until close-ready` listener watches this key, so the chat session
+        auto-resumes on the click instead of waiting for a typed "done".
+        """
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        if not note_path.exists():
+            return ("today's note not found", 404)
+        # Stamp WHEN the click happened so the spinner can't over-promise
+        # forever: if no close completes within CLOSE_READY_STALE_SECONDS, the
+        # next render falls back to the calm "nudge Claude" state.
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        def _mark(md: str) -> str:
+            md = set_frontmatter(md, "close_ready", "1")
+            return set_frontmatter(md, "close_ready_at", f'"{now_iso}"')
+
+        safe_modify(note_path, _mark)
+        broadcast(f"01-daily/{today}.md")
+        # Replaces the whole clicked banner (hx-target="closest .nsls-banner");
+        # the twin banner instance catches up on the next SSE re-render. Keep
+        # this markup in sync with command_banner.html's close_ready branch.
+        # The inline timer self-heals a tab left open on the spinner: if no
+        # close lands within the window, it re-renders into the calm state.
+        recheck_ms = CLOSE_READY_STALE_SECONDS * 1000 + 1000
+        return (
+            '<div class="nsls-banner"><span class="nsls-spinner" aria-hidden="true"></span>'
+            '<span class="font-medium">Claude is closing your day…</span> '
+            "This page will show your closing summary when it's done. "
+            '<span class="nsls-subtle">(Taking more than a few minutes? Check the Claude chat.)</span>'
+            "<script>(function(){if(window.__closeSpinnerTimer)clearTimeout(window.__closeSpinnerTimer);"
+            "window.__closeSpinnerTimer=setTimeout(function(){window.__closeSpinnerTimer=null;"
+            "if(window.__toolkitReloadMain)window.__toolkitReloadMain(true);else location.reload();},"
+            f"{recheck_ms});}})();</script></div>"
+        )
 
     def _week_of() -> str:
         """Return the week identifier from ?week= query param or derive from target date."""
@@ -1404,6 +1505,7 @@ def create_app(vault_path: str) -> Flask:
         ctx["insight_reflection_text"] = sections.get("Insight Reflection", "").strip()
         ctx["gratitude_text"] = sections.get("Gratitude", "").strip()
         ctx["daily_insight_text"] = sections.get("Daily Insight", "").strip()
+        ctx["closing_note_text"] = sections.get("Closing Note", "").strip()
         ctx["mode"] = target_mode
         return render_template("day.html", **ctx)
 

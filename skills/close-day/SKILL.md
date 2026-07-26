@@ -38,7 +38,18 @@ Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env` before runn
 - `${PEOPLE_OPS_BASE_ID}` — People Ops Airtable base
 - `${SLT_BASE_ID}` — SLT Meeting Intelligence Airtable base (Step 1h SLT Meeting Actions sync)
 
-Also read `${OBSIDIAN_VAULT_PATH}/50-reference/builder-profile.md` for role/categories/timezone — the categorization logic in Step 1b depends on it.
+Also read `${OBSIDIAN_VAULT_PATH}/50-reference/builder-profile.md` for role/categories/timezone — the categorization logic in Step 1b depends on it. If the `timezone:` field is absent, surface the gap and prompt once to pin it (see Date Discipline #4) — don't silently assume a default.
+
+---
+
+## Date Discipline
+
+Sessions span midnight. A "today" or "yesterday" computed earlier in the session rots silently — this has repeatedly pointed the builder at the wrong day's closing page. Four rules, all load-bearing:
+
+1. **Never trust a cached date.** Re-run `date +%Y-%m-%d` at every decision point that touches a date — before printing any companion link, before arming any wait-done listener, before writing any note. Never reuse a `$TODAY`/`$YESTERDAY` computed earlier in the conversation.
+2. **No relative date words in user-facing output.** Every link and chat line names the absolute date + weekday: "close **Monday, July 13** — http://localhost:7777/?date=2026-07-13&closing=1" — never bare "yesterday"/"today". A stale-date error is then instantly visible to the builder.
+3. **Re-validate listeners on fire.** A wait-done listener armed on day N can fire on a later day. When one fires, re-run `date` and trust the `<date>` in the `STATUS ... <date>` payload — re-check which date the event is actually about before acting; never assume it's the day you armed it.
+4. **Timezone pinning.** Day boundaries depend on timezone. Read `timezone:` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`; if the field is absent, surface the gap and prompt once to pin it (e.g. "Your profile has no `timezone:` — your calendar suggests America/New_York; want me to pin that?"). An unpinned timezone makes "today" ambiguous near midnight — don't silently rely on the default.
 
 ---
 
@@ -62,7 +73,9 @@ If the user invokes with `-v` (e.g., `/close-day -v`), full verbose output is fi
 
 ### Step 0: Determine the date
 
-Default to today (`date +%Y-%m-%d`). Override by passing the date as an argument: `/close-day 2026-03-21`.
+Default to today (`date +%Y-%m-%d` — run it fresh NOW, never reuse a date computed earlier in the session; Date Discipline #1). Override by passing the date as an argument: `/close-day 2026-03-21`. **Always echo the date you're closing** in your first line ("Closing **Monday, 2026-07-13**…") so a wrong day is obvious immediately — absolute weekday + date, never "today"/"yesterday" (Date Discipline #2).
+
+**Pending-close scan (honors a click made days ago).** The Command Center's "I'm done — close my day" button persists `close_ready: 1` into that day's note — a durable signal, unlike the live background listener (which only survives the current session). So before closing today, scan the last ~5 daily notes for any with `close_ready: 1` **and** `status:` not `closed`: that's a day the builder clicked closed but no session ever processed. If you find one (and no explicit date arg was given), target THAT date instead — the stale flag picks the *date*, but it is NOT fresh consent to synthesize: still route through Step 0.5's companion link and wait for a fresh click or typed "done" (see the hard rule there). If several, take the oldest first and mention the others. `close-day` clears `close_ready` when it writes the note, so a day is only ever caught once.
 
 **Test-mode flag (`-t`):** if the invocation includes `-t` (e.g. `close day -t`), run the **entire skill against a throwaway test vault** so your real daily notes are never touched. The whole system keys off one variable, `$OBSIDIAN_VAULT_PATH` — so test mode is just: **before anything else, point that variable at the test vault.** Resolve the companion binary (the `"$TC"` lookup in Step 0.5) and run:
 
@@ -81,6 +94,8 @@ The close routes through the **CLI companion** by default (Step 0.5 starts it if
 
 ### Step 0.5: Check the visual companion
 
+**HARD RULE — fresh confirmation, every time.** Never synthesize/close without a fresh builder confirmation *this session*: either the companion click (via the `wait-done` listener armed below) or a typed "done". A `close_ready: 1` already present in the frontmatter from a previous session is **stale** — do not treat it as consent; send the builder to the companion link and wait. (A stale flag may still pick *which date* to close — see the pending-close scan — but never *whether* to synthesize it.)
+
 **Resolving the binary path** (same lookup as open-day Step 8):
 ```bash
 TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
@@ -96,6 +111,8 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 
 **Always give a clickable localhost link.** Present the URL as `http://localhost:<port>` (swap `127.0.0.1` → `localhost`) as a Markdown link, every time — never a raw IP. Closing without a link to click is a bug.
 
+**Real browser, not the app panel.** Tell the builder to open the link in an actual browser tab (Chrome/Safari), **not** the Claude Code desktop "panel"/embedded view — edits made in the panel don't reach the local server and are lost silently (the companion shows an orange warning banner when it detects this). If the page won't load, use `http://127.0.0.1:<port>` — some machines resolve `localhost` to IPv6, which the IPv4-only server refuses.
+
 1. **Resolve `"$TC"`** (above). If it can't be found, or you're not on a surface that can run a local server, **skip silently** and close in chat.
 2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Not running`, start it in the background, then re-check:
    ```bash
@@ -110,11 +127,17 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
    ```
    If it still won't start, **skip silently** and close in chat. Parse the address from the status output.
 3. **Read the target date's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/<target-date>.md` (Step 0's date, default today). If it doesn't exist, skip this step.
-4. **Open the Command Center in closing mode**, scoped to the target date: build the URL as `/?date=<target-date>&closing=1` (`open "<url>"` on macOS; `start`/`xdg-open` on Windows/Linux). `?closing=1` forces the Command Center's end-of-day state (even if the note was never locked in); `?date=` pins the page — and every write from it — to that day's note. Give the builder the link + this prompt (adapt "day's open" phrasing when closing a past day):
+4. **Open the Command Center in closing mode**, scoped to the target date: if the target is "today", re-run `date +%Y-%m-%d` NOW to resolve it (Date Discipline #1 — the session may have crossed midnight since Step 0), then build the URL as `/?date=<target-date>&closing=1` (`open "<url>"` on macOS; `start`/`xdg-open` on Windows/Linux). `?closing=1` forces the Command Center's end-of-day state (even if the note was never locked in); `?date=` pins the page — and every write from it — to that day's note. Give the builder the link + this prompt, **always naming the absolute weekday + date** (Date Discipline #2 — never "your day"/"today"/"yesterday" alone):
 
-   > Your day's open at http://localhost:<port>/?date=<target-date>&closing=1 — **open it and mark off where you landed**: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**.)
+   > **Monday, July 13 (2026-07-13)** is open at http://localhost:<port>/?date=2026-07-13&closing=1 — **open it in your web browser (Chrome/Safari), not the app's embedded panel** (panel edits don't save). Mark off where you landed: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**. Page won't load? Try http://127.0.0.1:<port>/?date=2026-07-13&closing=1.)
 
-5. **Wait for the builder to say "done".** Do NOT proceed until they explicitly respond. Do NOT treat background hook notifications (like "Record skill usage event completed") as user input — only a real message from the builder ("done", "continue", "go", "ready", or similar) advances.
+5. **Wait for the builder to say "done" — and listen for the click.** Before stopping, start the click-listener as a **background task** (Monitor / run_in_background — NEVER a blocking foreground Bash call, whose timeout can kill the session):
+
+   ```bash
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" wait-done --until close-ready --date <target-date> --timeout 86400
+   ```
+
+   It exits with `STATUS close-ready <date>` the moment the builder clicks **I'm done — close my day** in the closing banner (the click sets `close_ready: 1` in the note's frontmatter — the same-machine "webhook", no typing needed; `status` stays untouched, `closed` remains this skill's to set). When it fires, re-run `date` and take the target date from the `STATUS` payload, not from memory (Date Discipline #3 — the listener may fire hours later, across midnight), then treat it exactly as the builder saying "done" and proceed. When you later rewrite the note's frontmatter (Step 5a), REMOVE the `close_ready` key so a future re-close waits fresh. A typed "done" still works and wins if it comes first — stop the watcher then. If background tasks aren't available on this surface, skip the listener and wait for the typed "done". Either way: do NOT proceed on anything else — background hook notifications (like "Record skill usage event completed") are NOT user input; only the wait-done signal or a real message from the builder ("done", "continue", "go", "ready", or similar) advances.
 
 6. After they say done, re-read the target date's daily note to pick up their changes, then proceed to Step 1 — synthesizing **for the target date only**.
 
@@ -556,7 +579,7 @@ Pull the builder's open Meeting Actions from the SLT Meeting Intelligence base. 
 - This is the same pattern documented in the MEMORY.md Airtable gotchas section — field IDs in formulas don't work; schema doc names may drift from display names.
 
 ```bash
-PYTHONPATH=/tmp/pptx_deps python3.12 -c "
+python3 -c "
 import httpx, os, urllib.parse
 
 key = os.environ['AIRTABLE_API_KEY']
@@ -712,6 +735,10 @@ goal_<slug>_moved: [true | false]   # one line per active personal goal — see 
 ---
 # YYYY-MM-DD — [Day of Week]
 
+## Closing Note
+
+[2-3 sentences MAX, written FOR the companion's day-closed card — the builder reads this on the web page instead of the chat. Plain language, no headers/bullets/markdown structure. Cover: what landed today (the one-line win), what carries to tomorrow, and one short coaching or momentum line. Do NOT summarize mechanics ("I updated your note") — speak to the builder about their day.]
+
 ## Insight Reflection
 
 [Paragraph 1 — primary pattern: what the data reveals that you might not have noticed. One concrete data point must anchor it. Max 3 sentences.]
@@ -831,6 +858,7 @@ Source: `${SLT_BASE_ID}/tblasgjUjadHCqzrg` — pulled fresh this evening.
 - **AI Suggested Top 3:** Generate 3 strategic priorities for tomorrow based on carry-overs, meeting action items, deadlines, and Asana. Filter for items that are (a) high-impact/high-leverage, (b) fit the builder's unique seat — relationship decisions, strategic judgment calls, cross-team visibility, contract/legal calls. Explain *why* each is builder-only and what it blocks/unlocks. **When a suggestion derives from an incomplete item that had a time estimate, append its `<!--e:X-->` marker (remaining hours as of close) to the suggestion line** — the companion strips it from display and pre-fills the estimate field when the builder takes the item.
 - **AI Suggested Delegate:** Generate 3 important items someone else could own. Name the person and why they're the right fit. The builder's role becomes review/approve, not execute. Look for: operational tasks with a clear domain owner, first-draft work where the builder adds value in editing not creating, technical setup that doesn't require strategic judgment.
 - **My Top 3:** Always left blank for the builder to fill in manually after reviewing the AI suggestions. The builder may adopt, modify, or completely replace the AI suggestions.
+- **Never pre-fill `### Bonus`.** The next-day seed writes only the `### AI Suggested: …` candidate pool + `## Carrying Over` — never a `### Bonus` pile. Everything is a *priority candidate*; the builder demotes to Bonus with one click in the companion the next morning (open-day's Seeding Principle). A carry-over dropped straight into Bonus can only be promoted by copy/paste, so don't create that trap. The `### AI Suggested: Top 3` picks are the AI's 3 strongest; genuine extra carry-overs still surface via `## Carrying Over`, which open-day folds into the same candidate pool.
 
 **Generating the Insight Reflection:**
 
@@ -977,7 +1005,7 @@ Write these keys from the **target-date** Apple Health pulled in Step 1f-bis (`a
 
 If Apple Health returned an error for the target date (no data synced yet), still ensure the frontmatter block exists, write the goal keys from whatever evidence exists (workouts, morning cue), and leave the numeric health keys you couldn't source as `null` rather than dropping the block.
 
-**Set `status: closed` in the note's YAML frontmatter** as part of this write. `status` (`planning | active | closed`) is the single signal the web companion reads to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
+**Set `status: closed` in the note's YAML frontmatter** as part of this write — and make this the LAST thing that changes: write the full note content (including `## Closing Note`) in the same write or before it, because the status flip is what makes the builder's open browser tab re-render into the Results view, and the Closing Note must already be there when it does. Also REMOVE any `close_ready:` key in the same write (it was the I'm-done click signal; leaving it would make the next close's listener fire instantly). `status` (`planning | active | closed`) is the single signal the web companion reads to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
 
 ### Step 6: Update project session logs
 

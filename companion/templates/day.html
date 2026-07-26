@@ -13,7 +13,7 @@
 {% elif mode == 'results' %}
   {% include "_components/results.html" %}
 {% else %}
-<h1 class="text-2xl nsls-h1 mb-1">{% if is_today %}Today — {% endif %}{{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h1>
+{% include "_components/day_header.html" %}
 <p class="text-sm nsls-subtle mb-4">Command Center{% if not is_today %} — closing out a past day{% endif %}</p>
 
 {% include "_components/command_banner.html" %}

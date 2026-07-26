@@ -105,9 +105,9 @@ status: planning
 3. Prep the board update
 
 ### My Top 3
-1.
-2.
-3.
+1. [ ]
+2. [ ]
+3. [ ]
 
 ### Bonus
 

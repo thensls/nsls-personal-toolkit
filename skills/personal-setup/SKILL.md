@@ -11,23 +11,44 @@ description: >-
 
 Set up your personal productivity toolkit — the skills that turn Claude into a daily co-pilot for morning planning, end-of-day summaries, weekly reviews, and project logging.
 
-Show the roadmap upfront:
+**Hand-hold this. One question at a time, wait for the answer, then continue. Never print a wall of steps for the builder to run themselves.**
+
+### Pick a tier first (ask this, wait)
+
+Don't launch into Obsidian — that's where new builders bail. Offer two paths and let them choose:
 
 ```
-Let's set up your personal productivity toolkit.
+Two ways to set this up:
 
-This takes about 10 minutes:
-  1. Set up your knowledge base (Obsidian)        — 5 min
-  2. Connect your accounts (mostly auto-detected)  — 2 min
-  3. Optional integrations (Fathom meeting notes)  — 3 min
-  4. Done — try "open my day" to see it in action
+  • Light (~3 min, recommended to start) — I use a plain notes folder. Nothing
+    to install. /open-day and /close-day work immediately, and if you connected
+    Fathom during /setup, your meetings flow in too. You can upgrade anytime.
+
+  • Advanced — the full Obsidian knowledge base: a real app, graph view, and
+    8 plugins. More powerful, more setup. Great once you're hooked.
+
+Want to start Light? (yes / I'd rather do Advanced)
 ```
+
+- **Light** → do Step 0, then **Step 1-Light**, then Step 2 (accounts), then the wrap-up. **Skip the Obsidian app/plugins entirely.**
+- **Advanced** → do Step 0, then **Step 1-Advanced** (invoke `/obsidian-setup`), then the rest.
+
+Either way, reuse whatever `/setup` already did (BUILDER_EMAIL, connected tools) — never re-ask for it.
 
 ## Step 0: Check current state
 
-Read `~/.claude/local-plugins/nsls-personal-toolkit/.env` (if it exists). Identify which values are set and which are empty or missing. If everything is already set, confirm and offer to reconfigure.
+Read `~/.claude/local-plugins/nsls-personal-toolkit/.env` (if it exists). Identify which values are set and which are empty or missing. If everything is already set, confirm and offer to reconfigure. If `/setup` already wrote `BUILDER_EMAIL`, treat it as done — don't ask again.
 
-## Step 1: Knowledge Base (Obsidian) — ~5 min
+## Step 1-Light: Notes folder (default, ~1 min)
+
+The light tier needs somewhere to write notes — no Obsidian app required. In order of preference:
+
+1. If an Obsidian vault already exists (auto-detect below), reuse it — no install needed.
+2. Otherwise create a plain folder, e.g. `~/NSLS-notes/`, and use it as `OBSIDIAN_VAULT_PATH`. The daily/weekly skills write plain markdown into it and work immediately; the folder becomes a real Obsidian vault later if the builder upgrades to Advanced.
+
+Confirm in one line: "Your notes will live in `[path]` — /open-day and /close-day work now." Then go to Step 2. (Auto-detect logic is shared with Advanced, below.)
+
+## Step 1-Advanced: Knowledge Base (Obsidian) — ~5 min
 
 This is the foundation — your notes, project logs, and daily plans all live here.
 
@@ -83,22 +104,28 @@ And your GitHub username? (optional, for /register-automation)
 
 ## Step 3: Optional Integrations — ~3 min
 
-### Fathom API Key
+### Fathom (meetings)
+
+**Check the connector first.** If the builder connected Fathom during `/setup`
+(the one-click Authorize connector), `/close-day` and `/person-intelligence`
+already read meetings through it — **no API key needed.** Verify with a live
+`get_identity` / `list_meetings` call; if it works, say "Fathom's already
+connected — nothing to do here" and move on.
+
+Only if there's no Fathom connector available do you fall back to an API key:
 
 ```
-Do you use Fathom (fathom.video) for meeting recording?
+Do you use Fathom (fathom.video) for meeting recording? If yes and the
+one-click connector isn't available to you, I can use an API key instead.
 
-If yes, your API key lets /close-day pull today's meeting summaries
-and /person-intelligence pull 1:1 transcripts.
-
-To get your key:
-  1. Go to https://fathom.video/settings/api
-  2. Copy your API key
-
-Paste it here, or skip — /close-day works without it.
+To get one: open fathom.video → Settings → API Access, and copy the key.
+(Paste it here, or skip — /close-day still works without it.)
 ```
 
-If provided, validate with a test call:
+> Note: the old `fathom.video/settings/api` deep link 404s — always describe the
+> path ("Settings → API Access"), never link it.
+
+If a key is provided, validate with a test call:
 ```bash
 curl -s -H "X-Api-Key: <key>" "https://api.fathom.ai/external/v1/meetings?created_after=$(date +%Y-%m-%d)T00:00:00Z" | head -c 100
 ```
@@ -182,7 +209,7 @@ If a value wasn't provided, leave it empty with a comment:
 After writing the .env, check whether the builder is an SLT member who should be able to write to the shared knowledge graph (`thensls/nsls-knowledge`). This is gated by `BUILDER_EMAIL` matching an entry in `skills/harvest-meeting/kb_authors.txt` (the canonical SLT allowlist).
 
 ```bash
-PYTHONPATH=/tmp/pptx_deps python3.12 << 'PYEOF'
+python3 << 'PYEOF'
 import os, pathlib, re, subprocess
 
 env_path = pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/.env'
@@ -259,7 +286,7 @@ After writing the .env, sync the org chart into the builder's Obsidian vault. Th
 
 Run:
 ```bash
-OBSIDIAN_VAULT_PATH="<vault path from step 1>" python3.12 \
+OBSIDIAN_VAULT_PATH="<vault path from step 1>" python3 \
   ~/.claude/local-plugins/nsls-builder-toolkit/_shared/scripts/sync_org_context.py \
   --update-vault
 ```

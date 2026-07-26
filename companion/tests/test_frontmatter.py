@@ -113,3 +113,40 @@ class TestSetFrontmatter:
         fm = parse_frontmatter(result)
         assert fm["date"] == "2026-06-17"
         assert fm["status"] == "closed"
+
+
+def test_set_frontmatter_first_key_keeps_opening_delimiter_on_own_line():
+    """Regression (2026-07-11): replacing the FIRST key of the block glued it
+    onto the opening --- ('---status: active'), breaking frontmatter for
+    every parser including Obsidian. The old pattern's leading \\s* swallowed
+    the newline before the key."""
+    from companion.parsers import set_frontmatter, parse_frontmatter
+    md = "---\nstatus: planning\n---\n# Note\n"
+    out = set_frontmatter(md, "status", "active")
+    assert out.startswith("---\nstatus: active\n---\n"), repr(out[:40])
+    assert parse_frontmatter(out).get("status") == "active"
+    # idempotent on a second write
+    out2 = set_frontmatter(out, "status", "closed")
+    assert out2.startswith("---\nstatus: closed\n---\n"), repr(out2[:40])
+
+
+def test_set_weekly_frontmatter_first_key_same_regression():
+    from companion.week_parsers import set_weekly_frontmatter
+    md = "---\nmode: plan\n---\n# Week\n"
+    out = set_weekly_frontmatter(md, "mode", "review")
+    assert out.startswith("---\nmode: review\n---\n"), repr(out[:40])
+
+
+def test_test_vault_seed_top3_rows_are_real_slots(tmp_path, monkeypatch):
+    """Seeded '1.' bare rows didn't match _LIST_ITEM_RE, so plan writes
+    inserted above them and left junk rows in the note."""
+    import companion.testmode as tm
+    monkeypatch.setattr(tm, "_TOOLKIT_ROOT", tmp_path)
+    vault = tm.ensure_test_vault(seed_today=True)
+    from datetime import date
+    from companion.parsers import parse_daily_note_sections
+    from companion.server import _extract_numbered_checkbox_list_raw
+    md = (vault / "01-daily" / f"{date.today().isoformat()}.md").read_text()
+    morning = parse_daily_note_sections(md).get("Morning Check-in", "")
+    raw = _extract_numbered_checkbox_list_raw(morning, "### My Top 3")
+    assert len(raw) == 3 and all(not r["text"] for r in raw)

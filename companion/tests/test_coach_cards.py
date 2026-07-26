@@ -57,6 +57,11 @@ def test_morning_coach_renders_plan_and_done(client_with_today):
     for label in (b"Plan your day", b"Your Top 3",
                   b"Bonus list", b"Command Center"):
         assert label in resp.data, f"missing: {label}"
+    # The weekday + full date must show at the top even in coach-morning mode
+    # (regression: it used to render only in Command Center / results).
+    from datetime import datetime
+    pretty = datetime.strptime(date.today().isoformat(), "%Y-%m-%d").strftime("%A, %B %-d, %Y")
+    assert pretty.encode() in resp.data
     # No greeting screen, no multi-step UI, no placeholder features.
     assert b"Good morning" not in resp.data
     assert b"Focus blocks" not in resp.data
@@ -71,6 +76,10 @@ def test_evening_coach_renders_3_steps(client_with_today):
     note.write_text("## Morning Check-in\n### My Top 3\n\n## Insight Reflection\n\n")
     resp = client.get("/?mode=coach-evening")
     assert resp.status_code == 200
+    # Weekday + full date must show at the top in coach-evening mode too.
+    from datetime import datetime
+    pretty = datetime.strptime(today, "%Y-%m-%d").strftime("%A, %B %-d, %Y")
+    assert pretty.encode() in resp.data
     # Stats step was cut — close is now Insight → Gratitude → Done (3 steps).
     assert b"Today's stats" not in resp.data
     assert b"of 3" in resp.data

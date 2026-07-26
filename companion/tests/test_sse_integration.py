@@ -134,3 +134,15 @@ def test_base_html_includes_error_toast_hook(app):
     assert b"__toolkitErrorToast" in resp.data
     assert b"EventSource" in resp.data
     assert b"visibilitychange" in resp.data
+
+
+def test_base_html_includes_embedded_panel_guard(app):
+    """Every page ships the embedded-panel guard: it detects framing /
+    failed writes and points the user at the 127.0.0.1 browser URL. This is
+    the client-side half of the 'panel silently loses edits' fix."""
+    resp = app.test_client().get("/")
+    body = resp.data
+    assert b"toolkit-embed-warn" in body
+    assert b"htmx:sendError" in body          # behavioral trigger
+    assert b"window.self !== window.top" in body  # framing trigger
+    assert b"127.0.0.1" in body               # steer to the reliable URL

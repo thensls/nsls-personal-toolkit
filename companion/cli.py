@@ -237,3 +237,115 @@ def status(test_mode):
         pid_file.unlink(missing_ok=True)
         sys.exit(1)
     click.echo(f"Running: pid {pid}, address {addr}")
+
+
+def wait_for_status(vault_path, date_str, target, timeout, poll=1.0):
+    """Block until the daily note signals ``target``.
+
+    Targets:
+      - 'active' / 'closed' — the ``status:`` frontmatter reaches that value
+        (morning Lock-in click / a fully closed day).
+      - 'close-ready' — the closing banner's "I'm done" button was clicked
+        (``close_ready: 1`` frontmatter), OR the day is already closed.
+      - 'any' — any status change from the initial value, including the note
+        first appearing.
+
+    Returns the matched signal string on success, or None on timeout. Polls
+    the FILE, not the server, so it keeps working across companion restarts
+    and needs no network.
+
+    **Fires only on a TRANSITION into the target, never a pre-existing
+    signal.** A stale ``close_ready: 1`` left by an earlier incomplete close
+    used to make this return instantly at arm time (misread as a "clock jump
+    fires it early"). The timeout uses the monotonic clock, so a wall-clock
+    jump can never trip it early.
+    """
+    import time as _time
+    from companion.parsers import parse_frontmatter
+
+    note = Path(vault_path) / "01-daily" / f"{date_str}.md"
+
+    def signals() -> tuple[str, bool]:
+        try:
+            fm = parse_frontmatter(note.read_text(encoding="utf-8"))
+        except (FileNotFoundError, OSError):
+            return "", False
+        return fm.get("status", ""), fm.get("close_ready") in ("1", "true", "yes")
+
+    def matched(status: str, ready: bool):
+        if target == "closed":
+            return status if status == "closed" else None
+        if target == "active":
+            return status if status == "active" else None
+        if target == "close-ready":
+            if ready:
+                return "close-ready"
+            if status == "closed":
+                return "closed"
+            return None
+        return None  # 'any' handled separately below
+
+    status0, ready0 = signals()
+    # If the target is ALREADY satisfied at arm time, don't fire — wait for
+    # the next transition. (A genuinely already-closed day is the one
+    # exception for 'closed', where there's nothing further to wait for.)
+    baseline = matched(status0, ready0)
+    already_closed = target in ("closed", "close-ready") and status0 == "closed"
+    deadline = _time.monotonic() + timeout if timeout > 0 else None
+    while True:
+        status, ready = signals()
+        if target == "any":
+            if status != status0:
+                return status
+        elif already_closed:
+            return "closed"
+        else:
+            hit = matched(status, ready)
+            if hit is not None and matched(status0, ready0) is None:
+                return hit
+        if deadline is not None and _time.monotonic() >= deadline:
+            return None
+        _time.sleep(poll)
+
+
+@main.command("wait-done")
+@click.option("--date", "date_str", default=None,
+              help="Note date YYYY-MM-DD (default: today)")
+@click.option("--until", "target",
+              type=click.Choice(["active", "closed", "close-ready", "any"]),
+              default="close-ready",
+              help="Signal to wait for: 'active' = morning Lock-in click, "
+                   "'close-ready' = the closing banner's I'm-done click, "
+                   "'closed' = day fully closed, 'any' = any status change.")
+@click.option("--timeout", default=86400, type=int,
+              help="Give up after N seconds (0 = wait forever). Default 24h. "
+                   "NOTE: a live listener only lasts as long as the Claude "
+                   "session; the durable path is the close_ready flag the "
+                   "click persists, which open-day/close-day honor on their "
+                   "next run — see the pending-close scan in those skills.")
+@click.option("--vault", default=None,
+              help="Override vault path (defaults to OBSIDIAN_VAULT_PATH)")
+def wait_done(date_str, target, timeout, vault):
+    """Block until the builder clicks Done/Lock-in in the browser companion.
+
+    This is the same-machine 'webhook': the click flips the daily note's
+    ``status:`` frontmatter, and this command exits the moment that happens.
+    Skills run it as a BACKGROUND/Monitor task (never a blocking foreground
+    Bash call) so the Claude session auto-resumes on the click instead of
+    waiting for the builder to type "done" in chat.
+
+    Prints exactly one line: ``STATUS <status> <date>`` on success (exit 0)
+    or ``TIMEOUT <date>`` (exit 1).
+    """
+    vault = vault or os.environ.get("OBSIDIAN_VAULT_PATH")
+    if not vault:
+        click.echo("Set OBSIDIAN_VAULT_PATH or pass --vault", err=True)
+        sys.exit(1)
+    if not date_str:
+        from datetime import date as _date
+        date_str = _date.today().isoformat()
+    status = wait_for_status(Path(vault), date_str, target, timeout)
+    if status is None:
+        click.echo(f"TIMEOUT {date_str}")
+        sys.exit(1)
+    click.echo(f"STATUS {status} {date_str}")

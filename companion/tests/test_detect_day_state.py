@@ -163,3 +163,16 @@ def test_lock_in_still_advances_to_command(client_no_status):
     html = c.post("/lock-in", data={"phase": "morning"}).get_data(as_text=True)
     assert 'id="task-table"' in html          # explicit Done → Command Center
     assert 'id="task-table"' in c.get("/").get_data(as_text=True)  # sticks
+
+
+def test_lock_in_response_shows_locked_banner(client_no_status):
+    """The /lock-in response itself must render the locked-in banner — it
+    used to omit day_status from the template context, so the builder locked
+    in and was immediately told their plan 'isn't locked in yet'
+    (2026-07-11, Davo, real vault)."""
+    c = client_no_status
+    c.post("/set-top-3", data={"index": "0", "text": "first priority"})
+    html = c.post("/lock-in", data={"phase": "morning"}).get_data(as_text=True)
+    assert "Claude's logged your plan" in html
+    assert "I'm done — close my day" in html
+    assert "isn't locked in yet" not in html

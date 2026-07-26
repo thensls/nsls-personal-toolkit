@@ -308,11 +308,10 @@ def test_command_center_renders_task_controls(client_with_today):
     assert "tasklist-top_3" in html and "tasklist-bonus" in html
     assert "/set-progress" in html and "/delete-task" in html
     assert "/carry-task" not in html          # carry column removed
-    # Default (non-closing) Command Center shows the top "come back any time"
-    # banner, not the closing "close your day" line.
-    assert "back here any time" in html
-    assert "close your day" not in html
-    assert "return to the terminal" in html.lower()
+    # Default (non-closing) Command Center on an unlocked note nudges toward
+    # Plan-your-day — and never tells the builder to return to the terminal.
+    assert "isn't locked in yet" in html
+    assert "return to the terminal" not in html.lower()
     # Both energy rows show on the Command Center now: beginning-of-day at top,
     # end-of-day near Insight so it can be captured before close-day runs.
     assert "energy-morning" in html
@@ -336,3 +335,119 @@ def test_evening_energy_appears_once_set(client_with_today):
     note.write_text(note.read_text() + "\n## End of Day\n- Energy: high\n")
     html = client.get("/?mode=command").get_data(as_text=True)
     assert "energy-evening" in html
+
+
+# --- /close-ready: the closing banner's "I'm done" click ---
+
+def test_close_ready_sets_flag_not_status(client_with_today):
+    """The button records close_ready WITHOUT closing the day — 'closed' is
+    the close pass's to set after synthesis."""
+    client, vault = client_with_today
+    from companion.parsers import parse_frontmatter
+    resp = client.post("/close-ready")
+    assert resp.status_code == 200
+    fm = parse_frontmatter(_note(vault))
+    assert fm.get("close_ready") == "1"
+    assert fm.get("status") != "closed"
+    # closing view now shows the waiting-for-Claude banner state
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "Claude is closing your day" in html
+    assert "nsls-spinner" in html
+    assert "I'm done — close my day" not in html
+
+
+def test_close_ready_writes_click_timestamp(client_with_today):
+    """The click stamps close_ready_at so the spinner can later go stale."""
+    client, vault = client_with_today
+    from companion.parsers import parse_frontmatter
+    client.post("/close-ready")
+    fm = parse_frontmatter(_note(vault))
+    assert fm.get("close_ready") == "1"
+    assert fm.get("close_ready_at")  # a timestamp was recorded
+
+
+def test_close_ready_goes_stale_after_window(client_with_today):
+    """The exact repro: a click was recorded but no Claude close ever picked it
+    up. Past the staleness window the page must STOP claiming Claude is closing
+    and calmly tell the builder to nudge it — never spin forever."""
+    from datetime import datetime, timezone, timedelta
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    old = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    note.write_text(f"---\nstatus: active\nclose_ready: 1\nclose_ready_at: \"{old}\"\n---\n"
+                    + note.read_text())
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "Claude is closing your day" not in html
+    assert "nsls-spinner" not in html
+    assert "Marked done" in html
+    assert "close day" in html  # nudge to type it in chat
+
+
+def test_close_ready_without_timestamp_is_stale(client_with_today):
+    """A close_ready flag left by a previous session (no timestamp) is stale —
+    it must not resurrect the 'Claude is closing' spinner on a fresh page load."""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("---\nstatus: active\nclose_ready: 1\n---\n" + note.read_text())
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "Claude is closing your day" not in html
+    assert "Marked done" in html
+
+
+def test_close_ready_fresh_click_still_spins(client_with_today):
+    """A just-happened click is optimistic: show the spinner (a listener may be
+    live) — but with a self-heal timer so it can't spin past the window."""
+    client, _ = client_with_today
+    client.post("/close-ready")
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "Claude is closing your day" in html
+    assert "nsls-spinner" in html
+    assert "__closeSpinnerTimer" in html  # self-heal timer armed
+
+
+def test_closing_banner_offers_done_button(client_with_today):
+    client, _ = client_with_today
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "/close-ready" in html
+    assert "I'm done — close my day" in html
+
+
+def test_results_view_shows_claude_closing_note(client_with_today):
+    """A closed day with a ## Closing Note renders Claude's summary card on
+    the Results view, with the return-to-chat pointer — the builder never has
+    to go back to the terminal to see how the close landed."""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("---\nstatus: closed\n---\n" + note.read_text()
+                    + "\n## Closing Note\n\nSolid day — 2 of 3 landed. Vendor thread carries to tomorrow at 0.5h. Protect the morning block.\n"
+                    + "\n## Insight Reflection\n\nGood focus.\n")
+    html = client.get("/").get_data(as_text=True)
+    assert "Day closed — from Claude" in html
+    assert "Solid day — 2 of 3 landed" in html
+    assert "Return to the Claude chat to continue the conversation" in html
+
+
+def test_results_view_without_closing_note_has_no_card(client_with_today):
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("---\nstatus: closed\n---\n" + note.read_text()
+                    + "\n## Insight Reflection\n\nGood focus.\n")
+    html = client.get("/").get_data(as_text=True)
+    assert "Day closed — from Claude" not in html
+
+
+def test_active_day_banner_offers_close_button(client_with_today):
+    """The normal (locked-in) Command Center carries the I'm-done button all
+    day, so closing never requires the terminal. close_ready flips it to the
+    closing spinner."""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("---\nstatus: active\n---\n" + note.read_text())
+    html = client.get("/").get_data(as_text=True)
+    assert "Claude's logged your plan" in html
+    assert "/close-ready" in html and "I'm done — close my day" in html
+    assert "close day" not in html  # no type-this-in-the-terminal copy
+    client.post("/close-ready")
+    html = client.get("/").get_data(as_text=True)
+    assert "Claude is closing your day" in html and "nsls-spinner" in html
+    assert "I'm done — close my day" not in html
