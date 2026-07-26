@@ -4,6 +4,7 @@ import hashlib
 import math
 import queue
 import re
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlparse
@@ -1055,6 +1056,14 @@ def _detect_day_state(daily_md: str, top_3: list) -> str:
 # within this window; past it, the honest state is "marked done — nudge Claude".
 CLOSE_READY_STALE_SECONDS = 300  # 5 min — matches the banner's "more than a few minutes" copy
 
+# How recently a `toolkit-companion wait-done` listener must have pinged
+# /listener-heartbeat for a Done/close click to trust that a Claude session is
+# actually attached. The listener pings on every poll (~1s) while it runs, so a
+# window a few multiples of that absorbs poll jitter without trusting a listener
+# that already exited. Past it, the click can't honestly promise a close — the
+# UI must send the builder to the chat instead of spinning behind nothing.
+LISTENER_HEARTBEAT_FRESH_SECONDS = 10
+
 
 def _close_ready_freshness(fm: dict) -> tuple[bool, bool, int]:
     """Interpret the close_ready flag honestly.
@@ -1261,6 +1270,14 @@ def create_app(vault_path: str) -> Flask:
 
     subscribers: list[queue.Queue] = []
     last_hashes: dict[str, str] = {}  # relpath -> sha256[:16] of last broadcast
+    # Monotonic seconds of the last `wait-done` listener heartbeat (None until
+    # one is seen this server lifetime). A Done/close click reads this to decide
+    # whether a Claude listener is actually attached — see /listener-heartbeat.
+    listener_state: dict[str, float | None] = {"last_heartbeat": None}
+
+    def _listener_live() -> bool:
+        last = listener_state["last_heartbeat"]
+        return last is not None and (time.monotonic() - last) <= LISTENER_HEARTBEAT_FRESH_SECONDS
 
     def _target_date() -> str:
         """Return the target date from ?date= query param or form field, default today.
@@ -1344,6 +1361,22 @@ def create_app(vault_path: str) -> Flask:
 
         safe_modify(note_path, _mark)
         broadcast(f"01-daily/{today}.md")
+        # The click always persists close_ready (the durable path open-day /
+        # close-day honor on their next run). But the spinner may only PROMISE a
+        # close when a `wait-done` listener is actually attached — otherwise the
+        # builder stares at "Claude is closing…" behind nothing until the 5-min
+        # self-heal. If no listener heartbeat landed recently, say so now and
+        # point them at the chat instead of spinning. (Enforces the click-only
+        # loop server-side, so an agent that forgot to arm wait-done can't leave
+        # the product looking broken.)
+        if not _listener_live():
+            return (
+                '<div class="nsls-banner">'
+                '<span class="font-medium">Claude isn\'t listening.</span> '
+                "Say <code>done</code> in the Claude chat to close your day. "
+                '<span class="nsls-subtle">(Your click was saved — but nothing\'s '
+                "attached to pick it up right now.)</span></div>"
+            )
         # Replaces the whole clicked banner (hx-target="closest .nsls-banner");
         # the twin banner instance catches up on the next SSE re-render. Keep
         # this markup in sync with command_banner.html's close_ready branch.
@@ -1360,6 +1393,19 @@ def create_app(vault_path: str) -> Flask:
             "if(window.__toolkitReloadMain)window.__toolkitReloadMain(true);else location.reload();},"
             f"{recheck_ms});}})();</script></div>"
         )
+
+    @app.route("/listener-heartbeat", methods=["POST"])
+    def listener_heartbeat():
+        """Heartbeat pinged by ``toolkit-companion wait-done`` while it runs.
+
+        The wait-done listener polls the daily note file (not the server), so
+        the server otherwise has no way to know a Claude close-listener is
+        attached. This lets it: the listener POSTs here on every poll, and a
+        Done/close click checks the freshness (see /close-ready). Cheap and
+        best-effort — the listener swallows failures, since the durable close
+        path is the close_ready flag, not this signal."""
+        listener_state["last_heartbeat"] = time.monotonic()
+        return ("", 204)
 
     def _week_of() -> str:
         """Return the week identifier from ?week= query param or derive from target date."""
@@ -1673,21 +1719,16 @@ def create_app(vault_path: str) -> Flask:
         resp = _set_morning_item("### Bonus", "bonus", rerender_partial=False)
         if isinstance(resp, tuple) and resp[1] != 204:
             return resp  # validation error — pass through
-        # Focus the fresh add slot only when the user added a brand-new item
-        # (the trailing add input, index == current count) so Tab/Enter keeps
-        # them typing instead of jumping to Reset. Editing an existing item
-        # (lower index) saves silently and shouldn't steal focus.
-        try:
-            idx = int(request.form.get("index", "-1"))
-        except (TypeError, ValueError):
-            idx = -1
-        bonus_count = len(_extract_bonus(
-            parse_daily_note_sections(
-                (app.config["VAULT_PATH"] / "01-daily" / f"{_target_date()}.md").read_text(encoding="utf-8")
-            ).get("Morning Check-in", "")
-        ))
-        # After the add, the item count is idx+1; focus if this was the add slot.
-        return _render_bonus_list(_target_date(), focus_add=(idx + 1 == bonus_count))
+        # Refocus the fresh add slot whenever this render REPLACES the list —
+        # i.e. the request came from the trailing "add" input (add=1), the only
+        # source that swaps #bonus-list (existing rows save with hx-swap="none"
+        # and discard this body, so a stray focus script on them is harmless).
+        # Keying off an explicit flag, not the old `idx + 1 == count` arithmetic,
+        # refocuses reliably: the count match dropped focus onto Done under
+        # Chrome's change + keyup[Enter] double-fire and when appending past the
+        # end — the exact "Enter jumps to Done" bug. (§3.6)
+        focus_add = request.form.get("add") == "1"
+        return _render_bonus_list(_target_date(), focus_add=focus_add)
 
     @app.route("/add-bonus", methods=["POST"])
     def add_bonus():

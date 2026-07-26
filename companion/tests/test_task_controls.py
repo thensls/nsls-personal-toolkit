@@ -451,3 +451,84 @@ def test_active_day_banner_offers_close_button(client_with_today):
     html = client.get("/").get_data(as_text=True)
     assert "Claude is closing your day" in html and "nsls-spinner" in html
     assert "I'm done — close my day" not in html
+
+
+# --- §3.5: ?closing=1 must force the Command Center, even from coach-morning ---
+
+def test_closing_forces_command_center_from_coach_morning(client_with_today):
+    """The reported bug: /close-day sends the builder to /?closing=1 but a note
+    still at `status: planning` (plan never locked in) rendered "Plan your day".
+    ?closing=1 must hard-force the Command Center + closing banner, and the two
+    renders must differ so the flag can never be a silent no-op. (§3.5)"""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    # A planning note with empty Top 3 → coach-morning WITHOUT the flag.
+    note.write_text(
+        "---\nstatus: planning\n---\n# Daily Note\n\n## Morning Check-in\n\n"
+        "### My Top 3\n1. [ ]\n2. [ ]\n3. [ ]\n\n### Bonus\n"
+    )
+    plain = client.get("/").get_data(as_text=True)
+    closing = client.get("/?closing=1").get_data(as_text=True)
+    # Without the flag: the coach-morning planning view (its lock-in button) —
+    # no Command Center task table, no closing banner.
+    assert "Done — show Command Center" in plain   # coach-morning lock-in button
+    assert 'id="task-table"' not in plain
+    assert "close your day" not in plain
+    # With the flag: the Command Center in its closing state.
+    assert 'id="task-table"' in closing            # Command Center rendered
+    assert "close your day" in closing             # closing banner
+    assert "Done — show Command Center" not in closing  # not the planning view
+    # The flag changed the page — it is not a silent no-op.
+    assert plain != closing
+
+
+def test_closed_day_with_closing_flag_stays_on_results(client_with_today):
+    """A genuinely closed day stays read-only on Results even with ?closing=1 —
+    the flag forces the Command Center only when the day isn't already closed."""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("---\nstatus: closed\n---\n" + note.read_text()
+                    + "\n## Insight Reflection\n\nGood focus.\n")
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert "close your day" not in html  # no closing banner on a closed day
+
+
+# --- §3.7: a Done/close click can't promise a close with no listener attached ---
+
+def test_close_ready_without_listener_shows_not_listening(client_with_today):
+    """No `wait-done` heartbeat seen → the click can't honestly promise a
+    close, so the response sends the builder to the chat instead of spinning
+    behind nothing. Enforces the click-only loop server-side. (§3.7)"""
+    client, vault = client_with_today
+    from companion.parsers import parse_frontmatter
+    html = client.post("/close-ready").get_data(as_text=True)
+    assert "Claude isn't listening" in html
+    assert "done" in html
+    assert "nsls-spinner" not in html
+    # The durable flag is still persisted (open-day/close-day honor it later).
+    assert parse_frontmatter(_note(vault)).get("close_ready") == "1"
+
+
+def test_close_ready_with_listener_heartbeat_shows_spinner(client_with_today):
+    """A recent listener heartbeat → a live listener is attached, so the
+    optimistic spinner is honest. Keeps the armed-path behavior intact. (§3.7)"""
+    client, _ = client_with_today
+    assert client.post("/listener-heartbeat").status_code == 204
+    html = client.post("/close-ready").get_data(as_text=True)
+    assert "Claude is closing your day" in html
+    assert "nsls-spinner" in html
+    assert "Claude isn't listening" not in html
+
+
+def test_listener_heartbeat_goes_stale(client_with_today, monkeypatch):
+    """A heartbeat older than the freshness window no longer counts as a live
+    listener — the click falls back to the chat nudge. (§3.7)"""
+    import companion.server as server_mod
+    client, _ = client_with_today
+    client.post("/listener-heartbeat")
+    # Advance the monotonic clock past the freshness window.
+    real_monotonic = server_mod.time.monotonic
+    skew = server_mod.LISTENER_HEARTBEAT_FRESH_SECONDS + 5
+    monkeypatch.setattr(server_mod.time, "monotonic", lambda: real_monotonic() + skew)
+    html = client.post("/close-ready").get_data(as_text=True)
+    assert "Claude isn't listening" in html

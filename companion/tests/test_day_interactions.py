@@ -422,3 +422,72 @@ def test_carryover_normalized_dedup_collapses_near_identical(client_with_today):
     )
     sugg = _plan_for(vault, today)["suggestions"]
     assert len(sugg) == 1
+
+
+# --- §3.6: Bonus add-slot refocus + suggestion checkbox move-to-Bonus --------
+
+def test_set_bonus_add_slot_refocuses(client_with_today):
+    """The trailing add slot (add=1) refocuses after the swap so Enter keeps the
+    builder typing bonus items instead of jumping to Done. The refocus keys off
+    the explicit add flag, not the old idx+1==count arithmetic that dropped
+    focus under Chrome's change + keyup[Enter] double-fire. (§3.6)"""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("## Morning Check-in\n### My Top 3\n1. [ ]\n\n### Bonus\n")
+    html = client.post(
+        "/set-bonus", data={"index": "0", "text": "new bonus", "add": "1"}
+    ).get_data(as_text=True)
+    assert 'placeholder="Add a bonus item..."' in html
+    assert ".focus()" in html  # one-shot refocus script present
+
+
+def test_set_bonus_existing_row_edit_does_not_refocus(client_with_today):
+    """Editing an existing bonus row (no add flag, saved with hx-swap="none")
+    must not carry the refocus script. (§3.6)"""
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text("## Morning Check-in\n### Bonus\n1. [ ] existing\n")
+    html = client.post(
+        "/set-bonus", data={"index": "0", "text": "edited"}
+    ).get_data(as_text=True)
+    assert ".focus()" not in html
+
+
+def test_plan_action_bonus_moves_suggestion_into_bonus(client_with_today):
+    """Ticking the Bonus checkbox on a suggestion row moves that item into the
+    Bonus list (§3.6 — reported not working; this guards the behavior)."""
+    from companion.server import _extract_bonus
+    from companion.parsers import parse_daily_note_sections
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text(
+        "## Morning Check-in\n"
+        "### AI Suggested: Top 3\n1. Draft the vendor email\n"
+        "### My Top 3\n1. [ ]\n2. [ ]\n3. [ ]\n### Bonus\n"
+    )
+    resp = client.post("/plan-action", data={
+        "text": "Draft the vendor email", "action": "bonus",
+    })
+    assert resp.status_code == 200
+    morning = parse_daily_note_sections(note.read_text()).get("Morning Check-in", "")
+    assert any(b["text"] == "Draft the vendor email" for b in _extract_bonus(morning))
+    # the re-rendered plan partial keeps the item visible (now ticked as Bonus)
+    assert "Draft the vendor email" in resp.get_data(as_text=True)
+
+
+def test_plan_action_bonus_toggles_off_on_second_click(client_with_today):
+    """Clicking the Bonus checkbox again removes the item from Bonus (untake) —
+    the move is reversible, not a one-way write. (§3.6)"""
+    from companion.server import _extract_bonus
+    from companion.parsers import parse_daily_note_sections
+    client, vault = client_with_today
+    note = vault / "01-daily" / f"{date.today().isoformat()}.md"
+    note.write_text(
+        "## Morning Check-in\n"
+        "### AI Suggested: Top 3\n1. Draft the vendor email\n"
+        "### My Top 3\n1. [ ]\n2. [ ]\n3. [ ]\n### Bonus\n"
+    )
+    client.post("/plan-action", data={"text": "Draft the vendor email", "action": "bonus"})
+    client.post("/plan-action", data={"text": "Draft the vendor email", "action": "bonus"})
+    morning = parse_daily_note_sections(note.read_text()).get("Morning Check-in", "")
+    assert not any(b["text"] == "Draft the vendor email" for b in _extract_bonus(morning))
