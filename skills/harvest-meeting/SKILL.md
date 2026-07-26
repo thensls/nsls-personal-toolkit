@@ -164,7 +164,10 @@ def git_email(*scope):
 
 def env_file_email(path, *keys):
     try:
-        text = pathlib.Path(path).read_text()
+        # utf-8-sig tolerates a UTF-8 BOM (a PowerShell-written .env can carry
+        # one) and is harmless without it — never let a BOM zero out the email
+        # match and silently route an SLT writer to the local KB (§3.1).
+        text = pathlib.Path(path).read_text(encoding='utf-8-sig')
     except Exception:
         return ''
     for key in keys:

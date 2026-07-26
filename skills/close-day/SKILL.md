@@ -129,7 +129,7 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 3. **Read the target date's daily note** at `$OBSIDIAN_VAULT_PATH/01-daily/<target-date>.md` (Step 0's date, default today). If it doesn't exist, skip this step.
 4. **Open the Command Center in closing mode**, scoped to the target date: if the target is "today", re-run `date +%Y-%m-%d` NOW to resolve it (Date Discipline #1 — the session may have crossed midnight since Step 0), then build the URL as `/?date=<target-date>&closing=1` (`open "<url>"` on macOS; `start`/`xdg-open` on Windows/Linux). `?closing=1` forces the Command Center's end-of-day state (even if the note was never locked in); `?date=` pins the page — and every write from it — to that day's note. Give the builder the link + this prompt, **always naming the absolute weekday + date** (Date Discipline #2 — never "your day"/"today"/"yesterday" alone):
 
-   > **Monday, July 13 (2026-07-13)** is open at http://localhost:<port>/?date=2026-07-13&closing=1 — **open it in your web browser (Chrome/Safari), not the app's embedded panel** (panel edits don't save). Mark off where you landed: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**. Page won't load? Try http://127.0.0.1:<port>/?date=2026-07-13&closing=1.)
+   > **Monday, July 13 (2026-07-13)** is open at http://localhost:<port>/?date=2026-07-13&closing=1 — **open it in your web browser (Chrome/Safari), not the app's embedded panel** (panel edits don't save; a separate window lets you alt-tab back here). Mark off where you landed: progress on your Top 3 and Bonus, any unplanned wins, habits, gratitude/insight, and your end-of-day energy. Say **done** when you've finalized it. (Already up to date? Just say **done**. Page won't load? Try http://127.0.0.1:<port>/?date=2026-07-13&closing=1.)
 
 5. **Wait for the builder to say "done" — and listen for the click.** Before stopping, start the click-listener as a **background task** (Monitor / run_in_background — NEVER a blocking foreground Bash call, whose timeout can kill the session):
 
@@ -974,6 +974,12 @@ The skill scans today's evidence against open ledger patterns and renders **at m
 ### Step 5: Write daily note
 
 Write to: `${OBSIDIAN_VAULT_PATH}/01-daily/YYYY-MM-DD.md`
+
+> **Ensure `01-daily/` exists before writing** — the Light tier never scaffolds a
+> vault (§3.3). The Write tool creates parent dirs automatically; if you write via
+> shell, create it platform-safely: `mkdir -p "$OBSIDIAN_VAULT_PATH/01-daily"` on
+> macOS/Linux, `New-Item -ItemType Directory -Force "$env:OBSIDIAN_VAULT_PATH\01-daily"`
+> on Windows PowerShell — **never `mkdir -p` on Windows** (§5.6).
 
 **If the file already exists** (the builder started it in the morning with priorities), **merge** — keep the existing Morning Check-in section and append/update the generated sections below it.
 
