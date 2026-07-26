@@ -28,6 +28,11 @@ Both create a virtualenv at `companion\.venv` and install the web companion into
 
 The skills resolve this `Scripts\…\.exe` path automatically — you don't need it on PATH.
 
+> **Agent-driven / piped installs:** the two installers offer the companion behind
+> an interactive prompt, which a piped `irm … | iex` run or an agent driving setup
+> will skip. In that case `/personal-setup` (Step 1.5) provisions the same venv —
+> so the companion still lands, and `visual_mode` stays truthful, without the prompt.
+
 ## Vault path
 
 Point the companion at your Obsidian vault:
