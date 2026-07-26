@@ -1,19 +1,17 @@
 {# State-aware Command Center banner. Rendered BOTH at the top and bottom of the
    Command Center so the builder always knows what to do, wherever they scroll. #}
 {% if closing %}
-<div class="nsls-banner">
   {% if close_ready %}
-  <span class="nsls-spinner" aria-hidden="true"></span><span class="font-medium">Claude is closing your day…</span>
-  This page will show your closing summary when it's done.
-  <span class="nsls-subtle">(Taking more than a few minutes? Check the Claude chat.)</span>
+  {% include "_components/closing_status.html" %}
   {% else %}
+  <div class="nsls-banner">
   <span class="font-medium">Almost done.</span> Mark any last progress above, then
   <button class="nsls-btn-gold" style="margin:0 .35rem" hx-post="/close-ready"
           hx-target="closest .nsls-banner" hx-swap="outerHTML"
           hx-on:htmx:response-error="window.__toolkitErrorToast(event)">I'm done — close my day</button>
   — or type <code>done</code> in Claude Code to close your day.
+  </div>
   {% endif %}
-</div>
 {% elif day_status == 'active' %}
 {% include "_components/day_open_banner.html" %}
 {% else %}

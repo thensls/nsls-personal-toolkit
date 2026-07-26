@@ -1,0 +1,24 @@
+{# Honest close-in-progress banner. Shared by command_banner.html and
+   day_open_banner.html so the copy can't drift. close_ready means the builder
+   clicked "I'm done" — it does NOT prove a Claude close is attached. So:
+     - fresh click (not stale) -> optimistic spinner + a self-heal timer that
+       re-renders into the calm state if no close lands within the window.
+     - stale (no close completed in time, or a flag left by a past session)
+       -> calm nudge; never keep claiming Claude is doing something it isn't. #}
+{% if close_ready_stale %}
+<div class="nsls-banner">
+  <span class="font-medium">Marked done.</span>
+  Tell Claude <code>close day</code> in chat to generate your summary.
+  <span class="nsls-subtle">(Nothing's running right now — the click was recorded, but no close is in progress.)</span>
+</div>
+{% else %}
+<div class="nsls-banner">
+  <span class="nsls-spinner" aria-hidden="true"></span><span class="font-medium">Claude is closing your day…</span>
+  This page will show your closing summary when it's done.
+  <span class="nsls-subtle">(Taking more than a few minutes? Check the Claude chat.)</span>
+  <script>(function(){if(window.__closeSpinnerTimer)clearTimeout(window.__closeSpinnerTimer);
+    window.__closeSpinnerTimer=setTimeout(function(){window.__closeSpinnerTimer=null;
+      if(window.__toolkitReloadMain)window.__toolkitReloadMain(true);else location.reload();},
+      {{ close_ready_recheck_ms or 60000 }});})();</script>
+</div>
+{% endif %}

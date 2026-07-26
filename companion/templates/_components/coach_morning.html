@@ -1,3 +1,7 @@
+<div class="max-w-2xl mx-auto mb-4">
+  {% include "_components/day_header.html" %}
+  <p class="text-sm nsls-subtle">Plan your day</p>
+</div>
 <div x-data="{ coachMode: true }" class="nsls-card max-w-2xl mx-auto">
   <div class="mb-5 pb-4 nsls-divider">
     {% with when='morning', label="How's your energy this morning?", value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
