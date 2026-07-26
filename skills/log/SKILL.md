@@ -32,7 +32,7 @@ Also use when **starting a brand-new project** — the skill will scaffold a new
 Resolve the vault in this order:
 1. `OBSIDIAN_VAULT_PATH` from `~/.claude/local-plugins/nsls-personal-toolkit/.env` (what `/personal-setup` writes).
 2. The `OBSIDIAN_VAULT_PATH` environment variable, if already set.
-3. **macOS only, as a last resort:** `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/<vault>` (the default iCloud Obsidian location). This path does **not** exist on Windows/Linux — never gate on it there (the old macOS-only detection made Windows users silently get "no Obsidian", §5.7).
+3. **macOS only, as a last resort:** `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/<vault>` (the default iCloud Obsidian location). This path does **not** exist on Windows/Linux — never gate on it there (the old macOS-only detection made Windows users silently get "no Obsidian").
 
 **If none resolves, STOP and say so explicitly — never skip silently:**
 > No Obsidian vault found. Set `OBSIDIAN_VAULT_PATH` — run `/personal-setup`, or on Windows `setx OBSIDIAN_VAULT_PATH "C:\path\to\vault"` (or add it to the toolkit `.env`) — then re-run `/log`.

@@ -426,11 +426,11 @@ def test_carryover_normalized_dedup_collapses_near_identical(client_with_today):
 
 # --- §3.6: Bonus add-slot refocus + suggestion checkbox move-to-Bonus --------
 
-def test_set_bonus_add_slot_refocuses(client_with_today):
-    """The trailing add slot (add=1) refocuses after the swap so Enter keeps the
-    builder typing bonus items instead of jumping to Done. The refocus keys off
-    the explicit add flag, not the old idx+1==count arithmetic that dropped
-    focus under Chrome's change + keyup[Enter] double-fire. (§3.6)"""
+def test_set_bonus_add_slot_includes_refocus_script(client_with_today):
+    """Coverage of the add-slot render: an add=1 request carries the one-shot
+    refocus script so Enter keeps the builder typing bonus items instead of
+    jumping to Done. (The regression pin is its sibling below —
+    test_set_bonus_existing_row_edit_does_not_refocus — which fails pre-fix.)"""
     client, vault = client_with_today
     note = vault / "01-daily" / f"{date.today().isoformat()}.md"
     note.write_text("## Morning Check-in\n### My Top 3\n1. [ ]\n\n### Bonus\n")

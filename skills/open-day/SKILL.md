@@ -866,10 +866,10 @@ $OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md
 ```
 
 > **Ensure `01-daily/` exists before writing** — the Light tier never scaffolds a
-> vault (§3.3). The Write tool creates parent dirs automatically; if you write via
+> vault. The Write tool creates parent dirs automatically; if you write via
 > shell instead, create it platform-safely: `mkdir -p "$OBSIDIAN_VAULT_PATH/01-daily"`
 > on macOS/Linux, `New-Item -ItemType Directory -Force "$env:OBSIDIAN_VAULT_PATH\01-daily"`
-> on Windows PowerShell — **never `mkdir -p` on Windows** (§5.6). (A visual-mode run
+> on Windows PowerShell — **never `mkdir -p` on Windows**. (A visual-mode run
 > is already covered: the companion's `ensure_vault_structure` creates it on startup.)
 
 The daily note should include:

@@ -166,7 +166,7 @@ def env_file_email(path, *keys):
     try:
         # utf-8-sig tolerates a UTF-8 BOM (a PowerShell-written .env can carry
         # one) and is harmless without it — never let a BOM zero out the email
-        # match and silently route an SLT writer to the local KB (§3.1).
+        # match and silently route an SLT writer to the local KB.
         text = pathlib.Path(path).read_text(encoding='utf-8-sig')
     except Exception:
         return ''

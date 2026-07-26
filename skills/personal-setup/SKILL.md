@@ -83,7 +83,7 @@ default** (the flagship "run your day in a little browser window" experience).
 It ships in the repo but needs a one-time editable install into its own venv so
 the `toolkit-companion` binary exists where the day skills look for it. Provision
 it now — otherwise `visual_mode` is on but the binary is missing, and every
-`/open-day` silently falls back to plain chat (§3.4). Both tiers use it.
+`/open-day` silently falls back to plain chat. Both tiers use it.
 
 **Idempotent — skip if it's already installed.** Check for the binary first:
 - macOS/Linux: `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion`
@@ -103,7 +103,7 @@ python3 -m venv .venv
 
 **Windows (PowerShell)** — use the FULL interpreter path; a bare `python`/`python3`
 on stock Win11 is the Microsoft-Store stub that prints "Python was not found" and
-**exits 0 while doing nothing** (§3.1/§5.6):
+**exits 0 while doing nothing**:
 ```powershell
 cd "$env:USERPROFILE\.claude\local-plugins\nsls-personal-toolkit\companion"
 & "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m venv .venv
@@ -113,8 +113,15 @@ cd "$env:USERPROFILE\.claude\local-plugins\nsls-personal-toolkit\companion"
 This produces `.venv\Scripts\toolkit-companion.exe` (Windows) /
 `.venv/bin/toolkit-companion` (macOS/Linux) — exactly where `/open-day` Step 8's
 platform-aware lookup expects it. **Verify by running `toolkit-companion --help`
-at that path** rather than trusting pip's exit code. If it fails, tell the builder
-visual mode won't work yet and they can retry or run `open day visual off`.
+at that path** rather than trusting pip's exit code.
+
+**If Python 3.12 isn't installed** (that `Python312\python.exe` path is missing —
+this depends on the Builder Toolkit installer having provisioned it), stop and tell
+the builder plainly: *"Python 3.12 not found — run the org installer first, or
+`winget install Python.Python.3.12`, then re-run `/personal-setup`."* Visual mode
+stays unavailable until Python 3.12 is present; they can use `open day visual off`
+to skip it meanwhile. For any other install failure, same fallback — retry, or
+`open day visual off`.
 
 > The `install.ps1` / `install.sh` installers also offer this, but behind an
 > interactive prompt that agent-driven and piped (`iex`/`bash`) installs skip —
@@ -260,7 +267,7 @@ import pathlib, re, sys
 # Resolve kb_authors.txt at the CANONICAL install path first. The old code
 # checked ~/nsls-skills and ~/.claude/plugins only — neither exists on a real
 # install — so `authors` was always empty and is_slt was False for EVERYONE,
-# including genuine SLT members (§3.2). local-plugins is where the bootstrapper
+# including genuine SLT members. local-plugins is where the bootstrapper
 # and both installers put it; the other two are pre-migration fallbacks.
 authors_candidates = [
     pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
@@ -271,14 +278,14 @@ authors_path = next((p for p in authors_candidates if p.exists()), None)
 
 env_path = pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/.env'
 # utf-8-sig tolerates a UTF-8 BOM (PowerShell 5.1's Set-Content writes one) and
-# is harmless on BOM-less files — read everything user-written this way (§3.1).
+# is harmless on BOM-less files — read everything user-written this way.
 env = env_path.read_text(encoding='utf-8-sig') if env_path.exists() else ''
 m = re.search(r'^BUILDER_EMAIL=(.+)$', env, re.MULTILINE)
 builder_email = m.group(1).strip() if m else ''
 
 if authors_path is None:
     # Fail LOUDLY — never silently treat everyone as non-SLT (the exact failure
-    # the KB-writer setup exists to prevent). (§3.2)
+    # the KB-writer setup exists to prevent).
     print('FATAL: kb_authors.txt not found at any known path. Expected at')
     print('  ~/.claude/local-plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt')
     print('  Is the toolkit installed there? SLT detection cannot run.')
@@ -293,7 +300,7 @@ print(f'authors_known: {len(authors)} (from {authors_path})')
 PYEOF
 ```
 
-> **Verify the check actually ran (Windows).** A bare `python3` on stock Windows 11 is the Microsoft-Store stub that prints *"Python was not found…"* and **exits 0** — so an empty result (no `is_slt:` line) means the check **did not run**, not that the builder is non-SLT. If you don't see an `is_slt:`/`FATAL:` line, re-run with the full interpreter path (`"%LOCALAPPDATA%\Programs\Python\Python312\python.exe"`) before trusting the outcome — never conclude "not SLT" from silence (§3.1).
+> **Verify the check actually ran (Windows).** A bare `python3` on stock Windows 11 is the Microsoft-Store stub that prints *"Python was not found…"* and **exits 0** — so an empty result (no `is_slt:` line) means the check **did not run**, not that the builder is non-SLT. If you don't see an `is_slt:`/`FATAL:` line, re-run with the full interpreter path (`"%LOCALAPPDATA%\Programs\Python\Python312\python.exe"`) before trusting the outcome — never conclude "not SLT" from silence.
 
 If `is_slt: True`, the builder is on SLT and needs the KB harvest pipeline configured so `/close-day` Step 4c and `/harvest-meeting` don't silently no-op for them:
 
@@ -348,10 +355,10 @@ After writing the .env, sync the org chart into the builder's Obsidian vault. Th
 
 **First, create the write target.** `sync_org_context.py` errors on a missing
 `30-people/` but (today) still **exits 0**, so it looks successful while writing
-nothing — the Light tier never scaffolds a vault, so this dir usually is missing
-(§3.3). Create it immediately before the sync, platform-safely:
+nothing — the Light tier never scaffolds a vault, so this dir usually is missing.
+Create it immediately before the sync, platform-safely:
 - macOS/Linux: `mkdir -p "$OBSIDIAN_VAULT_PATH/30-people"`
-- Windows (PowerShell): `New-Item -ItemType Directory -Force "$env:OBSIDIAN_VAULT_PATH\30-people" | Out-Null` — **never `mkdir -p`** here (§5.6).
+- Windows (PowerShell): `New-Item -ItemType Directory -Force "$env:OBSIDIAN_VAULT_PATH\30-people" | Out-Null` — **never `mkdir -p`** here.
 
 Then run:
 ```bash
@@ -362,7 +369,7 @@ OBSIDIAN_VAULT_PATH="<vault path from step 1>" python3 \
 
 **Verify the outcome, don't trust the exit code:** confirm `30-people/` now
 holds people files. If it's still empty, the sync didn't actually run (missing
-`org-chart.json`, or the Windows `python3` Store stub — see §3.1) — say so
+`org-chart.json`, or the Windows `python3` Store stub) — say so
 rather than reporting a synced org chart.
 
 This reads from `_shared/context/org-chart.json` (synced weekly by the builder toolkit) and:

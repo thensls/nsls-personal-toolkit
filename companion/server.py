@@ -1726,7 +1726,7 @@ def create_app(vault_path: str) -> Flask:
         # Keying off an explicit flag, not the old `idx + 1 == count` arithmetic,
         # refocuses reliably: the count match dropped focus onto Done under
         # Chrome's change + keyup[Enter] double-fire and when appending past the
-        # end — the exact "Enter jumps to Done" bug. (§3.6)
+        # end — the exact "Enter jumps to Done" bug.
         focus_add = request.form.get("add") == "1"
         return _render_bonus_list(_target_date(), focus_add=focus_add)
 

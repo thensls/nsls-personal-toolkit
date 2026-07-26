@@ -976,10 +976,10 @@ The skill scans today's evidence against open ledger patterns and renders **at m
 Write to: `${OBSIDIAN_VAULT_PATH}/01-daily/YYYY-MM-DD.md`
 
 > **Ensure `01-daily/` exists before writing** — the Light tier never scaffolds a
-> vault (§3.3). The Write tool creates parent dirs automatically; if you write via
+> vault. The Write tool creates parent dirs automatically; if you write via
 > shell, create it platform-safely: `mkdir -p "$OBSIDIAN_VAULT_PATH/01-daily"` on
 > macOS/Linux, `New-Item -ItemType Directory -Force "$env:OBSIDIAN_VAULT_PATH\01-daily"`
-> on Windows PowerShell — **never `mkdir -p` on Windows** (§5.6).
+> on Windows PowerShell — **never `mkdir -p` on Windows**.
 
 **If the file already exists** (the builder started it in the morning with priorities), **merge** — keep the existing Morning Check-in section and append/update the generated sections below it.
 
