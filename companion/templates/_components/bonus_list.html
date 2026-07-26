@@ -22,7 +22,9 @@
            value=""
            placeholder="Add a bonus item..."
            hx-post="/set-bonus"
-           hx-vals='{"index": "{{ plan.bonus|length }}"}'
+           {# add=1 marks the trailing "add" slot so /set-bonus refocuses it
+              after the swap — see set_bonus(). #}
+           hx-vals='{"index": "{{ plan.bonus|length }}", "add": "1"}'
            hx-trigger="change, keyup[key=='Enter']"
            hx-sync="this:drop"
            hx-target="#bonus-list" hx-swap="outerHTML"

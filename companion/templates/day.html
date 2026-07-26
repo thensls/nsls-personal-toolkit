@@ -6,6 +6,13 @@
    lock-in…) carry date={{ today }} — closing a past day via ?date= can never
    write into today's note. #}
 <div hx-vals='{"date": "{{ today }}"}'>
+{# `closing` (from ?closing=1, /close-day's handshake) lands the Command Center
+   — the only branch that renders the closing banner. index() forces command
+   mode server-side whenever closing is set and the day isn't already closed
+   (see the `if closing and not mode_override` block there), so `closing` is
+   only ever handled by the `{% else %}` branch below. The one exception is an
+   explicit `?mode=` override, which intentionally wins (test_explicit_mode_
+   override_still_wins) — planning views have no close affordance by design. #}
 {% if mode == 'coach-morning' %}
   {% include "_components/coach_morning.html" %}
 {% elif mode == 'coach-evening' %}

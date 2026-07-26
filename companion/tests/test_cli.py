@@ -199,3 +199,43 @@ def test_wait_active_fires_on_planning_to_active(tmp_path):
     got = wait_for_status(tmp_path, "2026-07-11", "active", timeout=5, poll=0.05)
     t.join()
     assert got == "active"
+
+
+# --- §3.7: wait_for_status pings the listener heartbeat while it waits --------
+
+def test_wait_for_status_pings_heartbeat_each_poll(tmp_path):
+    """The heartbeat hook fires while waiting so a Done/close click can tell a
+    listener is attached. (§3.7)"""
+    from companion.cli import wait_for_status
+    _write_note(tmp_path, "2026-07-11", "planning")
+    calls = []
+    # Target never reached → times out after a couple polls; heartbeat fires.
+    wait_for_status(tmp_path, "2026-07-11", "closed", timeout=0.25, poll=0.05,
+                    heartbeat=lambda: calls.append(1))
+    assert len(calls) >= 1
+
+
+def test_wait_for_status_swallows_heartbeat_errors(tmp_path):
+    """A raising heartbeat (companion down) must not break the wait — the file
+    transition is the durable signal. (§3.7)"""
+    from companion.cli import wait_for_status
+    _write_note(tmp_path, "2026-07-11", "planning")
+
+    def boom():
+        raise RuntimeError("server down")
+
+    assert wait_for_status(tmp_path, "2026-07-11", "closed", timeout=0.2,
+                           poll=0.05, heartbeat=boom) is None
+
+
+def test_read_pidfile_addr(tmp_path):
+    """_read_pidfile_addr returns the address line, or None when missing/malformed."""
+    from companion.cli import _read_pidfile_addr
+    pf = tmp_path / ".companion.pid"
+    pf.write_text("12345\n127.0.0.1:7777\n", encoding="utf-8")
+    assert _read_pidfile_addr(pf) == "127.0.0.1:7777"
+    # No 2nd line → None
+    pf.write_text("12345\n", encoding="utf-8")
+    assert _read_pidfile_addr(pf) is None
+    # Missing file → None
+    assert _read_pidfile_addr(tmp_path / "nope.pid") is None

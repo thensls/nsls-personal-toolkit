@@ -30,8 +30,8 @@ Two ways to set this up:
 Want to start Light? (yes / I'd rather do Advanced)
 ```
 
-- **Light** → do Step 0, then **Step 1-Light**, then Step 2 (accounts), then the wrap-up. **Skip the Obsidian app/plugins entirely.**
-- **Advanced** → do Step 0, then **Step 1-Advanced** (invoke `/obsidian-setup`), then the rest.
+- **Light** → do Step 0, then **Step 1-Light**, then **Step 1.5** (companion), then Step 2 (accounts), then the wrap-up. **Skip the Obsidian app/plugins entirely.**
+- **Advanced** → do Step 0, then **Step 1-Advanced** (invoke `/obsidian-setup`), then **Step 1.5** (companion), then the rest.
 
 Either way, reuse whatever `/setup` already did (BUILDER_EMAIL, connected tools) — never re-ask for it.
 
@@ -46,7 +46,7 @@ The light tier needs somewhere to write notes — no Obsidian app required. In o
 1. If an Obsidian vault already exists (auto-detect below), reuse it — no install needed.
 2. Otherwise create a plain folder, e.g. `~/NSLS-notes/`, and use it as `OBSIDIAN_VAULT_PATH`. The daily/weekly skills write plain markdown into it and work immediately; the folder becomes a real Obsidian vault later if the builder upgrades to Advanced.
 
-Confirm in one line: "Your notes will live in `[path]` — /open-day and /close-day work now." Then go to Step 2. (Auto-detect logic is shared with Advanced, below.)
+Confirm in one line: "Your notes will live in `[path]` — /open-day and /close-day work now." Then go to Step 1.5 (install the companion). (Auto-detect logic is shared with Advanced, below.)
 
 ## Step 1-Advanced: Knowledge Base (Obsidian) — ~5 min
 
@@ -75,6 +75,58 @@ If no → ask for the path to their notes directory (works with any folder, just
 ### Confirm vault path
 
 Once detected or created, confirm: "Your knowledge base is at `[path]` — I'll use this for all your notes and logs."
+
+## Step 1.5: Install the visual companion — ~2 min, no admin
+
+The companion is the browser dashboard `/open-day` and `/close-day` open **by
+default** (the flagship "run your day in a little browser window" experience).
+It ships in the repo but needs a one-time editable install into its own venv so
+the `toolkit-companion` binary exists where the day skills look for it. Provision
+it now — otherwise `visual_mode` is on but the binary is missing, and every
+`/open-day` silently falls back to plain chat. Both tiers use it.
+
+**Idempotent — skip if it's already installed.** Check for the binary first:
+- macOS/Linux: `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion`
+- Windows: `%USERPROFILE%\.claude\local-plugins\nsls-personal-toolkit\companion\.venv\Scripts\toolkit-companion.exe`
+
+If it exists, say "visual companion already installed" and continue to Step 2.
+
+If not, install it. The editable install **must** run from inside `companion/`
+(its `pyproject.toml` uses `package-dir = {"" = ".."}`):
+
+**macOS/Linux:**
+```bash
+cd ~/.claude/local-plugins/nsls-personal-toolkit/companion
+python3 -m venv .venv
+.venv/bin/python -m pip install -e . -q
+```
+
+**Windows (PowerShell)** — use the FULL interpreter path; a bare `python`/`python3`
+on stock Win11 is the Microsoft-Store stub that prints "Python was not found" and
+**exits 0 while doing nothing**:
+```powershell
+cd "$env:USERPROFILE\.claude\local-plugins\nsls-personal-toolkit\companion"
+& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m venv .venv
+& ".venv\Scripts\python.exe" -m pip install -e . -q
+```
+
+This produces `.venv\Scripts\toolkit-companion.exe` (Windows) /
+`.venv/bin/toolkit-companion` (macOS/Linux) — exactly where `/open-day` Step 8's
+platform-aware lookup expects it. **Verify by running `toolkit-companion --help`
+at that path** rather than trusting pip's exit code.
+
+**If Python 3.12 isn't installed** (that `Python312\python.exe` path is missing —
+this depends on the Builder Toolkit installer having provisioned it), stop and tell
+the builder plainly: *"Python 3.12 not found — run the org installer first, or
+`winget install Python.Python.3.12`, then re-run `/personal-setup`."* Visual mode
+stays unavailable until Python 3.12 is present; they can use `open day visual off`
+to skip it meanwhile. For any other install failure, same fallback — retry, or
+`open day visual off`.
+
+> The `install.ps1` / `install.sh` installers also offer this, but behind an
+> interactive prompt that agent-driven and piped (`iex`/`bash`) installs skip —
+> so provision it here too. Full Windows details, including auto-start at login,
+> live in [`docs/windows-setup.md`](../../docs/windows-setup.md).
 
 ## Step 2: Connect Accounts — ~2 min
 
@@ -210,28 +262,45 @@ After writing the .env, check whether the builder is an SLT member who should be
 
 ```bash
 python3 << 'PYEOF'
-import os, pathlib, re, subprocess
+import pathlib, re, sys
+
+# Resolve kb_authors.txt at the CANONICAL install path first. The old code
+# checked ~/nsls-skills and ~/.claude/plugins only — neither exists on a real
+# install — so `authors` was always empty and is_slt was False for EVERYONE,
+# including genuine SLT members. local-plugins is where the bootstrapper
+# and both installers put it; the other two are pre-migration fallbacks.
+authors_candidates = [
+    pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
+    pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
+    pathlib.Path.home() / '.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
+]
+authors_path = next((p for p in authors_candidates if p.exists()), None)
 
 env_path = pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/.env'
-authors_path = pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt'
-if not authors_path.exists():
-    authors_path = pathlib.Path.home() / '.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt'
-
-env = env_path.read_text() if env_path.exists() else ''
+# utf-8-sig tolerates a UTF-8 BOM (PowerShell 5.1's Set-Content writes one) and
+# is harmless on BOM-less files — read everything user-written this way.
+env = env_path.read_text(encoding='utf-8-sig') if env_path.exists() else ''
 m = re.search(r'^BUILDER_EMAIL=(.+)$', env, re.MULTILINE)
 builder_email = m.group(1).strip() if m else ''
 
-authors = set()
-if authors_path.exists():
-    authors = {line.strip() for line in authors_path.read_text().splitlines()
-               if line.strip() and not line.startswith('#')}
+if authors_path is None:
+    # Fail LOUDLY — never silently treat everyone as non-SLT (the exact failure
+    # the KB-writer setup exists to prevent).
+    print('FATAL: kb_authors.txt not found at any known path. Expected at')
+    print('  ~/.claude/local-plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt')
+    print('  Is the toolkit installed there? SLT detection cannot run.')
+    sys.exit(2)
 
+authors = {line.strip() for line in authors_path.read_text(encoding='utf-8-sig').splitlines()
+           if line.strip() and not line.startswith('#')}
 is_slt = builder_email in authors
 print(f'is_slt: {is_slt}')
 print(f'builder_email: {builder_email}')
-print(f'authors_known: {len(authors)}')
+print(f'authors_known: {len(authors)} (from {authors_path})')
 PYEOF
 ```
+
+> **Verify the check actually ran (Windows).** A bare `python3` on stock Windows 11 is the Microsoft-Store stub that prints *"Python was not found…"* and **exits 0** — so an empty result (no `is_slt:` line) means the check **did not run**, not that the builder is non-SLT. If you don't see an `is_slt:`/`FATAL:` line, re-run with the full interpreter path (`"%LOCALAPPDATA%\Programs\Python\Python312\python.exe"`) before trusting the outcome — never conclude "not SLT" from silence.
 
 If `is_slt: True`, the builder is on SLT and needs the KB harvest pipeline configured so `/close-day` Step 4c and `/harvest-meeting` don't silently no-op for them:
 
@@ -284,12 +353,24 @@ If `is_slt: False`, skip this section entirely — non-SLT builders don't need (
 
 After writing the .env, sync the org chart into the builder's Obsidian vault. This creates people files with management relationships (reports-to, manages) as wikilinks so the graph view shows the org tree.
 
-Run:
+**First, create the write target.** `sync_org_context.py` errors on a missing
+`30-people/` but (today) still **exits 0**, so it looks successful while writing
+nothing — the Light tier never scaffolds a vault, so this dir usually is missing.
+Create it immediately before the sync, platform-safely:
+- macOS/Linux: `mkdir -p "$OBSIDIAN_VAULT_PATH/30-people"`
+- Windows (PowerShell): `New-Item -ItemType Directory -Force "$env:OBSIDIAN_VAULT_PATH\30-people" | Out-Null` — **never `mkdir -p`** here.
+
+Then run:
 ```bash
 OBSIDIAN_VAULT_PATH="<vault path from step 1>" python3 \
   ~/.claude/local-plugins/nsls-builder-toolkit/_shared/scripts/sync_org_context.py \
   --update-vault
 ```
+
+**Verify the outcome, don't trust the exit code:** confirm `30-people/` now
+holds people files. If it's still empty, the sync didn't actually run (missing
+`org-chart.json`, or the Windows `python3` Store stub) — say so
+rather than reporting a synced org chart.
 
 This reads from `_shared/context/org-chart.json` (synced weekly by the builder toolkit) and:
 - **Existing people files** → merges `department`, `email`, `slack`, `reports-to`, `manages` into frontmatter without clobbering other fields

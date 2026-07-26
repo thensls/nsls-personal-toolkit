@@ -48,6 +48,20 @@ def _pid_alive(pid: int) -> bool:
     return True
 
 
+def _read_pidfile_addr(pid_file: Path):
+    """Return the ``host:port`` recorded on the pidfile's 2nd line, or None.
+
+    ``serve`` writes ``<pid>\\n<host>:<port>\\n``; wait-done reads line 2 to find
+    the running companion so it can ping /listener-heartbeat. None whenever the
+    file is missing or malformed — the caller then simply skips heartbeats.
+    """
+    try:
+        lines = pid_file.read_text(encoding="utf-8").splitlines()
+    except (FileNotFoundError, OSError):
+        return None
+    return lines[1] if len(lines) > 1 and lines[1].strip() else None
+
+
 def _find_free_port(start: int = DEFAULT_PORT) -> int:
     for port in range(start, start + 100):
         with socket.socket() as s:
@@ -239,8 +253,13 @@ def status(test_mode):
     click.echo(f"Running: pid {pid}, address {addr}")
 
 
-def wait_for_status(vault_path, date_str, target, timeout, poll=1.0):
+def wait_for_status(vault_path, date_str, target, timeout, poll=1.0, heartbeat=None):
     """Block until the daily note signals ``target``.
+
+    ``heartbeat``, if given, is called once per poll (best-effort; exceptions
+    are swallowed). ``wait_done`` passes a function that pings the companion's
+    /listener-heartbeat endpoint so a Done/close click can tell a live listener
+    is attached — the file poll below stays the source of truth regardless.
 
     Targets:
       - 'active' / 'closed' — the ``status:`` frontmatter reaches that value
@@ -293,6 +312,11 @@ def wait_for_status(vault_path, date_str, target, timeout, poll=1.0):
     already_closed = target in ("closed", "close-ready") and status0 == "closed"
     deadline = _time.monotonic() + timeout if timeout > 0 else None
     while True:
+        if heartbeat is not None:
+            try:
+                heartbeat()
+            except Exception:
+                pass  # best-effort: the file transition is the durable signal
         status, ready = signals()
         if target == "any":
             if status != status0:
@@ -344,7 +368,25 @@ def wait_done(date_str, target, timeout, vault):
     if not date_str:
         from datetime import date as _date
         date_str = _date.today().isoformat()
-    status = wait_for_status(Path(vault), date_str, target, timeout)
+
+    # While waiting, ping the companion's heartbeat endpoint so a Done/close
+    # click can tell this listener is actually attached (the server otherwise
+    # can't know — the wait below polls the file, not the server). Best-effort:
+    # if the companion isn't running or the pidfile is unreadable we simply
+    # don't ping; the file transition is still the durable signal.
+    from companion.testmode import is_test_vault
+    pid_file = TEST_PID_FILE if is_test_vault(Path(vault)) else PID_FILE
+    addr = _read_pidfile_addr(pid_file)
+    heartbeat = None
+    if addr:
+        import urllib.request
+        hb_url = f"http://{addr}/listener-heartbeat"
+
+        def heartbeat():
+            req = urllib.request.Request(hb_url, data=b"", method="POST")
+            urllib.request.urlopen(req, timeout=2).close()
+
+    status = wait_for_status(Path(vault), date_str, target, timeout, heartbeat=heartbeat)
     if status is None:
         click.echo(f"TIMEOUT {date_str}")
         sys.exit(1)
