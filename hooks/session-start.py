@@ -36,6 +36,12 @@ _DQ_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})|\\U([0-9a-fA-F
 _DQ_SIMPLE = {"0": "\0", "a": "\a", "b": "\b", "t": "\t", "n": "\n",
               "v": "\v", "f": "\f", "r": "\r", "e": "\x1b"}
 
+# Decoded control characters (NUL, BEL, ESC…) would make the generated pointer's
+# frontmatter unparseable, so they're mapped to spaces and folded away by the
+# whitespace collapse. \t \n \r are deliberately absent — they're whitespace and
+# the collapse already handles them.
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]")
+
 
 def _dq_unescape(match):
     for group in (1, 2, 3):
@@ -72,7 +78,7 @@ def unquote_scalar(value):
             # Single-quoted YAML has exactly one escape: '' is a literal quote.
             inner = inner.replace("''", "'")
         v = inner
-    return " ".join(v.split())
+    return " ".join(_CONTROL.sub(" ", v).split())
 
 
 def git_pull():
