@@ -1,6 +1,11 @@
 ---
 name: close-week
-description: Friday weekly roll-up — synthesizes the full week (Sat-Fri) of daily notes into achievements, learnings, project progress, time allocation, and priorities-vs-reality. Formatted for quick notes copy-paste. Trigger phrases: close week, weekly review, week summary, week roll up, friday summary, weekly wrap, end of week
+description: >-
+  Friday weekly roll-up — synthesizes the full week (Sat-Fri) of daily notes into
+  achievements, learnings, project progress, time allocation, and
+  priorities-vs-reality. Formatted for quick notes copy-paste. Trigger phrases:
+  close week, weekly review, week summary, week roll up, friday summary, weekly
+  wrap, end of week
 ---
 
 # Close Week

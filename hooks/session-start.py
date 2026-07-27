@@ -24,6 +24,29 @@ SKILLS_DIR = HOME / ".claude" / "skills"
 MARKER = "local-plugins/nsls-personal-toolkit"
 
 
+def unquote_scalar(value):
+    """Strip the YAML quotes off a single-line scalar.
+
+    The folded-block branch never sees quotes, but a description written as
+    `description: "Brain dump…"` reaches the single-line fallback with its
+    delimiters attached, and they end up verbatim in the generated pointer.
+    We can't just call a YAML parser here — pyyaml isn't guaranteed on a fresh
+    machine, which is why this extraction is hand-rolled in the first place.
+    """
+    v = value.strip()
+    quote = v[:1]
+    if len(v) < 2 or v[-1:] != quote or quote not in ('"', "'"):
+        return v
+    inner = v[1:-1]
+    if quote == '"':
+        # Double-quoted YAML supports backslash escapes; unescape the two that
+        # can appear in a description. Order matters: \\ last, or \\" would
+        # collapse to " and lose the backslash.
+        return inner.replace('\\"', '"').replace("\\\\", "\\")
+    # Single-quoted YAML has exactly one escape: '' means a literal quote.
+    return inner.replace("''", "'")
+
+
 def git_pull():
     try:
         subprocess.run(
@@ -76,13 +99,15 @@ def sync_pointers():
         fm_match = re.match(r"^---\n(.*?)\n---", content, re.DOTALL)
         if fm_match:
             fm = fm_match.group(1)
-            ml_match = re.search(r"description:\s*>-?\s*\n((?:\s+.+\n)*)", fm)
+            ml_match = re.search(r"description:\s*>-?\s*\n((?:[ \t]+.+\n?)+)", fm)
             if ml_match:
                 desc = " ".join(l.strip() for l in ml_match.group(1).strip().split("\n"))
             else:
-                sl_match = re.search(r"description:\s*(.+)", fm, re.MULTILINE)
-                if sl_match:
-                    desc = sl_match.group(1).strip()
+                sl_match = re.search(r"description:[ \t]*(.+)", fm, re.MULTILINE)
+                # Require content: a blank `description:` should leave the
+                # default in place, not overwrite it with an empty string.
+                if sl_match and sl_match.group(1).strip():
+                    desc = unquote_scalar(sl_match.group(1))
 
         dest.mkdir(parents=True, exist_ok=True)
         dest_skill.write_text(

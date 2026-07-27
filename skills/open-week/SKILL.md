@@ -1,6 +1,10 @@
 ---
 name: open-week
-description: Sunday/Monday weekly planning — sets week priorities from role, goals, last week's review, and Asana backlog. Includes leadership coaching patterns. Trigger phrases: open week, plan week, week plan, weekly planning, plan my week, what should I focus on this week, weekly priorities, set priorities
+description: >-
+  Sunday/Monday weekly planning — sets week priorities from role, goals, last
+  week's review, and Asana backlog. Includes leadership coaching patterns.
+  Trigger phrases: open week, plan week, week plan, weekly planning, plan my
+  week, what should I focus on this week, weekly priorities, set priorities
 ---
 
 # Open Week
