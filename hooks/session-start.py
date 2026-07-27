@@ -34,7 +34,14 @@ BLOCK_INDICATORS = (">", ">-", ">+", "|", "|-", "|+")
 # replacement (\\" would collapse to " and lose its backslash).
 _DQ_ESCAPE = re.compile(r"\\x([0-9a-fA-F]{2})|\\u([0-9a-fA-F]{4})|\\U([0-9a-fA-F]{8})|\\(.)")
 _DQ_SIMPLE = {"0": "\0", "a": "\a", "b": "\b", "t": "\t", "n": "\n",
-              "v": "\v", "f": "\f", "r": "\r", "e": "\x1b"}
+              "v": "\v", "f": "\f", "r": "\r", "e": "\x1b",
+              # The four named Unicode escapes YAML defines beyond the C set:
+              # next-line, non-breaking space, line separator, paragraph
+              # separator. Decoded faithfully; the collapse below folds all four
+              # to spaces (\x85 via _CONTROL, the rest because str.split treats
+              # them as whitespace), which is what a YAML value folded onto a
+              # single line should become.
+              "N": "\x85", "_": "\xa0", "L": "\u2028", "P": "\u2029"}
 
 # Decoded control characters (NUL, BEL, ESC…) would make the generated pointer's
 # frontmatter unparseable, so they're mapped to spaces and folded away by the
