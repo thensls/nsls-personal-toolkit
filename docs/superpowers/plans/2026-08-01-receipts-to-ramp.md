@@ -932,15 +932,32 @@ class GmailSource:
         )
 
     def fetch(self, since: str, until: str) -> list[Receipt]:
-        if not shutil.which("gws"):
-            raise SourceUnavailable("`gws` CLI not on PATH — see the gws skill")
+        # Verified 2026-08-01: gws takes query params as a JSON blob via --params.
+        # There is no `gws gmail search` subcommand.
+        gws = shutil.which("gws") or os.path.expanduser("~/bin/gws")
+        if not os.path.exists(gws):
+            raise SourceUnavailable("`gws` CLI not found — see the gws skill")
+        params = json.dumps(
+            {"userId": "me", "q": self.build_query(since, until), "maxResults": 100}
+        )
         try:
-            raw = subprocess.run(
-                ["gws", "gmail", "search", "--query", self.build_query(since, until), "--json"],
+            proc = subprocess.run(
+                [gws, "gmail", "users", "messages", "list", "--params", params, "--format", "json"],
                 capture_output=True, text=True, timeout=120, check=True,
-            ).stdout
+            )
         except subprocess.CalledProcessError as exc:
-            raise SourceUnavailable(f"gws gmail search failed: {exc.stderr[:200]}") from exc
+            raise SourceUnavailable(f"gws gmail list failed: {exc.stderr[:200]}") from exc
+
+        # gws prints a keyring banner before the JSON, and reports auth failure
+        # as a JSON error object with HTTP 200. Both must be handled.
+        body = proc.stdout[proc.stdout.find("{"):]
+        payload = json.loads(body or "{}")
+        if "error" in payload:
+            raise SourceUnavailable(
+                f"gws auth: {payload['error'].get('message', '')[:160]} "
+                f"— re-authorize Google, then retry"
+            )
+        raw = json.dumps(payload.get("messages", []))
 
         out = []
         for msg in json.loads(raw or "[]"):
@@ -968,9 +985,19 @@ SOURCE = GmailSource()
 Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_source_gmail.py && python3.12 skills/receipts/tests/test_source_contract.py`
 Expected: both pass; the contract test now covers two sources.
 
-- [ ] **Step 5: Verify the real `gws` search subcommand before trusting `fetch`**
+- [ ] **Step 5: Verify `gws` returns real message data before trusting `fetch`**
 
-Run: `gws gmail --help` and confirm the `search` subcommand and its flags match what `fetch()` invokes. If they differ, correct `fetch()` to match the real CLI and re-run the tests. **Do not skip this** — `parse_amount` and `build_query` are unit-tested, but the subprocess call is not.
+The CLI shape was verified on 2026-08-01 (`gws gmail users messages list --params '{...}'`), but **Google auth was expired at the time, so the response body was never seen.** Two things still need checking against a live, authorized call:
+
+```bash
+~/bin/gws gmail users messages list \
+  --params '{"userId":"me","q":"from:ramp.com newer_than:1m","maxResults":3}' --format json
+```
+
+1. If this returns `{"error": {"code": 401, ...}}`, Google auth is dead — re-authorize before continuing. `fetch()` already converts this into `SourceUnavailable`, so the skill degrades loudly rather than silently returning zero receipts.
+2. `messages list` returns only `{id, threadId}` — **it does not return subjects, snippets, dates, or attachments.** `fetch()` as written assumes those fields exist. You will need a second call per message (`gws gmail users messages get`) to retrieve headers and attachment parts. Implement that, extend `test_source_gmail.py` with a fixture of the real `messages get` response shape, and only then trust `fetch()`.
+
+**Do not skip this.** `parse_amount` and `build_query` are unit-tested; the subprocess path is not.
 
 - [ ] **Step 6: Commit**
 
