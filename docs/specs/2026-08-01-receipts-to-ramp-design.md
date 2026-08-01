@@ -47,41 +47,60 @@ Verified live on 2026-08-01 against the logged-in account.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Scope | All vendors, not just Anthropic | The manual batch-forward ritual is the real pain |
-| Ramp read | Ramp API, `transactions:read` | Need the authoritative missing-receipt queue |
-| Ramp write | Email to `receipts@ramp.com` | Lower-risk, reversible, no write scope to provision |
+| Ramp read | Ramp API, `transactions:read` + `receipts:read` | Need the authoritative missing-receipt queue |
+| Ramp write | Ramp API, `POST /developer/v1/receipts` with `transaction_id` | Names the exact target; `idempotency_key` makes retries safe |
 | Control flow | Exception-driven (work Ramp's queue) | Self-limiting, idempotent, verifies its own work |
 | Trigger | On-demand `/receipts` | Avoids the unattended session-cookie problem entirely |
 
-**Known limitation, accepted:** the email write path cannot name a target transaction.
-For `BALANCED` collisions this is acceptable (see below). If collisions become frequent
-or Ramp mis-binds, revisit by provisioning `receipts:write` and posting against a
-specific transaction ID.
+**Write path revised 2026-08-01, after reading Ramp's OpenAPI spec.** The design
+originally chose email forwarding to `receipts@ramp.com` on the assumption that it
+avoided provisioning API scopes. That assumption was wrong: there is no
+"missing receipt" filter on `GET /developer/v1/transactions`, so the queue must be
+built as a set difference against `GET /developer/v1/receipts`, which requires
+`receipts:read` regardless. Since a credential is being provisioned either way, adding
+`receipts:write` costs one checkbox and buys two things email cannot do — an explicit
+target `transaction_id` (resolves the collision case) and an `idempotency_key` (makes a
+retried upload provably harmless instead of a duplicate).
 
 ## Architecture
 
 ```
-┌─ queue.py ──────┐   Ramp API (read-only, transactions:read)
-│ What's missing? │ → [{txn_id, merchant, amount_cents, date}]
-└─────────────────┘
+┌─ queue.py ──────┐   Ramp: transactions:read + receipts:read
+│ What's missing? │   set difference over one date window
+└─────────────────┘ → [{txn_id, merchant, amount_cents, date}]
          ↓
 ┌─ sources/ ──────┐   Pluggable fetchers, tried in order
 │ gmail.py        │     Gmail search for a matching receipt
 │ anthropic.py    │     invoices endpoint → invoice_pdf_url → bytes
-└─────────────────┘ → [{amount_cents, date, pdf_bytes, provenance}]
+└─────────────────┘ → [{merchant, amount_cents, date, pdf_bytes, provenance}]
          ↓
 ┌─ match.py ──────┐   Pure function, zero I/O
 └─────────────────┘ → CONFIDENT | BALANCED | AMBIGUOUS | UNFOUND
          ↓
-┌─ send.py ───────┐   Forward via gws → receipts@ramp.com
-│ + ledger.json   │   Record txn_id, invoice id, amount, ts, outcome
+┌─ upload.py ─────┐   POST /developer/v1/receipts (receipts:write)
+│ + ledger.json   │   transaction_id + idempotency_key; record outcome
 └─────────────────┘
 ```
 
 ### Component contracts
 
-- **`queue.py`** — returns transactions currently missing a receipt. The exact Ramp
-  filter parameter and receipt field name must be **read from Ramp's API docs at build
-  time**, not assumed.
+- **`queue.py`** — returns transactions currently missing a receipt, computed as a set
+  difference. Verified against Ramp's OpenAPI spec on 2026-08-01:
+
+  ```
+  Base URL: https://api.ramp.com          Auth: OAuth2 client credentials
+  GET  /developer/v1/transactions   scope transactions:read
+       ?from_date&to_date&page_size&start        → data[].id, .amount, .merchant_*
+  GET  /developer/v1/receipts       scope receipts:read
+       ?from_date&to_date&page_size&start        → data[].transaction_id
+  POST /developer/v1/receipts       scope receipts:write
+       multipart: { idempotency_key, transaction_id?, user_id }
+  ```
+
+  `missing = {txn.id} - {receipt.transaction_id}` over the same date window. The
+  `all_requirements_met_and_approved=false` filter is **not** used: it conflates missing
+  receipts with missing memos and pending approvals, so it would produce a queue of
+  items this skill cannot act on.
 - **`sources/*.py`** — each declares `MERCHANTS`, the normalized merchant names it can
   supply receipts for, so `match.py` only asks sources that could plausibly answer. Each
   exposes `fetch(since) -> list[Receipt]` where
@@ -92,8 +111,12 @@ specific transaction ID.
   Adding a vendor means adding one file; nothing else changes.
 - **`match.py`** — pure, no I/O, so the highest-risk logic is testable against fixtures
   without network access.
-- **`send.py` + `ledger.json`** — the ledger distinguishes "never sent" from "sent and
-  Ramp didn't match". Those need opposite responses, and nothing else can tell them apart.
+- **`upload.py` + `ledger.json`** — posts the PDF to Ramp against a named
+  `transaction_id`. `idempotency_key` is derived deterministically as
+  `sha256(transaction_id + provenance)`, so the same receipt for the same transaction
+  produces the same key on every run and Ramp collapses repeats server-side. The ledger
+  records the attempt and its observed outcome, and remains the only thing that can
+  distinguish "never uploaded" from "uploaded and rejected".
 
 ### Session handling
 
@@ -124,14 +147,16 @@ destroy it and produce a confidently wrong binding.
 
 ## Failure handling
 
-Every run re-reads Ramp before acting:
+Every run re-reads Ramp before acting. Verification is exact — `GET /developer/v1/receipts
+?transaction_id=X` either returns a receipt or it does not:
 
-- Ledger says sent, Ramp now shows a receipt → `CLEARED`, never revisited.
-- Ledger says sent, Ramp still empty → `RETRY` once.
-- Failed twice → `ESCALATED`. **Stop resending.** Report it for manual attachment.
+- Ledger says uploaded, Ramp now shows a receipt → `CLEARED`, never revisited.
+- Ledger says uploaded, Ramp still empty → `RETRY` once (same idempotency key, so a
+  successful-but-unobserved first attempt cannot double-post).
+- Failed twice → `ESCALATED`. **Stop retrying.** Report it for manual attachment.
 
-The escalation cap is required: without it, receipts Ramp structurally cannot bind (the
-ACH cases) get re-forwarded on every run forever.
+The escalation cap is required: without it, a transaction Ramp refuses for a reason the
+skill cannot see gets retried on every run forever.
 
 Failures are partial and always announced on their own line:
 
@@ -139,9 +164,10 @@ Failures are partial and always announced on their own line:
   the run is meaningless and must not proceed on guesswork.
 - **Anthropic auth failure →** that source is skipped, Gmail still runs, report emits
   `SOURCE ANTHROPIC: SKIPPED (not authenticated)`.
-- **`gws` send failure →** ledger records **not-sent**. Never marked sent on anything
-  short of a confirmed success response. Worst case becomes a duplicate forward, which
-  Ramp deduplicates, rather than a missing receipt, which nobody catches until close.
+- **Upload failure →** ledger records **not-uploaded**. Never marked uploaded on
+  anything short of a 2xx. Worst case becomes a repeat POST carrying the same
+  idempotency key, which Ramp collapses, rather than a missing receipt, which nobody
+  catches until close.
 
 ## Modes
 
@@ -161,6 +187,35 @@ Failures are partial and always announced on their own line:
 - **Live smoke test, run manually:** hit the real invoices endpoint, assert ≥1 invoice,
   download the first PDF, assert bytes start with `%PDF`. This is what catches Anthropic
   changing the endpoint shape — the most likely way this breaks.
+
+## Phase 2 — Categorization memos (design not yet done)
+
+Raised 2026-08-01. Ramp supports this directly, and its data model already encodes the
+recurring/one-off split:
+
+```
+GET  /developer/v1/transactions?requires_memo=true    scope transactions:read
+     "Filters for transactions which require a memo, but do not have one."
+POST /developer/v1/memos/{transaction_id}             scope memos:write
+     { memo: string, is_memo_recurring: boolean }
+```
+
+`requires_memo=true` gives a ready-made queue — no set difference needed, unlike
+receipts. `is_memo_recurring` maps onto the two classes:
+
+- **Recurring** (Anthropic, Macroscope, Clay, GoDaddy) — memo is derivable from vendor
+  plus period. Templated, deterministic, `is_memo_recurring=true` so Ramp reuses it.
+- **One-off** (restaurant, travel) — memo needs facts the transaction does not carry:
+  which trip, which budget, who attended, what it was for.
+
+**The one-off case is a separate design problem and must not be bolted onto this plan.**
+Its hard part is not the API call, it is sourcing context that is only partly
+machine-readable — calendar events, the receipt itself (a United eTicket carries the
+itinerary; a restaurant charge carries nothing), and Kevin's own knowledge. It needs its
+own brainstorm before it gets a plan.
+
+Infrastructure it will reuse unchanged: `ramp_client.py` (Task 1) and the pagination and
+window logic in `queue.py` (Task 2).
 
 ## Out of scope
 
