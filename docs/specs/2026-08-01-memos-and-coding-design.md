@@ -1,7 +1,31 @@
 # Categorization Memos + Coding → Ramp — Design
 
 **Date:** 2026-08-01
-**Status:** Approved, ready for implementation planning
+**Status:** ⏸ SHELVED 2026-08-01 — do not implement as written
+
+> **Why shelved.** This spec was designed to *write missing* memos. Live data shows that
+> is the wrong problem: of Kevin's 145 transactions Jun 1–Aug 1, **zero** were missing a
+> memo. Ramp auto-generates them.
+>
+> **The real problem, per Kevin: Ramp's auto-memos are sometimes wrong.** That is an
+> *audit-and-correct* problem, not a *fill-the-blank* one, and `missing_memo: false` is
+> true for a memo that exists and is inaccurate — so the queue mechanism here doesn't
+> even find them.
+>
+> **What survives:** the context-resolution ladder (trip → receipt OCR → daily note →
+> calendar) was built to compose a memo; the same machinery can *check* an existing memo
+> against reality and flag disagreement. The verified API surface below is accurate and
+> worth keeping.
+>
+> **What is now known to be wrong:**
+> - `memos:write` is **not** granted on Kevin's Ramp key. Memo writes must route through
+>   `ramp transactions edit --memo` (`transactions:write`, which *is* granted).
+> - Ramp Trips is effectively unused — 1 of 145 transactions has a trip. The geographic
+>   clustering and derived home-city baseline solve a problem Ramp offers natively and
+>   NSLS hasn't turned on. Reassess before rebuilding either.
+>
+> Rework this into an audit spec before planning. See
+> `2026-08-01-receipts-to-ramp-design.md` for the live-verified access patterns.
 **Skill:** `nsls-personal-toolkit/skills/memos/`, invoked as `/memos`
 **Companion:** `docs/specs/2026-08-01-receipts-to-ramp-design.md` (Phase 1, shares infrastructure)
 

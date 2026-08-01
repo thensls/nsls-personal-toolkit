@@ -2,279 +2,263 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build `/receipts`, an on-demand skill that finds Ramp card transactions missing receipts, sources each receipt from Gmail or a vendor portal, and uploads it to Ramp against the exact transaction.
+**Goal:** Build `/receipts` — find Ramp transactions missing receipts, fetch each receipt from Anthropic's billing API or Gmail, and upload it to Ramp against the exact transaction.
 
-**Architecture:** Exception-driven. `queue.py` computes the missing-receipt set from Ramp, `sources/*.py` fetch candidate receipt PDFs, `match.py` (pure, no I/O) binds receipts to transactions with four confidence outcomes, `upload.py` POSTs to Ramp with an idempotency key and records the outcome in a ledger. Dry-run by default.
+**Architecture:** Shell out to the authenticated `ramp` CLI (no Developer API credentials exist). Build the queue by looping the authoritative per-transaction `transactions missing` check. Fetch receipts from pluggable sources. Match on merchant + amount + date with explicit collision handling. Upload with an idempotency key. Dry run by default.
 
-**Tech Stack:** Python 3.12, stdlib `urllib` for HTTP, Playwright (existing MCP browser profile) for the Anthropic session, Gmail via the existing `gws` CLI. No new third-party dependencies.
+**Tech Stack:** Python 3.12, stdlib only, `ramp` CLI 0.2.4, `gws` CLI for Gmail.
 
 **Spec:** `docs/specs/2026-08-01-receipts-to-ramp-design.md`
 
+> **Rewritten 2026-08-01** after probing live Ramp data. The prior version assumed
+> Developer API client credentials, a `receipts:read` set-difference queue, and email
+> forwarding — all three are wrong. See Global Constraints.
+
 ## Global Constraints
 
-- **Python 3.12.** Shebang `#!/usr/bin/env python3.12` on every script, matching the toolkit convention (`skills/person-intelligence/scripts/*.py`).
-- **Tests are dual-mode.** Plain `assert`, `test_*` functions collectable by pytest 9.0.2, plus an `if __name__ == "__main__":` block that calls each test and prints a summary. Matches `skills/person-intelligence/tests/test_resolve_user.py`.
-- **NEVER inline a secret value in a Bash command.** From repo `CLAUDE.md`: patterns like `export RAMP_CLIENT_SECRET=abc123; python3 -c "..."` leak the key into the tool log, the on-disk transcript, and upstream request logs. Read credentials from the environment inside Python only. To verify a variable is set, print its *length*, never its value.
-- **Secrets live in `.env`**, which is gitignored. Add new keys to `.env.example` with empty values.
-- **No new pip dependencies.** Use `urllib.request` from stdlib.
-- **Ramp API facts** (verified against `https://docs.ramp.com/openapi/developer-api.json` on 2026-08-01):
-  - Base URL `https://api.ramp.com`
-  - `POST /developer/v1/token` — OAuth2 client credentials, HTTP Basic auth with client id/secret
-  - `GET /developer/v1/transactions` — scope `transactions:read`; params `from_date`, `to_date`, `page_size` (2–100), `start`
-  - `GET /developer/v1/receipts` — scope `receipts:read`; params `from_date`, `to_date`, `transaction_id`, `page_size`, `start`
-  - `POST /developer/v1/receipts` — scope `receipts:write`; `multipart/form-data` with `idempotency_key`, `transaction_id` (optional), `user_id` (required)
-  - Pagination: response `page.next` is a URL or `null`
+- **Python 3.12.** Shebang `#!/usr/bin/env python3.12`. Toolkit convention.
+- **Tests are dual-mode.** Plain `assert`, `test_*` functions (pytest 9.0.2 collects them), plus an `if __name__ == "__main__":` block that runs each and prints a summary.
+- **NEVER inline a secret in a Bash command** (repo `CLAUDE.md`). Print lengths, never values.
+- **No new pip dependencies.** stdlib `subprocess`, `json`, `base64`, `urllib`.
+- **There are no Ramp API credentials.** That page is gated to admin/owner. All Ramp access goes through the `ramp` CLI at `~/.local/bin/ramp` (v0.2.4), authenticated as Kevin via `ramp auth login`. Env already defaults to **production**.
+- **Every `ramp` command requires `--rationale "<text>"`.** It lands in Ramp's audit log. Write honest ones — they are read by humans.
+- **⚠️ `missing_items` in `transactions list` is ALWAYS `null`.** It means *not computed*, not *nothing missing*. Trusting it produces a confidently empty queue while the Ramp UI shows 28 items. **The only ground truth is per-transaction:**
+  ```
+  ramp transactions missing <uuid> --rationale "..."
+  → { "missing_receipt": bool, "missing_memo": bool, "missing_accounting_items": [] }
+  ```
+- **Scopes granted** on Kevin's key: `transactions:read`, `transactions:write`, `receipts:write`, `memos:read`, `accounting:read`, `accounting:write`, `trips:read`. **NOT granted: `receipts:read`, `memos:write`.**
+- **Backlog reaches back to at least 2026-02-09.** Default window must be wide. Verified live queue on 2026-08-01: **28 transactions, $10,832.29**.
 - **Anthropic billing facts** (verified live 2026-08-01):
-  - `GET https://claude.ai/api/stripe/{org_uuid}/invoices?limit=100&page=` returns `{invoices: [...], has_more, next_page}`
+  - `GET https://claude.ai/api/stripe/{org}/invoices?limit=100&page=` → `{invoices:[{total (cents), created_ts, status, invoice_pdf_url}], has_more, next_page}`
   - NSLS org uuid `13e93397-1064-4c51-af05-279821a5bf9c`
-  - Invoice fields used: `total` (cents), `created_ts` (unix seconds), `status`, `invoice_pdf_url`
-  - `invoice_pdf_url` resolves with **no** authentication
-- **Amounts are integer cents everywhere.** Ramp's `amount` is a float in dollars; convert at the boundary in `queue.py` with `round(amount * 100)` and never carry floats past it.
+  - `invoice_pdf_url` resolves with **no authentication** (verified 200, valid PDF, 33,227 bytes)
+- **Amounts are integer cents everywhere.** The CLI returns `amount` as a display string like `"$1,085.00"`. Parse at the boundary; never carry floats.
+- **Out of scope:** memos and accounting coding. Zero of 145 transactions were missing a memo. See the shelved `2026-08-01-memos-and-coding-design.md`.
+
+### Target repo: `nsls-builder-toolkit` (org-wide), not the personal toolkit
+
+Build in `~/nsls-skills/nsls-builder-toolkit/skills/receipts/` (same `skills/<name>/scripts/` + `tests/` layout, 61 skills, `thensls/nsls-builder-toolkit`, changes land via PR). All task paths below are relative to that repo.
+
+Being org-wide changes four things — **every one of these is a way the skill silently does nothing for a colleague while working perfectly for Kevin:**
+
+1. **Nothing about Kevin may be hardcoded.** The Anthropic org uuid `13e93397-…` is NSLS-specific. Read it from `ANTHROPIC_ORG_UUID`, else discover it at runtime, else raise `SourceUnavailable` with a message naming the env var. Never fall back to a literal.
+2. **Most builders are not Anthropic org admins.** For them the invoices endpoint returns 403, not data. That must surface as `SOURCE ANTHROPIC: SKIPPED (not an org admin)` — a plain user should still get full value from the Gmail source.
+3. **Ramp roles differ.** `--transactions_to_retrieve my_transactions` is correct and portable; `all_transactions_across_entire_business` requires admin and must never be the default.
+4. **Windows parity.** Toolkit hooks mirror `.py`/`.sh`/`.ps1`. This skill is pure Python, so the exposure is path resolution: always `shutil.which(...)` first and `os.path.expanduser` after — never a bare `~/.local/bin/ramp`. Ledger and Playwright-profile paths must go through `expanduser` too.
 
 ---
 
-### Task 1: Skill scaffold and Ramp OAuth client
+### Task 1: Ramp CLI wrapper
 
 **Files:**
 - Create: `skills/receipts/SKILL.md`
-- Create: `skills/receipts/scripts/ramp_client.py`
-- Create: `skills/receipts/tests/test_ramp_client.py`
-- Modify: `.env.example` (append Ramp keys)
+- Create: `skills/receipts/scripts/ramp.py`
+- Create: `skills/receipts/tests/test_ramp.py`
 
 **Interfaces:**
-- Consumes: nothing (first task)
 - Produces:
-  - `RampClient(client_id: str, client_secret: str, base_url: str = "https://api.ramp.com")`
-  - `RampClient.from_env() -> RampClient` — reads `RAMP_CLIENT_ID`, `RAMP_CLIENT_SECRET`; raises `RampConfigError` if absent
-  - `RampClient.token(scopes: list[str]) -> str` — cached per scope-set for the process lifetime
-  - `RampClient.get(path: str, params: dict, scopes: list[str]) -> dict`
-  - `RampClient.paginate(path: str, params: dict, scopes: list[str]) -> Iterator[dict]` — yields each item from `data[]` across all pages, following `page.next`
-  - `class RampConfigError(Exception)`, `class RampAuthError(Exception)`
+  - `RampError(Exception)`, `RampAuthError(RampError)`
+  - `run(args: list[str], rationale: str) -> list[dict]` — invokes the CLI, returns `data`
+  - `parse_amount(text: str) -> int` — `"$1,085.00"` → `108500`
+  - `RAMP_BIN` — resolved path to the binary
 
 - [ ] **Step 1: Write the failing test**
 
-Create `skills/receipts/tests/test_ramp_client.py`:
+Create `skills/receipts/tests/test_ramp.py`:
 
 ```python
 #!/usr/bin/env python3.12
-"""Tests for ramp_client.py.
-
-Run: python3.12 skills/receipts/tests/test_ramp_client.py
-"""
+"""Tests for ramp.py — the CLI wrapper."""
 
 import json
-import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from ramp_client import RampClient, RampConfigError
+import ramp
+from ramp import RampAuthError, RampError, parse_amount, run
 
 
-def test_from_env_raises_without_credentials():
-    with patch.dict(os.environ, {}, clear=True):
+class FakeProc:
+    def __init__(self, stdout, returncode=0, stderr=""):
+        self.stdout, self.returncode, self.stderr = stdout, returncode, stderr
+
+
+def test_parse_amount_handles_thousands_and_cents():
+    assert parse_amount("$1,085.00") == 108500
+    assert parse_amount("$214.56") == 21456
+    assert parse_amount("$50.00") == 5000
+
+
+def test_parse_amount_rejects_unparseable():
+    try:
+        parse_amount("n/a")
+    except RampError:
+        return
+    raise AssertionError("expected RampError on unparseable amount")
+
+
+def test_run_injects_rationale():
+    payload = json.dumps({"schema_version": "1.0", "data": [{"ok": True}]})
+    seen = {}
+
+    def fake(cmd, **kw):
+        seen["cmd"] = cmd
+        return FakeProc(payload)
+
+    with patch("subprocess.run", side_effect=fake):
+        out = run(["users", "me"], rationale="why I am calling")
+
+    assert out == [{"ok": True}]
+    assert "--rationale" in seen["cmd"]
+    assert "why I am calling" in seen["cmd"]
+    assert "-o" in seen["cmd"] and "json" in seen["cmd"]
+
+
+def test_run_raises_on_error_object_despite_exit_zero():
+    payload = json.dumps({"error": {"code": 2, "message": "Missing required flags: ID"}, "data": []})
+    with patch("subprocess.run", return_value=FakeProc(payload)):
         try:
-            RampClient.from_env()
-        except RampConfigError as exc:
-            assert "RAMP_CLIENT_ID" in str(exc)
+            run(["transactions", "missing"], rationale="x")
+        except RampError as exc:
+            assert "Missing required flags" in str(exc)
             return
-        raise AssertionError("expected RampConfigError")
+    raise AssertionError("error object with exit 0 must still raise")
 
 
-def test_from_env_reads_credentials():
-    env = {"RAMP_CLIENT_ID": "cid", "RAMP_CLIENT_SECRET": "sec"}
-    with patch.dict(os.environ, env, clear=True):
-        client = RampClient.from_env()
-    assert client.client_id == "cid"
-    assert client.base_url == "https://api.ramp.com"
+def test_run_raises_auth_error_distinctly():
+    payload = json.dumps({"error": {"code": 2, "message": "not authenticated"}, "data": []})
+    with patch("subprocess.run", return_value=FakeProc(payload)):
+        try:
+            run(["users", "me"], rationale="x")
+        except RampAuthError:
+            return
+    raise AssertionError("auth failures must raise RampAuthError, not bare RampError")
 
 
-def test_paginate_follows_page_next_and_stops():
-    client = RampClient("cid", "sec")
-    pages = [
-        {"data": [{"id": "a"}, {"id": "b"}], "page": {"next": "https://api.ramp.com/x?start=b"}},
-        {"data": [{"id": "c"}], "page": {"next": None}},
-    ]
-    calls = []
-
-    def fake_request(url, headers=None, method="GET", body=None):
-        calls.append(url)
-        return pages[len(calls) - 1]
-
-    with patch.object(client, "_request", side_effect=fake_request):
-        with patch.object(client, "token", return_value="tok"):
-            items = list(client.paginate("/developer/v1/transactions", {}, ["transactions:read"]))
-
-    assert [i["id"] for i in items] == ["a", "b", "c"]
-    assert len(calls) == 2, f"expected 2 requests, got {len(calls)}"
-
-
-def test_paginate_returns_nothing_for_empty_data():
-    client = RampClient("cid", "sec")
-    with patch.object(client, "_request", return_value={"data": [], "page": {"next": None}}):
-        with patch.object(client, "token", return_value="tok"):
-            items = list(client.paginate("/developer/v1/receipts", {}, ["receipts:read"]))
-    assert items == []
+def test_run_tolerates_leading_banner_before_json():
+    payload = "Using keyring backend: keyring\n" + json.dumps({"data": [{"ok": 1}]})
+    with patch("subprocess.run", return_value=FakeProc(payload)):
+        assert run(["x"], rationale="y") == [{"ok": 1}]
 
 
 if __name__ == "__main__":
-    print("Running ramp_client tests")
-    test_from_env_raises_without_credentials()
-    test_from_env_reads_credentials()
-    test_paginate_follows_page_next_and_stops()
-    test_paginate_returns_nothing_for_empty_data()
-    print("\nAll ramp_client tests passed.")
+    print("Running ramp wrapper tests")
+    for n, f in sorted(globals().items()):
+        if n.startswith("test_"):
+            f(); print(f"  ok {n}")
+    print("\nAll ramp wrapper tests passed.")
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_ramp_client.py`
-Expected: FAIL with `ModuleNotFoundError: No module named 'ramp_client'`
+Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_ramp.py`
+Expected: FAIL with `ModuleNotFoundError: No module named 'ramp'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `skills/receipts/scripts/ramp_client.py`:
+Create `skills/receipts/scripts/ramp.py`:
 
 ```python
 #!/usr/bin/env python3.12
-"""Thin Ramp Developer API client.
+"""Wrapper around the authenticated `ramp` CLI.
 
-Credentials come from the environment only. Never pass secrets on a command line.
+There are no Ramp Developer API credentials — that page is gated to admin/owner.
+All access goes through the CLI, authenticated as the user via `ramp auth login`.
 """
 
-import base64
 import json
 import os
-import urllib.parse
-import urllib.request
-from typing import Iterator
+import re
+import shutil
+import subprocess
 
-BASE_URL = "https://api.ramp.com"
-
-
-class RampConfigError(Exception):
-    """Required Ramp credentials are missing from the environment."""
+RAMP_BIN = shutil.which("ramp") or os.path.expanduser("~/.local/bin/ramp")
+AMOUNT = re.compile(r"-?\$?\s?([0-9][0-9,]*\.[0-9]{2})")
+AUTH_HINTS = ("not authenticated", "unauthorized", "401", "auth", "login")
 
 
-class RampAuthError(Exception):
-    """Ramp rejected our credentials or token."""
+class RampError(Exception):
+    """The Ramp CLI refused or returned an error object."""
 
 
-class RampClient:
-    def __init__(self, client_id: str, client_secret: str, base_url: str = BASE_URL):
-        self.client_id = client_id
-        self.client_secret = client_secret
-        self.base_url = base_url.rstrip("/")
-        self._tokens: dict[str, str] = {}
+class RampAuthError(RampError):
+    """Ramp auth is dead — run `ramp auth login`."""
 
-    @classmethod
-    def from_env(cls) -> "RampClient":
-        cid = os.environ.get("RAMP_CLIENT_ID")
-        secret = os.environ.get("RAMP_CLIENT_SECRET")
-        missing = [n for n, v in (("RAMP_CLIENT_ID", cid), ("RAMP_CLIENT_SECRET", secret)) if not v]
-        if missing:
-            raise RampConfigError(
-                f"Missing {', '.join(missing)}. Add them to .env "
-                f"(Ramp → Settings → Developer API)."
-            )
-        return cls(cid, secret)
 
-    def _request(self, url, headers=None, method="GET", body=None):
-        req = urllib.request.Request(url, data=body, method=method)
-        for key, value in (headers or {}).items():
-            req.add_header(key, value)
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            raw = resp.read()
-        return json.loads(raw) if raw else {}
+def parse_amount(text: str) -> int:
+    m = AMOUNT.search(str(text or ""))
+    if not m:
+        raise RampError(f"Cannot parse amount from {text!r}")
+    return round(float(m.group(1).replace(",", "")) * 100)
 
-    def token(self, scopes: list[str]) -> str:
-        key = " ".join(sorted(scopes))
-        if key in self._tokens:
-            return self._tokens[key]
-        basic = base64.b64encode(f"{self.client_id}:{self.client_secret}".encode()).decode()
-        body = urllib.parse.urlencode({"grant_type": "client_credentials", "scope": key}).encode()
-        try:
-            data = self._request(
-                f"{self.base_url}/developer/v1/token",
-                headers={
-                    "Authorization": f"Basic {basic}",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                method="POST",
-                body=body,
-            )
-        except urllib.error.HTTPError as exc:
-            raise RampAuthError(
-                f"Ramp token request failed ({exc.code}). Check RAMP_CLIENT_ID/"
-                f"RAMP_CLIENT_SECRET and that the app grants: {key}"
-            ) from exc
-        self._tokens[key] = data["access_token"]
-        return self._tokens[key]
 
-    def get(self, path: str, params: dict, scopes: list[str]) -> dict:
-        url = f"{self.base_url}{path}"
-        if params:
-            url = f"{url}?{urllib.parse.urlencode(params)}"
-        return self._request(url, headers={"Authorization": f"Bearer {self.token(scopes)}"})
+def run(args: list[str], rationale: str) -> list[dict]:
+    if not os.path.exists(RAMP_BIN):
+        raise RampError(
+            "`ramp` CLI not found. Install: curl -fsSL https://agents.ramp.com/install.sh | sh"
+        )
+    cmd = [RAMP_BIN, *args, "--rationale", rationale, "-o", "json"]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
 
-    def paginate(self, path: str, params: dict, scopes: list[str]) -> Iterator[dict]:
-        url = f"{self.base_url}{path}"
-        if params:
-            url = f"{url}?{urllib.parse.urlencode(params)}"
-        while url:
-            page = self._request(url, headers={"Authorization": f"Bearer {self.token(scopes)}"})
-            yield from page.get("data", [])
-            url = (page.get("page") or {}).get("next")
+    # The CLI prints a keyring banner before JSON, and reports errors as a JSON
+    # object with exit code 0. Both must be handled.
+    start = proc.stdout.find("{")
+    if start < 0:
+        raise RampError(f"No JSON from ramp {' '.join(args)}: {proc.stderr[:200]}")
+    payload = json.loads(proc.stdout[start:])
+
+    if payload.get("error"):
+        msg = str(payload["error"].get("message", ""))
+        if any(h in msg.lower() for h in AUTH_HINTS):
+            raise RampAuthError(f"Ramp auth failed: {msg[:200]} — run `ramp auth login`")
+        raise RampError(f"ramp {' '.join(args)}: {msg[:200]}")
+
+    return payload.get("data", [])
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_ramp_client.py`
-Expected: `All ramp_client tests passed.`
+Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_ramp.py`
+Expected: `All ramp wrapper tests passed.`
 
-- [ ] **Step 5: Add credential placeholders to `.env.example`**
+- [ ] **Step 5: Verify against the live CLI**
 
-Append:
+Run: `~/.local/bin/ramp users me --rationale "Verify the receipts skill can reach Ramp as the expected user" -o json`
+Expected: JSON containing `kprentiss@nsls.org`. If it reports an auth error, run `ramp auth login` first.
 
-```
-# Ramp Developer API — Ramp → Settings → Developer API
-# Scopes required: transactions:read, receipts:read, receipts:write
-RAMP_CLIENT_ID=
-RAMP_CLIENT_SECRET=
-RAMP_USER_ID=
-```
+- [ ] **Step 6: Create SKILL.md**
 
-- [ ] **Step 6: Create the skill entry point**
-
-Create `skills/receipts/SKILL.md` with frontmatter. **Do not set `disable-model-invocation`** — it makes the skill invisible in new sessions.
+Create `skills/receipts/SKILL.md`. **Do not set `disable-model-invocation`** — it makes the skill invisible in new sessions.
 
 ```markdown
 ---
 name: receipts
-description: Find Ramp card transactions missing receipts, source each receipt from Gmail or a vendor billing portal, and upload it to Ramp against the exact transaction. Use when the user says "receipts", "/receipts", "missing receipts", "Ramp needs a receipt", "receipt cleanup", or forwards a Ramp "transaction needs a receipt" nag. Dry-run by default.
+description: Find Ramp transactions missing receipts, fetch each receipt from Anthropic's billing API or Gmail, and upload it to Ramp against the exact transaction. Use when the user says "receipts", "/receipts", "missing receipts", "Ramp needs a receipt", "receipt cleanup", or forwards a Ramp "transaction needs a receipt" nag. Dry run by default.
 ---
 
 # Receipts → Ramp
 
-Works Ramp's missing-receipt queue. Dry run by default; `--send` executes.
+Clears Ramp's missing-receipt queue. Dry run by default; `--send` executes.
 
 ## Usage
 
 - `/receipts` — show the plan, change nothing
-- `/receipts --send` — execute the plan
-- `/receipts --since 2026-04-01` — widen the window (default: 90 days)
+- `/receipts --send` — execute
+- `/receipts --since 2026-01-01` — widen the window (default: 2026-01-01)
 
-See `docs/specs/2026-08-01-receipts-to-ramp-design.md` for the design.
+Requires `ramp auth login`. Gmail sourcing additionally requires `gws auth login`.
 ```
 
 - [ ] **Step 7: Commit**
 
 ```bash
 cd ~/nsls-skills/nsls-personal-toolkit
-git add skills/receipts .env.example
-git commit -m "feat(receipts): add Ramp API client and skill scaffold"
+git add skills/receipts
+git commit -m "feat(receipts): add ramp CLI wrapper and skill scaffold"
 ```
 
 ---
@@ -286,11 +270,12 @@ git commit -m "feat(receipts): add Ramp API client and skill scaffold"
 - Create: `skills/receipts/tests/test_queue.py`
 
 **Interfaces:**
-- Consumes: `RampClient.paginate` from Task 1
+- Consumes: `run`, `parse_amount`, `RampError` from Task 1
 - Produces:
-  - `@dataclass(frozen=True) class Transaction: id: str; merchant: str; amount_cents: int; date: str  # ISO yyyy-mm-dd`
-  - `missing_receipts(client, since: str, until: str) -> list[Transaction]`
-  - `has_receipt(client, transaction_id: str) -> bool`
+  - `@dataclass(frozen=True) class Transaction: id: str; merchant: str; amount_cents: int; date: str`
+  - `list_transactions(since: str, until: str) -> list[Transaction]` — paginates
+  - `needs_receipt(txn_id: str) -> bool` — the authoritative per-transaction check
+  - `missing_receipts(since: str, until: str, progress=None) -> list[Transaction]`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -298,7 +283,11 @@ Create `skills/receipts/tests/test_queue.py`:
 
 ```python
 #!/usr/bin/env python3.12
-"""Tests for queue.py."""
+"""Tests for queue.py.
+
+Guards the single most dangerous bug in this skill: trusting `missing_items`
+from `transactions list`, which is ALWAYS null and means "not computed".
+"""
 
 import sys
 from pathlib import Path
@@ -308,58 +297,98 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
 from queue import Transaction, missing_receipts
 
-TXNS = [
-    {"id": "t1", "amount": 214.56, "merchant_name": "Anthropic", "user_transaction_time": "2026-07-23T10:00:00Z"},
-    {"id": "t2", "amount": 214.56, "merchant_name": "Anthropic", "user_transaction_time": "2026-07-23T10:03:00Z"},
-    {"id": "t3", "amount": 1085.00, "merchant_name": "Anthropic", "user_transaction_time": "2026-07-19T08:00:00Z"},
-]
+PAGE = {
+    "transactions": [
+        {"transaction_uuid": "t1", "merchant_name": "Anthropic", "amount": "$214.56",
+         "transaction_time": "2026-07-23T10:00:00+00:00", "missing_items": None},
+        {"transaction_uuid": "t2", "merchant_name": "Macroscope", "amount": "$50.00",
+         "transaction_time": "2026-07-30T10:00:00+00:00", "missing_items": None},
+    ],
+    "total_count": 2,
+    "next_page_cursor": None,
+}
 
 
-def _client_returning(txns, receipts):
-    class FakeClient:
-        def paginate(self, path, params, scopes):
-            return iter(txns if "transactions" in path else receipts)
-    return FakeClient()
+def test_does_not_trust_missing_items_field():
+    """missing_items is null for BOTH rows; only t1 actually needs a receipt."""
+    def fake_run(args, rationale):
+        if args[1] == "list":
+            return [PAGE]
+        return [{"missing_receipt": args[2] == "t1", "missing_memo": False,
+                 "missing_accounting_items": []}]
+
+    with patch("queue.run", side_effect=fake_run):
+        out = missing_receipts("2026-01-01", "2026-08-01")
+
+    assert [t.id for t in out] == ["t1"], (
+        "must use per-transaction `transactions missing`, not the null missing_items field"
+    )
 
 
-def test_subtracts_transactions_that_already_have_receipts():
-    client = _client_returning(TXNS, [{"transaction_id": "t3"}])
-    result = missing_receipts(client, "2026-07-01", "2026-07-31")
-    assert [t.id for t in result] == ["t1", "t2"]
+def test_returns_empty_when_nothing_needs_a_receipt():
+    def fake_run(args, rationale):
+        if args[1] == "list":
+            return [PAGE]
+        return [{"missing_receipt": False, "missing_memo": False, "missing_accounting_items": []}]
+
+    with patch("queue.run", side_effect=fake_run):
+        assert missing_receipts("2026-01-01", "2026-08-01") == []
 
 
-def test_converts_dollars_to_integer_cents():
-    client = _client_returning(TXNS[:1], [])
-    result = missing_receipts(client, "2026-07-01", "2026-07-31")
-    assert result[0].amount_cents == 21456
-    assert isinstance(result[0].amount_cents, int)
+def test_parses_amount_to_integer_cents():
+    def fake_run(args, rationale):
+        if args[1] == "list":
+            return [PAGE]
+        return [{"missing_receipt": True, "missing_memo": False, "missing_accounting_items": []}]
+
+    with patch("queue.run", side_effect=fake_run):
+        out = missing_receipts("2026-01-01", "2026-08-01")
+    assert out[0].amount_cents == 21456
+    assert isinstance(out[0].amount_cents, int)
 
 
-def test_normalizes_transaction_time_to_iso_date():
-    client = _client_returning(TXNS[:1], [])
-    result = missing_receipts(client, "2026-07-01", "2026-07-31")
-    assert result[0].date == "2026-07-23"
+def test_normalizes_date_to_iso():
+    def fake_run(args, rationale):
+        if args[1] == "list":
+            return [PAGE]
+        return [{"missing_receipt": True, "missing_memo": False, "missing_accounting_items": []}]
+
+    with patch("queue.run", side_effect=fake_run):
+        out = missing_receipts("2026-01-01", "2026-08-01")
+    assert out[0].date == "2026-07-23"
 
 
-def test_returns_empty_when_every_transaction_has_a_receipt():
-    receipts = [{"transaction_id": t["id"]} for t in TXNS]
-    client = _client_returning(TXNS, receipts)
-    assert missing_receipts(client, "2026-07-01", "2026-07-31") == []
+def test_follows_pagination_cursor():
+    p1 = {"transactions": PAGE["transactions"][:1], "next_page_cursor": "CUR"}
+    p2 = {"transactions": PAGE["transactions"][1:], "next_page_cursor": None}
+    pages = [p1, p2]
+    calls = []
+
+    def fake_run(args, rationale):
+        if args[1] == "list":
+            calls.append(args)
+            return [pages[len(calls) - 1]]
+        return [{"missing_receipt": True, "missing_memo": False, "missing_accounting_items": []}]
+
+    with patch("queue.run", side_effect=fake_run):
+        out = missing_receipts("2026-01-01", "2026-08-01")
+
+    assert len(out) == 2
+    assert any("CUR" in a for a in calls[1]), "second page must pass next_page_cursor"
 
 
 if __name__ == "__main__":
     print("Running queue tests")
-    test_subtracts_transactions_that_already_have_receipts()
-    test_converts_dollars_to_integer_cents()
-    test_normalizes_transaction_time_to_iso_date()
-    test_returns_empty_when_every_transaction_has_a_receipt()
+    for n, f in sorted(globals().items()):
+        if n.startswith("test_"):
+            f(); print(f"  ok {n}")
     print("\nAll queue tests passed.")
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_queue.py`
-Expected: FAIL with `ModuleNotFoundError: No module named 'queue'` resolving to our file — note Python has a stdlib `queue`; the `sys.path.insert(0, ...)` puts our scripts dir first, so ours wins. If the failure says `cannot import name 'Transaction' from 'queue'`, that is the stdlib shadowing and the test path insert is working as intended once our file exists.
+Expected: FAIL — `queue.py` has no `missing_receipts`. (Note: Python has a stdlib `queue`; the `sys.path.insert(0, ...)` puts our scripts dir first so ours wins.)
 
 - [ ] **Step 3: Write minimal implementation**
 
@@ -367,17 +396,20 @@ Create `skills/receipts/scripts/queue.py`:
 
 ```python
 #!/usr/bin/env python3.12
-"""Compute the set of Ramp transactions missing a receipt.
+"""Build the missing-receipt queue from Ramp.
 
-Ramp has no "missing receipt" filter. `all_requirements_met_and_approved=false`
-conflates missing receipts with missing memos and pending approvals, so we
-compute a set difference against the receipts endpoint instead.
+⚠️ `missing_items` in `transactions list` is ALWAYS null — it means "not computed",
+not "nothing missing". Trusting it yields an empty queue while the Ramp UI shows 28
+items. The only ground truth is `ramp transactions missing <uuid>`, one call per
+transaction. Slow, but correct.
 """
 
 from dataclasses import dataclass
 
-TXN_SCOPES = ["transactions:read"]
-RECEIPT_SCOPES = ["receipts:read"]
+from ramp import parse_amount, run
+
+LIST_WHY = "Audit which of my transactions still need a receipt, to attach them automatically"
+CHECK_WHY = "Verify whether this specific transaction still needs a receipt before attaching one"
 
 
 @dataclass(frozen=True)
@@ -388,41 +420,47 @@ class Transaction:
     date: str  # ISO yyyy-mm-dd
 
 
-def _iso_date(value: str) -> str:
-    return (value or "")[:10]
+def list_transactions(since: str, until: str) -> list[Transaction]:
+    out, cursor = [], None
+    while True:
+        args = [
+            "transactions", "list",
+            "--transactions_to_retrieve", "my_transactions",
+            "--from_date", since, "--to_date", until,
+            "--page_size", "100",
+        ]
+        if cursor:
+            args += ["--next_page_cursor", cursor]
 
-
-def missing_receipts(client, since: str, until: str) -> list[Transaction]:
-    window = {"from_date": since, "to_date": until, "page_size": 100}
-
-    receipted = {
-        r.get("transaction_id")
-        for r in client.paginate("/developer/v1/receipts", dict(window), RECEIPT_SCOPES)
-        if r.get("transaction_id")
-    }
-
-    out = []
-    for t in client.paginate("/developer/v1/transactions", dict(window), TXN_SCOPES):
-        if t["id"] in receipted:
-            continue
-        out.append(
-            Transaction(
-                id=t["id"],
-                merchant=t.get("merchant_name") or "",
-                amount_cents=round(float(t["amount"]) * 100),
-                date=_iso_date(t.get("user_transaction_time", "")),
+        page = run(args, rationale=LIST_WHY)[0]
+        for t in page.get("transactions", []):
+            out.append(
+                Transaction(
+                    id=t["transaction_uuid"],
+                    merchant=t.get("merchant_name") or "",
+                    amount_cents=parse_amount(t.get("amount")),
+                    date=(t.get("transaction_time") or "")[:10],
+                )
             )
-        )
+        cursor = page.get("next_page_cursor")
+        if not cursor:
+            return out
+
+
+def needs_receipt(txn_id: str) -> bool:
+    row = run(["transactions", "missing", txn_id], rationale=CHECK_WHY)[0]
+    return bool(row.get("missing_receipt"))
+
+
+def missing_receipts(since: str, until: str, progress=None) -> list[Transaction]:
+    txns = list_transactions(since, until)
+    out = []
+    for i, t in enumerate(txns, 1):
+        if progress:
+            progress(i, len(txns))
+        if needs_receipt(t.id):
+            out.append(t)
     return out
-
-
-def has_receipt(client, transaction_id: str) -> bool:
-    page = client.get(
-        "/developer/v1/receipts",
-        {"transaction_id": transaction_id, "page_size": 2},
-        RECEIPT_SCOPES,
-    )
-    return bool(page.get("data"))
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -430,11 +468,16 @@ def has_receipt(client, transaction_id: str) -> bool:
 Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_queue.py`
 Expected: `All queue tests passed.`
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Verify against live Ramp**
+
+Run a one-off script that calls `missing_receipts("2026-01-01", "2026-08-01")` and prints the count and dollar total.
+Expected on 2026-08-01: **28 transactions, $10,832.29**, dominated by Anthropic. If you get 0, you are reading `missing_items` somewhere — go back to Step 3.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add skills/receipts/scripts/queue.py skills/receipts/tests/test_queue.py
-git commit -m "feat(receipts): compute missing-receipt queue via set difference"
+git commit -m "feat(receipts): build queue from per-transaction missing checks"
 ```
 
 ---
@@ -447,13 +490,11 @@ git commit -m "feat(receipts): compute missing-receipt queue via set difference"
 - Create: `skills/receipts/tests/test_source_contract.py`
 
 **Interfaces:**
-- Consumes: nothing
 - Produces:
   - `@dataclass(frozen=True) class Receipt: merchant: str; amount_cents: int; date: str; pdf_bytes: bytes; provenance: str`
   - `class SourceUnavailable(Exception)`
-  - `class Source(Protocol): MERCHANTS: tuple[str, ...]; def fetch(self, since: str, until: str) -> list[Receipt]: ...`
-  - `normalize_merchant(name: str) -> str` — lowercase, strip non-alphanumerics
-  - `load_sources() -> list[Source]` — instantiates every `Source` subclass in `sources/`
+  - `normalize_merchant(name: str) -> str`
+  - `load_sources() -> list` — every `sources/*.py` module's `SOURCE`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -461,54 +502,50 @@ Create `skills/receipts/tests/test_source_contract.py`:
 
 ```python
 #!/usr/bin/env python3.12
-"""Contract test applied to every source. New vendors are covered on arrival."""
+"""Contract applied to every source, so new vendors are covered on arrival."""
 
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
-from sources.base import Receipt, SourceUnavailable, load_sources, normalize_merchant
+from sources.base import Receipt, load_sources, normalize_merchant
 
 
-def test_normalize_merchant_collapses_punctuation_and_case():
+def test_normalize_merchant_collapses_case_and_punctuation():
     assert normalize_merchant("Anthropic, PBC") == "anthropicpbc"
+    assert normalize_merchant("Neon Tech") == "neontech"
     assert normalize_merchant("ANTHROPIC") == "anthropic"
-    assert normalize_merchant("Clay Labs Inc") == "claylabsinc"
 
 
-def test_receipt_is_frozen():
-    r = Receipt("anthropic", 21456, "2026-07-23", b"%PDF-1.4", "anthropic:invoice 1")
+def test_receipt_is_immutable():
+    r = Receipt("anthropic", 21456, "2026-07-23", b"%PDF-1.4", "anthropic:inv A")
     try:
         r.amount_cents = 1
     except AttributeError:
         return
-    raise AssertionError("Receipt must be immutable")
+    raise AssertionError("Receipt must be frozen")
 
 
 def test_every_source_declares_normalized_merchants():
     sources = load_sources()
     assert sources, "load_sources() found no sources"
-    for src in sources:
-        assert hasattr(src, "MERCHANTS"), f"{type(src).__name__} missing MERCHANTS"
-        assert isinstance(src.MERCHANTS, tuple), f"{type(src).__name__}.MERCHANTS must be a tuple"
-        for m in src.MERCHANTS:
-            assert m == normalize_merchant(m), (
-                f"{type(src).__name__}.MERCHANTS entry {m!r} is not normalized"
-            )
+    for s in sources:
+        assert isinstance(s.MERCHANTS, tuple), f"{type(s).__name__}.MERCHANTS must be a tuple"
+        for m in s.MERCHANTS:
+            assert m == normalize_merchant(m), f"{type(s).__name__}: {m!r} is not normalized"
 
 
 def test_every_source_exposes_fetch():
-    for src in load_sources():
-        assert callable(getattr(src, "fetch", None)), f"{type(src).__name__} missing fetch()"
+    for s in load_sources():
+        assert callable(getattr(s, "fetch", None)), f"{type(s).__name__} missing fetch()"
 
 
 if __name__ == "__main__":
     print("Running source contract tests")
-    test_normalize_merchant_collapses_punctuation_and_case()
-    test_receipt_is_frozen()
-    test_every_source_declares_normalized_merchants()
-    test_every_source_exposes_fetch()
+    for n, f in sorted(globals().items()):
+        if n.startswith("test_"):
+            f(); print(f"  ok {n}")
     print("\nAll source contract tests passed.")
 ```
 
@@ -519,7 +556,7 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'sources'`
 
 - [ ] **Step 3: Write minimal implementation**
 
-Create `skills/receipts/scripts/sources/__init__.py` (empty file).
+Create `skills/receipts/scripts/sources/__init__.py` (empty).
 
 Create `skills/receipts/scripts/sources/base.py`:
 
@@ -531,7 +568,6 @@ import importlib
 import pkgutil
 import re
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
 
 
 class SourceUnavailable(Exception):
@@ -544,15 +580,7 @@ class Receipt:
     amount_cents: int
     date: str            # ISO yyyy-mm-dd
     pdf_bytes: bytes
-    provenance: str      # e.g. "anthropic:invoice 2422-8527-1659"
-
-
-@runtime_checkable
-class Source(Protocol):
-    MERCHANTS: tuple[str, ...]
-
-    def fetch(self, since: str, until: str) -> list[Receipt]:
-        ...
+    provenance: str      # e.g. "anthropic:invoice 2026-07-19 108500"
 
 
 def normalize_merchant(name: str) -> str:
@@ -560,7 +588,7 @@ def normalize_merchant(name: str) -> str:
 
 
 def load_sources() -> list:
-    """Instantiate every source module's `SOURCE` singleton."""
+    """Every sources/*.py module exposing a SOURCE singleton."""
     import sources
 
     found = []
@@ -576,13 +604,13 @@ def load_sources() -> list:
 - [ ] **Step 4: Run test to verify it fails on the empty-source assertion**
 
 Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_source_contract.py`
-Expected: FAIL with `AssertionError: load_sources() found no sources` — correct, no sources exist yet. Task 4 makes it pass.
+Expected: FAIL with `AssertionError: load_sources() found no sources` — correct; Task 4 makes it pass.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add skills/receipts/scripts/sources skills/receipts/tests/test_source_contract.py
-git commit -m "feat(receipts): add source contract and merchant normalization"
+git commit -m "feat(receipts): add source contract"
 ```
 
 ---
@@ -594,9 +622,10 @@ git commit -m "feat(receipts): add source contract and merchant normalization"
 - Create: `skills/receipts/tests/test_source_anthropic.py`
 
 **Interfaces:**
-- Consumes: `Receipt`, `SourceUnavailable`, `normalize_merchant` from Task 3
-- Produces: `SOURCE` — an `AnthropicSource` instance with `MERCHANTS = ("anthropic", "anthropicpbc")`
-  - `AnthropicSource.parse_invoices(payload: dict) -> list[dict]` — pure; maps raw invoice JSON to `{amount_cents, date, pdf_url, provenance}`
+- Produces: `SOURCE` — `AnthropicSource` with `MERCHANTS = ("anthropic", "anthropicpbc")`
+  - `parse_invoices(payload: dict) -> list[dict]` — pure
+
+This source alone covers **15 of the 22** in-window gaps.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -616,37 +645,19 @@ from sources.anthropic import SOURCE
 # Shape captured live from GET /api/stripe/{org}/invoices on 2026-08-01.
 PAYLOAD = {
     "invoices": [
-        {
-            "total": 21456,
-            "currency": "usd",
-            "status": "paid",
-            "created_ts": 1784806673,
-            "invoice_pdf_url": "https://pay.stripe.com/invoice/acct_X/live_A/pdf?s=ap",
-            "hosted_invoice_url": "https://invoice.stripe.com/i/acct_X/live_A",
-        },
-        {
-            "total": 108500,
-            "currency": "usd",
-            "status": "paid",
-            "created_ts": 1784501642,
-            "invoice_pdf_url": "https://pay.stripe.com/invoice/acct_X/live_B/pdf?s=ap",
-            "hosted_invoice_url": "https://invoice.stripe.com/i/acct_X/live_B",
-        },
-        {
-            "total": 9999,
-            "currency": "usd",
-            "status": "draft",
-            "created_ts": 1784501000,
-            "invoice_pdf_url": None,
-            "hosted_invoice_url": None,
-        },
+        {"total": 21456, "status": "paid", "created_ts": 1784806673,
+         "invoice_pdf_url": "https://pay.stripe.com/invoice/acct_X/live_A/pdf?s=ap"},
+        {"total": 108500, "status": "paid", "created_ts": 1784501642,
+         "invoice_pdf_url": "https://pay.stripe.com/invoice/acct_X/live_B/pdf?s=ap"},
+        {"total": 9999, "status": "draft", "created_ts": 1784501000,
+         "invoice_pdf_url": None},
     ],
     "has_more": False,
     "next_page": None,
 }
 
 
-def test_amount_stays_in_integer_cents():
+def test_amounts_stay_integer_cents():
     rows = SOURCE.parse_invoices(PAYLOAD)
     assert rows[0]["amount_cents"] == 21456
     assert rows[1]["amount_cents"] == 108500
@@ -657,30 +668,27 @@ def test_created_ts_becomes_iso_date():
     assert rows[1]["date"] == "2026-07-19", rows[1]["date"]
 
 
-def test_unpaid_or_pdfless_invoices_are_dropped():
+def test_unpaid_or_pdfless_invoices_dropped():
     rows = SOURCE.parse_invoices(PAYLOAD)
-    assert len(rows) == 2, "draft invoice with no PDF must be dropped"
+    assert len(rows) == 2
     assert all(r["pdf_url"] for r in rows)
 
 
-def test_provenance_identifies_the_specific_invoice():
+def test_provenance_is_unique_per_invoice():
     rows = SOURCE.parse_invoices(PAYLOAD)
     assert rows[0]["provenance"] != rows[1]["provenance"]
     assert "anthropic" in rows[0]["provenance"]
 
 
-def test_merchants_are_declared_and_normalized():
+def test_merchants_declared():
     assert "anthropic" in SOURCE.MERCHANTS
-    assert "anthropicpbc" in SOURCE.MERCHANTS
 
 
 if __name__ == "__main__":
     print("Running anthropic source tests")
-    test_amount_stays_in_integer_cents()
-    test_created_ts_becomes_iso_date()
-    test_unpaid_or_pdfless_invoices_are_dropped()
-    test_provenance_identifies_the_specific_invoice()
-    test_merchants_are_declared_and_normalized()
+    for n, f in sorted(globals().items()):
+        if n.startswith("test_"):
+            f(); print(f"  ok {n}")
     print("\nAll anthropic source tests passed.")
 ```
 
@@ -697,9 +705,10 @@ Create `skills/receipts/scripts/sources/anthropic.py`:
 #!/usr/bin/env python3.12
 """Anthropic (claude.ai) billing source.
 
-The listing call needs a claude.ai session cookie. The PDF URLs it returns are
-Stripe secret-token URLs that resolve with no authentication at all — verified
-2026-08-01 — so only the listing is session-gated.
+Anthropic emails receipts for the subscription charges but NOTHING for
+usage-credit auto-recharges — those are 15 of the 22 gaps. The listing call
+needs a claude.ai session; the PDF URLs it returns are Stripe secret-token URLs
+that resolve with no authentication at all (verified 2026-08-01).
 """
 
 import datetime as dt
@@ -723,38 +732,39 @@ class AnthropicSource:
             if inv.get("status") != "paid" or not inv.get("invoice_pdf_url"):
                 continue
             date = dt.datetime.fromtimestamp(inv["created_ts"], dt.UTC).date().isoformat()
-            rows.append(
-                {
-                    "amount_cents": int(inv["total"]),
-                    "date": date,
-                    "pdf_url": inv["invoice_pdf_url"],
-                    "provenance": f"anthropic:invoice {date} {inv['total']}",
-                }
-            )
+            rows.append({
+                "amount_cents": int(inv["total"]),
+                "date": date,
+                "pdf_url": inv["invoice_pdf_url"],
+                "provenance": f"anthropic:invoice {date} {inv['total']}",
+            })
         return rows
 
     def _listing(self, page: str = "") -> dict:
-        """Fetch one page of invoices using the persistent Playwright profile.
-
-        Raises SourceUnavailable if the session is dead; the caller skips this
-        source and continues with the others.
-        """
         from playwright.sync_api import sync_playwright
 
         url = LISTING.format(org=ORG_UUID, page=page)
         with sync_playwright() as p:
             ctx = p.chromium.launch_persistent_context(PROFILE, headless=True)
             try:
-                page_obj = ctx.new_page()
-                resp = page_obj.goto(url)
+                pg = ctx.new_page()
+                resp = pg.goto(url)
                 if resp is None or resp.status != 200:
                     raise SourceUnavailable(
                         "claude.ai session expired. Run: python3.12 "
                         "skills/receipts/scripts/sources/anthropic.py --login"
                     )
-                return json.loads(page_obj.inner_text("pre") or "{}")
+                return json.loads(pg.inner_text("pre") or "{}")
             finally:
                 ctx.close()
+
+    @staticmethod
+    def _download(url: str) -> bytes:
+        with urllib.request.urlopen(url, timeout=60) as resp:
+            data = resp.read()
+        if not data.startswith(b"%PDF"):
+            raise SourceUnavailable(f"Expected PDF from {url[:60]}…, got {data[:16]!r}")
+        return data
 
     def fetch(self, since: str, until: str) -> list[Receipt]:
         rows, page, guard = [], "", 0
@@ -766,35 +776,23 @@ class AnthropicSource:
             page = payload.get("next_page") or ""
             guard += 1
 
-        out = []
-        for r in rows:
-            if not (since <= r["date"] <= until):
-                continue
-            out.append(
-                Receipt(
-                    merchant="anthropic",
-                    amount_cents=r["amount_cents"],
-                    date=r["date"],
-                    pdf_bytes=self._download(r["pdf_url"]),
-                    provenance=r["provenance"],
-                )
+        return [
+            Receipt(
+                merchant="anthropic",
+                amount_cents=r["amount_cents"],
+                date=r["date"],
+                pdf_bytes=self._download(r["pdf_url"]),
+                provenance=r["provenance"],
             )
-        return out
-
-    @staticmethod
-    def _download(url: str) -> bytes:
-        with urllib.request.urlopen(url, timeout=60) as resp:
-            data = resp.read()
-        if not data.startswith(b"%PDF"):
-            raise SourceUnavailable(f"Expected a PDF from {url[:60]}…, got {data[:16]!r}")
-        return data
+            for r in rows
+            if since <= r["date"] <= until
+        ]
 
 
 SOURCE = AnthropicSource()
 
 
 def _login():
-    """Open a visible browser so the user can sign in once."""
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:
@@ -806,7 +804,6 @@ def _login():
 
 if __name__ == "__main__":
     import sys
-
     if "--login" in sys.argv:
         _login()
 ```
@@ -814,7 +811,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_source_anthropic.py && python3.12 skills/receipts/tests/test_source_contract.py`
-Expected: both print `All … tests passed.` The contract test now finds one source and passes.
+Expected: both pass — the contract test now finds one source.
 
 - [ ] **Step 5: Commit**
 
@@ -825,212 +822,28 @@ git commit -m "feat(receipts): add Anthropic billing source"
 
 ---
 
-### Task 5: Gmail source
-
-**Files:**
-- Create: `skills/receipts/scripts/sources/gmail.py`
-- Create: `skills/receipts/tests/test_source_gmail.py`
-
-**Interfaces:**
-- Consumes: `Receipt`, `SourceUnavailable`, `normalize_merchant` from Task 3
-- Produces: `SOURCE` — a `GmailSource` instance with `MERCHANTS = ()` (empty tuple means "try me for any merchant")
-  - `GmailSource.parse_amount(text: str) -> int | None` — pure; extracts cents from a receipt body
-  - `GmailSource.build_query(since: str, until: str) -> str` — pure; Gmail search syntax
-
-- [ ] **Step 1: Write the failing test**
-
-Create `skills/receipts/tests/test_source_gmail.py`:
-
-```python
-#!/usr/bin/env python3.12
-"""Tests for the Gmail receipt source. Parsing is pure and tested offline."""
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
-
-from sources.gmail import SOURCE
-
-
-def test_parse_amount_handles_thousands_separator():
-    assert SOURCE.parse_amount("Your receipt ... Total $1,085.00 paid") == 108500
-
-
-def test_parse_amount_handles_plain_dollars():
-    assert SOURCE.parse_amount("Amount charged: $99.91") == 9991
-
-
-def test_parse_amount_returns_none_when_absent():
-    assert SOURCE.parse_amount("Your organization used 75% of its credits") is None
-
-
-def test_build_query_scopes_by_date_and_receipt_language():
-    q = SOURCE.build_query("2026-07-01", "2026-07-31")
-    assert "after:2026/07/01" in q
-    assert "before:2026/07/31" in q
-    assert "receipt" in q.lower()
-
-
-def test_empty_merchants_means_try_for_any_merchant():
-    assert SOURCE.MERCHANTS == ()
-
-
-if __name__ == "__main__":
-    print("Running gmail source tests")
-    test_parse_amount_handles_thousands_separator()
-    test_parse_amount_handles_plain_dollars()
-    test_parse_amount_returns_none_when_absent()
-    test_build_query_scopes_by_date_and_receipt_language()
-    test_empty_merchants_means_try_for_any_merchant()
-    print("\nAll gmail source tests passed.")
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_source_gmail.py`
-Expected: FAIL with `ModuleNotFoundError: No module named 'sources.gmail'`
-
-- [ ] **Step 3: Write minimal implementation**
-
-Create `skills/receipts/scripts/sources/gmail.py`:
-
-```python
-#!/usr/bin/env python3.12
-"""Gmail receipt source — reads receipt mail via the existing `gws` CLI.
-
-MERCHANTS is empty, which means "candidate for any merchant". Gmail is tried
-after merchant-specific portal sources.
-"""
-
-import json
-import re
-import shutil
-import subprocess
-
-from .base import Receipt, SourceUnavailable, normalize_merchant
-
-AMOUNT = re.compile(r"\$\s?([0-9][0-9,]*\.[0-9]{2})")
-
-
-class GmailSource:
-    MERCHANTS: tuple[str, ...] = ()
-
-    def parse_amount(self, text: str) -> int | None:
-        m = AMOUNT.search(text or "")
-        if not m:
-            return None
-        return round(float(m.group(1).replace(",", "")) * 100)
-
-    def build_query(self, since: str, until: str) -> str:
-        a = since.replace("-", "/")
-        b = until.replace("-", "/")
-        return (
-            f"after:{a} before:{b} "
-            f"(subject:receipt OR subject:invoice OR subject:payment) "
-            f"has:attachment OR subject:receipt"
-        )
-
-    def fetch(self, since: str, until: str) -> list[Receipt]:
-        # Verified 2026-08-01: gws takes query params as a JSON blob via --params.
-        # There is no `gws gmail search` subcommand.
-        gws = shutil.which("gws") or os.path.expanduser("~/bin/gws")
-        if not os.path.exists(gws):
-            raise SourceUnavailable("`gws` CLI not found — see the gws skill")
-        params = json.dumps(
-            {"userId": "me", "q": self.build_query(since, until), "maxResults": 100}
-        )
-        try:
-            proc = subprocess.run(
-                [gws, "gmail", "users", "messages", "list", "--params", params, "--format", "json"],
-                capture_output=True, text=True, timeout=120, check=True,
-            )
-        except subprocess.CalledProcessError as exc:
-            raise SourceUnavailable(f"gws gmail list failed: {exc.stderr[:200]}") from exc
-
-        # gws prints a keyring banner before the JSON, and reports auth failure
-        # as a JSON error object with HTTP 200. Both must be handled.
-        body = proc.stdout[proc.stdout.find("{"):]
-        payload = json.loads(body or "{}")
-        if "error" in payload:
-            raise SourceUnavailable(
-                f"gws auth: {payload['error'].get('message', '')[:160]} "
-                f"— re-authorize Google, then retry"
-            )
-        raw = json.dumps(payload.get("messages", []))
-
-        out = []
-        for msg in json.loads(raw or "[]"):
-            cents = self.parse_amount(msg.get("snippet", "") + " " + msg.get("subject", ""))
-            pdf = msg.get("attachment_bytes")
-            if cents is None or not pdf:
-                continue
-            out.append(
-                Receipt(
-                    merchant=normalize_merchant(msg.get("merchant") or msg.get("sender", "")),
-                    amount_cents=cents,
-                    date=(msg.get("date") or "")[:10],
-                    pdf_bytes=bytes(pdf),
-                    provenance=f"gmail:msg {msg.get('id')}",
-                )
-            )
-        return out
-
-
-SOURCE = GmailSource()
-```
-
-- [ ] **Step 4: Run tests to verify they pass**
-
-Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_source_gmail.py && python3.12 skills/receipts/tests/test_source_contract.py`
-Expected: both pass; the contract test now covers two sources.
-
-- [ ] **Step 5: Verify `gws` returns real message data before trusting `fetch`**
-
-The CLI shape was verified on 2026-08-01 (`gws gmail users messages list --params '{...}'`), but **Google auth was expired at the time, so the response body was never seen.** Two things still need checking against a live, authorized call:
-
-```bash
-~/bin/gws gmail users messages list \
-  --params '{"userId":"me","q":"from:ramp.com newer_than:1m","maxResults":3}' --format json
-```
-
-1. If this returns `{"error": {"code": 401, ...}}`, Google auth is dead — re-authorize before continuing. `fetch()` already converts this into `SourceUnavailable`, so the skill degrades loudly rather than silently returning zero receipts.
-2. `messages list` returns only `{id, threadId}` — **it does not return subjects, snippets, dates, or attachments.** `fetch()` as written assumes those fields exist. You will need a second call per message (`gws gmail users messages get`) to retrieve headers and attachment parts. Implement that, extend `test_source_gmail.py` with a fixture of the real `messages get` response shape, and only then trust `fetch()`.
-
-**Do not skip this.** `parse_amount` and `build_query` are unit-tested; the subprocess path is not.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add skills/receipts/scripts/sources/gmail.py skills/receipts/tests/test_source_gmail.py
-git commit -m "feat(receipts): add Gmail receipt source"
-```
-
----
-
-### Task 6: Matching — the four outcomes
+### Task 5: Matching with collision handling
 
 **Files:**
 - Create: `skills/receipts/scripts/match.py`
 - Create: `skills/receipts/tests/test_match.py`
 
 **Interfaces:**
-- Consumes: `Transaction` (Task 2), `Receipt` and `normalize_merchant` (Task 3)
 - Produces:
   - `@dataclass(frozen=True) class Pairing: transaction: Transaction; receipt: Receipt | None; outcome: str; note: str`
-  - `CONFIDENT = "CONFIDENT"`, `BALANCED = "BALANCED"`, `AMBIGUOUS = "AMBIGUOUS"`, `UNFOUND = "UNFOUND"`
-  - `match(transactions: list[Transaction], receipts: list[Receipt], window_days: int = 3) -> list[Pairing]`
+  - `CONFIDENT`, `BALANCED`, `AMBIGUOUS`, `UNFOUND`
+  - `match(transactions, receipts, window_days: int = 3) -> list[Pairing]`
 
 - [ ] **Step 1: Write the failing test**
 
-Create `skills/receipts/tests/test_match.py`. Fixtures are the real 2026-07 data.
+Create `skills/receipts/tests/test_match.py`. Fixtures are real 2026 data.
 
 ```python
 #!/usr/bin/env python3.12
 """Tests for match.py — pure, no I/O.
 
-Fixtures are real transactions from 2026-07, including the four-way
-$214.56 collision on 07/23 and the $1,085.00 single on 07/19.
+Fixtures are real: the four-way $214.56 collision on 2026-07-23 and the
+$1,085.00 single on 2026-07-19, both from Kevin's live Ramp queue.
 """
 
 import sys
@@ -1052,71 +865,64 @@ def rcpt(cents, date="2026-07-23", prov="p", merchant="anthropic"):
 
 
 def test_single_match_is_confident():
-    pairs = match([txn("t3", 108500, "2026-07-19")], [rcpt(108500, "2026-07-19", "inv-b")])
-    assert len(pairs) == 1
-    assert pairs[0].outcome == CONFIDENT
-    assert pairs[0].receipt.provenance == "inv-b"
+    p = match([txn("t", 108500, "2026-07-19")], [rcpt(108500, "2026-07-19", "inv-b")])
+    assert p[0].outcome == CONFIDENT
+    assert p[0].receipt.provenance == "inv-b"
 
 
-def test_four_identical_transactions_and_four_receipts_are_balanced():
+def test_four_identical_charges_and_four_receipts_are_balanced():
     txns = [txn(f"t{i}", 21456) for i in range(4)]
     rs = [rcpt(21456, prov=f"inv-{i}") for i in range(4)]
     pairs = match(txns, rs)
     assert {p.outcome for p in pairs} == {BALANCED}
-    assigned = [p.receipt.provenance for p in pairs]
-    assert len(set(assigned)) == 4, "each transaction must get a distinct receipt"
+    assert len({p.receipt.provenance for p in pairs}) == 4, "each txn gets a distinct receipt"
 
 
-def test_balanced_assignment_is_deterministic():
+def test_balanced_assignment_is_order_independent():
     txns = [txn(f"t{i}", 21456) for i in range(4)]
     rs = [rcpt(21456, prov=f"inv-{i}") for i in range(4)]
-    first = [(p.transaction.id, p.receipt.provenance) for p in match(txns, rs)]
-    second = [(p.transaction.id, p.receipt.provenance) for p in match(txns, list(reversed(rs)))]
-    assert first == second, "assignment must not depend on input order"
+    a = [(p.transaction.id, p.receipt.provenance) for p in match(txns, rs)]
+    b = [(p.transaction.id, p.receipt.provenance) for p in match(txns, list(reversed(rs)))]
+    assert a == b
 
 
-def test_four_transactions_three_receipts_is_ambiguous_and_assigns_nothing():
+def test_four_transactions_three_receipts_assigns_nothing():
     txns = [txn(f"t{i}", 21456) for i in range(4)]
     rs = [rcpt(21456, prov=f"inv-{i}") for i in range(3)]
     pairs = match(txns, rs)
     assert {p.outcome for p in pairs} == {AMBIGUOUS}
-    assert all(p.receipt is None for p in pairs), "AMBIGUOUS must never assign a receipt"
+    assert all(p.receipt is None for p in pairs), "AMBIGUOUS must never assign"
 
 
-def test_no_receipt_anywhere_is_unfound():
-    pairs = match([txn("t9", 47838, "2026-06-17")], [])
-    assert pairs[0].outcome == UNFOUND
-    assert pairs[0].receipt is None
+def test_no_receipt_is_unfound():
+    p = match([txn("t9", 47838, "2026-06-17")], [])
+    assert p[0].outcome == UNFOUND and p[0].receipt is None
 
 
-def test_settlement_lag_within_window_still_matches():
-    pairs = match([txn("t1", 21456, "2026-07-25")], [rcpt(21456, "2026-07-23")])
-    assert pairs[0].outcome == CONFIDENT
+def test_settlement_lag_inside_window_matches():
+    p = match([txn("t", 21456, "2026-07-25")], [rcpt(21456, "2026-07-23")])
+    assert p[0].outcome == CONFIDENT
 
 
 def test_outside_window_does_not_match():
-    pairs = match([txn("t1", 21456, "2026-07-30")], [rcpt(21456, "2026-07-23")])
-    assert pairs[0].outcome == UNFOUND
+    p = match([txn("t", 21456, "2026-07-30")], [rcpt(21456, "2026-07-23")])
+    assert p[0].outcome == UNFOUND
 
 
 def test_different_merchant_never_matches():
-    pairs = match(
-        [txn("t1", 21456, merchant="Clay Labs Inc")],
-        [rcpt(21456, merchant="anthropic")],
-    )
-    assert pairs[0].outcome == UNFOUND
+    p = match([txn("t", 21456, merchant="Neon Tech")], [rcpt(21456, merchant="anthropic")])
+    assert p[0].outcome == UNFOUND
 
 
-def test_ach_case_with_no_card_transaction_yields_no_pairings():
-    assert match([], [rcpt(25908, "2026-07-21")]) == []
+def test_receipts_with_no_transaction_produce_no_pairings():
+    assert match([], [rcpt(25908)]) == []
 
 
 if __name__ == "__main__":
     print("Running match tests")
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_"):
-            fn()
-            print(f"  ok {name}")
+    for n, f in sorted(globals().items()):
+        if n.startswith("test_"):
+            f(); print(f"  ok {n}")
     print("\nAll match tests passed.")
 ```
 
@@ -1158,8 +964,8 @@ def _days_apart(a: str, b: str) -> int:
     return abs((dt.date.fromisoformat(a) - dt.date.fromisoformat(b)).days)
 
 
-def match(transactions: list[Transaction], receipts: list[Receipt], window_days: int = 3) -> list[Pairing]:
-    # Group transactions by everything that makes them indistinguishable.
+def match(transactions: list[Transaction], receipts: list[Receipt],
+          window_days: int = 3) -> list[Pairing]:
     groups: dict[tuple, list[Transaction]] = defaultdict(list)
     for t in transactions:
         groups[(normalize_merchant(t.merchant), t.amount_cents)].append(t)
@@ -1171,14 +977,11 @@ def match(transactions: list[Transaction], receipts: list[Receipt], window_days:
         txns = sorted(txns, key=lambda t: (t.date, t.id))
 
         candidates = sorted(
-            (
-                r
-                for i, r in enumerate(receipts)
-                if i not in used
-                and r.amount_cents == cents
-                and normalize_merchant(r.merchant) == merchant
-                and any(_days_apart(r.date, t.date) <= window_days for t in txns)
-            ),
+            (r for i, r in enumerate(receipts)
+             if i not in used
+             and r.amount_cents == cents
+             and normalize_merchant(r.merchant) == merchant
+             and any(_days_apart(r.date, t.date) <= window_days for t in txns)),
             key=lambda r: (r.date, r.provenance),
         )
 
@@ -1187,7 +990,7 @@ def match(transactions: list[Transaction], receipts: list[Receipt], window_days:
             continue
 
         if len(candidates) != len(txns):
-            note = f"{len(txns)} transactions vs {len(candidates)} receipts at ${cents/100:.2f}"
+            note = f"{len(txns)} transactions vs {len(candidates)} receipts at ${cents/100:,.2f}"
             pairs.extend(Pairing(t, None, AMBIGUOUS, note) for t in txns)
             continue
 
@@ -1203,30 +1006,31 @@ def match(transactions: list[Transaction], receipts: list[Receipt], window_days:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_match.py`
-Expected: every `ok test_…` line, then `All match tests passed.`
+Expected: `All match tests passed.`
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add skills/receipts/scripts/match.py skills/receipts/tests/test_match.py
-git commit -m "feat(receipts): add matching with collision and ambiguity handling"
+git commit -m "feat(receipts): add matching with collision handling"
 ```
 
 ---
 
-### Task 7: Upload and ledger
+### Task 6: Upload and ledger
 
 **Files:**
 - Create: `skills/receipts/scripts/upload.py`
 - Create: `skills/receipts/tests/test_upload.py`
 
 **Interfaces:**
-- Consumes: `RampClient` (Task 1), `has_receipt` (Task 2), `Pairing` and outcome constants (Task 6)
 - Produces:
-  - `idempotency_key(transaction_id: str, provenance: str) -> str` — `sha256` hex digest
-  - `Ledger(path: Path)` with `.record(txn_id, provenance, status)`, `.attempts(txn_id) -> int`, `.status(txn_id) -> str | None`, `.save()`
-  - `upload(client, pairing, ledger, user_id, dry_run: bool) -> str` — returns `"UPLOADED" | "SKIPPED" | "ESCALATED" | "DRY_RUN" | "FAILED"`
+  - `idempotency_key(transaction_id: str, provenance: str) -> str`
+  - `Ledger(path)` with `.record()`, `.attempts()`, `.status()`, `.save()`
+  - `upload(pairing, ledger, dry_run: bool) -> str` — `"UPLOADED"|"SKIPPED"|"ESCALATED"|"DRY_RUN"|"FAILED"`
   - `MAX_ATTEMPTS = 2`
+
+The CLI takes `--idempotency_key` and `--transaction_uuid` directly, so Ramp collapses repeats server-side.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1234,12 +1038,12 @@ Create `skills/receipts/tests/test_upload.py`:
 
 ```python
 #!/usr/bin/env python3.12
-"""Tests for upload.py — idempotency, the escalation cap, and dry-run safety."""
+"""Tests for upload.py — idempotency, escalation cap, dry-run safety."""
 
-import json
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
@@ -1253,27 +1057,11 @@ R = Receipt("anthropic", 21456, "2026-07-23", b"%PDF-1.4", "anthropic:invoice A"
 PAIR = Pairing(T, R, CONFIDENT, "")
 
 
-class FakeClient:
-    def __init__(self, receipt_exists=False, fail=False):
-        self.posts = []
-        self.receipt_exists = receipt_exists
-        self.fail = fail
-
-    def get(self, path, params, scopes):
-        return {"data": [{"id": "r1"}] if self.receipt_exists else []}
-
-    def post_multipart(self, path, fields, file_bytes, scopes):
-        if self.fail:
-            raise RuntimeError("ramp 500")
-        self.posts.append(fields)
-        return {"id": "r_new"}
-
-
 def _ledger():
     return Ledger(Path(tempfile.mkdtemp()) / "ledger.json")
 
 
-def test_idempotency_key_is_stable_across_runs():
+def test_idempotency_key_stable():
     assert idempotency_key("t1", "inv-A") == idempotency_key("t1", "inv-A")
 
 
@@ -1281,59 +1069,65 @@ def test_idempotency_key_differs_per_transaction():
     assert idempotency_key("t1", "inv-A") != idempotency_key("t2", "inv-A")
 
 
-def test_dry_run_never_posts():
-    client = FakeClient()
-    result = upload(client, PAIR, _ledger(), "u1", dry_run=True)
-    assert result == "DRY_RUN"
-    assert client.posts == [], "dry run must not POST"
+def test_dry_run_never_calls_ramp():
+    calls = []
+    with patch("upload.run", side_effect=lambda *a, **k: calls.append(a)):
+        assert upload(PAIR, _ledger(), dry_run=True) == "DRY_RUN"
+    assert calls == [], "dry run must not invoke the CLI"
 
 
-def test_upload_sends_transaction_id_and_idempotency_key():
-    client = FakeClient()
-    upload(client, PAIR, _ledger(), "u1", dry_run=False)
-    assert len(client.posts) == 1
-    sent = client.posts[0]
-    assert sent["transaction_id"] == "t1"
-    assert sent["user_id"] == "u1"
-    assert sent["idempotency_key"] == idempotency_key("t1", "anthropic:invoice A")
+def test_upload_passes_transaction_uuid_and_idempotency_key():
+    seen = {}
+
+    def fake(args, rationale):
+        seen["args"] = args
+        return [{"id": "r1"}]
+
+    with patch("upload.needs_receipt", return_value=True):
+        with patch("upload.run", side_effect=fake):
+            assert upload(PAIR, _ledger(), dry_run=False) == "UPLOADED"
+
+    assert "--transaction_uuid" in seen["args"]
+    assert "t1" in seen["args"]
+    assert idempotency_key("t1", "anthropic:invoice A") in seen["args"]
 
 
-def test_already_receipted_transaction_is_skipped():
-    client = FakeClient(receipt_exists=True)
-    assert upload(client, PAIR, _ledger(), "u1", dry_run=False) == "SKIPPED"
-    assert client.posts == []
+def test_already_receipted_is_skipped():
+    with patch("upload.needs_receipt", return_value=False):
+        with patch("upload.run") as r:
+            assert upload(PAIR, _ledger(), dry_run=False) == "SKIPPED"
+            r.assert_not_called()
 
 
-def test_failure_is_recorded_as_not_uploaded():
-    ledger = _ledger()
-    client = FakeClient(fail=True)
-    assert upload(client, PAIR, ledger, "u1", dry_run=False) == "FAILED"
-    assert ledger.status("t1") != "UPLOADED", "must never mark uploaded without a 2xx"
+def test_failure_never_marks_uploaded():
+    led = _ledger()
+    with patch("upload.needs_receipt", return_value=True):
+        with patch("upload.run", side_effect=RuntimeError("ramp 500")):
+            assert upload(PAIR, led, dry_run=False) == "FAILED"
+    assert led.status("t1") != "UPLOADED"
 
 
-def test_escalates_after_max_attempts_and_stops_posting():
-    ledger = _ledger()
+def test_escalates_after_max_attempts():
+    led = _ledger()
     for _ in range(MAX_ATTEMPTS):
-        ledger.record("t1", "anthropic:invoice A", "FAILED")
-    client = FakeClient()
-    assert upload(client, PAIR, ledger, "u1", dry_run=False) == "ESCALATED"
-    assert client.posts == [], "escalated items must not be retried forever"
+        led.record("t1", "anthropic:invoice A", "FAILED")
+    with patch("upload.needs_receipt", return_value=True):
+        with patch("upload.run") as r:
+            assert upload(PAIR, led, dry_run=False) == "ESCALATED"
+            r.assert_not_called()
 
 
-def test_ledger_persists_across_instances():
-    path = Path(tempfile.mkdtemp()) / "ledger.json"
-    a = Ledger(path)
-    a.record("t1", "p", "UPLOADED")
-    a.save()
-    assert Ledger(path).status("t1") == "UPLOADED"
+def test_ledger_persists():
+    p = Path(tempfile.mkdtemp()) / "l.json"
+    a = Ledger(p); a.record("t1", "pr", "UPLOADED"); a.save()
+    assert Ledger(p).status("t1") == "UPLOADED"
 
 
 if __name__ == "__main__":
     print("Running upload tests")
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_"):
-            fn()
-            print(f"  ok {name}")
+    for n, f in sorted(globals().items()):
+        if n.startswith("test_"):
+            f(); print(f"  ok {n}")
     print("\nAll upload tests passed.")
 ```
 
@@ -1350,14 +1144,16 @@ Create `skills/receipts/scripts/upload.py`:
 #!/usr/bin/env python3.12
 """Upload a matched receipt to Ramp and record the outcome."""
 
+import base64
 import hashlib
 import json
 from pathlib import Path
 
-from queue import has_receipt
+from queue import needs_receipt
+from ramp import run
 
 MAX_ATTEMPTS = 2
-RECEIPT_WRITE = ["receipts:write"]
+WHY = "Attach the receipt I located for this transaction so it clears Ramp's missing-items queue"
 
 
 def idempotency_key(transaction_id: str, provenance: str) -> str:
@@ -1372,9 +1168,7 @@ class Ledger:
             self.entries = json.loads(self.path.read_text())
 
     def record(self, txn_id: str, provenance: str, status: str) -> None:
-        self.entries.setdefault(txn_id, []).append(
-            {"provenance": provenance, "status": status}
-        )
+        self.entries.setdefault(txn_id, []).append({"provenance": provenance, "status": status})
 
     def attempts(self, txn_id: str) -> int:
         return len(self.entries.get(txn_id, []))
@@ -1388,95 +1182,61 @@ class Ledger:
         self.path.write_text(json.dumps(self.entries, indent=2))
 
 
-def upload(client, pairing, ledger: Ledger, user_id: str, dry_run: bool) -> str:
-    txn = pairing.transaction
+def upload(pairing, ledger: Ledger, dry_run: bool) -> str:
+    txn, rec = pairing.transaction, pairing.receipt
 
     if dry_run:
         return "DRY_RUN"
 
-    # Re-read Ramp: the receipt may have landed since the queue was built.
-    if has_receipt(client, txn.id):
-        ledger.record(txn.id, pairing.receipt.provenance, "SKIPPED")
+    # Re-check Ramp: the receipt may have landed since the queue was built.
+    if not needs_receipt(txn.id):
+        ledger.record(txn.id, rec.provenance, "SKIPPED")
         return "SKIPPED"
 
     if ledger.attempts(txn.id) >= MAX_ATTEMPTS and ledger.status(txn.id) != "UPLOADED":
-        ledger.record(txn.id, pairing.receipt.provenance, "ESCALATED")
+        ledger.record(txn.id, rec.provenance, "ESCALATED")
         return "ESCALATED"
 
-    fields = {
-        "idempotency_key": idempotency_key(txn.id, pairing.receipt.provenance),
-        "transaction_id": txn.id,
-        "user_id": user_id,
-    }
+    args = [
+        "receipts", "upload",
+        "--transaction_uuid", txn.id,
+        "--idempotency_key", idempotency_key(txn.id, rec.provenance),
+        "--filename", "receipt.pdf",
+        "--content_type", "application/pdf",
+        "--file_content_base64", base64.b64encode(rec.pdf_bytes).decode(),
+    ]
     try:
-        client.post_multipart(
-            "/developer/v1/receipts", fields, pairing.receipt.pdf_bytes, RECEIPT_WRITE
-        )
+        run(args, rationale=WHY)
     except Exception:
-        ledger.record(txn.id, pairing.receipt.provenance, "FAILED")
+        ledger.record(txn.id, rec.provenance, "FAILED")
         return "FAILED"
 
-    ledger.record(txn.id, pairing.receipt.provenance, "UPLOADED")
+    ledger.record(txn.id, rec.provenance, "UPLOADED")
     return "UPLOADED"
 ```
 
-- [ ] **Step 4: Add `post_multipart` to `RampClient`**
+- [ ] **Step 4: Run test to verify it passes**
 
-Append to `skills/receipts/scripts/ramp_client.py`:
+Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_upload.py`
+Expected: `All upload tests passed.`
 
-```python
-    def post_multipart(self, path: str, fields: dict, file_bytes: bytes, scopes: list[str]) -> dict:
-        boundary = "----ReceiptsBoundary" + hashlib.sha1(file_bytes[:64]).hexdigest()[:16]
-        parts = []
-        for key, value in fields.items():
-            parts.append(
-                f"--{boundary}\r\nContent-Disposition: form-data; name=\"{key}\"\r\n\r\n{value}\r\n".encode()
-            )
-        parts.append(
-            f"--{boundary}\r\nContent-Disposition: attachment; name=\"file\"; "
-            f"filename=\"receipt.pdf\"\r\nContent-Type: application/pdf\r\n\r\n".encode()
-        )
-        parts.append(file_bytes + b"\r\n")
-        parts.append(f"--{boundary}--\r\n".encode())
-        body = b"".join(parts)
-        return self._request(
-            f"{self.base_url}{path}",
-            headers={
-                "Authorization": f"Bearer {self.token(scopes)}",
-                "Content-Type": f"multipart/form-data; boundary={boundary}",
-            },
-            method="POST",
-            body=body,
-        )
-```
-
-Add `import hashlib` to the imports at the top of `ramp_client.py`.
-
-- [ ] **Step 5: Run tests to verify they pass**
-
-Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_upload.py && python3.12 skills/receipts/tests/test_ramp_client.py`
-Expected: both print their passing summary.
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add skills/receipts/scripts/upload.py skills/receipts/scripts/ramp_client.py skills/receipts/tests/test_upload.py
+git add skills/receipts/scripts/upload.py skills/receipts/tests/test_upload.py
 git commit -m "feat(receipts): add idempotent upload with ledger and escalation cap"
 ```
 
 ---
 
-### Task 8: CLI and report
+### Task 7: CLI and report
 
 **Files:**
 - Create: `skills/receipts/scripts/run.py`
 - Create: `skills/receipts/tests/test_run.py`
 
 **Interfaces:**
-- Consumes: everything from Tasks 1–7
-- Produces:
-  - `build_report(pairings: list[Pairing], results: dict[str, str], skipped_sources: list[str]) -> str`
-  - `main(argv: list[str]) -> int`
+- Produces: `build_report(pairings, results, skipped_sources) -> str`, `main(argv) -> int`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1498,41 +1258,41 @@ from sources.base import Receipt
 
 T1 = Transaction("t1", "Anthropic", 108500, "2026-07-19")
 R1 = Receipt("anthropic", 108500, "2026-07-19", b"%PDF", "anthropic:invoice A")
-T2 = Transaction("t2", "GoDaddy", 2178, "2026-07-30")
+T2 = Transaction("t2", "Neon Tech", 55076, "2026-08-01")
 
 
-def test_report_announces_a_skipped_source_on_its_own_line():
-    text = build_report([], {}, skipped_sources=["ANTHROPIC: not authenticated"])
+def test_skipped_source_gets_its_own_line():
+    text = build_report([], {}, ["ANTHROPIC: not authenticated"])
     assert "SOURCE ANTHROPIC: SKIPPED (not authenticated)" in text
 
 
-def test_report_says_so_when_no_sources_were_skipped():
+def test_no_skip_line_when_nothing_skipped():
     text = build_report([Pairing(T1, R1, CONFIDENT, "")], {"t1": "DRY_RUN"}, [])
     assert "SKIPPED" not in text
 
 
-def test_report_lists_unfound_transactions_with_amounts():
-    text = build_report([Pairing(T2, None, UNFOUND, "no receipt in any source")], {}, [])
-    assert "GoDaddy" in text
-    assert "$21.78" in text
+def test_unfound_listed_with_merchant_and_amount():
+    text = build_report([Pairing(T2, None, UNFOUND, "no receipt")], {}, [])
+    assert "Neon Tech" in text and "$550.76" in text
 
 
-def test_report_separates_ambiguous_from_actionable():
-    pairs = [
-        Pairing(T1, R1, CONFIDENT, ""),
-        Pairing(T2, None, AMBIGUOUS, "4 transactions vs 3 receipts at $214.56"),
-    ]
-    text = build_report(pairs, {"t1": "DRY_RUN"}, [])
+def test_ambiguous_note_is_surfaced():
+    pairs = [Pairing(T2, None, AMBIGUOUS, "4 transactions vs 3 receipts at $214.56")]
+    text = build_report(pairs, {}, [])
     assert "4 transactions vs 3 receipts" in text
-    assert AMBIGUOUS in text
+
+
+def test_totals_reported():
+    pairs = [Pairing(T1, R1, CONFIDENT, ""), Pairing(T2, None, UNFOUND, "")]
+    text = build_report(pairs, {"t1": "DRY_RUN"}, [])
+    assert "$1,635.76" in text, "must report total dollars still outstanding"
 
 
 if __name__ == "__main__":
     print("Running run tests")
-    for name, fn in sorted(globals().items()):
-        if name.startswith("test_"):
-            fn()
-            print(f"  ok {name}")
+    for n, f in sorted(globals().items()):
+        if n.startswith("test_"):
+            f(); print(f"  ok {n}")
     print("\nAll run tests passed.")
 ```
 
@@ -1557,7 +1317,7 @@ from pathlib import Path
 
 from match import AMBIGUOUS, BALANCED, CONFIDENT, UNFOUND, match
 from queue import missing_receipts
-from ramp_client import RampAuthError, RampClient, RampConfigError
+from ramp import RampAuthError, RampError
 from sources.base import SourceUnavailable, load_sources
 from upload import Ledger, upload
 
@@ -1574,83 +1334,73 @@ def build_report(pairings, results, skipped_sources) -> str:
     if skipped_sources:
         lines.append("")
 
+    outstanding = sum(p.transaction.amount_cents for p in pairings if p.outcome != CONFIDENT
+                      or results.get(p.transaction.id) != "UPLOADED")
+    lines.append(f"**{len(pairings)} transactions missing receipts — "
+                 f"${outstanding/100:,.2f} outstanding**")
+    lines.append("")
+
     ready = [p for p in pairings if p.outcome in ACTIONABLE]
     if ready:
         lines.append(f"## Ready ({len(ready)})")
         for p in ready:
             t = p.transaction
-            status = results.get(t.id, "PENDING")
             tag = f" [{p.outcome}]" if p.outcome == BALANCED else ""
-            lines.append(
-                f"- {t.date}  {t.merchant}  ${t.amount_cents/100:,.2f}  "
-                f"← {p.receipt.provenance}  {status}{tag}"
-            )
+            lines.append(f"- {t.date}  {t.merchant}  ${t.amount_cents/100:,.2f}  "
+                         f"← {p.receipt.provenance}  {results.get(t.id,'PENDING')}{tag}")
         lines.append("")
 
-    blocked = [p for p in pairings if p.outcome == AMBIGUOUS]
-    if blocked:
-        lines.append(f"## Needs your call ({len(blocked)})")
-        for p in blocked:
+    for outcome, title in ((AMBIGUOUS, "Needs your call"), (UNFOUND, "No receipt found")):
+        rows = [p for p in pairings if p.outcome == outcome]
+        if not rows:
+            continue
+        lines.append(f"## {title} ({len(rows)})")
+        for p in rows:
             t = p.transaction
-            lines.append(f"- {t.date}  {t.merchant}  ${t.amount_cents/100:,.2f}  {AMBIGUOUS}: {p.note}")
-        lines.append("")
-
-    unfound = [p for p in pairings if p.outcome == UNFOUND]
-    if unfound:
-        lines.append(f"## No receipt found ({len(unfound)})")
-        for p in unfound:
-            t = p.transaction
-            lines.append(f"- {t.date}  {t.merchant}  ${t.amount_cents/100:,.2f}")
+            suffix = f"  {p.note}" if p.note else ""
+            lines.append(f"- {t.date}  {t.merchant}  ${t.amount_cents/100:,.2f}{suffix}")
         lines.append("")
 
     if not pairings:
         lines.append("Nothing missing a receipt in this window.")
-
     return "\n".join(lines)
 
 
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="receipts")
     ap.add_argument("--send", action="store_true", help="execute (default is dry run)")
-    ap.add_argument("--since", default=None, help="ISO date; default 90 days ago")
+    ap.add_argument("--since", default="2026-01-01", help="ISO date; backlog reaches to 2026-02")
     ap.add_argument("--until", default=None, help="ISO date; default today")
     args = ap.parse_args(argv)
 
-    today = dt.date.today()
-    since = args.since or (today - dt.timedelta(days=90)).isoformat()
-    until = args.until or today.isoformat()
+    until = args.until or dt.date.today().isoformat()
+
+    def progress(i, n):
+        print(f"\r  checking {i}/{n}…", end="", file=sys.stderr, flush=True)
 
     try:
-        client = RampClient.from_env()
-    except RampConfigError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        return 2
-
-    user_id = os.environ.get("RAMP_USER_ID")
-    if args.send and not user_id:
-        print("ERROR: RAMP_USER_ID is required to upload. Add it to .env.", file=sys.stderr)
-        return 2
-
-    try:
-        txns = missing_receipts(client, since, until)
+        txns = missing_receipts(args.since, until, progress=progress)
     except RampAuthError as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
+        print(f"\nERROR: {exc}", file=sys.stderr)
         return 2
+    except RampError as exc:
+        print(f"\nERROR: {exc}", file=sys.stderr)
+        return 2
+    print("", file=sys.stderr)
 
     receipts, skipped = [], []
     for src in load_sources():
         try:
-            receipts.extend(src.fetch(since, until))
+            receipts.extend(src.fetch(args.since, until))
         except SourceUnavailable as exc:
-            skipped.append(f"{type(src).__name__.replace('Source', '').upper()}: {exc}")
+            skipped.append(f"{type(src).__name__.replace('Source','').upper()}: {exc}")
 
     pairings = match(txns, receipts)
     ledger = Ledger(LEDGER_PATH)
     results = {}
     for p in pairings:
-        if p.outcome not in ACTIONABLE:
-            continue
-        results[p.transaction.id] = upload(client, p, ledger, user_id or "", dry_run=not args.send)
+        if p.outcome in ACTIONABLE:
+            results[p.transaction.id] = upload(p, ledger, dry_run=not args.send)
     ledger.save()
 
     print(build_report(pairings, results, skipped))
@@ -1671,9 +1421,18 @@ Expected: `All run tests passed.`
 - [ ] **Step 5: Run the whole suite**
 
 Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 -m pytest skills/receipts/tests/ -v`
-Expected: all tests pass under pytest collection as well as standalone.
+Expected: all pass under pytest as well as standalone.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 6: Dry run against live data**
+
+Run:
+```bash
+python3.12 skills/receipts/scripts/sources/anthropic.py --login   # once
+python3.12 skills/receipts/scripts/run.py --since 2026-01-01
+```
+Expected: **28 transactions, $10,832.29 outstanding**, ~15 Anthropic rows under `## Ready`. Cross-check against the Ramp UI filter "Submission policy status = Missing items" before anyone runs `--send`.
+
+- [ ] **Step 7: Commit**
 
 ```bash
 git add skills/receipts/scripts/run.py skills/receipts/tests/test_run.py
@@ -1682,16 +1441,245 @@ git commit -m "feat(receipts): add CLI with dry-run default and degradation repo
 
 ---
 
-### Task 9: Live smoke test and documentation
+### Task 8: Gmail source
+
+**Files:**
+- Create: `skills/receipts/scripts/sources/gmail.py`
+- Create: `skills/receipts/tests/test_source_gmail.py`
+
+Covers the non-Anthropic gaps: Neon Tech, Supabase, Zoom, Asana, Groq, OpenAI, Hex, Kie, Mysecond.
+
+**Prerequisite:** `gws auth login -s gmail,calendar,drive`. Google auth was expired on 2026-08-01.
+
+**Interfaces:**
+- Produces: `SOURCE` — `GmailSource`, `MERCHANTS = ()` (empty = candidate for any merchant)
+  - `parse_amount(text) -> int | None`, `build_query(since, until) -> str` — both pure
+
+- [ ] **Step 1: The verified `gws` flow (confirmed live 2026-08-01, post-reauth)**
+
+There is **no** `gws gmail search` subcommand. Query params go in `--params` as JSON. Getting one receipt PDF takes **three calls**:
+
+```bash
+# 1. list → returns ONLY {id, threadId}. No subject, date, or attachment.
+gws gmail users messages list \
+  --params '{"userId":"me","q":"<query>","maxResults":100}' --format json
+
+# 2. get → headers, snippet, internalDate, and the MIME parts tree
+gws gmail users messages get \
+  --params '{"userId":"me","id":"<id>","format":"full"}' --format json
+
+# 3. attachments get → base64url in .data (NOT raw bytes)
+gws gmail users messages attachments get \
+  --params '{"userId":"me","messageId":"<id>","id":"<attachmentId>"}' --format json
+```
+
+Verified structure of a real Anthropic receipt (`19f94f2f9efe8c87`):
+
+```
+multipart/mixed
+  multipart/alternative
+    text/plain   (971 b)
+    text/html    (56,648 b)
+  application/pdf  filename='Invoice-DSCOITDB-0021.pdf'   attachmentId=…  32,965 b
+  application/pdf  filename='Receipt-2422-8527-1659.pdf'  attachmentId=…  34,104 b
+```
+
+Three facts `fetch()` must honour:
+
+1. **PDFs are attachment IDs, not inline bytes.** `body.attachmentId` on the part; call 3 retrieves it.
+2. **Decode with `base64.urlsafe_b64decode(data + "==")`.** Standard b64 fails on Gmail's URL-safe alphabet. Verified: yields 34,104 bytes starting `%PDF-1.4`.
+3. **There are TWO PDFs per Anthropic email.** Prefer the one whose filename starts with `Receipt-`; fall back to `Invoice-`. Attaching the wrong one is not fatal but is wrong.
+
+Headers come from `payload.headers[]` as `{name, value}` pairs — filter for `Subject`, `From`, `Date`. Date is also available as `internalDate` (epoch ms), which is easier to parse.
+
+- [ ] **Step 2: Write the failing test**
+
+Create `skills/receipts/tests/test_source_gmail.py`:
+
+```python
+#!/usr/bin/env python3.12
+"""Tests for the Gmail source. Pure parsing only; fetch() is verified live."""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
+
+from sources.gmail import SOURCE
+
+
+def test_parse_amount_handles_thousands():
+    assert SOURCE.parse_amount("Total $1,085.00 paid") == 108500
+
+
+def test_parse_amount_plain():
+    assert SOURCE.parse_amount("Amount charged: $99.91") == 9991
+
+
+def test_parse_amount_absent():
+    assert SOURCE.parse_amount("used 75% of its credits") is None
+
+
+def test_build_query_scopes_by_date():
+    q = SOURCE.build_query("2026-07-01", "2026-07-31")
+    assert "after:2026/07/01" in q and "before:2026/07/31" in q
+
+
+def test_empty_merchants_means_any():
+    assert SOURCE.MERCHANTS == ()
+
+
+if __name__ == "__main__":
+    print("Running gmail source tests")
+    for n, f in sorted(globals().items()):
+        if n.startswith("test_"):
+            f(); print(f"  ok {n}")
+    print("\nAll gmail source tests passed.")
+```
+
+- [ ] **Step 3: Run test to verify it fails**
+
+Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_source_gmail.py`
+Expected: FAIL with `ModuleNotFoundError: No module named 'sources.gmail'`
+
+- [ ] **Step 4: Write the implementation**
+
+Create `skills/receipts/scripts/sources/gmail.py`:
+
+```python
+#!/usr/bin/env python3.12
+"""Gmail receipt source — reads receipt mail via the `gws` CLI.
+
+MERCHANTS is empty, meaning "candidate for any merchant". Gmail is tried after
+merchant-specific portal sources. Covers Neon Tech, Supabase, Zoom, Asana,
+Groq, OpenAI, Hex, Kie, Mysecond — the non-Anthropic gaps.
+"""
+
+import base64
+import json
+import os
+import re
+import shutil
+import subprocess
+
+from .base import Receipt, SourceUnavailable, normalize_merchant
+
+AMOUNT = re.compile(r"\$\s?([0-9][0-9,]*\.[0-9]{2})")
+GWS = shutil.which("gws") or os.path.expanduser("~/bin/gws")
+
+
+def _gws(args: list[str], params: dict) -> dict:
+    if not os.path.exists(GWS):
+        raise SourceUnavailable("`gws` CLI not found — see the gws skill")
+    proc = subprocess.run(
+        [GWS, *args, "--params", json.dumps(params), "--format", "json"],
+        capture_output=True, text=True, timeout=120,
+    )
+    # gws prints a keyring banner before JSON and reports auth failure as a
+    # JSON error object with exit code 0. Both must be handled.
+    start = proc.stdout.find("{")
+    if start < 0:
+        raise SourceUnavailable(f"gws returned no JSON: {proc.stderr[:200]}")
+    payload = json.loads(proc.stdout[start:])
+    if "error" in payload:
+        raise SourceUnavailable(
+            f"gws: {payload['error'].get('message','')[:160]} — run `gws auth login`"
+        )
+    return payload
+
+
+class GmailSource:
+    MERCHANTS: tuple[str, ...] = ()
+
+    def parse_amount(self, text: str) -> int | None:
+        m = AMOUNT.search(text or "")
+        return round(float(m.group(1).replace(",", "")) * 100) if m else None
+
+    def build_query(self, since: str, until: str) -> str:
+        return (f"after:{since.replace('-','/')} before:{until.replace('-','/')} "
+                f"(subject:receipt OR subject:invoice OR subject:payment)")
+
+    @staticmethod
+    def _pdf_parts(part: dict) -> list[dict]:
+        """Flatten the MIME tree to PDF parts, Receipt-* preferred over Invoice-*."""
+        found = []
+        if (part.get("mimeType") == "application/pdf"
+                and (part.get("body") or {}).get("attachmentId")):
+            found.append(part)
+        for sub in part.get("parts") or []:
+            found += GmailSource._pdf_parts(sub)
+        return sorted(found, key=lambda p: not (p.get("filename") or "").startswith("Receipt-"))
+
+    def fetch(self, since: str, until: str) -> list[Receipt]:
+        listing = _gws(
+            ["gmail", "users", "messages", "list"],
+            {"userId": "me", "q": self.build_query(since, until), "maxResults": 100},
+        )
+
+        out = []
+        for stub in listing.get("messages", []):
+            msg = _gws(
+                ["gmail", "users", "messages", "get"],
+                {"userId": "me", "id": stub["id"], "format": "full"},
+            )
+            hdrs = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
+            cents = self.parse_amount(f"{hdrs.get('Subject','')} {msg.get('snippet','')}")
+            parts = self._pdf_parts(msg["payload"])
+            if cents is None or not parts:
+                continue
+
+            att = _gws(
+                ["gmail", "users", "messages", "attachments", "get"],
+                {"userId": "me", "messageId": stub["id"], "id": parts[0]["body"]["attachmentId"]},
+            )
+            # Gmail uses the URL-safe alphabet; standard b64decode fails here.
+            pdf = base64.urlsafe_b64decode(att["data"] + "==")
+            if not pdf.startswith(b"%PDF"):
+                continue
+
+            date = __import__("datetime").datetime.fromtimestamp(
+                int(msg["internalDate"]) / 1000, __import__("datetime").UTC
+            ).date().isoformat()
+
+            out.append(Receipt(
+                merchant=normalize_merchant(re.sub(r"<.*?>", "", hdrs.get("From", ""))),
+                amount_cents=cents,
+                date=date,
+                pdf_bytes=pdf,
+                provenance=f"gmail:msg {stub['id']}",
+            ))
+        return out
+
+
+SOURCE = GmailSource()
+```
+
+**Note on merchant normalization:** the `From` header is `"Anthropic, PBC" <invoice+statements@…>` — the display name normalizes to `anthropicpbc`, which `match.py` will not equate with Ramp's `Anthropic` → `anthropic`. Add an alias map in this file (`anthropicpbc → anthropic`, `clay labs inc → clay`, etc.) or relax matching to prefix comparison. Verify against the real `## No receipt found` list in Step 6 and fix whatever fails to bind.
+
+- [ ] **Step 5: Run tests**
+
+Run: `cd ~/nsls-skills/nsls-personal-toolkit && python3.12 skills/receipts/tests/test_source_gmail.py && python3.12 skills/receipts/tests/test_source_contract.py`
+Expected: both pass; the contract test now covers two sources.
+
+- [ ] **Step 6: Dry run and confirm coverage improved**
+
+Run: `python3.12 skills/receipts/scripts/run.py --since 2026-01-01`
+Expected: the `## No receipt found` section shrinks from ~13 toward 0 as Gmail supplies the non-Anthropic receipts.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add skills/receipts/scripts/sources/gmail.py skills/receipts/tests/test_source_gmail.py
+git commit -m "feat(receipts): add Gmail receipt source"
+```
+
+---
+
+### Task 9: Live smoke test and docs
 
 **Files:**
 - Create: `skills/receipts/tests/smoke_live.py`
-- Modify: `skills/receipts/SKILL.md` (full usage + setup)
-- Modify: `CLAUDE.md` (add `/receipts` to the command table)
-
-**Interfaces:**
-- Consumes: everything
-- Produces: `smoke_live.py` — manual-only, hits real endpoints, asserts no fabricated success
+- Modify: `skills/receipts/SKILL.md`, `CLAUDE.md`
 
 - [ ] **Step 1: Write the live smoke test**
 
@@ -1699,12 +1687,10 @@ Create `skills/receipts/tests/smoke_live.py`:
 
 ```python
 #!/usr/bin/env python3.12
-"""Live smoke test — NOT run by the unit suite. Hits real endpoints.
+"""Live smoke test — NOT part of the unit suite. Hits real endpoints.
 
-Run: python3.12 skills/receipts/tests/smoke_live.py
-
-This is what catches Anthropic changing the invoices endpoint shape, which is
-the single most likely way this skill breaks.
+Catches Anthropic changing the invoices endpoint shape and Ramp auth dying —
+the two most likely ways this skill breaks.
 """
 
 import sys
@@ -1712,25 +1698,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 
+from ramp import run
 from sources.anthropic import SOURCE
 
 
 def main() -> int:
+    me = run(["users", "me"], rationale="Smoke test: confirm Ramp auth is alive")[0]
+    print(f"OK  ramp auth: {me['users'][0]['email']}")
+
     payload = SOURCE._listing()
     invoices = payload.get("invoices")
-    assert isinstance(invoices, list), f"expected invoices[], got {type(invoices)}"
-    assert invoices, "endpoint returned zero invoices — shape may have changed"
-
+    assert isinstance(invoices, list) and invoices, "invoices endpoint shape changed"
     rows = SOURCE.parse_invoices(payload)
     assert rows, "parse_invoices dropped everything — field names may have changed"
-    for field in ("amount_cents", "date", "pdf_url", "provenance"):
-        assert field in rows[0], f"missing {field}"
-
     pdf = SOURCE._download(rows[0]["pdf_url"])
     assert pdf.startswith(b"%PDF"), f"not a PDF: {pdf[:16]!r}"
-
-    print(f"OK  {len(invoices)} invoices, {len(rows)} paid with PDFs")
-    print(f"OK  downloaded {len(pdf):,} bytes from {rows[0]['provenance']}")
+    print(f"OK  {len(invoices)} invoices, {len(rows)} paid; downloaded {len(pdf):,} bytes")
     return 0
 
 
@@ -1738,40 +1721,20 @@ if __name__ == "__main__":
     raise SystemExit(main())
 ```
 
-- [ ] **Step 2: Authenticate the browser profile, then run it**
+- [ ] **Step 2: Run it**
 
-Run:
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-python3.12 skills/receipts/scripts/sources/anthropic.py --login   # sign in once
-python3.12 skills/receipts/tests/smoke_live.py
-```
-Expected: two `OK` lines. As of 2026-08-01 the live data had 100 invoices between 2026-04-29 and 2026-07-23, so `len(invoices)` should be substantial.
+Run: `python3.12 skills/receipts/tests/smoke_live.py`
+Expected: two `OK` lines. As of 2026-08-01 the listing had 100 invoices between 2026-04-29 and 2026-07-23.
 
-- [ ] **Step 3: Provision Ramp credentials and verify the queue against reality**
+- [ ] **Step 3: Expand SKILL.md**
 
-In Ramp → Settings → Developer API, create an app granting **`transactions:read`, `receipts:read`, `receipts:write`**. Put the id and secret in `.env` as `RAMP_CLIENT_ID` / `RAMP_CLIENT_SECRET`, and your Ramp user id as `RAMP_USER_ID`.
+Keep the Task 1 frontmatter. Add: usage, setup (`ramp auth login`, `gws auth login`, `anthropic.py --login`), the four match outcomes, and troubleshooting — `RampAuthError` → `ramp auth login`; `SOURCE ANTHROPIC: SKIPPED` → `anthropic.py --login`; `ESCALATED` → attach manually in Ramp, the skill will not retry; **empty queue but the Ramp UI shows items** → something is reading `missing_items` instead of `transactions missing`.
 
-**Never echo these values in a shell command.** To confirm they loaded:
-```bash
-python3.12 -c "import os; print({k: len(os.environ.get(k,'')) for k in ('RAMP_CLIENT_ID','RAMP_CLIENT_SECRET','RAMP_USER_ID')})"
-```
+- [ ] **Step 4: Register in CLAUDE.md**
 
-Then run the dry run:
-```bash
-python3.12 skills/receipts/scripts/run.py
-```
-Expected: a report ending in `Dry run — nothing uploaded.` Cross-check a handful of `## No receipt found` entries against Ramp's UI to confirm the set difference is right **before** anyone runs `--send`.
+Add a row: `` | `/receipts` | Find Ramp transactions missing receipts, fetch them from Anthropic billing or Gmail, upload to Ramp (dry run by default; `--send` executes) | ``
 
-- [ ] **Step 4: Expand SKILL.md**
-
-Replace `skills/receipts/SKILL.md` body (keep the frontmatter from Task 1) with usage, the setup steps from Step 3, the four match outcomes, and a troubleshooting section covering: `RampConfigError` → credentials missing; `SOURCE ANTHROPIC: SKIPPED` → run `anthropic.py --login`; `ESCALATED` → attach manually in Ramp, the skill will not retry.
-
-- [ ] **Step 5: Register the command in CLAUDE.md**
-
-Add a row to the command table: `| `/receipts` | Find Ramp transactions missing receipts, source them from Gmail or vendor portals, upload to Ramp (dry run by default; `--send` executes) |`
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add skills/receipts CLAUDE.md
@@ -1780,10 +1743,79 @@ git commit -m "docs(receipts): add live smoke test and skill documentation"
 
 ---
 
+### Task 10: Publish to the builder toolkit
+
+**Files:**
+- Modify: `.claude-plugin/plugin.json` (version bump)
+- Modify: `README.md`, `CLAUDE.md` (skill listing)
+- Verify: `skills/receipts/SKILL.md`
+
+- [ ] **Step 1: Prove it works for someone who isn't Kevin**
+
+The multi-user failure modes are invisible on Kevin's machine, so force each one:
+
+```bash
+cd ~/nsls-skills/nsls-builder-toolkit
+# 1. No org uuid → must name the env var, not fall back to the NSLS literal
+env -u ANTHROPIC_ORG_UUID python3.12 -c "
+import sys; sys.path.insert(0,'skills/receipts/scripts')
+from sources.anthropic import SOURCE
+try: SOURCE.fetch('2026-07-01','2026-08-01')
+except Exception as e: print('OK:', e)"
+# 2. Ramp auth dead → RampAuthError naming `ramp auth login`, not an empty queue
+# 3. gws auth dead → SOURCE GMAIL: SKIPPED line, Anthropic still runs
+```
+
+Expected: each names the fix. **If any returns an empty queue and exit 0, that is the bug** — a colleague would read it as "nothing to do."
+
+- [ ] **Step 2: Confirm no NSLS-specific literals remain**
+
+```bash
+grep -rnE "13e93397|kprentiss|/Users/k|nsls\.org" skills/receipts/ --include=*.py --include=*.md
+```
+Expected: **no matches** outside doc examples clearly marked as such.
+
+- [ ] **Step 3: Bump the plugin version**
+
+Edit `.claude-plugin/plugin.json`: `"version": "3.1.0"` → `"3.2.0"` (new skill, backward compatible). Update `description` if it names a skill count.
+
+- [ ] **Step 4: Add to README.md and CLAUDE.md**
+
+One row each: `` `/receipts` `` — find Ramp transactions missing receipts, fetch them from Anthropic billing or Gmail, upload to Ramp. Dry run by default. Requires `ramp auth login`; Gmail sourcing needs `gws auth login`.
+
+- [ ] **Step 5: Run the full suite in the toolkit repo**
+
+Run: `cd ~/nsls-skills/nsls-builder-toolkit && python3.12 -m pytest skills/receipts/tests/ -v`
+Expected: all pass. Run the full build/lint the repo uses before opening a PR — do not let a lint error reach CI.
+
+- [ ] **Step 6: Open the PR**
+
+```bash
+git checkout -b feat/receipts-skill
+git add skills/receipts .claude-plugin/plugin.json README.md CLAUDE.md
+git commit -m "feat(receipts): add /receipts — Ramp missing-receipt automation"
+git push -u origin feat/receipts-skill
+gh pr create --title "feat(receipts): add /receipts skill" --body "..."
+```
+
+Share the **full clickable PR URL**. Then wait for Macroscope and resolve its correctness findings before merging — toolkit PRs are Kevin's to merge.
+
+- [ ] **Step 7: Update the onboarding Google Doc**
+
+The builder-toolkit onboarding doc must be updated whenever skills change. Add `/receipts` with its setup prerequisites (`ramp auth login`, `gws auth login`) — a skill that silently needs auth nobody was told about is the same silent-failure class as everything else in this plan.
+
+---
+
 ## Self-Review Notes
 
-**Spec coverage:** queue set-difference → Task 2. Pluggable sources → Tasks 3–5. Four match outcomes incl. BALANCED zip and AMBIGUOUS non-assignment → Task 6. Idempotency key, ledger, escalation cap, never-mark-uploaded-without-2xx → Task 7. Dry-run default, partial-failure announcement, hard stop on Ramp 401 → Task 8. Live smoke test, real-data fixtures → Tasks 6 and 9.
+**Spec coverage:** queue → Task 2. Sources → Tasks 3, 4, 8. Collision handling → Task 5. Idempotency, ledger, escalation cap, never-mark-uploaded-without-success → Task 6. Dry-run default, degradation announcement, hard stop on Ramp auth failure → Task 7. Live smoke → Task 9.
 
-**Known deviation from the spec:** the spec's `sources/*.py` contract said `fetch(since)`; this plan uses `fetch(since, until)` so sources can honour the `--until` flag. Signature is consistent across Tasks 3, 4, 5, and 8.
+**Corrections from the prior version, all verified live 2026-08-01:**
+1. No Developer API credentials exist — everything routes through the `ramp` CLI.
+2. `missing_items` is always null; the queue must loop `transactions missing <id>`. This is the bug most likely to be reintroduced, so Task 2's first test guards it specifically.
+3. `receipts:read` and `memos:write` are not granted; `receipts:write` and `transactions:write` are.
+4. Email forwarding replaced by `ramp receipts upload --transaction_uuid`.
+5. Memos and coding removed — zero of 145 transactions were missing a memo.
+6. Default window widened to 2026-01-01; the backlog reaches 2026-02-09.
 
-**Deliberately unverified until build time:** the exact `gws gmail search` subcommand and flags (Task 5, Step 5 is an explicit verification gate). Everything Ramp and Anthropic is verified against live responses or the published OpenAPI spec.
+**Deliberately unverified until build time:** the `gws users messages get` response shape (Task 8, Step 1 is an explicit gate). Everything Ramp and Anthropic is verified against live responses.
