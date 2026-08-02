@@ -405,9 +405,12 @@ def finalize(vault_path, cache_dir, sweep_date):
 
     synthesized = count_synthesized_today(vault_path, sweep_date)
     expected = manifest.get("relationship_count", 0)
-    if not isinstance(expected, int) or isinstance(expected, bool):
+    # bool is an int subclass, so True would otherwise sail through as 1; a
+    # negative count would make the "short count" check vacuously false and let
+    # a nonsense manifest certify the sweep complete.
+    if not isinstance(expected, int) or isinstance(expected, bool) or expected < 0:
         manifest_error = (manifest_error or "") + (
-            f" relationship_count is {expected!r}, expected int;"
+            f" relationship_count is {expected!r}, expected a non-negative int;"
         ).strip()
         expected = 0
     pulse = vault_path / "30-people" / "_pulse" / f"{sweep_date}-team-pulse.md"
