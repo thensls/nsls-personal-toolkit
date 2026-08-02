@@ -388,12 +388,28 @@ def finalize(vault_path, cache_dir, sweep_date):
         manifest_error = f"manifest not found: {manifest_path}"
     else:
         try:
-            manifest = json.loads(manifest_path.read_text())
+            loaded = json.loads(manifest_path.read_text())
         except Exception as exc:
             manifest_error = f"manifest unreadable: {exc}"
+        else:
+            # Valid JSON is not necessarily an object. A bare array or string would
+            # make manifest.get() raise, aborting finalize before write_status and
+            # leaving the status file stale — the exact outcome this path exists to
+            # prevent. Nothing below may raise; finalize must always write.
+            if isinstance(loaded, dict):
+                manifest = loaded
+            else:
+                manifest_error = (
+                    f"manifest is {type(loaded).__name__}, expected object: {manifest_path}"
+                )
 
     synthesized = count_synthesized_today(vault_path, sweep_date)
     expected = manifest.get("relationship_count", 0)
+    if not isinstance(expected, int) or isinstance(expected, bool):
+        manifest_error = (manifest_error or "") + (
+            f" relationship_count is {expected!r}, expected int;"
+        ).strip()
+        expected = 0
     pulse = vault_path / "30-people" / "_pulse" / f"{sweep_date}-team-pulse.md"
 
     problems = []
