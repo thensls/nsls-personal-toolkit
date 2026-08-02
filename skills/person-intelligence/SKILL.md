@@ -180,23 +180,75 @@ This enables Obsidian dataview queries in `30-people/` hub files.
 
 ## Scheduling
 
-The biweekly sweep is designed to run automatically every other Sunday at 7:00 AM ET — before the `/open-week` routine, so the team-pulse digest is ready to inform weekly planning.
+The sweep runs early Sunday morning, before `/open-week`, so the team-pulse digest is ready to inform weekly planning.
 
-Register the schedule once per user via the `/schedule` skill:
+### Do NOT use `/schedule` — it cannot run this
+
+⚠️ **The `/schedule` skill creates a Claude *cloud routine*, and a cloud routine physically cannot run this sweep.** Routines execute in an isolated cloud sandbox with **no local filesystem** and **no MCP connectors attached**. That means no Obsidian vault to read or write, and no Fathom or Signal access. A routine registered for this sweep fires on time and accomplishes nothing — the worst failure mode, because the schedule looks healthy.
+
+*Earlier versions of this file documented `/schedule create --cron ... --command ...`. That flag syntax never existed, and the underlying mechanism was wrong regardless. If you followed it, delete the routine.*
+
+The sweep must run **on your own machine, under your own credentials**. Everything it needs is token-direct — `FATHOM_API_KEY`, the Signal token, `ANTHROPIC_API_KEY`, all read from `~/.claude/local-plugins/nsls-personal-toolkit/.env` by `load_dotenv_local.py` — so a headless run works fine. It just has to be a *local* headless run.
+
+### The scheduled entry point
+
+Both platforms call one script, so there is no shell-vs-PowerShell logic to drift apart:
 
 ```
-/schedule create "Person-intelligence biweekly sweep" \
-  --cron "0 7 * * 0/2" \
-  --command "/person-intelligence biweekly sweep"
+scheduler (weekly)  →  scheduled_sweep.py  →  claude -p  →  the sweep pipeline
 ```
 
-That cron pattern means "minute 0, hour 7, every other Sunday (day-of-week 0, step 2)". Adjust to your timezone via the dashboard if needed.
+[`scripts/scheduled_sweep.py`](scripts/scheduled_sweep.py) does four things:
 
-**To pause** (e.g., vacation): `/schedule pause "Person-intelligence biweekly sweep"`
-**To resume**: `/schedule resume "Person-intelligence biweekly sweep"`
-**To run manually any time**: `/person-intelligence biweekly sweep` (no schedule needed)
+1. Calls [`scripts/sweep_due.py`](scripts/sweep_due.py) to decide whether a sweep is actually due.
+2. If due, runs `claude -p` headless with a self-contained prompt and a **scoped** tool allowlist (`Bash(python3.12 *)`, Read, Write, Edit, Glob, Grep, Skill) — deliberately not `--dangerously-skip-permissions`.
+3. Verifies the run actually finalized. A zero exit is not proof of work, so it re-runs `--finalize` if the status file doesn't show a complete sweep for today.
+4. Records every outcome — success, failure, timeout, `claude` not on PATH — to `~/.cache/person-intelligence/sweep-cron.log` and, on failure, into `last-sweep-status.json` so `/open-day` surfaces it the next morning.
 
-If a scheduled run fails, `/open-day` will surface an alert the next morning (from the `last-sweep-status.json` cache). You can re-run manually from there.
+**Fire weekly, not biweekly.** Standard cron and launchd cannot express "every other Sunday" — in the day-of-week field `0/2` expands to `0,2,4,6`, i.e. Sunday, Tuesday, Thursday, Saturday. So the scheduler fires every Sunday and `sweep_due.py` gates it down: it skips unless the last **finalized** sweep is ≥ 12 days old. Twelve rather than fourteen gives a two-day grace window, so a missed Sunday doesn't push the cadence out to 21 days.
+
+`sweep_due.py` exit codes: `0` due · `10` fresh, skip · `11` a recent sweep never finalized, so finalize instead of re-sweeping · `2` status file unreadable.
+
+### macOS — launchd
+
+```bash
+cp skills/person-intelligence/setup/com.nsls.person-intelligence-sweep.plist \
+   ~/Library/LaunchAgents/
+# Edit the plist: replace YOUR_USERNAME throughout, confirm your python3.12 path
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist
+```
+
+Verify without waiting for Sunday:
+
+```bash
+launchctl kickstart -p gui/$(id -u)/com.nsls.person-intelligence-sweep
+tail -5 ~/.cache/person-intelligence/launchd.log
+```
+
+A healthy first run logs `FRESH: ... skipping` — that is the gate working, not a failure.
+
+**launchd gotcha:** launchd starts with a minimal `PATH` that does not include `~/.local/bin`, where `claude` lives. The plist sets `PATH` explicitly. If you see `FAIL: claude not found on PATH`, that's the line to fix.
+
+### Windows — Task Scheduler
+
+See [`setup/windows-task-scheduler.md`](setup/windows-task-scheduler.md) for the full walkthrough. The short version:
+
+```
+Program:    python
+Arguments:  %USERPROFILE%\.claude\local-plugins\nsls-personal-toolkit\skills\person-intelligence\scripts\scheduled_sweep.py
+Start in:   %USERPROFILE%\nsls-skills\nsls-personal-toolkit
+Trigger:    Weekly, Sunday, 6:47 AM
+```
+
+Check "Run task as soon as possible after a scheduled start is missed" — laptops are asleep at 6:47 AM. The freshness gate makes a late catch-up run safe.
+
+### Manual control
+
+- **Run now, ignoring the gate:** `python3.12 scripts/scheduled_sweep.py --force`
+- **See what it would do:** `python3.12 scripts/scheduled_sweep.py --dry-run`
+- **Run interactively instead:** `/person-intelligence biweekly sweep` — no scheduler involved
+- **Pause (vacation):** `launchctl bootout gui/$(id -u)/com.nsls.person-intelligence-sweep` (Mac) or disable the task (Windows)
+- **Resume:** `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist`
 
 ## Mode: Biweekly Sweep
 
@@ -258,6 +310,7 @@ Step 1 writes a **plan-time baseline** into `last-sweep-status.json`, and that b
 
 *Confirmed 2026-07-27: the Sunday 7/26 Slack reminder fired two days after the successful 7/24 sweep because it never read this file.*
 
+*Resolved 2026-08-01: the old `--cron "0 7 * * 0/2"` pattern claimed "every other Sunday" but expands to Sun/Tue/Thu/Sat. The fix was to stop encoding cadence in cron entirely — the scheduler now fires weekly and [`sweep_due.py`](scripts/sweep_due.py) owns the every-other-week decision, reading the same `last-sweep-status.json` that the freshness guard above reads. One source of truth for "is a sweep due," shared by the scheduler and the nudges.*
 
 ## Keeping Obsidian frontmatter in sync with the org chart
 
