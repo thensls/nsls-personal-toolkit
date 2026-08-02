@@ -235,9 +235,29 @@ Writes `30-people/_pulse/YYYY-MM-DD-team-pulse.md` — one digest per cycle with
 
 Empty sections are omitted. Use `--dry-run` to preview the prompt before the API call.
 
+### Step 3: finalize the status file — REQUIRED, do not skip
+
+```bash
+OBSIDIAN_VAULT_PATH=/path/to/vault \
+python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/biweekly_sweep.py --finalize
+```
+
+Step 1 writes a **plan-time baseline** into `last-sweep-status.json`, and that baseline always says `relationships_processed: 0` — it is computed from `manifest.completed_relationships`, which is empty by definition when the manifest is built. Its `timestamp` is when planning started, not when work finished. Nothing else ever wrote back, so the status file has been reporting zero work on successful sweeps.
+
+`--finalize` recomputes the file from ground truth: it counts `30-people/*.md` profiles whose `health_last_assessed` equals the sweep date, checks whether the team-pulse digest exists, and adds `profiles_synthesized`, `team_pulse_written`, `complete`, and `finalized: true`. Pass `--sweep-date YYYY-MM-DD` to finalize an earlier sweep retroactively.
+
+*Confirmed 2026-07-27: the 2026-07-24 sweep had been reporting `relationships_processed: 0` for three days; `--finalize` corrected it to 21/21, `complete: true`.*
+
 ### Observability
 
-`~/.cache/person-intelligence/last-sweep-status.json` records the most recent sweep's exit code, error (if any), and relationships processed. `/open-day` reads this and surfaces a one-line alert if the last sweep failed or hasn't run in 18+ days.
+`~/.cache/person-intelligence/last-sweep-status.json` records the most recent sweep's completion timestamp, exit code, error (if any), and the relationships actually processed. `/open-day` reads this and surfaces a one-line alert if the last sweep failed or hasn't run in 18+ days.
+
+**Read `finalized` before trusting the numbers.** If `finalized` is absent or false, the file is a plan-time baseline: `relationships_processed` and `timestamp` are meaningless, and `exit_code: 0` only means the manifest built. Treat that as "unknown," never as "no work done" — and never as grounds for telling the user a sweep is overdue.
+
+**Freshness guard — any reminder or alert MUST check this file first.** Before nudging the user to run a sweep, read `last-sweep-status.json` and suppress the nudge when a finalized, complete sweep is newer than the cadence interval. Compare against `sweep_date` (or `timestamp` when `sweep_date` is absent), not against a date mentioned in prose in a weekly note — weekly notes go stale and will produce false alarms.
+
+*Confirmed 2026-07-27: the Sunday 7/26 Slack reminder fired two days after the successful 7/24 sweep because it never read this file.*
+
 
 ## Keeping Obsidian frontmatter in sync with the org chart
 
