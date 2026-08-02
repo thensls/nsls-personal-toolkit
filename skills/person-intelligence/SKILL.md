@@ -87,11 +87,31 @@ Fetch transcripts and summarize each:
 python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/fetch_fathom_1on1s.py \
   --email {email} --fetch-all > /tmp/person-intel-meetings.jsonl
 
-# Summarize each meeting (one Claude API call per meeting)
+# Summarize each meeting (one Claude API call per meeting).
+# NOTE: fetch_fathom_1on1s.py does NOT emit person_name — you must inject it.
 while IFS= read -r line; do
-  echo "$line" | python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/summarize_meeting.py
+  echo "$line" \
+    | python3.12 -c 'import json,sys; r=json.load(sys.stdin); r["person_name"]="{Name}"; print(json.dumps(r))' \
+    | python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/summarize_meeting.py
 done < /tmp/person-intel-meetings.jsonl > /tmp/person-intel-summaries.jsonl
 ```
+
+🛑 **`person_name` is effectively required — always inject it.** `fetch_fathom_1on1s.py`
+matches on `calendar_invitees`, so the results include **group meetings** (SLT Standing,
+Sprint Retro, Society Sprint Start, Manager Preview Meeting), not just 1:1s. If
+`person_name` is missing, `summarize_meeting.py` infers a subject from the meeting *title* —
+which on a group title profiles whoever dominated the conversation and writes their traits
+into this person's profile.
+
+*This happened on 2026-07-27: Jordan Perry's and Julia Botz's material landed in Lauren
+Prentiss's profile, and Kimberly Campbell's in LaShaundra Randolph's. Both profiles had to
+be restored from backup and re-synthesized.* The script now refuses to guess when the title
+yields no name, and warns when it does infer — but the caller injecting `person_name`
+explicitly is the actual fix.
+
+**Verify before trusting a synthesis:** grep the written profile for the names of other
+frequent attendees. A structural check (single H1, no doubled frontmatter) will pass on a
+profile that is about the wrong person.
 
 **For weekly updates:** Add `--after {last-synthesized date}` to only fetch new meetings.
 

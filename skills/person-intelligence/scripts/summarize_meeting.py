@@ -87,7 +87,29 @@ def main():
     transcript = data.get("transcript", "")
     title = data.get("title", "")
     date = data.get("date", "")
-    person_name = data.get("person_name", "") or infer_person_name(title)
+    person_name = data.get("person_name", "")
+    if not person_name:
+        inferred = infer_person_name(title)
+        # A group / recurring meeting title cannot identify a subject. Inferring one here
+        # silently profiles whoever dominated the conversation and writes their traits into
+        # someone else's profile — a real incident on 2026-07-27, where a Sprint Retro and a
+        # Manager Preview Meeting put Jordan Perry's and Kimberly Campbell's material into
+        # Lauren Prentiss's and LaShaundra Randolph's profiles. Refuse instead of guessing.
+        if inferred == "the other participant":
+            print(
+                "ERROR: person_name not provided and it cannot be inferred from the title "
+                f"{title!r}. This looks like a group or recurring meeting, where inference "
+                "would profile the dominant speaker rather than the intended subject. "
+                "Pass person_name explicitly.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        person_name = inferred
+        print(
+            f"WARN: person_name not provided; inferred {person_name!r} from the title. "
+            "Pass it explicitly — inference is only reliable for two-party 1:1 titles.",
+            file=sys.stderr,
+        )
 
     if not transcript:
         print("ERROR: No transcript provided", file=sys.stderr)
