@@ -197,10 +197,15 @@ def run_claude(cache_dir, interpreter, dry_run):
 
 
 def run_finalize(cache_dir, interpreter, sweep_date, dry_run):
+    # --cache-dir must be forwarded: without it the subprocess finalizes the
+    # DEFAULT cache while we go on to read cache_dir, see no finalized status,
+    # and report a successful run as a failure.
     cmd = [
         interpreter,
         str(SCRIPT_DIR / "biweekly_sweep.py"),
         "--finalize",
+        "--cache-dir",
+        str(cache_dir),
         "--sweep-date",
         str(sweep_date),
     ]

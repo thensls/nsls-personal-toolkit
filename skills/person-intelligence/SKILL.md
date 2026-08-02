@@ -89,12 +89,19 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
 
 # Summarize each meeting (one Claude API call per meeting).
 # NOTE: fetch_fathom_1on1s.py does NOT emit person_name — you must inject it.
+# The name goes through the ENVIRONMENT, never interpolated into the -c source:
+# an apostrophe (Michael O'Brien) would otherwise break both the shell quoting
+# and the Python string.
+export PI_PERSON_NAME='{Name}'
 while IFS= read -r line; do
   echo "$line" \
-    | python3.12 -c 'import json,sys; r=json.load(sys.stdin); r["person_name"]="{Name}"; print(json.dumps(r))' \
+    | python3.12 -c 'import json,os,sys; r=json.load(sys.stdin); r["person_name"]=os.environ["PI_PERSON_NAME"]; print(json.dumps(r))' \
     | python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/summarize_meeting.py
 done < /tmp/person-intel-meetings.jsonl > /tmp/person-intel-summaries.jsonl
 ```
+
+If the name itself contains an apostrophe, set it with a here-doc or `read -r`
+rather than single quotes — `export PI_PERSON_NAME="Michael O'Brien"`.
 
 🛑 **`person_name` is effectively required — always inject it.** `fetch_fathom_1on1s.py`
 matches on `calendar_invitees`, so the results include **group meetings** (SLT Standing,

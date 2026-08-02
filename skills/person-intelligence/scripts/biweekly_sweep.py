@@ -378,29 +378,48 @@ def finalize(vault_path, cache_dir, sweep_date):
     baseline written at manifest-build time, which always reports
     relationships_processed: 0 and a timestamp from before any work happened.
     """
+    # A missing or unreadable manifest is a real degradation, not a zero.
+    # Defaulting `expected` to 0 would make `len(synthesized) >= expected`
+    # vacuously true, certifying a damaged sweep as complete.
     manifest_path = cache_dir / f"biweekly-sweep-{sweep_date}.manifest.json"
     manifest = {}
-    if manifest_path.exists():
+    manifest_error = None
+    if not manifest_path.exists():
+        manifest_error = f"manifest not found: {manifest_path}"
+    else:
         try:
             manifest = json.loads(manifest_path.read_text())
-        except Exception:
-            manifest = {}
+        except Exception as exc:
+            manifest_error = f"manifest unreadable: {exc}"
 
     synthesized = count_synthesized_today(vault_path, sweep_date)
     expected = manifest.get("relationship_count", 0)
     pulse = vault_path / "30-people" / "_pulse" / f"{sweep_date}-team-pulse.md"
 
+    problems = []
+    if manifest_error:
+        problems.append(manifest_error)
+    if not synthesized:
+        problems.append("finalize found 0 profiles stamped for this sweep_date")
+    elif len(synthesized) < expected:
+        problems.append(f"only {len(synthesized)} of {expected} relationships synthesized")
+    if not pulse.exists():
+        problems.append(f"team-pulse digest missing: {pulse.name}")
+
+    # `complete` gates the scheduler's freshness check, so it has to mean
+    # "nothing left to retry". A sweep that skipped the digest is not complete —
+    # marking it so suppresses the next run and the digest is never produced.
     status = {
         "timestamp": utc_now_iso(),
         "sweep_date": sweep_date,
-        "exit_code": 0 if synthesized else 1,
-        "error": None if synthesized else "finalize found 0 profiles stamped for this sweep_date",
+        "exit_code": 0 if not problems else 1,
+        "error": None if not problems else "; ".join(problems),
         "manifest_path": str(manifest_path) if manifest_path.exists() else None,
         "relationships_processed": len(synthesized),
         "relationship_count": expected,
         "profiles_synthesized": synthesized,
         "team_pulse_written": pulse.exists(),
-        "complete": bool(synthesized) and len(synthesized) >= expected,
+        "complete": not problems,
         "finalized": True,
     }
     write_status(cache_dir, status)

@@ -173,22 +173,30 @@ def compute_proposed_fields(emp, redirect_map=None):
 
 
 def follow_redirect(path, people_dir):
-    """If path is a person-redirect stub, return the canonical profile it points at."""
+    """Resolve a person-redirect stub to the canonical profile it points at.
+
+    Returns None when the chain cannot be resolved — a dangling target, a cycle,
+    or more than three hops. Never return the stub itself: the caller writes
+    org-chart frontmatter into whatever comes back, so handing back a tombstone
+    overwrites the redirect and leaves the real profile stale. None is handled
+    by find_obsidian_file's caller, which records the employee under
+    `employees_without_obsidian_file` — visible, rather than silently wrong.
+    """
     for _ in range(3):  # bounded, so a cycle can't hang the sync
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
-            return path
+            return None
         if not is_redirect(text):
             return path
         canonical = canonical_from_redirect(text)
         if not canonical:
-            return path
+            return None
         nxt = people_dir / f"{canonical}.md"
         if not nxt.exists() or nxt == path:
-            return path
+            return None
         path = nxt
-    return path
+    return None
 
 
 def find_obsidian_file(emp, people_dir, email_index):
