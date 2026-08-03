@@ -151,11 +151,28 @@ get_me()
 - **Not detected**: "Asana integration is only needed for /open-day and /close-day task sync. Want to skip this for now?" If they want to set it up, walk them through finding their GIDs manually.
 
 ### Builder Email and GitHub Username
-Ask the user:
-```
-What's your NSLS email? (e.g., jdoe@nsls.org)
-And your GitHub username? (optional, for /register-automation)
-```
+
+Both may already be set — the org `/setup` collects and validates them — so
+check the existing `.env` first and confirm instead of re-asking.
+
+**Email:** propose the signed-in account's address; ask only to confirm.
+
+**GitHub username:** this is how the tracker credits **merged PRs** — a wrong
+or empty value silently earns no PR credit (this cost a builder six weeks of
+points). **Never guess it from the email**; the email prefix has been wrong
+for every known builder. Ask: "Which GitHub account do you open pull requests
+as?" — and validate before writing, never store an unverified guess:
+
+1. **Account exists?** `curl -s -o /dev/null -w '%{http_code}' "https://api.github.com/users/<name>"`
+   → `200` real; `404` typo — show what you checked and re-ask; anything else
+   (rate limit, offline) — accept but say you couldn't verify.
+2. **Right account?** `curl -s "https://api.github.com/search/issues?q=type:pr+org:thensls+author:<name>&per_page=1"`
+   → `total_count` 0 is normal for a brand-new builder, suspicious for someone
+   who's shipped NSLS work before — double-check with them (hint, not proof:
+   private-repo PRs may not show unauthenticated).
+
+Skippable if they don't use GitHub yet — leave it empty and note they can
+re-run `/personal-setup` (or the org `/setup`) after their first PR.
 
 ## Step 3: Optional Integrations — ~3 min
 
@@ -258,6 +275,16 @@ If a value wasn't provided, leave it empty with a comment:
 ```
 # FATHOM_API_KEY=  # Run /personal-setup again when you have this
 ```
+
+**Assert the Asana pair before finishing.** Unless the builder explicitly
+skipped Asana in Step 2, read the written `.env` back and check that
+`ASANA_WORKSPACE_GID` **and** `ASANA_USER_GID` are both non-empty. Empty GIDs
+with Asana "set up" means the `get_me` discovery silently failed — most often
+because the connector's tools weren't loaded in this session yet (they load on
+restart). Say so plainly and either re-run discovery after the restart or
+collect the GIDs manually. Never finish with the pair silently empty:
+`/open-day` and `/close-day` task sync fail quietly on it, which reads as "the
+day-planner is broken."
 
 ### KB writer setup (SLT only — auto-detected)
 
