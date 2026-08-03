@@ -1028,24 +1028,44 @@ Also update each project's home note:
 
 This step does three things: marks finished tasks done, adds progress notes to in-progress tasks, and creates new tasks from carry-overs.
 
-**7a. Complete finished tasks**
-
-Cross-reference the day's Work Log against the builder's open Asana tasks (fetched in Step 1g). For each Asana task that was clearly completed today, mark it done:
+**Gate — build the full preview, then ASK. Never write to Asana unprompted.**
+Assemble the complete write-back plan across 7a/7b/7c BEFORE calling any Asana
+write tool, and present it as a **clickable choice** (AskUserQuestion with
+multi-select where available; otherwise a compact list in chat) with per-item
+control and a genuine decline:
 
 ```
-mcp__claude_ai_Asana__update_tasks(
+Sync these to Asana?
+  ✅ Complete:  "[task name]" — evidence: [work-log bullet]
+  💬 Comment:   "[task name]" — "Progress 3/25: [what was done]"
+  ➕ Create:    "[carry-over]" (P2, due YYYY-MM-DD)
+  (pick any / all / "no — I'll update Asana myself")
+```
+
+Only approved items proceed. **7a and 7b mutate tasks other people see on
+shared boards** — a wrong auto-complete or stray comment is publicly visible,
+so they are never run unconfirmed, however clear the evidence looks.
+"Conservative matching" is a judgment guardrail, not a consent gate; the ask
+is the gate. Declining everything is a fine outcome.
+
+**7a. Complete finished tasks (approved items only)**
+
+Cross-reference the day's Work Log against the builder's open Asana tasks (fetched in Step 1g). For each **approved** task, mark it done via the Asana connector's `update_tasks` (resolve the live tool name — see the connector-naming note in Step 1g):
+
+```
+update_tasks(
   tasks=[{"task": "[GID]", "completed": true}]
 )
 ```
 
-**How to match:** Compare Asana task names against Work Log bullets, sent emails, Fathom action items marked done, and Claude session accomplishments. Be conservative — only mark complete if there's clear evidence the task is finished, not just worked on.
+**How to match (for building the preview):** Compare Asana task names against Work Log bullets, sent emails, Fathom action items marked done, and Claude session accomplishments. Be conservative — propose completion only when there's clear evidence the task is finished, not just worked on.
 
-**7b. Comment on in-progress tasks**
+**7b. Comment on in-progress tasks (approved items only)**
 
-For Asana tasks that the builder worked on but didn't finish, add a progress comment:
+For **approved** in-progress tasks, add the progress comment via the connector's comment tool (`add_comment` / `create_task_story`, by connector version):
 
 ```
-mcp__claude_ai_asana__add_comment(
+add_comment(
   task_id="[GID]",
   text="Progress 3/25: [what was done]. Remaining: [what's left]."
 )
@@ -1053,12 +1073,12 @@ mcp__claude_ai_asana__add_comment(
 
 This keeps Asana as a living record of where things stand.
 
-**7c. Create new carry-over tasks**
+**7c. Create new carry-over tasks (approved items only)**
 
-For each item in **Carrying Over** that doesn't already exist in Asana, create it with priority and due date:
+For each **approved** item in **Carrying Over** that doesn't already exist in Asana, create it with priority and due date via the connector's task-creation tool (`create_task_preview` → `create_task_confirm` where the connector offers the preview pair — keep that two-step as a second belt; plain `create_tasks` otherwise):
 
 ```
-mcp__claude_ai_Asana__create_task_preview(
+create_task_preview(
   taskName="[carry-over item]",
   assignee="me",
   dueDate="YYYY-MM-DD",
@@ -1066,7 +1086,7 @@ mcp__claude_ai_Asana__create_task_preview(
 )
 ```
 
-Then confirm with `mcp__claude_ai_Asana__create_task_confirm` using workspace `${ASANA_WORKSPACE_GID}`.
+Then confirm with `create_task_confirm` using workspace `${ASANA_WORKSPACE_GID}`.
 
 **Priority framework (CEO lens):**
 
