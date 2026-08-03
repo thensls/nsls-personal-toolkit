@@ -466,6 +466,28 @@ restorative_pct = round((sleep_deep_hrs + sleep_rem_hrs) / sleep_total_hrs * 100
 
 Restorative % (deep + REM as share of total sleep) is the closest proxy to "sleep quality score" derivable from Apple Health stage data. Typical healthy range: 25-50%.
 
+**⚠️ `hrv_ms` you read in the morning is PROVISIONAL — never make a training call on it.** Apple samples HRV opportunistically (irregular background spot checks plus every Breathe session and ECG), so the daily aggregate is an average of whatever samples have landed *so far*. Early in the day only a few overnight samples exist, and overnight samples run high — so the morning value is systematically optimistic and drifts down as daytime samples accumulate. Measured on Kevin's vault: 2026-07-29 read **66** in the morning and settled at **44**; 7/20 read 106 and settled at 63; 7/24 read 70 and settled at 49. Every divergence ran high.
+
+So: write the morning value to frontmatter (it's the best available), but treat it as provisional. `/close-day` overwrites it with the settled aggregate the next day (its Step 5a owns that backfill).
+
+**HRV baseline band (use this, not the raw number).** A single day is noise and population norms are meaningless for HRV. Compare against the builder's own trailing mean ± 1 SD:
+
+```bash
+OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3 \
+  ~/.claude/local-plugins/nsls-personal-toolkit/scripts/hrv_band.py \
+  --date "$YESTERDAY" --window 14
+```
+
+Returns one ready-to-paste line (add `--json` for the full structure: `mean`, `sd`, `band_low`, `band_high`, `z`, `status`, `consecutive_below`, `back_off`, `trend_delta`, `trend_reliable`). Run it for **yesterday**, whose value has settled — not for today.
+
+Reading the result:
+- **In band** → unremarkable. Say so and move on; don't manufacture a story.
+- **One day below band** → noise, especially the day after a hard session. Mention it, don't act on it.
+- **`back_off: true`** (2+ consecutive days at z ≤ −1.0) → surface it in the goal cue: easy days genuinely easy, hold volume flat. **It does NOT override the Wednesday 4×4** — that session is ~90% of the VO2 signal per the goal file, and the flag has already fired on a day that produced a personal-best gain.
+- **`trend_reliable: true`** → the baseline drift is the real signal, more than any single day. Falls back to `false` when the prior window still holds unsettled spot-readings; when false, don't quote the trend.
+
+Skip the band silently if the script is missing or returns fewer than 5 days of history.
+
 **2l. Quarterly goal anchor cues**
 
 Read active personal goal files from `$OBSIDIAN_VAULT_PATH/10-strategy/goals/*.md` (skip `personal-goals.md`, `work-goals.md`, anything in `archive/`). Filter to `status: active` AND `category: personal`.
@@ -506,6 +528,7 @@ Present to the builder. If AI suggestions were seeded by close-day, show them fi
 
 ### Yesterday's body
 Sleep: [Xh Ym] ([Z]% restorative) · Exercise: [N] min · Steps: [N,NNN]
+[HRV band line from the `hrv_band.py` call in Step 2k — omit entirely if the script is unavailable or history is under 5 days]
 
 ### Goal cues today
 *Populated from Step 2l. Skip entirely if no anchors fire today.*

@@ -999,7 +999,13 @@ Write these keys from the **target-date** Apple Health pulled in Step 1f-bis (`a
 | `vo2_max` | `body.vo2_max` | target date; write `null` if absent that day |
 | `goal_<slug>_moved` | Step 1f-bis hit decision | one line per active personal goal (see below) |
 
-**Do NOT write or overwrite `sleep_*` / `hrv_ms` here** — sleep is keyed to wake-up date and is owned by the morning write (per the Sleep semantics in 1f-bis). Preserve whatever is already there; only fill `hrv_ms` from `heart.hrv_ms` if the key is entirely absent.
+**Do NOT write or overwrite `sleep_*` here** — sleep is keyed to wake-up date and is owned by the morning write (per the Sleep semantics in 1f-bis). Preserve whatever is already there.
+
+**DO overwrite `hrv_ms` for the target date with the settled aggregate.** This is close-day's job precisely because close-day runs after the day is over. Apple samples HRV opportunistically, so the daily value is an average of whatever has landed so far: overnight samples run high, daytime samples pull it down, and the number drifts downward through the day. The morning value `/open-day` wrote is therefore systematically optimistic — on Kevin's vault 2026-07-29 read **66** in the morning and settled at **44** (also 7/20: 106 → 63; 7/24: 70 → 49; every divergence ran high).
+
+Write `hrv_ms` from the target-date `apple_health_daily(target).heart.hrv_ms`. If close-day runs the same evening the value is better but not fully settled; when it runs the next day (the common catch-up case) it is final. Leave `null` if Apple returned nothing.
+
+This matters because `scripts/hrv_band.py` builds the baseline band by reading `hrv_ms` out of daily-note frontmatter. A single unsettled spot-reading inflates the mean and the SD, which widens the band and hides real below-band days — so an unsettled value doesn't just misreport one day, it degrades every band computed for the next two weeks.
 
 **Goal key mapping.** For each active personal goal (the same set Step 1f-bis evaluated — `10-strategy/goals/*.md` with `status: active` AND `category: personal`):
 - Key name = `goal_` + the goal file's **`slug:` frontmatter field** + `_moved`. Example: goal file with `slug: vo2_max` → `goal_vo2_max_moved`. Use the `slug` field verbatim (it may contain underscores); do not re-derive it from the filename.
