@@ -470,6 +470,10 @@ Restorative % (deep + REM as share of total sleep) is the closest proxy to "slee
 
 So: write the morning value to frontmatter (it's the best available), but treat it as provisional. `/close-day` overwrites it with the settled aggregate the next day (its Step 5a owns that backfill).
 
+**First, refresh yesterday's `hrv_ms` — do this BEFORE running the band.** If `/close-day` ran yesterday evening, the value it wrote was better than the morning read but still not fully settled, and nothing has corrected it since. Banding on it would train on exactly the kind of provisional number the rule above says never to train on.
+
+You already have the fix in hand: the `apple_health_daily` call above fetched **yesterday's** aggregate, which by this morning is final. Write `heart.hrv_ms` from that response into `$YESTERDAY`'s frontmatter, overwriting whatever is there, then run the band. If Apple returned nothing for yesterday, leave the existing value and note that the band is running on an unsettled reading.
+
 **HRV baseline band (use this, not the raw number).** A single day is noise and population norms are meaningless for HRV. Compare against the builder's own trailing mean ± 1 SD:
 
 ```bash
@@ -478,7 +482,7 @@ OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" python3 \
   --date "$YESTERDAY" --window 14
 ```
 
-Returns one ready-to-paste line (add `--json` for the full structure: `mean`, `sd`, `band_low`, `band_high`, `z`, `status`, `consecutive_below`, `back_off`, `trend_delta`, `trend_reliable`). Run it for **yesterday**, whose value has settled — not for today.
+Returns one ready-to-paste line (add `--json` for the full structure: `mean`, `sd`, `band_low`, `band_high`, `z`, `status`, `consecutive_below`, `back_off`, `trend_delta`, `trend_reliable`). Run it for **yesterday**, whose value you just settled — never for today.
 
 Reading the result:
 - **In band** → unremarkable. Say so and move on; don't manufacture a story.

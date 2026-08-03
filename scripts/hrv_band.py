@@ -38,6 +38,7 @@ Default output is one line suitable for dropping into a morning note.
 import argparse
 import datetime
 import json
+import math
 import os
 import pathlib
 import re
@@ -52,20 +53,30 @@ def read_hrv(vault: pathlib.Path, day: datetime.date):
     note = vault / "01-daily" / f"{day.isoformat()}.md"
     if not note.exists():
         return None
-    # Only look at frontmatter — the body may quote a spot-reading in prose.
+    # Frontmatter ONLY. The body routinely quotes HRV in prose (the band line
+    # this script emits ends up there), so falling back to a scan of the whole
+    # note would read a narrated spot-reading as a settled aggregate. No complete
+    # `---`-delimited block means no value.
     text = note.read_text(errors="ignore")
     head = text.split("---", 2)
-    fm = head[1] if text.startswith("---") and len(head) >= 3 else text[:1500]
-    m = FM_RE.search(fm)
+    if not (text.startswith("---") and len(head) >= 3):
+        return None
+    m = FM_RE.search(head[1])
     if not m:
         return None
     raw = m.group(1).strip().strip('"').strip("'")
     if raw.lower() in ("null", "none", "~", ""):
         return None
     try:
-        return float(raw)
+        val = float(raw)
     except ValueError:
         return None
+    # nan/inf parse fine as floats and then poison mean, sd, and the whole band:
+    # every comparison against NaN is false, so classify() would call a genuinely
+    # low reading "in_band", and --json would emit non-standard NaN tokens.
+    if not math.isfinite(val):
+        return None
+    return val
 
 
 def build(vault: pathlib.Path, target: datetime.date, window: int):
@@ -176,13 +187,25 @@ def main():
         prior = [v for _, v in prior_hist]
         if len(prior) >= 5:
             out["trend_delta"] = round(mean - statistics.fmean(prior), 1)
-            prior_mean = statistics.fmean(prior)
-            prior_sd = statistics.stdev(prior) if len(prior) > 1 else 0.0
-            has_outlier = any(v > prior_mean + 3 * prior_sd for v in prior) if prior_sd else False
+
+            # Check BOTH windows for spot-reading outliers, not just the prior
+            # one. An inflated reading in the current window skews `mean` and so
+            # skews trend_delta by exactly the same amount an inflated prior
+            # reading does — the asymmetry just hid it in one direction.
+            def has_high_outlier(sample):
+                if len(sample) < 2:
+                    return False
+                s_mean = statistics.fmean(sample)
+                s_sd = statistics.stdev(sample)
+                if not s_sd:
+                    return False
+                return any(v > s_mean + 3 * s_sd for v in sample)
+
             out["trend_reliable"] = (
                 len(prior) >= args.window - 1
                 and len(values) >= args.window - 1
-                and not has_outlier
+                and not has_high_outlier(prior)
+                and not has_high_outlier(values)
             )
 
     # Human line for the morning note.
