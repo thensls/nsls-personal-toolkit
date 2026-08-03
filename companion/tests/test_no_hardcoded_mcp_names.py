@@ -18,9 +18,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-# mcp__ followed by a real identifier character — the explanatory placeholder
-# mcp__<uuid>__ starts with '<' and is deliberately not matched.
-HARDCODED = re.compile(r"mcp__(?!<)[A-Za-z0-9]")
+# Any mcp__ token that is not the literal explanatory placeholder
+# (mcp__<uuid>…) counts as hardcoded — including exotic prefixes like
+# mcp___x or mcp__-x, which the earlier [A-Za-z0-9] check let through.
+HARDCODED = re.compile(r"mcp__(?!<uuid>)")
 ALLOWED = re.compile(r"mcp__apple-health__")
 
 

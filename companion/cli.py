@@ -268,7 +268,11 @@ def status(test_mode):
             pidfile_age = time.time() - pid_file.stat().st_mtime
         except OSError:
             pidfile_age = float("inf")  # stat raced an unlink — out of grace
-        if port is not None and pidfile_age < STARTUP_GRACE_SECONDS:
+        # Inside the grace window an unparseable address line gets the same
+        # benefit of the doubt as an unresponsive port: the pidfile write
+        # isn't atomic, so a torn/partial address just means "mid-startup".
+        # Past the window, unparseable falls through to the reap below.
+        if pidfile_age < STARTUP_GRACE_SECONDS:
             click.echo(
                 f"Starting: pid {pid}, address {addr} "
                 "(port not up yet — re-run status in a few seconds)."
