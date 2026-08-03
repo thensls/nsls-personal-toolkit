@@ -114,12 +114,14 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 **Real browser, not the app panel.** Tell the builder to open the link in an actual browser tab (Chrome/Safari), **not** the Claude Code desktop "panel"/embedded view — edits made in the panel don't reach the local server and are lost silently (the companion shows an orange warning banner when it detects this). If the page won't load, use `http://127.0.0.1:<port>` — some machines resolve `localhost` to IPv6, which the IPv4-only server refuses.
 
 1. **Resolve `"$TC"`** (above). If it can't be found, or you're not on a surface that can run a local server, **skip silently** and close in chat.
-2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Not running`, start it in the background, then re-check:
+2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Starting:`, wait ~3 seconds and re-run status once. If it reports `Not running`, start it **with the harness's run-in-background facility** (Bash `run_in_background` — never a bare `&`, which dies when the tool call's shell exits and takes the server with it):
    ```bash
    # serve auto-detects the test vault from OBSIDIAN_VAULT_PATH and starts the
    # test instance (port 7788, its own pidfile) — no flag needed on serve.
-   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
-   sleep 2
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open
+   ```
+   Then, in a separate foreground call a couple of seconds later:
+   ```bash
    # Re-check at the SAME scope you started. In test mode you MUST pass --test —
    # plain `status` reads the REAL companion's pidfile and will wrongly report
    # "Not running", forcing a needless chat fallback.

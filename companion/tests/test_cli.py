@@ -1,5 +1,68 @@
+import os
 import socket
+import time as _time
+
+from click.testing import CliRunner
+
+from companion import cli
 from companion.cli import _find_free_port, ensure_vault_structure, TEMPLATES_DIR
+
+
+def _write_pidfile(path, pid, addr="127.0.0.1:1"):
+    # Port 1 is never listening — a live pid with an unresponsive port.
+    path.write_text(f"{pid}\n{addr}\n", encoding="utf-8")
+
+
+def test_status_grace_window_reports_starting_and_never_reaps(tmp_path, monkeypatch):
+    """P2: a fresh pidfile + live pid + port not yet bound is a BOOTING server.
+
+    `status` used to SIGTERM it (killing a healthy companion ~2s after start).
+    Inside STARTUP_GRACE_SECONDS it must report Starting and touch nothing.
+    """
+    pidfile = tmp_path / "companion.pid"
+    _write_pidfile(pidfile, os.getpid())
+    monkeypatch.setattr(cli, "PID_FILE", pidfile)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)  # keep the retry loop instant
+    terminated = []
+    real_kill = os.kill
+
+    def guarded_kill(pid, sig):
+        if sig == cli.signal.SIGTERM:
+            terminated.append(pid)
+            return
+        return real_kill(pid, sig)  # liveness probes (sig 0) stay real
+
+    monkeypatch.setattr(cli.os, "kill", guarded_kill)
+    result = CliRunner().invoke(cli.main, ["status"])
+    assert "Starting:" in result.output
+    assert result.exit_code == 0
+    assert terminated == []
+    assert pidfile.exists()
+
+
+def test_status_reaps_after_grace_window(tmp_path, monkeypatch):
+    """Past the grace window, a live pid with a dead port is still cleaned up."""
+    pidfile = tmp_path / "companion.pid"
+    _write_pidfile(pidfile, os.getpid())
+    old = _time.time() - (cli.STARTUP_GRACE_SECONDS + 60)
+    os.utime(pidfile, (old, old))
+    monkeypatch.setattr(cli, "PID_FILE", pidfile)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    terminated = []
+    real_kill = os.kill
+
+    def guarded_kill(pid, sig):
+        if sig == cli.signal.SIGTERM:
+            terminated.append(pid)
+            return
+        return real_kill(pid, sig)
+
+    monkeypatch.setattr(cli.os, "kill", guarded_kill)
+    result = CliRunner().invoke(cli.main, ["status"])
+    assert "Not running (process alive but port not responding" in result.output
+    assert result.exit_code == 1
+    assert terminated == [os.getpid()]
+    assert not pidfile.exists()
 
 
 def test_find_free_port_returns_int():

@@ -1048,6 +1048,7 @@ When you don't skip:
    "$TC" status
    ```
    - Output `Running: pid <pid>, address <addr>` → parse the URL, continue to step 2.
+   - Output starts with `Starting:` → the server is mid-boot (startup grace window); wait ~3 seconds, re-run `"$TC" status` once, and follow that result's branch.
    - Output contains `Not running` or `stale pidfile` → **start it with the
      harness's run-in-background facility** (Bash `run_in_background` — NEVER a
      bare `&`, which dies when the tool call's shell exits and takes the server
