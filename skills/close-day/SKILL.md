@@ -23,8 +23,8 @@ Synthesize the builder's full day from seven data sources into a daily note and 
 | **Fathom** | Meeting summaries, topics, action items, decisions | Bash: Python script calling Fathom API (see below) |
 | **Sent Email** | Approvals, decisions, outbound communications | `gmail_search_messages` MCP tool (`from:me after:YYYY/M/DD before:YYYY/M/DD+1`) |
 | **Sent Slack** | Conversations, decisions, coordination, context | `slack_search_public_and_private` MCP tool (`from:<@${SLACK_USER_ID}> on:YYYY-MM-DD`) |
-| **Asana** | Pending tasks, overdue items, what was due today | `mcp__claude_ai_Asana__get_my_tasks` and `mcp__claude_ai_asana__asana_search_tasks` MCP tools |
-| **Apple Health** | Personal-goal execution: workouts, exercise minutes, distance, HR, sleep, VO2 max | `mcp__apple-health__apple_health_workouts` and `mcp__apple-health__apple_health_daily` MCP tools |
+| **Asana** | Pending tasks, overdue items, what was due today | Asana connector tools (`get_my_tasks`, task search) — resolve live names per the note in Step 1g |
+| **Apple Health** | Personal-goal execution: workouts, exercise minutes, distance, HR, sleep, VO2 max | `mcp__apple-health__apple_health_workouts` and `mcp__apple-health__apple_health_daily` MCP tools (local server — stable name) |
 | **Claude session context** | What was built, decided, and discussed in this conversation | Conversation history in current session |
 
 ## Builder Context
@@ -388,7 +388,7 @@ The **"Meeting time"** line is an orthogonal metric — it cross-cuts all catego
 Use the Fathom MCP tools (no API key or Python script needed):
 
 ```
-mcp__claude_ai_Fathom__list_meetings(
+list_meetings(        ← the Fathom connector's tool; resolve the live mcp__<uuid>__ name from this session's tools
   created_after="YYYY-MM-DDT00:00:00Z",
   created_before="YYYY-MM-DDT23:59:59Z",
   include_summary=true,
@@ -532,11 +532,21 @@ Distinguish "didn't do it" from "did it but didn't log it on the Watch." An unlo
 
 **1g. Asana — pending tasks and what was due**
 
+> **Connector tool names are per-machine.** claude.ai connector tools (Asana,
+> Fathom, Slack, Gmail, Calendar, Airtable) are namespaced `mcp__<uuid>__<tool>`
+> and the UUID differs on every install — never call a hardcoded name. Find the
+> tool in THIS session's tool list by its suffix (e.g. `get_my_tasks`; suffixes
+> can vary slightly by connector version — match by capability). **If no Asana
+> tools exist in this session, the connector isn't connected: say so plainly —
+> "No Asana connected, so no task sync today; connect it via Settings ›
+> Connectors (Ctrl+,/Cmd+,) to include tasks" — and skip 1g and Step 7. Never
+> skip silently.**
+
 Run in parallel with other data collection. Two calls:
 
 **Call 1: Get all incomplete tasks assigned to the builder**
 ```
-mcp__claude_ai_Asana__get_my_tasks(
+get_my_tasks(
   completed_since="now",
   limit=100,
   opt_fields="name,due_on,projects.name,assignee_section.name"
@@ -545,7 +555,7 @@ mcp__claude_ai_Asana__get_my_tasks(
 
 **Call 2: Search for tasks that were due today or are overdue**
 ```
-mcp__claude_ai_asana__asana_search_tasks(
+search_tasks(         ← named `asana_search_tasks` on older connector versions
   assignee_any="me",
   completed=false,
   due_on_before="YYYY-MM-DD",  // the target date

@@ -198,10 +198,19 @@ Extract: meeting title, start/end time, attendees. Flag meetings that need prep 
 
 **2b. Asana — what's due and overdue**
 
+> **Connector tool names are per-machine.** claude.ai connector tools (Asana,
+> Fathom, Slack, Gmail, Calendar, Airtable) are namespaced `mcp__<uuid>__<tool>`
+> and the UUID differs on every install — never call a hardcoded name. Find the
+> tool in THIS session's tool list by its suffix (suffixes can vary slightly by
+> connector version — match by capability). **If no Asana tools exist in this
+> session, the connector isn't connected: say so plainly — "No Asana connected,
+> so no task list today; connect it via Settings › Connectors (Ctrl+,/Cmd+,) to
+> pull tasks in" — and continue without the task steps. Never skip silently.**
+
 Two parallel calls:
 
 ```
-mcp__claude_ai_Asana__get_my_tasks(
+get_my_tasks(
   completed_since="now",
   limit=100,
   opt_fields="name,due_on,projects.name,assignee_section.name"
@@ -209,7 +218,7 @@ mcp__claude_ai_Asana__get_my_tasks(
 ```
 
 ```
-mcp__claude_ai_Asana__search_tasks_preview(
+search_tasks_preview(     ← or the connector's equivalent task search
   assignee_any="me",
   completed=false,
   due_on_before="YYYY-MM-DD+1"
@@ -332,7 +341,7 @@ If the list is empty, omit the section entirely. If a candidate appears in last 
 
 If `learning_capture_method` in the builder profile is set to `slack`, scrape the builder's Slack self-DMs for URLs:
 
-1. Use `mcp__plugin_slack_slack__slack_read_channel` to read the builder's self-DM channel (using `$SLACK_USER_ID`). Look for messages from the last 24 hours containing URLs.
+1. Use the Slack connector's `slack_read_channel` (resolve the live `mcp__<uuid>__` name — see 2b's note) to read the builder's self-DM channel (using `$SLACK_USER_ID`). Look for messages from the last 24 hours containing URLs.
 2. For each URL found:
    - Fetch the page title via WebFetch (just the title and first paragraph, not the full page)
    - Generate a 1-2 sentence summary
@@ -728,10 +737,12 @@ Other SLT items ripe for promotion:
 Which should I shadow to Asana? (comma list of rec IDs, "all", or "none")
 ```
 
-For each selected SLT action, create an Asana companion task:
+For each selected SLT action, create an Asana companion task (the selection
+above IS the consent — create only what the builder picked). Use the Asana
+connector's task-creation tool (resolve the live name — see 2b's note):
 
 ```
-mcp__claude_ai_Asana__create_task_preview(
+create_task_preview(
   taskName="[action_description]",
   assignee="me",
   dueDate="YYYY-MM-DD",

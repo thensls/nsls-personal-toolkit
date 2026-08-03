@@ -98,7 +98,7 @@ This is the "tiny habit anchor" identification. Goal: find 3 candidate anchors �
 **5a. Calendar pattern scan (past 4 weeks):**
 
 ```
-mcp__claude_ai_Google_Calendar__list_events(
+list_events(      ← the Google Calendar connector's tool; resolve the live mcp__<uuid>__ name from this session's tools
   timeMin="$TODAY - 28 days",
   timeMax="$TODAY",
   timeZone="America/Denver",
@@ -155,11 +155,11 @@ Ask the builder to pick or propose a different anchor.
 
 For metric and behavior goals, run evidence-based research on protocols:
 
+Run a web search (WebSearch, or this session's research tooling) for:
+
 ```
-mcp__claude_ai_web-research(
-  query="<goal-specific query — e.g., 'evidence-based VO2 max improvement protocols
-        for 40-year-old male, current 36 ml/kg/min, training 3-4x/week'>"
-)
+"<goal-specific query — e.g., 'evidence-based VO2 max improvement protocols
+ for 40-year-old male, current 36 ml/kg/min, training 3-4x/week'>"
 ```
 
 Or invoke the `web-research` skill (Google AI Mode) for synthesized, cited findings.
@@ -273,9 +273,11 @@ bar:
 Ask:
 > "Want me to create an Asana task for the first action ([day + time])?"
 
-If yes:
+If yes (the ask above is the consent gate — create nothing without it), use
+the Asana connector's task-creation tool (resolve the live `mcp__<uuid>__`
+name; prefer a preview→confirm pair when the connector offers one):
 ```
-mcp__claude_ai_Asana__create_tasks(...)
+create_tasks(...)
 ```
 
 with task name = the first action, due_on = the anchor day, assignee = builder.

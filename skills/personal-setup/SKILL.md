@@ -139,9 +139,12 @@ The Slack MCP provides the user ID automatically in tool descriptions: "Current 
 - **Not detected**: "Click your profile picture in Slack → Profile → ⋮ → Copy member ID, then paste it here."
 
 ### Asana
-Use the Asana MCP:
+Use the Asana connector's `get_me` (resolve the live tool name from this
+session's tools — connector tools are `mcp__<uuid>__<tool>` with a
+per-machine UUID; if no Asana tools are present, the connector isn't
+connected — treat as "not detected" below, don't silently skip):
 ```
-mcp__claude_ai_Asana__get_me()
+get_me()
 ```
 
 - **Detected**: "Your Asana workspace GID is `XXXX` and your user GID is `XXXX` — correct?"

@@ -423,7 +423,7 @@ This step is mode-specific.
 Use the Fathom MCP to list meetings for the date where the current user was a participant or owner:
 
 ```
-Call: mcp__claude_ai_Fathom__list_meetings
+Call: the Fathom connector's list_meetings (resolve the live mcp__<uuid>__ name from this session's tools — connector UUIDs are per-machine)
 Parameters:
   - start_date: YYYY-MM-DD
   - end_date: YYYY-MM-DD
@@ -442,7 +442,7 @@ If N == 0, heartbeat `Step 2: no meetings for YYYY-MM-DD, nothing to harvest` an
 
 ### Mode: `--fathom-url <url>`
 
-Call `mcp__claude_ai_Fathom__get_recording_by_url` with the URL. Then `get_meeting_summary` and `get_meeting_transcript`. Stash same as above (single-item list).
+Call the Fathom connector's `get_recording_by_url` with the URL (live per-machine tool name, as above). Then `get_meeting_summary` and `get_meeting_transcript`. Stash same as above (single-item list).
 
 Heartbeat: `Step 2: loaded 1 meeting from URL: <title>`
 

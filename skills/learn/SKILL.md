@@ -288,7 +288,7 @@ new-product planning to surface relevant building blocks.
 
 When called from `/open-day`, ingest new links based on the builder's configured `learning_capture_method` (from builder profile):
 
-**If `slack`:** Use `mcp__plugin_slack_slack__slack_read_channel` to read the builder's self-DM channel (using `$SLACK_USER_ID`, passed as `channel_id`) for messages since the last ingestion. Extract URLs, **resolve shortlinks (below)**, fetch titles, classify, and append to `_inbox.md`. Skip automated reminder messages (e.g. anything containing "person-intelligence sweep" or an `:alarm_clock:` prefix).
+**If `slack`:** Use the Slack connector's `slack_read_channel` (resolve the live `mcp__<uuid>__` name from this session's tools — connector UUIDs are per-machine) to read the builder's self-DM channel (using `$SLACK_USER_ID`, passed as `channel_id`) for messages since the last ingestion. Extract URLs, **resolve shortlinks (below)**, fetch titles, classify, and append to `_inbox.md`. Skip automated reminder messages (e.g. anything containing "person-intelligence sweep" or an `:alarm_clock:` prefix).
 
 **If other method or not configured:** Skip automatic ingestion. The builder adds links to `_inbox.md` manually or via `/learn inbox`. This is the default — automatic ingestion is opt-in.
 

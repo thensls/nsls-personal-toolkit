@@ -23,9 +23,10 @@ For each person the sweep tracks, three sources fire in parallel.
 
 ### Slack — DMs and shared threads (last 14 days)
 
-- **`mcp__claude_ai_Slack__slack_read_dm`** with the target person's Slack ID
-  (looked up from `org-chart.json`)
-- **`mcp__claude_ai_Slack__slack_search_public_and_private`** restricted to
+- The Slack connector's **`slack_read_dm`** with the target person's Slack ID
+  (looked up from `org-chart.json`) — connector tool names are per-machine
+  (`mcp__<uuid>__<tool>`); resolve them from the live session, never hardcode
+- The Slack connector's **`slack_search_public_and_private`** restricted to
   threads where both the operating user and the target are participants
 - 14-day rolling window — no historical backfill
 - **No keyword searches across the workspace.** The sweep never runs queries
@@ -34,7 +35,7 @@ For each person the sweep tracks, three sources fire in parallel.
 
 ### Gmail — direct threads (last 14 days)
 
-- **`mcp__claude_ai_Gmail__search_threads`** with `from:{email} OR to:{email}`
+- The Gmail connector's **`search_threads`** (live per-machine name, as above) with `from:{email} OR to:{email}`
   scoped to the last 14 days
 - Threads where you're a direct participant (sender or recipient)
 - **No keyword sweeps on the person's name** across your full mailbox.

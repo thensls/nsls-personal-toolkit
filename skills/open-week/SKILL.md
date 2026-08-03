@@ -62,8 +62,12 @@ Pull open tasks from whichever task system the builder uses. Most builders use o
 
 **1b.1 — Asana**
 
+Connector tool names are per-machine (`mcp__<uuid>__<tool>`, UUID differs on
+every install) — resolve the live name from this session's tools; if none
+exist, say "no Asana connected" plainly and use 1b.2 only.
+
 ```
-mcp__claude_ai_Asana__get_my_tasks(
+get_my_tasks(
   completed_since="now",
   limit=100,
   opt_fields="name,due_on,projects.name,assignee_section.name"
@@ -76,8 +80,12 @@ Also pull the "Do today" section items (self-flagged urgent) separately.
 
 Query open tasks (status = Not Started or In Progress) assigned to the builder. The builder's name appears in the singleLineText `assignee` field; the linked record sits in `assignee (linked)`.
 
+Use the Airtable connector's `list_records_for_table` — resolve the live
+`mcp__<uuid>__` name from this session's tools (the UUID is per-machine;
+never copy one from another install):
+
 ```
-mcp__b9e0ba62-fba1-48c0-8814-6f701844c723__list_records_for_table(
+list_records_for_table(
   baseId="${SLT_BASE_ID}",
   tableId="tblasgjUjadHCqzrg",
   filters={
