@@ -1048,10 +1048,15 @@ When you don't skip:
    "$TC" status
    ```
    - Output `Running: pid <pid>, address <addr>` → parse the URL, continue to step 2.
-   - Output contains `Not running` or `stale pidfile` → **start it automatically** in the background:
+   - Output contains `Not running` or `stale pidfile` → **start it with the
+     harness's run-in-background facility** (Bash `run_in_background` — NEVER a
+     bare `&`, which dies when the tool call's shell exits and takes the server
+     with it; observed live):
      ```bash
-     OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
-     sleep 2
+     OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open
+     ```
+     Then, in a separate foreground call a couple of seconds later:
+     ```bash
      "$TC" status
      ```
      If it's now running, parse the URL and continue to step 2. If it still fails, tell the builder: *"Companion couldn't start. Run `open day visual off` to stay in chat, or check the error."* Then skip the rest of this step.
@@ -1063,7 +1068,7 @@ When you don't skip:
 
 3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now. **Always give a clickable link**: present the URL as `http://localhost:<port>` as a Markdown link, never a bare IP.
 
-   > A tab opened at http://localhost:<port> — **open it in your web browser (Chrome/Safari), not the app's embedded panel.** A **separate browser window** works best — you can alt-tab between it and this chat. Edits made in the Claude Code desktop "panel"/side view don't save. If the page won't load, use http://127.0.0.1:<port> instead. Then pick your Top 3, add anything else to the Bonus list, and click **Done — show Command Center** when you're ready.
+   > I've opened a separate browser tab you can keep open through the day as your **command center**: http://localhost:<port> (if it won't load, use http://127.0.0.1:<port>). Pick your Top 3, add anything else to the Bonus list, and click **Done — show Command Center** when you're ready.
    >
    > When you're done, say **done** here and I'll print a one-line summary. Or just go straight into your day — the daily note is being saved as you type. Type `open day visual off` if you'd rather skip the visual next time.
 
