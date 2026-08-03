@@ -46,6 +46,8 @@ import statistics
 import sys
 
 FM_RE = re.compile(r"^hrv_ms:\s*(\S+)\s*$", re.M)
+# Leading frontmatter block, anchored on the opening and closing delimiter lines.
+FM_BLOCK_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.S)
 
 
 def read_hrv(vault: pathlib.Path, day: datetime.date):
@@ -57,11 +59,15 @@ def read_hrv(vault: pathlib.Path, day: datetime.date):
     # this script emits ends up there), so falling back to a scan of the whole
     # note would read a narrated spot-reading as a settled aggregate. No complete
     # `---`-delimited block means no value.
+    # Match the delimiter LINES, not bare "---". A naive split("---", 2) treats an
+    # inline triple-dash inside a value (title: "foo---bar") as the closing fence,
+    # truncates the block above hrv_ms, and silently reports no reading for a day
+    # that has one.
     text = note.read_text(errors="ignore")
-    head = text.split("---", 2)
-    if not (text.startswith("---") and len(head) >= 3):
+    block = FM_BLOCK_RE.match(text)
+    if not block:
         return None
-    m = FM_RE.search(head[1])
+    m = FM_RE.search(block.group(1))
     if not m:
         return None
     raw = m.group(1).strip().strip('"').strip("'")
@@ -74,7 +80,9 @@ def read_hrv(vault: pathlib.Path, day: datetime.date):
     # nan/inf parse fine as floats and then poison mean, sd, and the whole band:
     # every comparison against NaN is false, so classify() would call a genuinely
     # low reading "in_band", and --json would emit non-standard NaN tokens.
-    if not math.isfinite(val):
+    # HRV in milliseconds is strictly positive, so a zero or negative value is a
+    # typo, not a measurement — and one would drag the whole baseline with it.
+    if not math.isfinite(val) or val <= 0:
         return None
     return val
 
