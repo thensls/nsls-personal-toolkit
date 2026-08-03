@@ -50,6 +50,55 @@ SIGNAL_EXCLUDE = {
 }
 
 
+def build_redirect_map(vault_path):
+    """Map each `type: person-redirect` stub's name -> the canonical (preferred) name.
+
+    Mirrors sync_obsidian_frontmatter.build_redirect_map and
+    biweekly_sweep.resolve_canonical_name. Any place that turns an org-chart name into a
+    vault identity has to go through this, or the Rippling spelling wins.
+    """
+    import re
+
+    mapping = {}
+    people_dir = vault_path / "30-people" if vault_path and str(vault_path) != "." else None
+    if not people_dir or not people_dir.is_dir():
+        return mapping
+    for path in sorted(people_dir.glob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if not re.search(r"^type:\s*person-redirect\s*$", text, re.MULTILINE):
+            continue
+        canonical = None
+        for pat in (
+            r"^preferred_name:[ \t]*(\S[^\n]*)$",
+            r'^canonical_profile:[ \t]*"?\[\[([^\]]+)\]\]"?',
+            r'^canonical:[ \t]*"?\[\[([^\]]+)\]\]"?',
+        ):
+            m = re.search(pat, text, re.MULTILINE)
+            if m:
+                canonical = m.group(1).strip().strip('"').strip("'")
+                break
+        if not canonical or canonical == path.stem:
+            continue
+        mapping[path.stem] = canonical
+        m = re.search(r"^rippling_name:[ \t]*(\S[^\n]*)$", text, re.MULTILINE)
+        if m:
+            rn = m.group(1).strip().strip('"').strip("'")
+            if rn and rn != canonical:
+                mapping[rn] = canonical
+    return mapping
+
+
+def preferred_name(name, redirect_map):
+    seen = set()
+    while name in redirect_map and name not in seen:
+        seen.add(name)
+        name = redirect_map[name]
+    return name
+
+
 def is_signal_eligible(name, email, tracking_reason):
     """True when a tracked person plausibly has NSLS Signal Quick Notes.
 
@@ -139,8 +188,16 @@ def main():
     seen_emails = set()
     seen_names = set()
 
+    # Preferred-name map, built from the vault's `type: person-redirect` stubs.
+    # Rippling stores formal names ("Jana Amsellem", "Jordyn Tannenbaum") for people who go
+    # by something else. Without this, the org-chart name and the preferred name are added as
+    # TWO relationships — dedup is by email, and the key-relationship entry usually has no
+    # email to match on — which double-lists the person and leaves a phantom "never
+    # assessed" row in the health dashboard.
+    redirect_map = build_redirect_map(Path(os.environ.get("OBSIDIAN_VAULT_PATH", "")).expanduser())
+
     def add(emp, reason):
-        name = emp.get("name", "")
+        name = preferred_name(emp.get("name", ""), redirect_map)
         emp_email = emp.get("email", "")
         # Deduplicate by email when known, by name otherwise.
         key_email = emp_email.lower() if emp_email else None
@@ -189,13 +246,22 @@ def main():
 
     # 3. KEY_RELATIONSHIPS.
     key_names = parse_key_relationships(os.environ.get("KEY_RELATIONSHIPS", ""))
-    for name in key_names:
-        emp = find_by_name(employees, name)
+    for raw_name in key_names:
+        # Resolve to the preferred name FIRST. A key relationship named by its Rippling
+        # spelling (or already picked up as a report/peer under the preferred name) must not
+        # be added a second time.
+        name = preferred_name(raw_name, redirect_map)
+        emp = find_by_name(employees, raw_name) or find_by_name(employees, name)
         if emp:
             add(emp, "key_relationship")
         else:
-            # Not in org chart — likely a contractor, family, external.
-            # Add a minimal record; the sweep will work from Fathom + manual notes.
+            # Not in org chart — likely a contractor, coach, board member, family.
+            # Add a minimal record; the sweep works from Fathom + manual notes.
+            # Route through the same dedup gate `add()` uses, or an org-chart entry
+            # already added under the preferred name gets duplicated here.
+            if name.lower() in seen_names:
+                continue
+            seen_names.add(name.lower())
             relationships.append(
                 {
                     "name": name,

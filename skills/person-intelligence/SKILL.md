@@ -87,11 +87,38 @@ Fetch transcripts and summarize each:
 python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/fetch_fathom_1on1s.py \
   --email {email} --fetch-all > /tmp/person-intel-meetings.jsonl
 
-# Summarize each meeting (one Claude API call per meeting)
+# Summarize each meeting (one Claude API call per meeting).
+# NOTE: fetch_fathom_1on1s.py does NOT emit person_name — you must inject it.
+# The name goes through the ENVIRONMENT, never interpolated into the -c source:
+# an apostrophe (Michael O'Brien) would otherwise break both the shell quoting
+# and the Python string.
+export PI_PERSON_NAME='{Name}'
 while IFS= read -r line; do
-  echo "$line" | python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/summarize_meeting.py
+  echo "$line" \
+    | python3.12 -c 'import json,os,sys; r=json.load(sys.stdin); r["person_name"]=os.environ["PI_PERSON_NAME"]; print(json.dumps(r))' \
+    | python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/summarize_meeting.py
 done < /tmp/person-intel-meetings.jsonl > /tmp/person-intel-summaries.jsonl
 ```
+
+If the name itself contains an apostrophe, set it with a here-doc or `read -r`
+rather than single quotes — `export PI_PERSON_NAME="Michael O'Brien"`.
+
+🛑 **`person_name` is effectively required — always inject it.** `fetch_fathom_1on1s.py`
+matches on `calendar_invitees`, so the results include **group meetings** (SLT Standing,
+Sprint Retro, Society Sprint Start, Manager Preview Meeting), not just 1:1s. If
+`person_name` is missing, `summarize_meeting.py` infers a subject from the meeting *title* —
+which on a group title profiles whoever dominated the conversation and writes their traits
+into this person's profile.
+
+*This happened on 2026-07-27: Jordan Perry's and Julia Botz's material landed in Lauren
+Prentiss's profile, and Kimberly Campbell's in LaShaundra Randolph's. Both profiles had to
+be restored from backup and re-synthesized.* The script now refuses to guess when the title
+yields no name, and warns when it does infer — but the caller injecting `person_name`
+explicitly is the actual fix.
+
+**Verify before trusting a synthesis:** grep the written profile for the names of other
+frequent attendees. A structural check (single H1, no doubled frontmatter) will pass on a
+profile that is about the wrong person.
 
 **For weekly updates:** Add `--after {last-synthesized date}` to only fetch new meetings.
 
@@ -160,23 +187,75 @@ This enables Obsidian dataview queries in `30-people/` hub files.
 
 ## Scheduling
 
-The biweekly sweep is designed to run automatically every other Sunday at 7:00 AM ET — before the `/open-week` routine, so the team-pulse digest is ready to inform weekly planning.
+The sweep runs early Sunday morning, before `/open-week`, so the team-pulse digest is ready to inform weekly planning.
 
-Register the schedule once per user via the `/schedule` skill:
+### Do NOT use `/schedule` — it cannot run this
+
+⚠️ **The `/schedule` skill creates a Claude *cloud routine*, and a cloud routine physically cannot run this sweep.** Routines execute in an isolated cloud sandbox with **no local filesystem** and **no MCP connectors attached**. That means no Obsidian vault to read or write, and no Fathom or Signal access. A routine registered for this sweep fires on time and accomplishes nothing — the worst failure mode, because the schedule looks healthy.
+
+*Earlier versions of this file documented `/schedule create --cron ... --command ...`. That flag syntax never existed, and the underlying mechanism was wrong regardless. If you followed it, delete the routine.*
+
+The sweep must run **on your own machine, under your own credentials**. Everything it needs is token-direct — `FATHOM_API_KEY`, the Signal token, `ANTHROPIC_API_KEY`, all read from `~/.claude/local-plugins/nsls-personal-toolkit/.env` by `load_dotenv_local.py` — so a headless run works fine. It just has to be a *local* headless run.
+
+### The scheduled entry point
+
+Both platforms call one script, so there is no shell-vs-PowerShell logic to drift apart:
 
 ```
-/schedule create "Person-intelligence biweekly sweep" \
-  --cron "0 7 * * 0/2" \
-  --command "/person-intelligence biweekly sweep"
+scheduler (weekly)  →  scheduled_sweep.py  →  claude -p  →  the sweep pipeline
 ```
 
-That cron pattern means "minute 0, hour 7, every other Sunday (day-of-week 0, step 2)". Adjust to your timezone via the dashboard if needed.
+[`scripts/scheduled_sweep.py`](scripts/scheduled_sweep.py) does four things:
 
-**To pause** (e.g., vacation): `/schedule pause "Person-intelligence biweekly sweep"`
-**To resume**: `/schedule resume "Person-intelligence biweekly sweep"`
-**To run manually any time**: `/person-intelligence biweekly sweep` (no schedule needed)
+1. Calls [`scripts/sweep_due.py`](scripts/sweep_due.py) to decide whether a sweep is actually due.
+2. If due, runs `claude -p` headless with a self-contained prompt and a **scoped** tool allowlist (`Bash(python3.12 *)`, Read, Write, Edit, Glob, Grep, Skill) — deliberately not `--dangerously-skip-permissions`.
+3. Verifies the run actually finalized. A zero exit is not proof of work, so it re-runs `--finalize` if the status file doesn't show a complete sweep for today.
+4. Records every outcome — success, failure, timeout, `claude` not on PATH — to `~/.cache/person-intelligence/sweep-cron.log` and, on failure, into `last-sweep-status.json` so `/open-day` surfaces it the next morning.
 
-If a scheduled run fails, `/open-day` will surface an alert the next morning (from the `last-sweep-status.json` cache). You can re-run manually from there.
+**Fire weekly, not biweekly.** Standard cron and launchd cannot express "every other Sunday" — in the day-of-week field `0/2` expands to `0,2,4,6`, i.e. Sunday, Tuesday, Thursday, Saturday. So the scheduler fires every Sunday and `sweep_due.py` gates it down: it skips unless the last **finalized** sweep is ≥ 12 days old. Twelve rather than fourteen gives a two-day grace window, so a missed Sunday doesn't push the cadence out to 21 days.
+
+`sweep_due.py` exit codes: `0` due · `10` fresh, skip · `11` a recent sweep never finalized, so finalize instead of re-sweeping · `2` status file unreadable.
+
+### macOS — launchd
+
+```bash
+cp skills/person-intelligence/setup/com.nsls.person-intelligence-sweep.plist \
+   ~/Library/LaunchAgents/
+# Edit the plist: replace YOUR_USERNAME throughout, confirm your python3.12 path
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist
+```
+
+Verify without waiting for Sunday:
+
+```bash
+launchctl kickstart -p gui/$(id -u)/com.nsls.person-intelligence-sweep
+tail -5 ~/.cache/person-intelligence/launchd.log
+```
+
+A healthy first run logs `FRESH: ... skipping` — that is the gate working, not a failure.
+
+**launchd gotcha:** launchd starts with a minimal `PATH` that does not include `~/.local/bin`, where `claude` lives. The plist sets `PATH` explicitly. If you see `FAIL: claude not found on PATH`, that's the line to fix.
+
+### Windows — Task Scheduler
+
+See [`setup/windows-task-scheduler.md`](setup/windows-task-scheduler.md) for the full walkthrough. The short version:
+
+```
+Program:    python
+Arguments:  %USERPROFILE%\.claude\local-plugins\nsls-personal-toolkit\skills\person-intelligence\scripts\scheduled_sweep.py
+Start in:   %USERPROFILE%\nsls-skills\nsls-personal-toolkit
+Trigger:    Weekly, Sunday, 6:47 AM
+```
+
+Check "Run task as soon as possible after a scheduled start is missed" — laptops are asleep at 6:47 AM. The freshness gate makes a late catch-up run safe.
+
+### Manual control
+
+- **Run now, ignoring the gate:** `python3.12 scripts/scheduled_sweep.py --force`
+- **See what it would do:** `python3.12 scripts/scheduled_sweep.py --dry-run`
+- **Run interactively instead:** `/person-intelligence biweekly sweep` — no scheduler involved
+- **Pause (vacation):** `launchctl bootout gui/$(id -u)/com.nsls.person-intelligence-sweep` (Mac) or disable the task (Windows)
+- **Resume:** `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist`
 
 ## Mode: Biweekly Sweep
 
@@ -215,9 +294,30 @@ Writes `30-people/_pulse/YYYY-MM-DD-team-pulse.md` — one digest per cycle with
 
 Empty sections are omitted. Use `--dry-run` to preview the prompt before the API call.
 
+### Step 3: finalize the status file — REQUIRED, do not skip
+
+```bash
+OBSIDIAN_VAULT_PATH=/path/to/vault \
+python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/biweekly_sweep.py --finalize
+```
+
+Step 1 writes a **plan-time baseline** into `last-sweep-status.json`, and that baseline always says `relationships_processed: 0` — it is computed from `manifest.completed_relationships`, which is empty by definition when the manifest is built. Its `timestamp` is when planning started, not when work finished. Nothing else ever wrote back, so the status file has been reporting zero work on successful sweeps.
+
+`--finalize` recomputes the file from ground truth: it counts `30-people/*.md` profiles whose `health_last_assessed` equals the sweep date, checks whether the team-pulse digest exists, and adds `profiles_synthesized`, `team_pulse_written`, `complete`, and `finalized: true`. Pass `--sweep-date YYYY-MM-DD` to finalize an earlier sweep retroactively.
+
+*Confirmed 2026-07-27: the 2026-07-24 sweep had been reporting `relationships_processed: 0` for three days; `--finalize` corrected it to 21/21, `complete: true`.*
+
 ### Observability
 
-`~/.cache/person-intelligence/last-sweep-status.json` records the most recent sweep's exit code, error (if any), and relationships processed. `/open-day` reads this and surfaces a one-line alert if the last sweep failed or hasn't run in 18+ days.
+`~/.cache/person-intelligence/last-sweep-status.json` records the most recent sweep's completion timestamp, exit code, error (if any), and the relationships actually processed. `/open-day` reads this and surfaces a one-line alert if the last sweep failed or hasn't run in 18+ days.
+
+**Read `finalized` before trusting the numbers.** If `finalized` is absent or false, the file is a plan-time baseline: `relationships_processed` and `timestamp` are meaningless, and `exit_code: 0` only means the manifest built. Treat that as "unknown," never as "no work done" — and never as grounds for telling the user a sweep is overdue.
+
+**Freshness guard — any reminder or alert MUST check this file first.** Before nudging the user to run a sweep, read `last-sweep-status.json` and suppress the nudge when a finalized, complete sweep is newer than the cadence interval. Compare against `sweep_date` (or `timestamp` when `sweep_date` is absent), not against a date mentioned in prose in a weekly note — weekly notes go stale and will produce false alarms.
+
+*Confirmed 2026-07-27: the Sunday 7/26 Slack reminder fired two days after the successful 7/24 sweep because it never read this file.*
+
+*Resolved 2026-08-01: the old `--cron "0 7 * * 0/2"` pattern claimed "every other Sunday" but expands to Sun/Tue/Thu/Sat. The fix was to stop encoding cadence in cron entirely — the scheduler now fires weekly and [`sweep_due.py`](scripts/sweep_due.py) owns the every-other-week decision, reading the same `last-sweep-status.json` that the freshness guard above reads. One source of truth for "is a sweep due," shared by the scheduler and the nudges.*
 
 ## Keeping Obsidian frontmatter in sync with the org chart
 

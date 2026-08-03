@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Person-intelligence biweekly sweep — macOS launchd agent.
+
+  Install:
+    1. Replace every /Users/YOUR_USERNAME below with your home directory.
+    2. Confirm your python3.12 path:  which python3.12
+    3. Confirm your claude path:      which claude   (PATH below must contain its dir)
+    4. cp this file to ~/Library/LaunchAgents/
+    5. launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist
+
+  Verify without waiting for Sunday:
+    launchctl kickstart -p gui/$(id -u)/com.nsls.person-intelligence-sweep
+    tail -5 ~/.cache/person-intelligence/launchd.log
+  A first run that logs "FRESH: ... skipping" is the freshness gate working correctly.
+
+  Uninstall / pause:
+    launchctl bootout gui/$(id -u)/com.nsls.person-intelligence-sweep
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.nsls.person-intelligence-sweep</string>
+
+	<!-- Fires WEEKLY on Sunday. scheduled_sweep.py gates it down to biweekly via
+	     sweep_due.py, because cron/launchd cannot express "every other Sunday"
+	     (0/2 in the day-of-week field means Sun/Tue/Thu/Sat, not alternating).
+	     06:47 rather than 07:00 so it isn't competing with every other
+	     top-of-the-hour job on the machine. -->
+	<key>StartCalendarInterval</key>
+	<dict>
+		<key>Weekday</key>
+		<integer>0</integer>
+		<key>Hour</key>
+		<integer>6</integer>
+		<key>Minute</key>
+		<integer>47</integer>
+	</dict>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/local/bin/python3.12</string>
+		<string>/Users/YOUR_USERNAME/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/scheduled_sweep.py</string>
+	</array>
+
+	<key>WorkingDirectory</key>
+	<string>/Users/YOUR_USERNAME/nsls-skills/nsls-personal-toolkit</string>
+
+	<!-- launchd starts with a minimal PATH that does NOT include ~/.local/bin,
+	     where `claude` lives. Without this the sweep logs
+	     "FAIL: claude not found on PATH". -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>/Users/YOUR_USERNAME/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+	</dict>
+
+	<key>StandardOutPath</key>
+	<string>/Users/YOUR_USERNAME/.cache/person-intelligence/launchd.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/YOUR_USERNAME/.cache/person-intelligence/launchd.log</string>
+
+	<key>RunAtLoad</key>
+	<false/>
+</dict>
+</plist>

@@ -347,12 +347,124 @@ def write_status(cache_dir, status):
     path.write_text(json.dumps(status, indent=2))
 
 
+def count_synthesized_today(vault_path, sweep_date):
+    """Count profiles whose health_last_assessed equals sweep_date.
+
+    This is the ground truth for 'did the sweep actually do work'. The manifest's
+    completed_relationships list is written at PLAN time and is always empty, so
+    it can never answer the question.
+    """
+    people_dir = vault_path / "30-people"
+    names = []
+    if not people_dir.is_dir():
+        return names
+    for f in sorted(people_dir.glob("*.md")):
+        try:
+            text = f.read_text()
+        except Exception:
+            continue
+        for line in text.splitlines()[:40]:
+            if line.startswith("health_last_assessed:"):
+                if line.split(":", 1)[1].strip().strip('"\'') == sweep_date:
+                    names.append(f.stem)
+                break
+    return names
+
+
+def finalize(vault_path, cache_dir, sweep_date):
+    """Recompute last-sweep-status.json from what is actually on disk.
+
+    Run this as the LAST step of a sweep. Without it the status file keeps the
+    baseline written at manifest-build time, which always reports
+    relationships_processed: 0 and a timestamp from before any work happened.
+    """
+    # A missing or unreadable manifest is a real degradation, not a zero.
+    # Defaulting `expected` to 0 would make `len(synthesized) >= expected`
+    # vacuously true, certifying a damaged sweep as complete.
+    manifest_path = cache_dir / f"biweekly-sweep-{sweep_date}.manifest.json"
+    manifest = {}
+    manifest_error = None
+    if not manifest_path.exists():
+        manifest_error = f"manifest not found: {manifest_path}"
+    else:
+        try:
+            loaded = json.loads(manifest_path.read_text())
+        except Exception as exc:
+            manifest_error = f"manifest unreadable: {exc}"
+        else:
+            # Valid JSON is not necessarily an object. A bare array or string would
+            # make manifest.get() raise, aborting finalize before write_status and
+            # leaving the status file stale — the exact outcome this path exists to
+            # prevent. Nothing below may raise; finalize must always write.
+            if isinstance(loaded, dict):
+                manifest = loaded
+            else:
+                manifest_error = (
+                    f"manifest is {type(loaded).__name__}, expected object: {manifest_path}"
+                )
+
+    synthesized = count_synthesized_today(vault_path, sweep_date)
+    expected = manifest.get("relationship_count", 0)
+    # bool is an int subclass, so True would otherwise sail through as 1; a
+    # negative count would make the "short count" check vacuously false and let
+    # a nonsense manifest certify the sweep complete.
+    if not isinstance(expected, int) or isinstance(expected, bool) or expected < 0:
+        manifest_error = (manifest_error or "") + (
+            f" relationship_count is {expected!r}, expected a non-negative int;"
+        ).strip()
+        expected = 0
+    pulse = vault_path / "30-people" / "_pulse" / f"{sweep_date}-team-pulse.md"
+
+    problems = []
+    if manifest_error:
+        problems.append(manifest_error)
+    if not synthesized:
+        problems.append("finalize found 0 profiles stamped for this sweep_date")
+    elif len(synthesized) < expected:
+        problems.append(f"only {len(synthesized)} of {expected} relationships synthesized")
+    if not pulse.exists():
+        problems.append(f"team-pulse digest missing: {pulse.name}")
+
+    # `complete` gates the scheduler's freshness check, so it has to mean
+    # "nothing left to retry". A sweep that skipped the digest is not complete —
+    # marking it so suppresses the next run and the digest is never produced.
+    status = {
+        "timestamp": utc_now_iso(),
+        "sweep_date": sweep_date,
+        "exit_code": 0 if not problems else 1,
+        "error": None if not problems else "; ".join(problems),
+        "manifest_path": str(manifest_path) if manifest_path.exists() else None,
+        "relationships_processed": len(synthesized),
+        "relationship_count": expected,
+        "profiles_synthesized": synthesized,
+        "team_pulse_written": pulse.exists(),
+        "complete": not problems,
+        "finalized": True,
+    }
+    write_status(cache_dir, status)
+    return status
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--resume",
         action="store_true",
         help="If today's manifest exists, read it and report status rather than re-fetching",
+    )
+    parser.add_argument(
+        "--finalize",
+        action="store_true",
+        help=(
+            "Run as the LAST step of a sweep: recompute last-sweep-status.json from "
+            "profiles actually stamped with health_last_assessed == sweep date. Without "
+            "this, the status file keeps the plan-time baseline (relationships_processed: 0)."
+        ),
+    )
+    parser.add_argument(
+        "--sweep-date",
+        default=None,
+        help="Sweep date for --finalize (YYYY-MM-DD). Defaults to today.",
     )
     parser.add_argument(
         "--cache-dir",
@@ -369,6 +481,13 @@ def main():
     vault_path = Path(vault).expanduser()
 
     today = date.today().isoformat()
+
+    if args.finalize:
+        status = finalize(vault_path, args.cache_dir, args.sweep_date or today)
+        json.dump(status, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        sys.exit(0 if status["exit_code"] == 0 else 1)
+
     manifest_path = args.cache_dir / f"biweekly-sweep-{today}.manifest.json"
 
     if args.resume and manifest_path.exists():

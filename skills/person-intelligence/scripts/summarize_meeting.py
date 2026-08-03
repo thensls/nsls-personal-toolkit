@@ -59,10 +59,56 @@ Extract any personal details mentioned in small talk or conversation — family 
 Keep it factual and direct. Preserve their voice."""
 
 
+UNKNOWN_SUBJECT = "the other participant"
+
+# Words that mean "this is a group or recurring meeting, not a 1:1". A title
+# containing any of these can never yield a subject by inference, no matter how
+# name-shaped the surrounding text is.
+GROUP_TITLE_WORDS = {
+    "all-hands", "allhands", "board", "check-in", "checkin", "council", "crew",
+    "demo", "grooming", "huddle", "kickoff", "leadership", "meeting", "offsite",
+    "onboarding", "planning", "preview", "retro", "retrospective", "review",
+    "roundtable", "session", "slt", "sprint", "squad", "stand-up", "standing",
+    "standup", "summit", "sync", "team", "townhall", "training", "weekly",
+    "workshop",
+}
+
+
+def looks_like_person_name(value):
+    """True only for something shaped like a person's name.
+
+    Deliberately strict: this decides whether we are allowed to guess at all.
+    One to three tokens, each starting with an uppercase letter, none of them a
+    group-meeting word.
+    """
+    if not value:
+        return False
+    tokens = value.split()
+    if not 1 <= len(tokens) <= 3:
+        return False
+    for tok in tokens:
+        bare = tok.strip(".,").replace("'", "").replace("-", "")
+        if not bare or not bare[0].isupper() or not bare.isalpha():
+            return False
+        if tok.lower().strip(".,") in GROUP_TITLE_WORDS:
+            return False
+    return True
+
+
 def infer_person_name(title):
-    """Try to extract a person name from the meeting title."""
+    """Try to extract a person name from the meeting title.
+
+    Returns UNKNOWN_SUBJECT unless the title is confidently a two-party 1:1.
+    Callers must treat UNKNOWN_SUBJECT as "refuse", never as a name.
+    """
     if not title:
-        return "the other participant"
+        return UNKNOWN_SUBJECT
+    # Any group-meeting word disqualifies the whole title up front. Without this,
+    # "Sprint Retro - Platform" splits on " - " and returns "Sprint Retro", which
+    # is name-shaped enough to pass a fallback-sentinel check.
+    words = {w.lower().strip(".,:") for w in title.split()}
+    if words & GROUP_TITLE_WORDS:
+        return UNKNOWN_SUBJECT
     # Common patterns: "Name / User 1:1", "User / Name 1:1", "Name <> User"
     for sep in [" / ", " <> ", " & ", " and ", " - "]:
         if sep in title:
@@ -70,9 +116,10 @@ def infer_person_name(title):
             for part in parts:
                 # Skip the user's name variants
                 clean = part.replace("1:1", "").replace("1-on-1", "").strip()
-                if clean.lower() not in ("kevin", "kevin prentiss", "kp", ""):
-                    return clean
-    return "the other participant"
+                if clean.lower() in ("kevin", "kevin prentiss", "kp", ""):
+                    continue
+                return clean if looks_like_person_name(clean) else UNKNOWN_SUBJECT
+    return UNKNOWN_SUBJECT
 
 
 def main():
@@ -87,7 +134,29 @@ def main():
     transcript = data.get("transcript", "")
     title = data.get("title", "")
     date = data.get("date", "")
-    person_name = data.get("person_name", "") or infer_person_name(title)
+    person_name = data.get("person_name", "")
+    if not person_name:
+        inferred = infer_person_name(title)
+        # A group / recurring meeting title cannot identify a subject. Inferring one here
+        # silently profiles whoever dominated the conversation and writes their traits into
+        # someone else's profile — a real incident on 2026-07-27, where a Sprint Retro and a
+        # Manager Preview Meeting put Jordan Perry's and Kimberly Campbell's material into
+        # Lauren Prentiss's and LaShaundra Randolph's profiles. Refuse instead of guessing.
+        if inferred == UNKNOWN_SUBJECT:
+            print(
+                "ERROR: person_name not provided and it cannot be inferred from the title "
+                f"{title!r}. This looks like a group or recurring meeting, where inference "
+                "would profile the dominant speaker rather than the intended subject. "
+                "Pass person_name explicitly.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+        person_name = inferred
+        print(
+            f"WARN: person_name not provided; inferred {person_name!r} from the title. "
+            "Pass it explicitly — inference is only reliable for two-party 1:1 titles.",
+            file=sys.stderr,
+        )
 
     if not transcript:
         print("ERROR: No transcript provided", file=sys.stderr)

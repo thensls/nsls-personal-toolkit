@@ -97,8 +97,65 @@ def yaml_quote(value):
     return s
 
 
-def compute_proposed_fields(emp):
+def is_redirect(text):
+    return bool(re.search(r"^type:\s*person-redirect\s*$", text, re.MULTILINE))
+
+
+def canonical_from_redirect(text):
+    """Given a person-redirect file's text, return the canonical name it points at."""
+    m = re.search(r"^preferred_name:[ \t]*(\S[^\n]*)$", text, re.MULTILINE)
+    if m:
+        return m.group(1).strip().strip('"').strip("'")
+    m = re.search(r'^canonical_profile:[ \t]*"?\[\[([^\]]+)\]\]"?', text, re.MULTILINE)
+    if m:
+        return m.group(1).strip()
+    m = re.search(r'^canonical:[ \t]*"?\[\[([^\]]+)\]\]"?', text, re.MULTILINE)
+    if m:
+        return m.group(1).strip()
+    return None
+
+
+def build_redirect_map(people_dir):
+    """Map every redirect's own name -> the canonical (preferred) name.
+
+    Rippling stores formal names ("Jordyn Tannenbaum", "Jana Amsellem") for people who
+    go by a preferred name ("Jordan Tannenbaum", "Red Akasha"). Without this map the sync
+    writes the Rippling spelling into every report's `manager:` field, silently reverting
+    the preferred name across the vault.
+    """
+    mapping = {}
+    for path in sorted(people_dir.glob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if not is_redirect(text):
+            continue
+        canonical = canonical_from_redirect(text)
+        if not canonical or canonical == path.stem:
+            continue
+        mapping[path.stem] = canonical
+        # Also map the explicit rippling_name when it differs from the filename.
+        m = re.search(r"^rippling_name:[ \t]*(\S[^\n]*)$", text, re.MULTILINE)
+        if m:
+            rn = m.group(1).strip().strip('"').strip("'")
+            if rn and rn != canonical:
+                mapping[rn] = canonical
+    return mapping
+
+
+def preferred(name, redirect_map):
+    """Resolve a person name to its preferred form (one hop is enough in practice)."""
+    seen = set()
+    while name in redirect_map and name not in seen:
+        seen.add(name)
+        name = redirect_map[name]
+    return name
+
+
+def compute_proposed_fields(emp, redirect_map=None):
     """Return a dict {field: yaml_value} of fields the sync wants to set for this employee."""
+    redirect_map = redirect_map or {}
     proposed = {}
     if emp.get("email"):
         proposed["email"] = yaml_quote(emp["email"])
@@ -109,8 +166,37 @@ def compute_proposed_fields(emp):
     if emp.get("title"):
         proposed["title"] = yaml_quote(emp["title"])
     if emp.get("manager"):
-        proposed["manager"] = yaml_quote(emp["manager"])
+        # NAME-VALUED FIELD: always resolve through the redirect map before writing,
+        # or the Rippling spelling overwrites the preferred name on every report.
+        proposed["manager"] = yaml_quote(preferred(emp["manager"], redirect_map))
     return proposed
+
+
+def follow_redirect(path, people_dir):
+    """Resolve a person-redirect stub to the canonical profile it points at.
+
+    Returns None when the chain cannot be resolved — a dangling target, a cycle,
+    or more than three hops. Never return the stub itself: the caller writes
+    org-chart frontmatter into whatever comes back, so handing back a tombstone
+    overwrites the redirect and leaves the real profile stale. None is handled
+    by find_obsidian_file's caller, which records the employee under
+    `employees_without_obsidian_file` — visible, rather than silently wrong.
+    """
+    for _ in range(3):  # bounded, so a cycle can't hang the sync
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            return None
+        if not is_redirect(text):
+            return path
+        canonical = canonical_from_redirect(text)
+        if not canonical:
+            return None
+        nxt = people_dir / f"{canonical}.md"
+        if not nxt.exists() or nxt == path:
+            return None
+        path = nxt
+    return None
 
 
 def find_obsidian_file(emp, people_dir, email_index):
@@ -119,15 +205,19 @@ def find_obsidian_file(emp, people_dir, email_index):
     Strategy:
       1. Match by email (frontmatter email == emp.email)
       2. Match by exact filename `[Name].md`
+
+    Either match may land on a `person-redirect` stub — a redirect shares the canonical
+    person's email by design. Always follow it, or the sync writes org data into the
+    tombstone and leaves the real profile stale.
     """
     email = (emp.get("email") or "").lower()
     if email and email in email_index:
-        return email_index[email]
+        return follow_redirect(email_index[email], people_dir)
     name = emp.get("name", "")
     if name:
         candidate = people_dir / f"{name}.md"
         if candidate.exists():
-            return candidate
+            return follow_redirect(candidate, people_dir)
     return None
 
 
@@ -138,6 +228,11 @@ def build_email_index(people_dir):
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
+            continue
+        # Redirect stubs carry the canonical person's email on purpose. Indexing them
+        # lets filename sort order decide which file wins — that is how "Jordyn
+        # Tannenbaum.md" beat "Jordan Tannenbaum.md". Never index a redirect.
+        if is_redirect(text):
             continue
         fm_lines, _ = parse_frontmatter(text)
         if not fm_lines:
@@ -151,13 +246,13 @@ def build_email_index(people_dir):
     return index
 
 
-def diff_employee(emp, path):
+def diff_employee(emp, path, redirect_map=None):
     """Return list of (field, old, new) tuples for this employee's file."""
     text = path.read_text(encoding="utf-8")
     fm_lines, _ = parse_frontmatter(text)
     if not fm_lines:
         return []
-    proposed = compute_proposed_fields(emp)
+    proposed = compute_proposed_fields(emp, redirect_map)
     changes = []
     for field in SYNC_FIELDS:
         if field not in proposed:
@@ -221,6 +316,12 @@ def main():
 
     employees = resolve_user.load_org_chart(chart_path)
     email_index = build_email_index(people_dir)
+    redirect_map = build_redirect_map(people_dir)
+    if redirect_map:
+        print("Preferred-name redirects honored:")
+        for formal, canonical in sorted(redirect_map.items()):
+            print(f"  {formal} -> {canonical}")
+        print()
 
     summary = {
         "files_changed": 0,
@@ -234,7 +335,7 @@ def main():
         if path is None:
             summary["employees_without_obsidian_file"].append(emp.get("name", "?"))
             continue
-        changes = diff_employee(emp, path)
+        changes = diff_employee(emp, path, redirect_map)
         if not changes:
             summary["files_unchanged"] += 1
             continue
