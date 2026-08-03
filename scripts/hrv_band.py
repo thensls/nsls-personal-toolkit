@@ -53,8 +53,11 @@ FM_BLOCK_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.
 def read_hrv(vault: pathlib.Path, day: datetime.date):
     """Return the settled hrv_ms for `day`, or None if absent/null/unparseable."""
     note = vault / "01-daily" / f"{day.isoformat()}.md"
-    if not note.exists():
-        return None
+    # No exists() precheck: the vault lives in iCloud Drive, so a note can be
+    # evicted, renamed, or briefly locked by sync between the check and the read.
+    # A missing note is supposed to be skipped, not to abort the whole band, so
+    # let the read decide and swallow the OSError.
+    #
     # Frontmatter ONLY. The body routinely quotes HRV in prose (the band line
     # this script emits ends up there), so falling back to a scan of the whole
     # note would read a narrated spot-reading as a settled aggregate. No complete
@@ -63,7 +66,10 @@ def read_hrv(vault: pathlib.Path, day: datetime.date):
     # inline triple-dash inside a value (title: "foo---bar") as the closing fence,
     # truncates the block above hrv_ms, and silently reports no reading for a day
     # that has one.
-    text = note.read_text(errors="ignore")
+    try:
+        text = note.read_text(errors="ignore")
+    except OSError:
+        return None
     block = FM_BLOCK_RE.match(text)
     if not block:
         return None
