@@ -106,7 +106,7 @@ Use the same categorization rules from `/close-day` (Gmail, YouTube, Airtable, e
 **1c. Asana tasks completed this week**
 
 ```
-mcp__claude_ai_asana__asana_search_tasks(
+search_tasks(     ← the Asana connector's task search (resolve the live mcp__<uuid>__ name; `asana_search_tasks` on older connector versions)
   assignee_any="me",
   completed=true,
   completed_on_after="YYYY-MM-DD",  // Saturday (start of range)
@@ -120,7 +120,7 @@ mcp__claude_ai_asana__asana_search_tasks(
 **1d. Asana tasks still overdue**
 
 ```
-mcp__claude_ai_asana__asana_search_tasks(
+search_tasks(     ← the Asana connector's task search (resolve the live mcp__<uuid>__ name; `asana_search_tasks` on older connector versions)
   assignee_any="me",
   completed=false,
   due_on_before="YYYY-MM-DD",  // today (Friday)

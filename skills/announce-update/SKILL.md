@@ -218,6 +218,12 @@ Show:
 - Commit pushed: `<sha>`
 - Announcement ID: `<id>` from POST response
 
+Then judge whether this release shipped something **registerable** — a new
+skill, tool, or service other builders will rely on (a pure bugfix, doc tweak,
+or maintenance release is not). If it did, or you can't tell, end with:
+"Shipped something new in this release? Run `/register-automation` so it's on
+the org tracker." Skip the line for clearly maintenance-only releases.
+
 ---
 
 ## Output format rules

@@ -198,10 +198,19 @@ Extract: meeting title, start/end time, attendees. Flag meetings that need prep 
 
 **2b. Asana — what's due and overdue**
 
+> **Connector tool names are per-machine.** claude.ai connector tools (Asana,
+> Fathom, Slack, Gmail, Calendar, Airtable) are namespaced `mcp__<uuid>__<tool>`
+> and the UUID differs on every install — never call a hardcoded name. Find the
+> tool in THIS session's tool list by its suffix (suffixes can vary slightly by
+> connector version — match by capability). **If no Asana tools exist in this
+> session, the connector isn't connected: say so plainly — "No Asana connected,
+> so no task list today; connect it via Settings › Connectors (Ctrl+,/Cmd+,) to
+> pull tasks in" — and continue without the task steps. Never skip silently.**
+
 Two parallel calls:
 
 ```
-mcp__claude_ai_Asana__get_my_tasks(
+get_my_tasks(
   completed_since="now",
   limit=100,
   opt_fields="name,due_on,projects.name,assignee_section.name"
@@ -209,7 +218,7 @@ mcp__claude_ai_Asana__get_my_tasks(
 ```
 
 ```
-mcp__claude_ai_Asana__search_tasks_preview(
+search_tasks_preview(     ← or the connector's equivalent task search
   assignee_any="me",
   completed=false,
   due_on_before="YYYY-MM-DD+1"
@@ -332,7 +341,7 @@ If the list is empty, omit the section entirely. If a candidate appears in last 
 
 If `learning_capture_method` in the builder profile is set to `slack`, scrape the builder's Slack self-DMs for URLs:
 
-1. Use `mcp__plugin_slack_slack__slack_read_channel` to read the builder's self-DM channel (using `$SLACK_USER_ID`). Look for messages from the last 24 hours containing URLs.
+1. Use the Slack connector's `slack_read_channel` (resolve the live `mcp__<uuid>__` name — see 2b's note) to read the builder's self-DM channel (using `$SLACK_USER_ID`). Look for messages from the last 24 hours containing URLs.
 2. For each URL found:
    - Fetch the page title via WebFetch (just the title and first paragraph, not the full page)
    - Generate a 1-2 sentence summary
@@ -728,10 +737,12 @@ Other SLT items ripe for promotion:
 Which should I shadow to Asana? (comma list of rec IDs, "all", or "none")
 ```
 
-For each selected SLT action, create an Asana companion task:
+For each selected SLT action, create an Asana companion task (the selection
+above IS the consent — create only what the builder picked). Use the Asana
+connector's task-creation tool (resolve the live name — see 2b's note):
 
 ```
-mcp__claude_ai_Asana__create_task_preview(
+create_task_preview(
   taskName="[action_description]",
   assignee="me",
   dueDate="YYYY-MM-DD",
@@ -1037,10 +1048,16 @@ When you don't skip:
    "$TC" status
    ```
    - Output `Running: pid <pid>, address <addr>` → parse the URL, continue to step 2.
-   - Output contains `Not running` or `stale pidfile` → **start it automatically** in the background:
+   - Output starts with `Starting:` → the server is mid-boot (startup grace window); wait ~3 seconds, re-run `"$TC" status` once, and follow that result's branch.
+   - Output contains `Not running` or `stale pidfile` → **start it with the
+     harness's run-in-background facility** (Bash `run_in_background` — NEVER a
+     bare `&`, which dies when the tool call's shell exits and takes the server
+     with it; observed live):
      ```bash
-     OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
-     sleep 2
+     OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open
+     ```
+     Then, in a separate foreground call a couple of seconds later:
+     ```bash
      "$TC" status
      ```
      If it's now running, parse the URL and continue to step 2. If it still fails, tell the builder: *"Companion couldn't start. Run `open day visual off` to stay in chat, or check the error."* Then skip the rest of this step.
@@ -1052,7 +1069,7 @@ When you don't skip:
 
 3. **Hand off to the browser, quietly.** Print exactly this (substituting the actual URL), and **do not dump suggestion text or long flow narration into chat** — the builder is doing that work in the browser now. **Always give a clickable link**: present the URL as `http://localhost:<port>` as a Markdown link, never a bare IP.
 
-   > A tab opened at http://localhost:<port> — **open it in your web browser (Chrome/Safari), not the app's embedded panel.** A **separate browser window** works best — you can alt-tab between it and this chat. Edits made in the Claude Code desktop "panel"/side view don't save. If the page won't load, use http://127.0.0.1:<port> instead. Then pick your Top 3, add anything else to the Bonus list, and click **Done — show Command Center** when you're ready.
+   > I've opened a separate browser tab you can keep open through the day as your **command center**: http://localhost:<port> (if it won't load, use http://127.0.0.1:<port>). Pick your Top 3, add anything else to the Bonus list, and click **Done — show Command Center** when you're ready.
    >
    > When you're done, say **done** here and I'll print a one-line summary. Or just go straight into your day — the daily note is being saved as you type. Type `open day visual off` if you'd rather skip the visual next time.
 

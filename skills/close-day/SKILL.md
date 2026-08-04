@@ -23,8 +23,8 @@ Synthesize the builder's full day from seven data sources into a daily note and 
 | **Fathom** | Meeting summaries, topics, action items, decisions | Bash: Python script calling Fathom API (see below) |
 | **Sent Email** | Approvals, decisions, outbound communications | `gmail_search_messages` MCP tool (`from:me after:YYYY/M/DD before:YYYY/M/DD+1`) |
 | **Sent Slack** | Conversations, decisions, coordination, context | `slack_search_public_and_private` MCP tool (`from:<@${SLACK_USER_ID}> on:YYYY-MM-DD`) |
-| **Asana** | Pending tasks, overdue items, what was due today | `mcp__claude_ai_Asana__get_my_tasks` and `mcp__claude_ai_asana__asana_search_tasks` MCP tools |
-| **Apple Health** | Personal-goal execution: workouts, exercise minutes, distance, HR, sleep, VO2 max | `mcp__apple-health__apple_health_workouts` and `mcp__apple-health__apple_health_daily` MCP tools |
+| **Asana** | Pending tasks, overdue items, what was due today | Asana connector tools (`get_my_tasks`, task search) — resolve live names per the note in Step 1g |
+| **Apple Health** | Personal-goal execution: workouts, exercise minutes, distance, HR, sleep, VO2 max | `mcp__apple-health__apple_health_workouts` and `mcp__apple-health__apple_health_daily` MCP tools (local server — stable name) |
 | **Claude session context** | What was built, decided, and discussed in this conversation | Conversation history in current session |
 
 ## Builder Context
@@ -114,12 +114,14 @@ TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolki
 **Real browser, not the app panel.** Tell the builder to open the link in an actual browser tab (Chrome/Safari), **not** the Claude Code desktop "panel"/embedded view — edits made in the panel don't reach the local server and are lost silently (the companion shows an orange warning banner when it detects this). If the page won't load, use `http://127.0.0.1:<port>` — some machines resolve `localhost` to IPv6, which the IPv4-only server refuses.
 
 1. **Resolve `"$TC"`** (above). If it can't be found, or you're not on a surface that can run a local server, **skip silently** and close in chat.
-2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Not running`, start it in the background, then re-check:
+2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Starting:`, wait ~3 seconds and re-run status once. If it reports `Not running`, start it **with the harness's run-in-background facility** (Bash `run_in_background` — never a bare `&`, which dies when the tool call's shell exits and takes the server with it):
    ```bash
    # serve auto-detects the test vault from OBSIDIAN_VAULT_PATH and starts the
    # test instance (port 7788, its own pidfile) — no flag needed on serve.
-   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open &
-   sleep 2
+   OBSIDIAN_VAULT_PATH="$OBSIDIAN_VAULT_PATH" "$TC" serve --no-open
+   ```
+   Then, in a separate foreground call a couple of seconds later:
+   ```bash
    # Re-check at the SAME scope you started. In test mode you MUST pass --test —
    # plain `status` reads the REAL companion's pidfile and will wrongly report
    # "Not running", forcing a needless chat fallback.
@@ -388,7 +390,7 @@ The **"Meeting time"** line is an orthogonal metric — it cross-cuts all catego
 Use the Fathom MCP tools (no API key or Python script needed):
 
 ```
-mcp__claude_ai_Fathom__list_meetings(
+list_meetings(        ← the Fathom connector's tool; resolve the live mcp__<uuid>__ name from this session's tools
   created_after="YYYY-MM-DDT00:00:00Z",
   created_before="YYYY-MM-DDT23:59:59Z",
   include_summary=true,
@@ -532,11 +534,21 @@ Distinguish "didn't do it" from "did it but didn't log it on the Watch." An unlo
 
 **1g. Asana — pending tasks and what was due**
 
+> **Connector tool names are per-machine.** claude.ai connector tools (Asana,
+> Fathom, Slack, Gmail, Calendar, Airtable) are namespaced `mcp__<uuid>__<tool>`
+> and the UUID differs on every install — never call a hardcoded name. Find the
+> tool in THIS session's tool list by its suffix (e.g. `get_my_tasks`; suffixes
+> can vary slightly by connector version — match by capability). **If no Asana
+> tools exist in this session, the connector isn't connected: say so plainly —
+> "No Asana connected, so no task sync today; connect it via Settings ›
+> Connectors (Ctrl+,/Cmd+,) to include tasks" — and skip 1g and Step 7. Never
+> skip silently.**
+
 Run in parallel with other data collection. Two calls:
 
 **Call 1: Get all incomplete tasks assigned to the builder**
 ```
-mcp__claude_ai_Asana__get_my_tasks(
+get_my_tasks(
   completed_since="now",
   limit=100,
   opt_fields="name,due_on,projects.name,assignee_section.name"
@@ -545,7 +557,7 @@ mcp__claude_ai_Asana__get_my_tasks(
 
 **Call 2: Search for tasks that were due today or are overdue**
 ```
-mcp__claude_ai_asana__asana_search_tasks(
+search_tasks(         ← named `asana_search_tasks` on older connector versions
   assignee_any="me",
   completed=false,
   due_on_before="YYYY-MM-DD",  // the target date
@@ -1028,24 +1040,44 @@ Also update each project's home note:
 
 This step does three things: marks finished tasks done, adds progress notes to in-progress tasks, and creates new tasks from carry-overs.
 
-**7a. Complete finished tasks**
-
-Cross-reference the day's Work Log against the builder's open Asana tasks (fetched in Step 1g). For each Asana task that was clearly completed today, mark it done:
+**Gate — build the full preview, then ASK. Never write to Asana unprompted.**
+Assemble the complete write-back plan across 7a/7b/7c BEFORE calling any Asana
+write tool, and present it as a **clickable choice** (AskUserQuestion with
+multi-select where available; otherwise a compact list in chat) with per-item
+control and a genuine decline:
 
 ```
-mcp__claude_ai_Asana__update_tasks(
+Sync these to Asana?
+  ✅ Complete:  "[task name]" — evidence: [work-log bullet]
+  💬 Comment:   "[task name]" — "Progress 3/25: [what was done]"
+  ➕ Create:    "[carry-over]" (P2, due YYYY-MM-DD)
+  (pick any / all / "no — I'll update Asana myself")
+```
+
+Only approved items proceed. **7a and 7b mutate tasks other people see on
+shared boards** — a wrong auto-complete or stray comment is publicly visible,
+so they are never run unconfirmed, however clear the evidence looks.
+"Conservative matching" is a judgment guardrail, not a consent gate; the ask
+is the gate. Declining everything is a fine outcome.
+
+**7a. Complete finished tasks (approved items only)**
+
+Cross-reference the day's Work Log against the builder's open Asana tasks (fetched in Step 1g). For each **approved** task, mark it done via the Asana connector's `update_tasks` (resolve the live tool name — see the connector-naming note in Step 1g):
+
+```
+update_tasks(
   tasks=[{"task": "[GID]", "completed": true}]
 )
 ```
 
-**How to match:** Compare Asana task names against Work Log bullets, sent emails, Fathom action items marked done, and Claude session accomplishments. Be conservative — only mark complete if there's clear evidence the task is finished, not just worked on.
+**How to match (for building the preview):** Compare Asana task names against Work Log bullets, sent emails, Fathom action items marked done, and Claude session accomplishments. Be conservative — propose completion only when there's clear evidence the task is finished, not just worked on.
 
-**7b. Comment on in-progress tasks**
+**7b. Comment on in-progress tasks (approved items only)**
 
-For Asana tasks that the builder worked on but didn't finish, add a progress comment:
+For **approved** in-progress tasks, add the progress comment via the connector's comment tool (`add_comment` / `create_task_story`, by connector version):
 
 ```
-mcp__claude_ai_asana__add_comment(
+add_comment(
   task_id="[GID]",
   text="Progress 3/25: [what was done]. Remaining: [what's left]."
 )
@@ -1053,12 +1085,12 @@ mcp__claude_ai_asana__add_comment(
 
 This keeps Asana as a living record of where things stand.
 
-**7c. Create new carry-over tasks**
+**7c. Create new carry-over tasks (approved items only)**
 
-For each item in **Carrying Over** that doesn't already exist in Asana, create it with priority and due date:
+For each **approved** item in **Carrying Over** that doesn't already exist in Asana, create it with priority and due date via the connector's task-creation tool (`create_task_preview` → `create_task_confirm` where the connector offers the preview pair — keep that two-step as a second belt; plain `create_tasks` otherwise):
 
 ```
-mcp__claude_ai_Asana__create_task_preview(
+create_task_preview(
   taskName="[carry-over item]",
   assignee="me",
   dueDate="YYYY-MM-DD",
@@ -1066,7 +1098,7 @@ mcp__claude_ai_Asana__create_task_preview(
 )
 ```
 
-Then confirm with `mcp__claude_ai_Asana__create_task_confirm` using workspace `${ASANA_WORKSPACE_GID}`.
+Then confirm with `create_task_confirm` using workspace `${ASANA_WORKSPACE_GID}`.
 
 **Priority framework (CEO lens):**
 

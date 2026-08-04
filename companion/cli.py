@@ -5,6 +5,7 @@ import shutil
 import signal
 import socket
 import sys
+import time
 import webbrowser
 from pathlib import Path
 
@@ -19,6 +20,10 @@ PID_FILE = _PLUGIN_DIR / ".companion.pid"
 TEST_PID_FILE = _PLUGIN_DIR / ".companion-test.pid"
 DEFAULT_PORT = 7777
 TEST_DEFAULT_PORT = 7788
+# `status` won't reap a non-responding server whose pidfile is younger than
+# this — Flask needs a beat to bind, and reaping inside that window kills
+# healthy servers.
+STARTUP_GRACE_SECONDS = 15
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
 
 
@@ -237,12 +242,42 @@ def status(test_mode):
         click.echo("Not running (stale pidfile cleaned up).")
         pid_file.unlink(missing_ok=True)
         sys.exit(1)
-    # Verify the port actually responds
+    # Verify the port actually responds — with a startup grace window. Flask
+    # takes a moment to bind after the pidfile is written, and a `status`
+    # probe racing that window used to conclude the server was dead and
+    # SIGTERM a perfectly healthy process (bit twice in one onboarding run:
+    # the server "died ~2s after start" with nothing in its own log). Retry
+    # briefly; inside the grace window report "Starting" and never reap.
     host, _, port_str = addr.partition(":")
     try:
-        with socket.create_connection((host, int(port_str)), timeout=2):
-            pass
-    except (OSError, ValueError):
+        port = int(port_str)
+    except ValueError:
+        port = None  # malformed address line — unprobeable, fall through to reap
+    responded = False
+    if port is not None:
+        for attempt in range(3):
+            try:
+                with socket.create_connection((host, port), timeout=2):
+                    responded = True
+                    break
+            except OSError:
+                if attempt < 2:
+                    time.sleep(1)
+    if not responded:
+        try:
+            pidfile_age = time.time() - pid_file.stat().st_mtime
+        except OSError:
+            pidfile_age = float("inf")  # stat raced an unlink — out of grace
+        # Inside the grace window an unparseable address line gets the same
+        # benefit of the doubt as an unresponsive port: the pidfile write
+        # isn't atomic, so a torn/partial address just means "mid-startup".
+        # Past the window, unparseable falls through to the reap below.
+        if pidfile_age < STARTUP_GRACE_SECONDS:
+            click.echo(
+                f"Starting: pid {pid}, address {addr} "
+                "(port not up yet — re-run status in a few seconds)."
+            )
+            return
         click.echo("Not running (process alive but port not responding; cleaning up).")
         try:
             os.kill(pid, signal.SIGTERM)
