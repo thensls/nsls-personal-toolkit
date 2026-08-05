@@ -92,46 +92,61 @@ Common modifications:
 ## How Updates Reach a Builder
 
 **`~/.claude/local-plugins/` is not a Claude Code convention** — it's just this
-project's checkout location. Nothing there loads automatically. A plugin living
+project's checkout location, and it appears nowhere in the plugin docs. A plugin
 outside a skills directory is *locally enabled* via
-`enabledPlugins: {"nsls-personal-toolkit@local": true}` in `~/.claude/settings.json`,
-and a locally enabled plugin **does not reliably load its bundled `hooks/hooks.json`**
-(notably on Claude Code desktop). The builder toolkit hit this and works around it
-the same way.
+`enabledPlugins: {"nsls-personal-toolkit@local": true}` in `~/.claude/settings.json`.
 
-So updates ride on **two** registrations, primary first:
+Whether a locally enabled plugin loads its bundled `hooks/hooks.json` is **not
+something to rely on**. The builder toolkit's installer states both that local
+enable "loads skills/commands/hooks" *and* that a locally enabled plugin "does not
+reliably load bundled hooks (especially on Claude Code desktop)" — and it resolves
+the contradiction in practice by registering its hooks in the global
+`settings.json`. We do the same, and ship no `hooks/hooks.json` at all: two
+registrations would mean two concurrent `git pull`s racing for `.git/index.lock`
+and two non-atomic pointer writes, for no added coverage.
 
-1. **`~/.claude/settings.json` → `hooks.SessionStart`**, written by `install.sh` /
-   `install.ps1`. The pull entry is a bare `git` call on purpose — no python, no
-   bash, so neither a missing Git Bash nor the Microsoft-Store python stub can
-   defeat it. This is the path that actually fires.
-2. **`hooks/hooks.json`** in the plugin root — the documented location, kept as a
-   fallback for surfaces that do load bundled hooks. Don't rely on it alone.
+**The single registration** is `~/.claude/settings.json` → `hooks.SessionStart`,
+written idempotently by `install.sh` / `install.ps1`:
+
+- The pull entry is a bare `git` call on purpose — no python, no bash, so neither a
+  missing Git Bash nor the Microsoft-Store python stub can defeat it.
+- `matcher` is `startup|resume`, not `startup` — a resumed session must update too.
+- Both installers **append their own entry and never touch another**. The builder
+  toolkit registers into this same array; an earlier version of the PowerShell block
+  dropped whole entries whose commands merely mentioned our path, which silently
+  deleted the builder toolkit's hook on any machine where `install.sh` ran first.
+- `install.sh` verifies the write *outside* the python heredoc, via a printed
+  sentinel. Verifying inside it is worthless against the Store-stub interpreter that
+  exits 0 having run nothing — the check never executes, so the installer would
+  report neither success nor failure.
 
 `install.sh` clones from `thensls/nsls-personal-toolkit` by default (override with
 `NSLS_PERSONAL_REPO`), so for a standard install `origin` *is* upstream and a merge
 to `main` reaches everyone whose hook is registered.
 
-Two things to know:
+### What pulls this toolkit today — it differs by platform
 
-- **`hooks/session-start.py` was unregistered for a long time.** Nothing pointed at
-  it — not `install.sh`, not `install.ps1`, not `plugin.json` — so the toolkit never
-  auto-updated and every fix had to be pulled by hand.
-- **An existing install can't self-update into having the hook** — it has to arrive
-  first. Either re-run the installer, or one catch-up pull:
-  ```bash
-  git -C ~/.claude/local-plugins/nsls-personal-toolkit pull --ff-only
-  ```
-  On a machine with the **builder** toolkit, its SessionStart hook is already
-  registered and already self-updates, so shipping the personal-toolkit pull there
-  (`SYNC_PLUGINS` in the builder's `hooks/session-start.py` lists both toolkits but
-  `git_pull()` only pulls its own dir) reaches those builders with no action at all.
+| Machine | Personal toolkit auto-pulled? |
+| :-- | :-- |
+| Windows + builder toolkit | **Yes, already.** The builder's `hooks/session-start.ps1` loops `@($BuilderDir, $PersonalDir)` and pulls both. |
+| macOS/Linux + builder toolkit | **No.** The builder's `hooks/session-start.py` lists both in `SYNC_PLUGINS` (pointer sync) but `git_pull()` pulls only its own dir. |
+| Either, personal toolkit only | Only once this installer has registered the hook above. |
 
-`--ff-only` refuses on a dirty tree or a diverged branch, and `## Customizing`
-below actively invites editing skills in place — so that's a normal state, not an
-edge case. It used to fail silently; now the hook prints one line naming the
-reason. If you edit skills locally, commit your changes so fast-forwards keep
-working.
+So the cheapest way to cover existing macOS/Linux builders is to make the builder
+toolkit's `git_pull()` iterate `SYNC_PLUGINS` the way its PowerShell counterpart
+already does — that hook is already registered and already self-updates, so it
+reaches them with no action on their part.
+
+**An existing install can't self-update into having the hook** — it has to arrive
+first. Either re-run the installer, or one catch-up pull:
+
+```bash
+git -C ~/.claude/local-plugins/nsls-personal-toolkit pull --ff-only
+```
+
+Note `hooks/session-start.py` sat unregistered for a long time — nothing pointed at
+it, so on macOS/Linux this toolkit never auto-updated and every fix had to be
+pulled by hand.
 
 ## Keeping Your Fork Updated
 

@@ -46,50 +46,77 @@ if (Test-Path $PluginDir) {
 #
 # The pull hook is a bare `git` call deliberately: no python, no bash, so it
 # can't be defeated by the Microsoft-Store python stub or a missing Git Bash.
-$Settings = Join-Path $env:USERPROFILE '.claude\settings.json'
-if (Test-Path $Settings) {
-  try {
-    $cfg = Get-Content $Settings -Raw -Encoding UTF8 | ConvertFrom-Json
-
-    if (-not ($cfg.PSObject.Properties.Name -contains 'enabledPlugins') -or $null -eq $cfg.enabledPlugins) {
-      $cfg | Add-Member -NotePropertyName enabledPlugins -NotePropertyValue ([pscustomobject]@{}) -Force
-    }
-    $cfg.enabledPlugins | Add-Member -NotePropertyName 'nsls-personal-toolkit@local' -NotePropertyValue $true -Force
-
-    if (-not ($cfg.PSObject.Properties.Name -contains 'hooks') -or $null -eq $cfg.hooks) {
-      $cfg | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force
-    }
-    $ss = @($cfg.hooks.SessionStart)
-    $ss = @($ss | Where-Object { $null -ne $_ })
-
-    $pullCmd = 'git -C "' + $PluginDir + '" pull --ff-only --quiet'
-    # Keep every existing entry (the builder toolkit registers its own here);
-    # only drop a previous copy of ours so re-running stays idempotent.
-    $ss = @($ss | Where-Object {
-      -not (($_.hooks | ForEach-Object { $_.command }) -join ' ' -like '*nsls-personal-toolkit" pull*')
-    })
-    $ss += , @{ matcher = 'startup'; hooks = @(@{ type = 'command'; command = $pullCmd;
-                 timeout = 20; statusMessage = 'Updating personal toolkit...' }) }
-    $cfg.hooks | Add-Member -NotePropertyName SessionStart -NotePropertyValue $ss -Force
-
-    # BOM-less write: PowerShell 5.1's `Set-Content -Encoding utf8` emits a BOM,
-    # which breaks json.load() for every other consumer of settings.json.
-    [System.IO.File]::WriteAllText($Settings, ($cfg | ConvertTo-Json -Depth 12),
-      (New-Object System.Text.UTF8Encoding $false))
-
-    # Verify by re-reading rather than trusting that the write happened.
-    $chk = Get-Content $Settings -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ($chk.enabledPlugins.'nsls-personal-toolkit@local') {
-      Write-Host "  Enabled plugin + registered the auto-update hook."
-    } else {
-      Write-Host "  Note: settings.json write did not take effect."
-    }
-  } catch {
-    Write-Host "  Note: could not update settings.json - see README (Updates) to add the hook by hand."
+# $HOME (not $env:USERPROFILE) to match $PluginDir above — on a machine with a
+# redirected or UNC home these differ under PS 5.1, and the clone and the
+# settings file must land under the same root.
+$Settings = Join-Path $HOME '.claude\settings.json'
+try {
+  # Create it when absent rather than bailing: a first-ever install would
+  # otherwise register nothing, with nothing to remind the builder later.
+  if (Test-Path $Settings) {
+    $raw = Get-Content $Settings -Raw
+    # Strip a UTF-8 BOM by hand — an older installer may have written one, and
+    # ConvertFrom-Json chokes on it.
+    if ($raw.Length -gt 0 -and $raw[0] -eq [char]0xFEFF) { $raw = $raw.Substring(1) }
+    $cfg = if ($raw.Trim()) { $raw | ConvertFrom-Json } else { [pscustomobject]@{} }
+  } else {
+    New-Item -ItemType Directory -Force -Path (Split-Path $Settings) | Out-Null
+    $cfg = [pscustomobject]@{}
   }
-} else {
-  Write-Host "  Note: no settings.json yet - re-run this installer after your first Claude Code session."
+
+  if (-not ($cfg.PSObject.Properties.Name -contains 'enabledPlugins') -or $null -eq $cfg.enabledPlugins) {
+    $cfg | Add-Member -NotePropertyName enabledPlugins -NotePropertyValue ([pscustomobject]@{}) -Force
+  }
+  $cfg.enabledPlugins | Add-Member -NotePropertyName 'nsls-personal-toolkit@local' -NotePropertyValue $true -Force
+
+  if (-not ($cfg.PSObject.Properties.Name -contains 'hooks') -or $null -eq $cfg.hooks) {
+    $cfg | Add-Member -NotePropertyName hooks -NotePropertyValue ([pscustomobject]@{}) -Force
+  }
+  $ss = @(@($cfg.hooks.SessionStart) | Where-Object { $null -ne $_ })
+
+  $pullCmd = 'git -C "' + $PluginDir + '" pull --ff-only --quiet'
+  $pullMarker = $PluginDir + '" pull'
+
+  # Append-only, and idempotency is checked across EVERY entry. Never filter or
+  # rewrite another entry: the builder toolkit registers its own SessionStart
+  # hook in this same array, and an earlier version of this block dropped whole
+  # entries whose commands merely mentioned our path — which silently deleted
+  # the builder toolkit's hook (its auto-update, pointer sync and tracker ping)
+  # on any machine where install.sh had run first.
+  $found = $false
+  foreach ($entry in $ss) {
+    foreach ($h in @($entry.hooks)) {
+      if ($h.command -and $h.command.Contains($pullMarker)) { $found = $true }
+    }
+  }
+  if (-not $found) {
+    # startup|resume: a resumed session must update too.
+    $ss += , @{ matcher = 'startup|resume'; hooks = @(@{ type = 'command'; command = $pullCmd;
+                 timeout = 20; statusMessage = 'Updating personal toolkit...' }) }
+  }
+  $cfg.hooks | Add-Member -NotePropertyName SessionStart -NotePropertyValue $ss -Force
+
+  # BOM-less write: PowerShell 5.1's `Set-Content -Encoding utf8` emits a BOM,
+  # which breaks json.load() for every other consumer of settings.json.
+  [System.IO.File]::WriteAllText($Settings, ($cfg | ConvertTo-Json -Depth 12),
+    (New-Object System.Text.UTF8Encoding $false))
+
+  # Verify by re-reading rather than trusting that the write happened.
+  $chk = Get-Content $Settings -Raw | ConvertFrom-Json
+  if ($chk.enabledPlugins.'nsls-personal-toolkit@local') {
+    Write-Host "  Enabled plugin + registered the auto-update hook."
+  } else {
+    Write-Host "  Note: settings.json write did not take effect."
+  }
+} catch {
+  Write-Host "  Note: could not update settings.json - see README (Updates) to add the hook by hand."
 }
+
+# Pointer sync is NOT registered here. It needs Python, and a stock Win11
+# python/python3 is the Store stub that exits 0 having done nothing. On Windows
+# the builder toolkit's own hook (hooks/session-start.ps1) already syncs
+# pointers for BOTH toolkits, so registering a Python one here would add a
+# failure mode without adding coverage.
 
 Write-Host ""
 Write-Host "Done! Personal productivity skills installed at:"

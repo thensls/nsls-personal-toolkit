@@ -2,10 +2,12 @@
 """
 session-start.py — SessionStart hook for the NSLS Personal Productivity Toolkit.
 
-Registered by hooks/hooks.json. Runs on every Claude Code session start:
+Registered in ~/.claude/settings.json by install.sh (see "How Updates Reach a
+Builder" in CLAUDE.md for why that, and not a bundled hooks/hooks.json).
+Runs on every Claude Code session start:
 1. git pull the toolkit to get latest updates (fast-forward only) — skipped with
-   --no-pull, which hooks.json passes because it runs the pull itself as a bare
-   `git` command (that keeps the update path free of any Python dependency).
+   --no-pull, which the installer passes because it registers the pull as its own
+   bare `git` entry (keeping the update path free of any Python dependency).
 2. Report when the toolkit could NOT update, instead of hiding it.
 3. Sync skill pointers from the plugin to ~/.claude/skills/ so each skill is
    discoverable by name (and invokable as a slash command).
@@ -16,12 +18,13 @@ while fixes ship upstream, which is exactly the failure that motivated the
 visual-companion self-heal.
 
 NOTE: this script sat in the repo unregistered for a long time — no installer or
-manifest referenced it — so the toolkit never actually auto-updated. hooks.json
-is what wires it in; don't remove that file thinking it's redundant.
+manifest referenced it — so on macOS/Linux the toolkit never actually
+auto-updated. install.sh's settings.json merge is what wires it in.
 
-Mirrors the builder-toolkit hook but scoped to the personal-toolkit — the
-builder-toolkit hook only syncs its own skills, so without this hook, new
-personal-toolkit skills added via `git pull` never get registered.
+Mirrors the builder-toolkit hook. Note what that one does and doesn't cover: its
+SYNC_PLUGINS lists both toolkits, so it syncs our pointers, but on macOS/Linux its
+git_pull() pulls only its own directory (its PowerShell counterpart pulls both).
+So on macOS/Linux nothing fetched this toolkit before this hook was registered.
 """
 
 import re
@@ -43,7 +46,7 @@ SKILLS_DIR = HOME / ".claude" / "skills"
 # user-owned skill matched the check and would be replaced by a ~200-byte stub.
 # That includes a cloud-synced custom skill, where the full text lives in
 # ~/.claude/skills/ rather than being a pointer. Dormant while nothing ran this
-# script; live the moment hooks.json registered it.
+# script; live the moment the installer registered it.
 POINTER_SENTINEL = (
     "Read and follow the full skill at "
     "`~/.claude/local-plugins/nsls-personal-toolkit/skills/"
@@ -160,8 +163,9 @@ def report_if_stale():
         )
         return
 
-    # No network here: hook 1's pull already updated the remote-tracking ref, so
-    # a non-zero "behind" count means the fast-forward itself was refused.
+    # No network here: the installer's pull entry runs before this one and has
+    # already updated the remote-tracking ref, so a non-zero "behind" count means
+    # the fast-forward itself was refused.
     counts_ok, counts = _git("rev-list", "--left-right", "--count", "@{upstream}...HEAD")
     if not counts_ok or not counts:
         return
@@ -255,7 +259,7 @@ def sync_pointers():
 
 
 def main():
-    # hooks/hooks.json runs the pull itself as a bare `git` command (no
+    # The installer registers the pull as its own bare `git` entry (no
     # interpreter needed, so the update path can't be broken by a missing or
     # miswired python) and passes --no-pull here to avoid a second round trip.
     if "--no-pull" not in sys.argv:

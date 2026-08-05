@@ -81,12 +81,17 @@ fi
 # that Windows might lack. Pointer sync (which does need python) is registered
 # separately below and is allowed to be absent.
 SETTINGS="$HOME/.claude/settings.json"
-if [ -f "$SETTINGS" ]; then
-  PLUGIN_DIR="$PLUGIN_DIR" python3 - <<'PYEOF' 2>/dev/null || echo "  Note: could not update settings.json — see README (Updates) to add the hook by hand"
+if [ -f "$SETTINGS" ] && [ -n "$PY" ]; then
+  # Use "$PY" (python3 → python), not a hardcoded python3: on Windows Git Bash
+  # python3 often doesn't exist, and the sentinel check below is OUTSIDE the
+  # heredoc so a Store-stub interpreter that exits 0 having run nothing is
+  # detected rather than reported as success.
+  _settings_out="$(PLUGIN_DIR="$PLUGIN_DIR" PY_BIN="$PY" "$PY" - <<'PYEOF' 2>/dev/null
 import json, os
 from pathlib import Path
 
 plugin_dir = os.environ["PLUGIN_DIR"]
+py_bin = os.environ["PY_BIN"]
 path = Path(os.path.expanduser("~/.claude/settings.json"))
 
 # utf-8-sig: an older PowerShell installer may have left a BOM, which plain
@@ -96,41 +101,53 @@ with open(path, encoding="utf-8-sig") as f:
 
 cfg.setdefault("enabledPlugins", {})["nsls-personal-toolkit@local"] = True
 
+# Absolute interpreter path, so the entry can't be broken later by PATH order.
 PULL_CMD = f'git -C "{plugin_dir}" pull --ff-only --quiet'
-SYNC_CMD = f'python3 "{plugin_dir}/hooks/session-start.py" --no-pull'
-WANTED = [
-    ("nsls-personal-toolkit\" pull", {"type": "command", "command": PULL_CMD,
-     "timeout": 20, "statusMessage": "Updating personal toolkit..."}),
-    ("nsls-personal-toolkit/hooks/session-start.py", {"type": "command",
-     "command": SYNC_CMD, "timeout": 20}),
-]
+SYNC_CMD = f'"{py_bin}" "{plugin_dir}/hooks/session-start.py" --no-pull'
+PULL_MARKER = f'{plugin_dir}" pull'
+SYNC_MARKER = "nsls-personal-toolkit/hooks/session-start.py"
 
 hooks = cfg.setdefault("hooks", {})
 session_start = hooks.setdefault("SessionStart", [])
-startup = next((e for e in session_start if str(e.get("matcher", "")).startswith("startup")), None)
-if startup is None:
-    startup = {"matcher": "startup", "hooks": []}
-    session_start.append(startup)
-hook_list = startup.setdefault("hooks", [])
 
-added = 0
-for marker, entry in WANTED:
-    if not any(marker in h.get("command", "") for h in hook_list):
-        hook_list.append(entry)
-        added += 1
+# Idempotency is checked across EVERY entry, and we only ever append our own
+# entry. Two rules learned the hard way:
+#   - never mutate or filter another entry: the builder toolkit registers its
+#     SessionStart hook in this same array, and dropping it would kill its
+#     auto-update, pointer sync and tracker ping.
+#   - never append into someone else's entry either, or the Windows installer
+#     (which matches on entry contents) can't tell ours from theirs.
+def already(marker):
+    return any(marker in h.get("command", "")
+               for e in session_start if isinstance(e, dict)
+               for h in e.get("hooks", []) if isinstance(h, dict))
+
+new_hooks = []
+if not already(PULL_MARKER):
+    new_hooks.append({"type": "command", "command": PULL_CMD, "timeout": 20,
+                      "statusMessage": "Updating personal toolkit..."})
+if not already(SYNC_MARKER):
+    new_hooks.append({"type": "command", "command": SYNC_CMD, "timeout": 20})
+
+if new_hooks:
+    # "startup|resume" — a resumed session must update too; startup-only leaves
+    # long-lived sessions frozen.
+    session_start.append({"matcher": "startup|resume", "hooks": new_hooks})
 
 with open(path, "w", encoding="utf-8") as f:
     json.dump(cfg, f, indent=2)
 
-# Verify by re-reading — never trust the exit code alone. On stock Win11 a bare
-# `python`/`python3` can be the Store stub, which exits 0 having done nothing.
 chk = json.load(open(path, encoding="utf-8-sig"))
-ok = chk.get("enabledPlugins", {}).get("nsls-personal-toolkit@local")
-print(f"  Enabled plugin + registered {added} auto-update hook(s)." if ok
-      else "  Note: settings.json write did not take effect")
+if chk.get("enabledPlugins", {}).get("nsls-personal-toolkit@local"):
+    print(f"NSLS_SETTINGS_OK Enabled plugin + registered {len(new_hooks)} auto-update hook(s).")
 PYEOF
+)"
+  case "$_settings_out" in
+    *NSLS_SETTINGS_OK*) echo "  ${_settings_out#*NSLS_SETTINGS_OK }" ;;
+    *) echo "  Note: could not update settings.json — see README (Updates) to add the hook by hand" ;;
+  esac
 else
-  echo "  Note: no settings.json yet — run this installer again after your first Claude Code session"
+  echo "  Note: no settings.json (or no Python) — see README (Updates) to register the hook"
 fi
 
 # Fire an install event to the Automation Tracker (best-effort, never blocks).
