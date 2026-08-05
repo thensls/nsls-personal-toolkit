@@ -132,10 +132,21 @@ Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`) 
 `--dry-run` is present. Treat "dry run", "preview", "what would this harvest", and "show me
 what it would read" as `--dry-run` too.
 
-`--dry-run` is a *pre-flight* flag, not a mode: it runs Step 0, then **skips Step 1 entirely and
-jumps straight to Step 2's listing + exclusion filter**, prints the keep/skip lists, and stops
-before a single transcript is fetched. It must never fetch content, write to the KB, commit, or
-push.
+### `--dry-run` handling
+
+**First, reject the unsupported combination.** `--dry-run` is supported for `--date` and
+`--fathom-url` only. Step 2 is explicitly a no-op for `--week-audit` (that mode's data load lives
+in Step 9), so pairing the two would print an empty keep/skip list that reads as "nothing would be
+harvested" — a false all-clear. If `--week-audit` and `--dry-run` are both present, print this and
+STOP before Step 1:
+
+> `--dry-run` isn't supported for `--week-audit` yet. Run `--week-audit` on its own (its write
+> actions are individually approved), or dry-run a specific date or Fathom URL.
+
+**Otherwise** (`--date` / `--fathom-url`), `--dry-run` is a *pre-flight* flag, not a mode: it runs
+Step 0, then **skips Step 1 entirely and jumps straight to Step 2's listing + exclusion filter**,
+prints the keep/skip lists, and stops before a single transcript is fetched. It must never fetch
+content, write to the KB, commit, or push.
 
 > ⚠️ **Skipping Step 1 is load-bearing, not an optimization.** Step 1a clones or `git pull`s the
 > company KB, and for a first-run local KB it does `mkdir -p`, copies the seed, and makes a
@@ -143,14 +154,6 @@ push.
 > commit — breaking the guarantee above. Dry-run needs only identity/routing (Step 0) and the
 > meeting listing (Step 2); it never touches topic files or the rubric, so Step 1's context load
 > is genuinely unnecessary.
-
-**`--dry-run` is only meaningful for `--date` and `--fathom-url`.** Step 2 is explicitly a no-op
-for `--week-audit` (its data load lives in Step 9), so pairing the two would print an empty
-keep/skip list that reads as "nothing would be harvested" — a false all-clear. If both are passed,
-say so plainly and stop rather than printing an empty preview:
-
-> `--dry-run` isn't supported for `--week-audit` yet. Run `--week-audit` on its own (its write
-> actions are individually approved), or dry-run a specific date or Fathom URL.
 
 Then check whether the current user is an SLT writer.
 
