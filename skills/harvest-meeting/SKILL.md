@@ -73,25 +73,34 @@ gateway URL or token to verify** (the kb-gateway only powers the bot + kb.nsls.o
 |---|---|
 | `--dry-run` | List which recordings *would* be harvested and stop. No transcript fetched, nothing written, nothing committed. Combine with any mode. |
 
-## What this skill reads (and what it never reads)
+## What this skill reads, and the two places you control it
 
-`--date` mode lists **every recording you made that day** — Fathom exposes no "private meeting"
-flag for the skill to respect, so by default a 1:1 or a personal recording is as eligible as an
-SLT strategy session.
+`--date` mode lists **every recording you made that day** — 1:1s included. Fathom exposes no
+"private meeting" flag, so the skill cannot infer which of your meetings are sensitive. **Nothing
+is excluded by default, on purpose:** guessing that "1:1" means "don't harvest" would silently
+drop real strategy conversations, and a silent drop is the failure mode this skill works hardest
+to avoid. You decide what to exclude; the skill never decides for you.
 
-Two independent protections, and it matters which one does what:
+Two independent controls. It matters which does what:
 
-1. **`harvest-exclude.txt` — prevents reading.** A title/invitee denylist you own, matched
-   against the Fathom listing *before* any transcript is fetched. An excluded recording's
-   content is never read, never sent to Claude, never written to `/tmp`. This is the one that
-   protects private meetings. It is opt-in: with no file in place, nothing is excluded.
-   Start from `references/harvest-exclude.example.txt`.
-2. **Step 7 approval gate — prevents writing.** Every proposed edit is shown with its target
-   file and section and requires explicit approval; nothing is committed or pushed until you
-   approve. This has always been there, and it means no harvest lands silently — but it fires
-   *after* transcripts have been read, so it is not a privacy control.
+1. **Step 7 approval gate — always on, prevents *writing*.** Every candidate edit is presented
+   individually, with its target file and section, and you approve or drop them **item by item**
+   (`all` / `drop 1,3` / `edit 2: <text>` / `cancel`). Nothing is committed or pushed until you
+   say so. This is the control that is always protecting you, on every run, with no setup. If a
+   1:1 produces a candidate you don't want in the KB, you drop that line and it never lands.
+2. **`harvest-exclude.txt` — opt-in, prevents *reading*.** If you'd rather a whole class of
+   meeting never be read at all, put it in your settings and the skill will skip it before
+   fetching a transcript — content never read, never sent to Claude, never written to `/tmp`.
+   Ships with **no active rules**; `references/harvest-exclude.example.txt` is a commented menu
+   to copy and uncomment. Use it for meeting types you never want touched (therapy, medical,
+   candidate interviews), not as a substitute for the approval gate.
 
-Use `--dry-run` to see the read set before trusting either.
+The ordering matters: the approval gate covers the common case, so you don't need to configure
+anything to be safe from a bad *write*. The denylist is the stronger, narrower tool for content
+you don't want *read* — and it's the only one of the two that helps there, because the approval
+gate fires after transcripts are already loaded.
+
+Use `--dry-run` to see exactly which recordings would be read before any of it happens.
 
 ## Allowlist → routing (not a write gate)
 
@@ -123,9 +132,17 @@ Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`) 
 `--dry-run` is present. Treat "dry run", "preview", "what would this harvest", and "show me
 what it would read" as `--dry-run` too.
 
-`--dry-run` is a *pre-flight* flag, not a mode: it runs Step 0 → Step 2's exclusion filter,
-prints the keep/skip lists, and stops before a single transcript is fetched. It must never
-fetch content, write to the KB, commit, or push.
+`--dry-run` is a *pre-flight* flag, not a mode: it runs Step 0, then **skips Step 1 entirely and
+jumps straight to Step 2's listing + exclusion filter**, prints the keep/skip lists, and stops
+before a single transcript is fetched. It must never fetch content, write to the KB, commit, or
+push.
+
+> ⚠️ **Skipping Step 1 is load-bearing, not an optimization.** Step 1a clones or `git pull`s the
+> company KB, and for a first-run local KB it does `mkdir -p`, copies the seed, and makes a
+> `local KB: initial scaffold` commit. Running it would make `--dry-run` mutate disk and create a
+> commit — breaking the guarantee above. Dry-run needs only identity/routing (Step 0) and the
+> meeting listing (Step 2); it never touches topic files or the rubric, so Step 1's context load
+> is genuinely unnecessary.
 
 Then check whether the current user is an SLT writer.
 
@@ -452,11 +469,38 @@ This step is mode-specific.
 
 Use the Fathom MCP to list the meetings the current user recorded on that date:
 
+**The date window must be the user's *local* day, converted to UTC.** `created_after` /
+`created_before` are absolute UTC instants, so hardcoding `T00:00:00Z`–`T23:59:59Z` asks for the
+UTC day, not the day the user means. Nobody on this team is in UTC (Pacific through Central), so
+that mistake silently drops every evening recording — a 7pm PT meeting on the 5th is
+`00:00Z on the 6th` — and leaks in early-morning meetings from the previous local day. close-day
+harvests *in the evening*, so this is the common case, not an edge case.
+
+Compute the bounds from the local zone first:
+
+```bash
+python3 - "$TARGET_DATE" <<'PYEOF'
+import sys
+from datetime import datetime, timedelta, timezone
+d = sys.argv[1]                                   # YYYY-MM-DD, the user's local calendar day
+# A naive datetime's .astimezone() attaches the machine's local offset *for that datetime*,
+# so this stays correct across DST boundaries. Do not substitute a fixed offset.
+start_local = datetime.fromisoformat(f'{d}T00:00:00').astimezone()
+end_local   = start_local + timedelta(days=1) - timedelta(seconds=1)
+fmt = lambda t: t.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+print(f'created_after:  {fmt(start_local)}')
+print(f'created_before: {fmt(end_local)}')
+print(f'(local day {d} in {start_local.tzname()} → the UTC window above)')
+PYEOF
+```
+
+Then pass those two computed values:
+
 ```
 Call: the Fathom connector's list_meetings (resolve the live mcp__<uuid>__ name from this session's tools — connector UUIDs are per-machine)
 Parameters:
-  - created_after:  YYYY-MM-DDT00:00:00Z   (the target date, UTC)
-  - created_before: YYYY-MM-DDT23:59:59Z
+  - created_after:  <computed UTC start of the user's local day>
+  - created_before: <computed UTC end of the user's local day>
   - recorded_by:    ["<current user.email>"]
 ```
 
@@ -465,6 +509,9 @@ Parameters:
 > of them exist. Passing them means the date and recorder filters are silently dropped and you
 > get the newest page of *everything the user can see*, including other people's meetings.
 > The scoping params are `created_after` / `created_before` / `recorded_by`.
+
+**Heartbeat the window you actually used**, so a timezone mismatch is visible instead of looking
+like a quiet day: `Step 2: window <created_after> → <created_before> (local day YYYY-MM-DD, <tz>)`.
 
 Stash the raw listing — titles, ids and invitees only, **no transcripts** — at
 `/tmp/harvest-meeting-ctx/listing.json`.
@@ -532,19 +579,18 @@ for m, _ in keep:
     json.dumps([{'title': m.get('title'), 'reason': r} for m, r in dropped], indent=2))
 
 nrules = len(title_pats) + len(ids) + len(invitees)
-if not src:
-    print("Step 2: ⚠ no denylist in place. Every recording you made that day will be read, "
-          "including 1:1s and personal recordings. To fix:\n"
-          "  cp <toolkit>/skills/harvest-meeting/references/harvest-exclude.example.txt "
-          "<toolkit>/harvest-exclude.txt")
-elif nrules == 0:
-    # A file that exists but parses to nothing is the dangerous case: it looks like
-    # protection and is none. Never let this pass silently.
-    print(f"Step 2: ⚠ {src} exists but defines 0 rules (all comments/blank?). "
-          "It is excluding nothing — this is not protection. Add patterns or delete the file.")
-else:
-    print(f"Step 2: denylist {src.name} → {len(title_pats)} title pattern(s), "
+if nrules:
+    print(f"Step 2: exclude rules active ({src.name}) → {len(title_pats)} title pattern(s), "
           f"{len(ids)} id(s), {len(invitees)} invitee(s)")
+else:
+    # No rules is the DEFAULT and is not an error — the skill must never guess that a 1:1
+    # is off-limits. State the consequence plainly, point at the setting, and move on.
+    where = str(src) if src else '<toolkit>/harvest-exclude.txt'
+    print(f"Step 2: no exclude rules set — all {len(listing)} recording(s) above will be read, "
+          "1:1s included. Every proposed edit still needs your item-by-item approval in Step 7 "
+          "before anything is written.\n"
+          f"        To never read a meeting type at all, add patterns to {where} "
+          "(see references/harvest-exclude.example.txt).")
 PYEOF
 ```
 
@@ -552,8 +598,11 @@ PYEOF
 - It runs on the *listing* only. Never call `get_meeting_transcript` or `get_meeting_summary`
   before it has run — the whole point is that excluded content is never read.
 - Never silently drop. Every exclusion prints the title and the reason that matched.
-- If the denylist is missing, or present but empty, say so loudly (above) and continue — do not
-  invent exclusions.
+- **Never infer an exclusion.** Only rules the user wrote down exclude anything. Do not skip a
+  meeting because its title looks like a 1:1, because it has two attendees, or because it seems
+  personal — an unconfigured run reads everything and says so. Guessing here would silently lose
+  real strategy conversations, and the user cannot debug a skip they were never told about.
+- No rules configured is a normal state, not a failure. Report it and continue.
 
 **If `--dry-run` was passed: stop here.** Print the keep/skip lists, state that no transcript
 was fetched and nothing was written, and exit. This answers "what would this read?" without

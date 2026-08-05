@@ -1,47 +1,57 @@
-# harvest-exclude.txt — recordings /harvest-meeting must never read.
+# harvest-exclude.txt — meeting types /harvest-meeting must never read.
 #
-# Copy this file to your toolkit root to activate it:
+# NOTHING IS ACTIVE IN THIS FILE. Every rule below is commented out on purpose.
+# This is a menu, not a policy. The skill never guesses that a meeting is private —
+# a 1:1 is harvested like any other meeting unless YOU say otherwise here.
+#
+# To use it, copy it to your toolkit root and uncomment what you want excluded:
 #   cp skills/harvest-meeting/references/harvest-exclude.example.txt \
 #      ~/.claude/local-plugins/nsls-personal-toolkit/harvest-exclude.txt
 #
-# One pattern per line. Case-insensitive substring match against the Fathom
-# meeting TITLE. Blank lines and lines starting with # are ignored.
+# You do not need this file to be safe from a bad write. Every candidate edit is
+# approved by you item by item in Step 7, on every run, with no setup. Use this file
+# for the stronger, narrower thing: meetings whose transcript you never want READ.
+#
+# One pattern per line. Case-insensitive substring match against the Fathom meeting
+# TITLE. Blank lines and lines starting with # are ignored.
 #
 # Matching happens in Step 2 BEFORE any transcript is fetched, so an excluded
-# recording's content is never read, never sent to Claude, and never written to
-# /tmp. Excluded titles are reported by name so a skip is never silent.
+# recording's content is never read, never sent to Claude, and never written to /tmp.
+# Excluded titles are reported by name so a skip is never silent.
 #
-# A line of the form `id:<recording_id>` excludes one specific recording.
-# A line of the form `invitee:<email>` excludes any meeting that person attended.
+# Two targeted forms besides titles:
+#   id:<recording_id>   exclude one specific recording
+#   invitee:<email>     exclude any meeting that person attended
+
+# --- Genuinely private: the usual reasons people turn this on ---
+# therapy
+# doctor
+# medical
+# personal
+# private
+# family
+
+# --- Hiring (candidate PII and comp discussion) ---
+# interview
+# candidate
+# reference check
 
 # --- 1:1s and coaching ---
-1:1
-1-on-1
-one-on-one
-onexone
-coaching
+# Off by default deliberately. Plenty of real decisions happen in a 1:1, and the
+# approval gate already lets you drop anything you don't want kept. Turn these on
+# only if you'd rather the transcript never be read at all.
+# 1:1
+# 1-on-1
+# one-on-one
+# coaching
 
-# Uncomment if you want these too. "check-in" is deliberately OFF by default —
-# it also matches real meetings like "SLT check-in", and over-excluding costs you
-# KB content. Under-excluding costs you privacy, so tune this list deliberately.
+# --- Broad patterns: think before enabling ---
+# These also match legitimate meetings ("SLT check-in", "revops sync"), and
+# over-excluding quietly costs you KB content. Under-excluding costs privacy.
 # check-in
 # sync
 # catch-up
 
-# --- personal / non-work ---
-personal
-private
-doctor
-therapy
-medical
-family
-
-# --- hiring (candidate PII, comp discussion) ---
-interview
-candidate
-screen
-reference check
-
-# --- examples of the targeted forms ---
+# --- Targeted examples ---
 # id:12345678
-# invitee:spouse@example.com
+# invitee:someone@example.com
