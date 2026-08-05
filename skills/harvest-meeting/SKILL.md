@@ -71,7 +71,7 @@ gateway URL or token to verify** (the kb-gateway only powers the bot + kb.nsls.o
 
 | Flag | Effect |
 |---|---|
-| `--dry-run` | List which recordings *would* be harvested and stop. No transcript fetched, nothing written, nothing committed. Combine with any mode. |
+| `--dry-run` | List which recordings *would* be harvested and stop. No transcript fetched, nothing written, nothing committed. Supported for `--date` and `--fathom-url`; **not** for `--week-audit` (see below). |
 
 ## What this skill reads, and the two places you control it
 
@@ -143,6 +143,14 @@ push.
 > commit — breaking the guarantee above. Dry-run needs only identity/routing (Step 0) and the
 > meeting listing (Step 2); it never touches topic files or the rubric, so Step 1's context load
 > is genuinely unnecessary.
+
+**`--dry-run` is only meaningful for `--date` and `--fathom-url`.** Step 2 is explicitly a no-op
+for `--week-audit` (its data load lives in Step 9), so pairing the two would print an empty
+keep/skip list that reads as "nothing would be harvested" — a false all-clear. If both are passed,
+say so plainly and stop rather than printing an empty preview:
+
+> `--dry-run` isn't supported for `--week-audit` yet. Run `--week-audit` on its own (its write
+> actions are individually approved), or dry-run a specific date or Fathom URL.
 
 Then check whether the current user is an SLT writer.
 
@@ -481,12 +489,17 @@ Compute the bounds from the local zone first:
 ```bash
 python3 - "$TARGET_DATE" <<'PYEOF'
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 d = sys.argv[1]                                   # YYYY-MM-DD, the user's local calendar day
 # A naive datetime's .astimezone() attaches the machine's local offset *for that datetime*,
-# so this stays correct across DST boundaries. Do not substitute a fixed offset.
+# so each boundary lands on the right side of a DST change. Do not substitute a fixed offset.
+# Build EACH boundary from its own naive wall-clock time. Do not derive the end by adding
+# timedelta(days=1) to start_local: an aware datetime carries a FIXED offset, so arithmetic
+# reuses midnight's offset and the end boundary gets the wrong one on DST transition days
+# (window 1h too long on spring-forward → leaks the next local day; 1h too short on
+# fall-back → drops the last hour of recordings).
 start_local = datetime.fromisoformat(f'{d}T00:00:00').astimezone()
-end_local   = start_local + timedelta(days=1) - timedelta(seconds=1)
+end_local   = datetime.fromisoformat(f'{d}T23:59:59').astimezone()
 fmt = lambda t: t.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 print(f'created_after:  {fmt(start_local)}')
 print(f'created_before: {fmt(end_local)}')
@@ -1085,6 +1098,21 @@ PYEOF
 
 Pull Fathom meetings in the week window via MCP, compare against meeting titles in `harvest_commits[*].subject`. List meetings not found in any commit subject.
 
+**Apply `harvest-exclude.txt` here too, with the same loader as Step 2.** This mode pulls the
+week's meetings and prints their titles in the audit report, so without the filter it would (a)
+read meetings the user asked never to be read, and (b) list an excluded meeting as "unharvested"
+every week — nagging them to harvest the exact thing they excluded, and echoing its title into a
+report. Both defeat the setting.
+
+Rules for the week window:
+- Build the week's `created_after` / `created_before` from **local** midnight boundaries, same as
+  Step 2 — construct each boundary from its own naive wall-clock time.
+- Filter the listing through the denylist **before** requesting summaries.
+- Excluded meetings are **not** counted as unharvested and **not** listed by title. Report them
+  only as an aggregate count, so the exclusion is visible without leaking what was excluded:
+  `{E} excluded by your harvest-exclude rules (not listed)`.
+- Omit that line entirely when `E == 0`.
+
 ### 9c. Audit report — always displayed
 
 ```
@@ -1093,6 +1121,7 @@ Week YYYY-Www KB audit:
 Activity:
   - {N} harvest commits, {M} edits across {K} topic files
   - {J} SLT-recorded meetings; {I} harvested ({J-I} unharvested — listed below)
+  - {E} excluded by your harvest-exclude rules (not listed)   ← omit this line when E == 0
 
 Unharvested meetings:
   - YYYY-MM-DD "<title>": no harvest commits reference this meeting
