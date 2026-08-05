@@ -32,7 +32,22 @@ from pathlib import Path
 HOME = Path.home()
 PLUGIN_DIR = HOME / ".claude" / "local-plugins" / "nsls-personal-toolkit"
 SKILLS_DIR = HOME / ".claude" / "skills"
-MARKER = "local-plugins/nsls-personal-toolkit"
+
+# Sentinel identifying a pointer THIS script generated, used both to write one
+# and to decide whether an existing file is ours to overwrite. It must be the
+# exact generated sentence.
+#
+# It used to be a loose path match on "local-plugins/nsls-personal-toolkit",
+# which is unsafe: a real skill's body legitimately mentions that path —
+# open-day names the companion venv there several times — so a full,
+# user-owned skill matched the check and would be replaced by a ~200-byte stub.
+# That includes a cloud-synced custom skill, where the full text lives in
+# ~/.claude/skills/ rather than being a pointer. Dormant while nothing ran this
+# script; live the moment hooks.json registered it.
+POINTER_SENTINEL = (
+    "Read and follow the full skill at "
+    "`~/.claude/local-plugins/nsls-personal-toolkit/skills/"
+)
 
 
 # A bare block-scalar indicator is not a description. If `description: >-` (or
@@ -189,11 +204,12 @@ def sync_pointers():
         dest = SKILLS_DIR / skill
         dest_skill = dest / "SKILL.md"
 
-        # Skip if a user customization or builder-toolkit pointer already owns this slot.
-        # Only overwrite our own pointers (identified by the personal-toolkit marker).
+        # Skip if anything else already owns this slot — a user customization, a
+        # builder-toolkit pointer, or a full cloud-synced skill. Only overwrite
+        # pointers we generated ourselves.
         if dest.is_dir() and dest_skill.exists():
             try:
-                if MARKER not in dest_skill.read_text():
+                if POINTER_SENTINEL not in dest_skill.read_text():
                     continue
             except Exception:
                 continue
@@ -227,10 +243,10 @@ def sync_pointers():
                 desc = extracted
 
         dest.mkdir(parents=True, exist_ok=True)
+        # Built from POINTER_SENTINEL so generation and detection can never drift.
         dest_skill.write_text(
             f"---\nname: {name}\ndescription: >-\n  {desc}\n---\n\n"
-            f"Read and follow the full skill at "
-            f"`~/.claude/local-plugins/nsls-personal-toolkit/skills/{skill}/SKILL.md`.\n"
+            f"{POINTER_SENTINEL}{skill}/SKILL.md`.\n"
         )
         created += 1
 
