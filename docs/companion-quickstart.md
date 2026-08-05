@@ -1,11 +1,16 @@
 # Companion Quickstart
 
-You've installed the companion. Here's how to use it.
+Here's how to use the companion. You don't need to install it first — `/open-day`
+builds it on first use if it isn't there yet.
 
 ## Start it
 
+`/open-day` starts it for you. To start it by hand, note the binary lives in a venv
+and so is **not on your PATH** — resolve it first:
+
 ```bash
-toolkit-companion serve
+TC="$(bash ~/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh)"
+"$TC" serve
 ```
 
 This starts the server on `http://localhost:7777` (or the next free port if 7777 is taken) and opens your browser.
@@ -25,7 +30,7 @@ Click the Streaks tab. You see all active habits with a 30-day heatmap each. Add
 ## Stop it
 
 ```bash
-toolkit-companion stop
+"$TC" stop
 ```
 
 Or auto-start at login (offered during install). Manage with `launchctl`.

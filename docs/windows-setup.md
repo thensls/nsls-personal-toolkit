@@ -28,10 +28,24 @@ Both create a virtualenv at `companion\.venv` and install the web companion into
 
 The skills resolve this `Scripts\…\.exe` path automatically — you don't need it on PATH.
 
-> **Agent-driven / piped installs:** the two installers offer the companion behind
-> an interactive prompt, which a piped `irm … | iex` run or an agent driving setup
-> will skip. In that case `/personal-setup` (Step 1.5) provisions the same venv —
-> so the companion still lands, and `visual_mode` stays truthful, without the prompt.
+> **Agent-driven / piped installs:** the installers only *ask* about the companion
+> when a terminal is actually reachable. A piped `irm … | iex` run, or an agent
+> driving setup, installs it without prompting (`NSLS_SKIP_COMPANION=1` opts out).
+> And if it's still missing for any reason — you skipped it, or you installed the
+> toolkit before the companion shipped — the first `/open-day` builds it for you.
+> Nothing is left in a state where `visual_mode` is on but the binary is absent.
+
+If you ever need to install or repair it directly, from Git Bash:
+
+```bash
+bash ~/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh
+```
+
+It prints the path to `toolkit-companion.exe`, or prints nothing and explains why
+on stderr (full detail in `companion\.install.log`). Add `--force` to retry after a
+failed build. It probes the interpreter by **running** it, so the Microsoft-Store
+`python` stub — which exits 0 while doing nothing — is correctly rejected instead
+of producing a half-built venv.
 
 ## Vault path
 

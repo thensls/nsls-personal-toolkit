@@ -47,7 +47,9 @@ export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
 There are two ways the ritual can run: with the **CLI companion** (the local Flask server, the default) or in **chat** (the fallback). `visual_mode` decides between them — on by default, `off` to stay in chat. The companion only runs on a CLI surface (Claude Code) where Bash can start a local server; on any surface that can't, the graceful fallback below finishes the ritual in chat.
 
 When `visual_mode` is **on** (the default):
-- **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary** (not installed, or you're not on a surface that can run a local server), **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
+- **Graceful fallback (do this check first).** The companion is a local Flask server that only runs on a CLI surface (Claude Code) where Bash can start it. **If you cannot resolve OR start the companion binary**, **do not announce a companion.** Silently fall back to the full chat flow ("When `visual_mode` is **off**" below) and finish the ritual in chat. Never leave the user staring at a "I opened the companion" message for something that isn't there.
+
+  **"Not installed" is NOT a fallback trigger — build it instead.** A builder who has the toolkit has the companion's *source*; only the venv may be missing (it used to be an interactive install prompt). Step 8's `ensure-companion.sh` builds it on first use, so reach for the chat fallback only when that script comes back **empty** — no toolkit source, no Python ≥3.10, a failed build, or a surface with no local server. Falling back merely because the binary isn't there yet is the bug this rule used to cause: the companion never appeared, run after run, and nothing said why.
 - **Step 1.5 only**: If yesterday wasn't closed, route to the companion link and wait for the click/typed "done" (same as CLI mode) — never auto-synthesize.
 - **Step 2**: Collect ALL data (calendar, Asana, carry-overs, AI suggestions, stack rank, free time, habits, learning, PRs, SLT). Run Bash commands in the background or silently — **do not show raw Bash output to the user**. Present ONE condensed summary line per data source (e.g., "3 meetings today · 6 open Asana · 2 carry-overs · AI suggestions seeded").
 - **Step 6**: Write the daily note with **empty Top 3 slots AND an empty Bonus section** (`1. [ ]`, `2. [ ]`, `3. [ ]` for Top 3; nothing under `### Bonus`). Include habits, calendar, and the standard template. **Do NOT fill in Top 3 or Bonus — that's the companion's job.** Everything the AI knows about (carry-overs, close-day seeds, generated ideas) goes into the **candidate pool** — the `### AI Suggested: …` sections the companion renders as the "Suggestions & carry-overs" grid, where every row has a one-click **Top 3 / Bonus / Defer / Delete** control.
@@ -1025,21 +1027,24 @@ Count the totals: e.g., `2 adopted, 0 modified, 1 replaced`
 **Skip this entire step** if any of these is true:
 - The builder said `open day -v` / `open day visual off` (one-shot CLI mode) or `open day -v forever` / `open day visual off forever`
 - `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
-- The companion binary cannot be found at either of the locations below, or you're on a surface that can't run a local server — the companion is optional; see `CLAUDE.md`
+- The companion cannot be provisioned on this machine at all (see **Resolving the binary** below — this step now *builds* it on first use, so a missing binary is no longer a reason to skip), or you're on a surface that can't run a local server — the companion is optional; see `CLAUDE.md`
 
 When you skip, finish the morning ritual entirely in chat (Steps 3 and 4 in this skill already cover the chat-based draft + review of Top 3 / Bonus / etc.).
 
-**Resolving the binary path.** The install runs an editable pip install inside a venv at `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/`, so on most installs the `toolkit-companion` binary is **not on PATH** in a fresh shell. The venv binary dir differs by OS — `bin/` on macOS/Linux, `Scripts/` (with a `.exe`) on Windows. Resolve it with this platform-aware lookup before invoking — never assume PATH:
+**Resolving the binary — and building it on first use.** The companion lives in a venv at `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/`, so `toolkit-companion` is **not on PATH** in a fresh shell, and the venv's binary dir differs by OS (`bin/` on macOS/Linux, `Scripts/` with a `.exe` on Windows).
+
+Building that venv used to be an *optional interactive prompt* in the installers ("Install the web companion? [Y/n]"), which means a builder can easily have the companion **source** but no binary — they installed the toolkit before the companion shipped, ran the installer non-interactively, or answered `n` once. This step used to skip silently and permanently for those builders, so the visual companion simply never appeared and nothing said why.
+
+`companion/ensure-companion.sh` closes that. It resolves the binary and, when the source is present but the venv was never built, builds it — then prints the path. Call it; never hand-roll the lookup:
 
 ```bash
-VENV="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv"
-TC="$VENV/bin/toolkit-companion"                      # macOS / Linux
-[ -x "$TC" ] || TC="$VENV/Scripts/toolkit-companion.exe"   # Windows (Git Bash)
-[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
-[ -n "$TC" ] || { echo "companion not installed"; }
+TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
 ```
 
-Use the resolved `"$TC"` in every command below. If all lookups fail, skip the rest of this step.
+- **`$TC` non-empty** → use the resolved `"$TC"` in every command below.
+- **`$TC` empty** → the companion genuinely cannot run here: no toolkit source, no Python ≥3.10, or the build failed. The script prints one reason line on stderr and writes detail to `companion/.install.log`. Skip the rest of this step and finish in chat.
+
+**The first run on a machine takes ~10–30s** while it builds the venv; every run after that resolves instantly. If it did build, say so in one short line — *"Set up the visual companion (first run on this machine)."* — and carry on. Never print the build log or the pip output.
 
 When you don't skip:
 

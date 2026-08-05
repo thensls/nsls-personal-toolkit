@@ -41,7 +41,22 @@ Write-Host "  $PluginDir\skills\<name>\SKILL.md"
 Write-Host ""
 
 # Optional: web companion (in an explicit venv so the Scripts\ path is stable).
-$answer = Read-Host "Install the web companion (browser-based UI)? [Y/n]"
+#
+# Only ask when a human can actually answer. The documented path is
+# `irm ... | iex`, and a non-interactive run (CI, or an agent driving the
+# installer) can't respond to Read-Host — which is how builders end up with
+# companion\ source but no .venv, leaving every day skill to fall back to chat
+# silently. With no console to prompt, install it: the skills expect it.
+# $env:NSLS_SKIP_COMPANION = "1" is the explicit opt-out.
+if ($env:NSLS_SKIP_COMPANION) {
+  $answer = "n"
+  Write-Host "NSLS_SKIP_COMPANION set - skipping the web companion."
+} elseif ([Environment]::UserInteractive -and -not [Console]::IsInputRedirected) {
+  $answer = Read-Host "Install the web companion (browser-based UI)? [Y/n]"
+} else {
+  $answer = "y"
+  Write-Host "Non-interactive run - installing the web companion (set NSLS_SKIP_COMPANION=1 to skip)."
+}
 if ($answer -eq "" -or $answer -match "^[Yy]") {
   $Companion = Join-Path $PluginDir "companion"
   $Venv = Join-Path $Companion ".venv"

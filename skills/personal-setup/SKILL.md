@@ -85,14 +85,31 @@ the `toolkit-companion` binary exists where the day skills look for it. Provisio
 it now — otherwise `visual_mode` is on but the binary is missing, and every
 `/open-day` silently falls back to plain chat. Both tiers use it.
 
-**Idempotent — skip if it's already installed.** Check for the binary first:
-- macOS/Linux: `~/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion`
-- Windows: `%USERPROFILE%\.claude\local-plugins\nsls-personal-toolkit\companion\.venv\Scripts\toolkit-companion.exe`
+**One command, idempotent.** `companion/ensure-companion.sh` does the whole job —
+resolves the binary if it already exists (a no-op), otherwise creates the venv and
+runs the editable install from the right directory, then prints the binary path:
 
-If it exists, say "visual companion already installed" and continue to Step 2.
+```bash
+TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
+[ -n "$TC" ] && "$TC" --help >/dev/null && echo "visual companion ready: $TC"
+```
 
-If not, install it. The editable install **must** run from inside `companion/`
-(its `pyproject.toml` uses `package-dir = {"" = ".."}`):
+- **Path printed** → say "visual companion ready" (or "already installed" if it
+  returned instantly) and continue to Step 2.
+- **Empty output** → it couldn't be provisioned. The script prints the reason on
+  stderr and logs detail to `companion/.install.log`; read that before guessing.
+  Re-run with `--force` after fixing the cause.
+
+Note it **verifies the interpreter actually runs** `>=3.10` rather than trusting
+that `python` exists — which is what catches the stock-Win11 Microsoft-Store stub
+that prints "Python was not found" and **exits 0 while doing nothing**. If no
+usable interpreter is found it exits without creating a half-built venv.
+
+<details>
+<summary>Equivalent manual steps (only if the script is unavailable)</summary>
+
+The editable install **must** run from inside `companion/` (its `pyproject.toml`
+uses `package-dir = {"" = ".."}`):
 
 **macOS/Linux:**
 ```bash
@@ -101,19 +118,16 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e . -q
 ```
 
-**Windows (PowerShell)** — use the FULL interpreter path; a bare `python`/`python3`
-on stock Win11 is the Microsoft-Store stub that prints "Python was not found" and
-**exits 0 while doing nothing**:
+**Windows (PowerShell)** — use the FULL interpreter path, for the stub reason above:
 ```powershell
 cd "$env:USERPROFILE\.claude\local-plugins\nsls-personal-toolkit\companion"
 & "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m venv .venv
 & ".venv\Scripts\python.exe" -m pip install -e . -q
 ```
 
-This produces `.venv\Scripts\toolkit-companion.exe` (Windows) /
-`.venv/bin/toolkit-companion` (macOS/Linux) — exactly where `/open-day` Step 8's
-platform-aware lookup expects it. **Verify by running `toolkit-companion --help`
-at that path** rather than trusting pip's exit code.
+Either way, **verify by running `toolkit-companion --help`** at the resulting path
+rather than trusting pip's exit code.
+</details>
 
 **If Python 3.12 isn't installed** (that `Python312\python.exe` path is missing —
 this depends on the Builder Toolkit installer having provisioned it), stop and tell

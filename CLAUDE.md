@@ -31,9 +31,19 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 
 ## Web Companion
 
-The companion runs at `http://localhost:7777`. It is optional — install with `install.sh` or `cd companion && pip install -e .`.
+The companion runs at `http://localhost:7777`. Anyone with the toolkit installed gets it: the day skills **build it on first use** if it isn't there yet, so no separate install step is required. `install.sh` still sets it up up front, and `cd companion && pip install -e .` still works by hand.
 
-The binary is installed into a venv and is **not on PATH** in a fresh shell. The venv binary dir is OS-specific: `companion/.venv/bin/toolkit-companion` on macOS/Linux, `companion/.venv/Scripts/toolkit-companion.exe` on Windows. To run it: invoke that full path, activate the venv first, or (Unix) symlink it to `~/.local/bin/`. Skills resolve the correct path automatically — see open-day Step 8 for the platform-aware lookup. Windows users: see `docs/windows-setup.md`.
+The binary is installed into a venv and is **not on PATH** in a fresh shell. The venv binary dir is OS-specific: `companion/.venv/bin/toolkit-companion` on macOS/Linux, `companion/.venv/Scripts/toolkit-companion.exe` on Windows.
+
+**Never hand-roll that lookup.** `companion/ensure-companion.sh` is the single resolver every skill calls — it checks all three locations, builds the venv when the source is present but the companion was never installed, and prints the binary path (empty output = genuinely unavailable, fall back to chat):
+
+```bash
+TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
+```
+
+It is a no-op costing three stats once the companion exists; the first build takes ~10–30s and logs to `companion/.install.log`. `--force` retries after a failed build (failures cool down for 24h so a broken toolchain can't slow every morning). Windows users: see `docs/windows-setup.md`.
+
+*Why it exists:* installing the companion used to be an interactive prompt in the installers, and under the documented `curl … | bash` path that `read` consumed the script's own next line and killed the installer after "Done!" had printed. Builders were left with `companion/` source, no `.venv`, and day skills that silently fell back to chat forever. Both installers now only prompt when a terminal is actually reachable and install by default otherwise (`NSLS_SKIP_COMPANION=1` opts out).
 
 Habits live in `30-habits/habits.md`; daily ticks accumulate in `30-habits/log.md` (append-only). The streak rule is documented in `skills/close-day/SKILL.md` and implemented in `companion/streak.py`. Both must stay in sync.
 

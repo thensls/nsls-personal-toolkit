@@ -69,17 +69,21 @@ vault** instead of your real vault — the `companion-test-vault` that `open day
 `close day -t` write to. This is just an `$OBSIDIAN_VAULT_PATH` redirect, with a
 hard safety guard so it can **never** delete real data.
 
-**Before any read or delete**, resolve the companion binary (same platform-aware
-lookup open-day Step 8 uses), point the vault at the test vault, and *assert* it:
+**Before any read or delete**, resolve the companion binary (same helper open-day
+Step 8 uses — it builds the venv on first use if the toolkit source is present but
+the companion was never installed), point the vault at the test vault, and
+*assert* it:
 
 ```bash
-VENV="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv"
-TC="$VENV/bin/toolkit-companion"
-[ -x "$TC" ] || TC="$VENV/Scripts/toolkit-companion.exe"
-[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
+[ -n "$TC" ] || { echo "ABORT: no companion binary — cannot verify the test vault"; exit 1; }
 export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"
 "$TC" assert-test-vault "$OBSIDIAN_VAULT_PATH" || { echo "ABORT: not a test vault"; exit 1; }
 ```
+
+**The `[ -n "$TC" ]` guard is load-bearing.** Without a binary there is no way to
+resolve *or* verify the test vault, so the only safe move is to stop — never fall
+through to the delete steps with an unverified `$OBSIDIAN_VAULT_PATH`.
 
 `assert-test-vault` exits non-zero unless the resolved path is a directory named
 `companion-test-vault`. **If it fails, stop — delete nothing.** Only after it passes

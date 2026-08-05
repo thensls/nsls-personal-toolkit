@@ -108,7 +108,33 @@ echo "  $PLUGIN_DIR/skills/<name>/SKILL.md"
 echo ""
 
 # Optional: install web companion
-read -p "Install the web companion (browser-based UI)? [Y/n] " yn
+#
+# NEVER `read` from stdin here. The documented install path is `curl … | bash`,
+# which makes stdin the *script itself* — a bare `read` then swallows the next
+# lines of this file as the "answer", mangling the control flow that follows
+# (observed: it ate the `if` below and died with a syntax error, after "Done!"
+# had already printed). That is how builders ended up with companion/ source,
+# no .venv, and an install that looked like it succeeded — every later /open-day
+# silently fell back to chat.
+#
+# So: ask on the terminal directly when there is one, and when there's no
+# terminal at all (CI, an agent driving the installer) install without asking,
+# because every day skill expects the companion to exist.
+# NSLS_SKIP_COMPANION=1 is the explicit opt-out.
+if [ -n "${NSLS_SKIP_COMPANION:-}" ]; then
+  yn="n"
+  echo "NSLS_SKIP_COMPANION set — skipping the web companion."
+elif [ -t 0 ]; then
+  read -p "Install the web companion (browser-based UI)? [Y/n] " yn || yn="y"
+elif { : </dev/tty; } 2>/dev/null; then
+  # Piped install, but the user's terminal is still reachable — prompt there.
+  # (Test by *opening* /dev/tty, not `[ -r /dev/tty ]`: the node can exist and
+  # pass -r in a container while opening it fails with ENXIO.)
+  read -p "Install the web companion (browser-based UI)? [Y/n] " yn </dev/tty || yn="y"
+else
+  yn="y"
+  echo "No terminal detected — installing the web companion (set NSLS_SKIP_COMPANION=1 to skip)."
+fi
 if [[ "${yn:-y}" =~ ^[Yy] ]]; then
   if [ -n "$PY" ]; then
     COMPANION_DIR="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion"
