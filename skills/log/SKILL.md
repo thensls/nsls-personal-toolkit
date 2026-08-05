@@ -60,6 +60,18 @@ Check (in order):
 3. **Conversation context** — scan recent messages for directory paths, skill names, project names
 4. **Ask** — if still ambiguous, list the directories under `$OBSIDIAN_VAULT_PATH/20-projects/` and ask which one, plus offer "New project"
 
+**🛑 Confidence gate — a wrong guess here silently corrupts a project's history.** Signals 1 and 2 are *identifying*: an explicit name, or a `pwd` that resolves to a repo you can map to exactly one project. Signal 3 is *suggestive only* — never sufficient on its own.
+
+Before writing anything, state the chosen slug and which signal produced it, then apply these rules:
+
+- **`pwd` is the home directory** (`$HOME`, e.g. `/Users/<name>`) — this is **not** a project match. A home-dir session is the single most common cause of misfiling, because every repo path in the transcript looks equally plausible. Skip to step 4 and ask.
+- **Signal 3 alone → ask.** Do not write off conversation context unless exactly one candidate project matches and the match is an exact slug or repo name, not a topical resemblance. Two plausible candidates means ask.
+- **Never fall back to the last-used or most-recently-touched project.** Absence of a signal is not evidence for the previous answer.
+- **Content sanity check (run this even when confident).** Compare the session content you are about to write against the target project's home note — its title, `## Sessions` history, and stated scope. If the dominant repo, product surface, or topic of this session does not appear anywhere in that project's existing history, **stop and ask.** A session about `market-exploration` does not belong in a project whose history is entirely about onboarding documentation.
+- **Home-note `next-action` guard.** You are about to overwrite `next-action` on the home note. If the new `next-action` names a repo, service, or deliverable that appears nowhere else in that project's note, that is proof the project is wrong. Stop and ask.
+
+When you ask, show your best guess first with its reasoning, so confirming is one word.
+
 If it's a **new project** → go to **New Project flow** (Step 2A).
 If it matches an **existing project** → go to **Existing Project flow** (Step 2B).
 
