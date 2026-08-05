@@ -19,7 +19,13 @@ Walk through unadopted releases in `updates/` one at a time. Safely merge each o
 ## Step 1: Prep
 
 ```bash
-REPO=~/nsls-skills/nsls-personal-toolkit
+# Where the toolkit actually lives. Both installers put it under
+# ~/.claude/local-plugins/; ~/nsls-skills/ is the older layout, kept as a
+# fallback for machines that predate the move. The hardcoded old path meant
+# this command targeted a directory that doesn't exist on current installs.
+REPO=~/.claude/local-plugins/nsls-personal-toolkit
+[ -d "$REPO/.git" ] || REPO=~/nsls-skills/nsls-personal-toolkit
+[ -d "$REPO/.git" ] || { echo "Personal toolkit checkout not found — run install.sh first."; }
 
 # Ensure upstream remote exists (forks only)
 if ! git -C "$REPO" remote | grep -q '^upstream$'; then
@@ -39,7 +45,7 @@ fi
 
 ## Step 2: Load adoption state
 
-Read `~/nsls-skills/nsls-personal-toolkit/.toolkit-state.json`. If missing, initialize with:
+Read `$REPO/.toolkit-state.json` (the path resolved in Step 1). If missing, initialize with:
 
 ```json
 {
@@ -214,7 +220,7 @@ Add slug to `adopted_releases` in state.
 
 ## Step 5: Save state
 
-Write `~/nsls-skills/nsls-personal-toolkit/.toolkit-state.json` with updated `adopted_releases`, `skipped_releases`, `pending_manual_steps`, and `last_checked: <today>`.
+Write `$REPO/.toolkit-state.json` (the path resolved in Step 1) with updated `adopted_releases`, `skipped_releases`, `pending_manual_steps`, and `last_checked: <today>`.
 
 ---
 

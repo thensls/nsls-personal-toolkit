@@ -27,7 +27,10 @@ Run after you've committed one or more skill changes to `nsls-personal-toolkit` 
 
 ## Prerequisites
 
-- `cwd` inside `~/nsls-skills/nsls-personal-toolkit/` (or a symlink to it)
+- `cwd` inside a checkout of the personal toolkit. On an installed machine that's
+  `~/.claude/local-plugins/nsls-personal-toolkit/`; a maintainer's dev clone
+  (e.g. `~/nsls-skills/nsls-personal-toolkit/`) works too — the check is the
+  `git remote -v` below, not the path.
 - All changes to announce are already committed and pushed to `origin/main`
 - Railway announcement endpoint available: `https://web-production-6281e.up.railway.app/announcement`
 
@@ -37,7 +40,7 @@ Run after you've committed one or more skill changes to `nsls-personal-toolkit` 
 
 ### Step 1: Verify location and state
 
-1. Run `pwd` and `git remote -v`. If the remote isn't `thensls/nsls-personal-toolkit`, stop and tell the user: "This skill runs inside the personal toolkit repo. cd to `~/nsls-skills/nsls-personal-toolkit/` first."
+1. Run `pwd` and `git remote -v`. If the remote isn't `thensls/nsls-personal-toolkit`, stop and tell the user: "This skill runs inside the personal toolkit repo. cd to `~/.claude/local-plugins/nsls-personal-toolkit/` (or your dev clone) first."
 2. Run `git status`. If there are uncommitted changes, stop and ask: "There are uncommitted changes. Commit them first, or is there a reason to announce before committing?"
 3. Run `git log origin/main..HEAD` to check for unpushed commits. If any exist, ask: "Commit `<hash>` isn't pushed. Push first?" If yes, `git push origin main` before continuing. If no, tell the user announcements without pushed changes mislead forks — confirm they want to proceed anyway.
 
@@ -121,7 +124,7 @@ breaking: true | false
 
 **If you haven't customized these skills:**
 ```bash
-cd ~/nsls-skills/nsls-personal-toolkit
+cd ~/.claude/local-plugins/nsls-personal-toolkit   # or your dev clone
 git fetch upstream
 git checkout upstream/main -- skills/<skill-1>/SKILL.md skills/<skill-2>/SKILL.md
 git commit -m "pull upstream: [slug]"
