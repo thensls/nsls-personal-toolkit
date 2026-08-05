@@ -65,9 +65,33 @@ gateway URL or token to verify** (the kb-gateway only powers the bot + kb.nsls.o
 
 | Mode | When | Source |
 |---|---|---|
-| `--date YYYY-MM-DD` | close-day Step 4c | All Fathom meetings for the date |
+| `--date YYYY-MM-DD` | close-day Step 4c | Your Fathom recordings for the date, minus exclusions |
 | `--fathom-url <url>` | Manual after important meeting | Single meeting |
 | `--week-audit --week YYYY-Www` | close-week Step 2b | Git log + topic files for the week |
+
+| Flag | Effect |
+|---|---|
+| `--dry-run` | List which recordings *would* be harvested and stop. No transcript fetched, nothing written, nothing committed. Combine with any mode. |
+
+## What this skill reads (and what it never reads)
+
+`--date` mode lists **every recording you made that day** — Fathom exposes no "private meeting"
+flag for the skill to respect, so by default a 1:1 or a personal recording is as eligible as an
+SLT strategy session.
+
+Two independent protections, and it matters which one does what:
+
+1. **`harvest-exclude.txt` — prevents reading.** A title/invitee denylist you own, matched
+   against the Fathom listing *before* any transcript is fetched. An excluded recording's
+   content is never read, never sent to Claude, never written to `/tmp`. This is the one that
+   protects private meetings. It is opt-in: with no file in place, nothing is excluded.
+   Start from `references/harvest-exclude.example.txt`.
+2. **Step 7 approval gate — prevents writing.** Every proposed edit is shown with its target
+   file and section and requires explicit approval; nothing is committed or pushed until you
+   approve. This has always been there, and it means no harvest lands silently — but it fires
+   *after* transcripts have been read, so it is not a privacy control.
+
+Use `--dry-run` to see the read set before trusting either.
 
 ## Allowlist → routing (not a write gate)
 
@@ -95,7 +119,13 @@ result, and STOP. If they asked to *verify / check* their setup, run
 `bash references/verify-setup.sh`, report its ROUTE verdict, and STOP. In both cases do not
 proceed to Step 1 or fetch any meeting.
 
-Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`).
+Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`) and whether
+`--dry-run` is present. Treat "dry run", "preview", "what would this harvest", and "show me
+what it would read" as `--dry-run` too.
+
+`--dry-run` is a *pre-flight* flag, not a mode: it runs Step 0 → Step 2's exclusion filter,
+prints the keep/skip lists, and stops before a single transcript is fetched. It must never
+fetch content, write to the KB, commit, or push.
 
 Then check whether the current user is an SLT writer.
 
@@ -420,17 +450,116 @@ This step is mode-specific.
 
 ### Mode: `--date YYYY-MM-DD`
 
-Use the Fathom MCP to list meetings for the date where the current user was a participant or owner:
+Use the Fathom MCP to list the meetings the current user recorded on that date:
 
 ```
 Call: the Fathom connector's list_meetings (resolve the live mcp__<uuid>__ name from this session's tools — connector UUIDs are per-machine)
 Parameters:
-  - start_date: YYYY-MM-DD
-  - end_date: YYYY-MM-DD
-  - owner_email: <current user.email>
+  - created_after:  YYYY-MM-DDT00:00:00Z   (the target date, UTC)
+  - created_before: YYYY-MM-DDT23:59:59Z
+  - recorded_by:    ["<current user.email>"]
 ```
 
-For each returned recording_id, call `get_meeting_summary` and `get_meeting_transcript` to get the full content. Stash in `/tmp/harvest-meeting-ctx/meetings.json` as a list of:
+> ⚠️ **Use these parameter names exactly.** There is no `start_date`, `end_date`, or
+> `owner_email` on this tool — earlier versions of this skill documented those three and none
+> of them exist. Passing them means the date and recorder filters are silently dropped and you
+> get the newest page of *everything the user can see*, including other people's meetings.
+> The scoping params are `created_after` / `created_before` / `recorded_by`.
+
+Stash the raw listing — titles, ids and invitees only, **no transcripts** — at
+`/tmp/harvest-meeting-ctx/listing.json`.
+
+**Now apply the exclusion filter — before fetching any content.** `list_meetings` returns only
+`recording_id`, `title`, `url`, `recorded_by`, and `calendar_invitees`; Fathom exposes no
+"private meeting" flag, so exclusion is driven by a user-owned denylist matched on the title
+and invitees.
+
+```bash
+python3 <<'PYEOF'
+import json, pathlib
+
+# --- Locate the user's denylist (first hit wins; absent = nothing excluded) ---
+candidates = [
+    pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/harvest-exclude.txt',
+    pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit/harvest-exclude.txt',
+    pathlib.Path.home() / '.claude/plugins/nsls-personal-toolkit/harvest-exclude.txt',
+]
+src = next((p for p in candidates if p.is_file()), None)
+
+title_pats, ids, invitees = [], set(), set()
+for raw in (src.read_text(encoding='utf-8-sig').splitlines() if src else []):
+    line = raw.strip()
+    if not line or line.startswith('#'):
+        continue
+    low = line.lower()
+    if low.startswith('id:'):
+        ids.add(low[3:].strip())
+    elif low.startswith('invitee:'):
+        invitees.add(low[8:].strip())
+    else:
+        title_pats.append(low)
+
+ctx_dir = pathlib.Path('/tmp/harvest-meeting-ctx'); ctx_dir.mkdir(exist_ok=True)
+listing = json.loads((ctx_dir / 'listing.json').read_text())
+
+def why_excluded(m):
+    if str(m.get('recording_id', '')).lower() in ids:
+        return 'id'
+    for e in m.get('calendar_invitees') or []:
+        addr = (e if isinstance(e, str) else e.get('email', '')).lower()
+        if addr and addr in invitees:
+            return f'invitee {addr}'
+    t = (m.get('title') or '').lower()
+    for p in title_pats:
+        if p in t:
+            return f'title matched "{p}"'
+    return None
+
+keep, dropped = [], []
+for m in listing:
+    reason = why_excluded(m)
+    (dropped if reason else keep).append((m, reason))
+
+print(f"Step 2: {len(listing)} recording(s) listed; "
+      f"{len(keep)} to harvest, {len(dropped)} excluded")
+for m, reason in dropped:
+    print(f"  ⊘ skipped \"{m.get('title')}\" ({reason})")
+for m, _ in keep:
+    print(f"  ✓ {m.get('title')}")
+
+(ctx_dir / 'to_fetch.json').write_text(json.dumps([m for m, _ in keep], indent=2))
+(ctx_dir / 'excluded.json').write_text(
+    json.dumps([{'title': m.get('title'), 'reason': r} for m, r in dropped], indent=2))
+
+nrules = len(title_pats) + len(ids) + len(invitees)
+if not src:
+    print("Step 2: ⚠ no denylist in place. Every recording you made that day will be read, "
+          "including 1:1s and personal recordings. To fix:\n"
+          "  cp <toolkit>/skills/harvest-meeting/references/harvest-exclude.example.txt "
+          "<toolkit>/harvest-exclude.txt")
+elif nrules == 0:
+    # A file that exists but parses to nothing is the dangerous case: it looks like
+    # protection and is none. Never let this pass silently.
+    print(f"Step 2: ⚠ {src} exists but defines 0 rules (all comments/blank?). "
+          "It is excluding nothing — this is not protection. Add patterns or delete the file.")
+else:
+    print(f"Step 2: denylist {src.name} → {len(title_pats)} title pattern(s), "
+          f"{len(ids)} id(s), {len(invitees)} invitee(s)")
+PYEOF
+```
+
+**Hard rules for this filter:**
+- It runs on the *listing* only. Never call `get_meeting_transcript` or `get_meeting_summary`
+  before it has run — the whole point is that excluded content is never read.
+- Never silently drop. Every exclusion prints the title and the reason that matched.
+- If the denylist is missing, or present but empty, say so loudly (above) and continue — do not
+  invent exclusions.
+
+**If `--dry-run` was passed: stop here.** Print the keep/skip lists, state that no transcript
+was fetched and nothing was written, and exit. This answers "what would this read?" without
+reading it.
+
+For each recording in `to_fetch.json`, call `get_meeting_summary` and `get_meeting_transcript` to get the full content. Stash in `/tmp/harvest-meeting-ctx/meetings.json` as a list of:
 
 ```json
 {"recording_id": "...", "title": "...", "url": "...", "summary": "...", "transcript_url": "...", "attendees": [...]}
@@ -440,11 +569,21 @@ Heartbeat: `Step 2: loaded N meeting(s) for YYYY-MM-DD: <comma-separated titles>
 
 If N == 0, heartbeat `Step 2: no meetings for YYYY-MM-DD, nothing to harvest` and exit step (the rest of the pipeline can't run with no input).
 
+If N == 0 *because everything was excluded*, say that instead — `Step 2: all M recording(s) for
+YYYY-MM-DD were excluded by harvest-exclude.txt, nothing to harvest` — so an over-broad denylist
+pattern is distinguishable from a genuinely empty day.
+
 ### Mode: `--fathom-url <url>`
 
-Call the Fathom connector's `get_recording_by_url` with the URL (live per-machine tool name, as above). Then `get_meeting_summary` and `get_meeting_transcript`. Stash same as above (single-item list).
+Call the Fathom connector's `get_recording_by_url` with the URL (live per-machine tool name, as above). **Then run the same exclusion check from the `--date` mode against that single recording's title and invitees**, before fetching its content. A direct URL is a deliberate act, so a match here is a confirmation prompt rather than a hard skip:
 
-Heartbeat: `Step 2: loaded 1 meeting from URL: <title>`
+> ⚠ "<title>" matches your harvest-exclude rule (`title matched "1:1"`). Harvest it anyway? (y/N)
+
+Default is **no**. Only on explicit `y` do you call `get_meeting_summary` /
+`get_meeting_transcript`. Stash same as above (single-item list).
+
+Heartbeat: `Step 2: loaded 1 meeting from URL: <title>` — or
+`Step 2: URL matches an exclude rule, declined, nothing fetched`.
 
 ### Mode: `--week-audit`
 

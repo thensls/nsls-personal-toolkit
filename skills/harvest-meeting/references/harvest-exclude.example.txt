@@ -1,0 +1,47 @@
+# harvest-exclude.txt — recordings /harvest-meeting must never read.
+#
+# Copy this file to your toolkit root to activate it:
+#   cp skills/harvest-meeting/references/harvest-exclude.example.txt \
+#      ~/.claude/local-plugins/nsls-personal-toolkit/harvest-exclude.txt
+#
+# One pattern per line. Case-insensitive substring match against the Fathom
+# meeting TITLE. Blank lines and lines starting with # are ignored.
+#
+# Matching happens in Step 2 BEFORE any transcript is fetched, so an excluded
+# recording's content is never read, never sent to Claude, and never written to
+# /tmp. Excluded titles are reported by name so a skip is never silent.
+#
+# A line of the form `id:<recording_id>` excludes one specific recording.
+# A line of the form `invitee:<email>` excludes any meeting that person attended.
+
+# --- 1:1s and coaching ---
+1:1
+1-on-1
+one-on-one
+onexone
+coaching
+
+# Uncomment if you want these too. "check-in" is deliberately OFF by default —
+# it also matches real meetings like "SLT check-in", and over-excluding costs you
+# KB content. Under-excluding costs you privacy, so tune this list deliberately.
+# check-in
+# sync
+# catch-up
+
+# --- personal / non-work ---
+personal
+private
+doctor
+therapy
+medical
+family
+
+# --- hiring (candidate PII, comp discussion) ---
+interview
+candidate
+screen
+reference check
+
+# --- examples of the targeted forms ---
+# id:12345678
+# invitee:spouse@example.com
