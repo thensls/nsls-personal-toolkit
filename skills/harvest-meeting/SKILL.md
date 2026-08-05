@@ -65,9 +65,42 @@ gateway URL or token to verify** (the kb-gateway only powers the bot + kb.nsls.o
 
 | Mode | When | Source |
 |---|---|---|
-| `--date YYYY-MM-DD` | close-day Step 4c | All Fathom meetings for the date |
+| `--date YYYY-MM-DD` | close-day Step 4c | Your Fathom recordings for the date, minus exclusions |
 | `--fathom-url <url>` | Manual after important meeting | Single meeting |
 | `--week-audit --week YYYY-Www` | close-week Step 2b | Git log + topic files for the week |
+
+| Flag | Effect |
+|---|---|
+| `--dry-run` | List which recordings *would* be harvested and stop. No transcript fetched, nothing written, nothing committed. Supported for `--date` and `--fathom-url`; **not** for `--week-audit` (see below). |
+
+## What this skill reads, and the two places you control it
+
+`--date` mode lists **every recording you made that day** — 1:1s included. Fathom exposes no
+"private meeting" flag, so the skill cannot infer which of your meetings are sensitive. **Nothing
+is excluded by default, on purpose:** guessing that "1:1" means "don't harvest" would silently
+drop real strategy conversations, and a silent drop is the failure mode this skill works hardest
+to avoid. You decide what to exclude; the skill never decides for you.
+
+Two independent controls. It matters which does what:
+
+1. **Step 7 approval gate — always on, prevents *writing*.** Every candidate edit is presented
+   individually, with its target file and section, and you approve or drop them **item by item**
+   (`all` / `drop 1,3` / `edit 2: <text>` / `cancel`). Nothing is committed or pushed until you
+   say so. This is the control that is always protecting you, on every run, with no setup. If a
+   1:1 produces a candidate you don't want in the KB, you drop that line and it never lands.
+2. **`harvest-exclude.txt` — opt-in, prevents *reading*.** If you'd rather a whole class of
+   meeting never be read at all, put it in your settings and the skill will skip it before
+   fetching a transcript — content never read, never sent to Claude, never written to `/tmp`.
+   Ships with **no active rules**; `references/harvest-exclude.example.txt` is a commented menu
+   to copy and uncomment. Use it for meeting types you never want touched (therapy, medical,
+   candidate interviews), not as a substitute for the approval gate.
+
+The ordering matters: the approval gate covers the common case, so you don't need to configure
+anything to be safe from a bad *write*. The denylist is the stronger, narrower tool for content
+you don't want *read* — and it's the only one of the two that helps there, because the approval
+gate fires after transcripts are already loaded.
+
+Use `--dry-run` to see exactly which recordings would be read before any of it happens.
 
 ## Allowlist → routing (not a write gate)
 
@@ -95,7 +128,41 @@ result, and STOP. If they asked to *verify / check* their setup, run
 `bash references/verify-setup.sh`, report its ROUTE verdict, and STOP. In both cases do not
 proceed to Step 1 or fetch any meeting.
 
-Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`).
+Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`) and whether
+`--dry-run` is present. Treat "dry run", "preview", "what would this harvest", and "show me
+what it would read" as `--dry-run` too.
+
+### `--dry-run` handling
+
+**First, reject the unsupported combination.** `--dry-run` is supported for `--date` and
+`--fathom-url` only. Step 2 is explicitly a no-op for `--week-audit` (that mode's data load lives
+in Step 9), so pairing the two would print an empty keep/skip list that reads as "nothing would be
+harvested" — a false all-clear. If `--week-audit` and `--dry-run` are both present, print this and
+STOP before Step 1:
+
+> `--dry-run` isn't supported for `--week-audit` yet. Run `--week-audit` on its own (its write
+> actions are individually approved), or dry-run a specific date or Fathom URL.
+
+**Otherwise** (`--date` / `--fathom-url`), `--dry-run` is a *pre-flight* flag, not a mode: it runs
+Step 0, then **skips Step 1 entirely and jumps straight to Step 2's listing + exclusion filter**,
+prints the keep/skip lists, and stops before a single transcript is fetched.
+
+**Exactly what dry-run guarantees:** it never fetches meeting content, never reads an excluded
+recording, never creates or modifies a KB file, never commits, and never pushes.
+
+**What it does still do:** Step 0's allowlist check runs `git fetch origin main` in the KB clone
+(then `git show origin/main:_data/kb_authors.txt`), which updates `FETCH_HEAD` and remote-tracking
+refs. That is Git metadata, not KB content — no commit, no push, working tree untouched. It is
+deliberately kept: routing (company KB vs local KB) is one of the things dry-run reports, and
+resolving it from the toolkit's stale fallback allowlist instead would let dry-run name the wrong
+destination. An accurate preview is worth a `FETCH_HEAD` write.
+
+> ⚠️ **Skipping Step 1 is load-bearing, not an optimization.** Step 1a clones or `git pull`s the
+> company KB, and for a first-run local KB it does `mkdir -p`, copies the seed, and makes a
+> `local KB: initial scaffold` commit. That is a real content mutation and a commit — categorically
+> different from a fetch of refs — so running Step 1 would break the guarantee above. Dry-run needs
+> only identity/routing (Step 0) and the meeting listing (Step 2); it never touches topic files or
+> the rubric, so Step 1's context load is genuinely unnecessary.
 
 Then check whether the current user is an SLT writer.
 
@@ -420,17 +487,153 @@ This step is mode-specific.
 
 ### Mode: `--date YYYY-MM-DD`
 
-Use the Fathom MCP to list meetings for the date where the current user was a participant or owner:
+Use the Fathom MCP to list the meetings the current user recorded on that date:
+
+**The date window must be the user's *local* day, converted to UTC.** `created_after` /
+`created_before` are absolute UTC instants, so hardcoding `T00:00:00Z`–`T23:59:59Z` asks for the
+UTC day, not the day the user means. Nobody on this team is in UTC (Pacific through Central), so
+that mistake silently drops every evening recording — a 7pm PT meeting on the 5th is
+`00:00Z on the 6th` — and leaks in early-morning meetings from the previous local day. close-day
+harvests *in the evening*, so this is the common case, not an edge case.
+
+Compute the bounds from the local zone first:
+
+```bash
+python3 - "$TARGET_DATE" <<'PYEOF'
+import sys
+from datetime import datetime, timezone
+d = sys.argv[1]                                   # YYYY-MM-DD, the user's local calendar day
+# A naive datetime's .astimezone() attaches the machine's local offset *for that datetime*,
+# so each boundary lands on the right side of a DST change. Do not substitute a fixed offset.
+# Build EACH boundary from its own naive wall-clock time. Do not derive the end by adding
+# timedelta(days=1) to start_local: an aware datetime carries a FIXED offset, so arithmetic
+# reuses midnight's offset and the end boundary gets the wrong one on DST transition days
+# (window 1h too long on spring-forward → leaks the next local day; 1h too short on
+# fall-back → drops the last hour of recordings).
+start_local = datetime.fromisoformat(f'{d}T00:00:00').astimezone()
+end_local   = datetime.fromisoformat(f'{d}T23:59:59').astimezone()
+fmt = lambda t: t.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+print(f'created_after:  {fmt(start_local)}')
+print(f'created_before: {fmt(end_local)}')
+print(f'(local day {d} in {start_local.tzname()} → the UTC window above)')
+PYEOF
+```
+
+Then pass those two computed values:
 
 ```
 Call: the Fathom connector's list_meetings (resolve the live mcp__<uuid>__ name from this session's tools — connector UUIDs are per-machine)
 Parameters:
-  - start_date: YYYY-MM-DD
-  - end_date: YYYY-MM-DD
-  - owner_email: <current user.email>
+  - created_after:  <computed UTC start of the user's local day>
+  - created_before: <computed UTC end of the user's local day>
+  - recorded_by:    ["<current user.email>"]
 ```
 
-For each returned recording_id, call `get_meeting_summary` and `get_meeting_transcript` to get the full content. Stash in `/tmp/harvest-meeting-ctx/meetings.json` as a list of:
+> ⚠️ **Use these parameter names exactly.** There is no `start_date`, `end_date`, or
+> `owner_email` on this tool — earlier versions of this skill documented those three and none
+> of them exist. Passing them means the date and recorder filters are silently dropped and you
+> get the newest page of *everything the user can see*, including other people's meetings.
+> The scoping params are `created_after` / `created_before` / `recorded_by`.
+
+**Heartbeat the window you actually used**, so a timezone mismatch is visible instead of looking
+like a quiet day: `Step 2: window <created_after> → <created_before> (local day YYYY-MM-DD, <tz>)`.
+
+Stash the raw listing — titles, ids and invitees only, **no transcripts** — at
+`/tmp/harvest-meeting-ctx/listing.json`.
+
+**Now apply the exclusion filter — before fetching any content.** `list_meetings` returns only
+`recording_id`, `title`, `url`, `recorded_by`, and `calendar_invitees`; Fathom exposes no
+"private meeting" flag, so exclusion is driven by a user-owned denylist matched on the title
+and invitees.
+
+```bash
+python3 <<'PYEOF'
+import json, pathlib
+
+# --- Locate the user's denylist (first hit wins; absent = nothing excluded) ---
+candidates = [
+    pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/harvest-exclude.txt',
+    pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit/harvest-exclude.txt',
+    pathlib.Path.home() / '.claude/plugins/nsls-personal-toolkit/harvest-exclude.txt',
+]
+src = next((p for p in candidates if p.is_file()), None)
+
+title_pats, ids, invitees = [], set(), set()
+for raw in (src.read_text(encoding='utf-8-sig').splitlines() if src else []):
+    line = raw.strip()
+    if not line or line.startswith('#'):
+        continue
+    low = line.lower()
+    if low.startswith('id:'):
+        ids.add(low[3:].strip())
+    elif low.startswith('invitee:'):
+        invitees.add(low[8:].strip())
+    else:
+        title_pats.append(low)
+
+ctx_dir = pathlib.Path('/tmp/harvest-meeting-ctx'); ctx_dir.mkdir(exist_ok=True)
+listing = json.loads((ctx_dir / 'listing.json').read_text())
+
+def why_excluded(m):
+    if str(m.get('recording_id', '')).lower() in ids:
+        return 'id'
+    for e in m.get('calendar_invitees') or []:
+        addr = (e if isinstance(e, str) else e.get('email', '')).lower()
+        if addr and addr in invitees:
+            return f'invitee {addr}'
+    t = (m.get('title') or '').lower()
+    for p in title_pats:
+        if p in t:
+            return f'title matched "{p}"'
+    return None
+
+keep, dropped = [], []
+for m in listing:
+    reason = why_excluded(m)
+    (dropped if reason else keep).append((m, reason))
+
+print(f"Step 2: {len(listing)} recording(s) listed; "
+      f"{len(keep)} to harvest, {len(dropped)} excluded")
+for m, reason in dropped:
+    print(f"  ⊘ skipped \"{m.get('title')}\" ({reason})")
+for m, _ in keep:
+    print(f"  ✓ {m.get('title')}")
+
+(ctx_dir / 'to_fetch.json').write_text(json.dumps([m for m, _ in keep], indent=2))
+(ctx_dir / 'excluded.json').write_text(
+    json.dumps([{'title': m.get('title'), 'reason': r} for m, r in dropped], indent=2))
+
+nrules = len(title_pats) + len(ids) + len(invitees)
+if nrules:
+    print(f"Step 2: exclude rules active ({src.name}) → {len(title_pats)} title pattern(s), "
+          f"{len(ids)} id(s), {len(invitees)} invitee(s)")
+else:
+    # No rules is the DEFAULT and is not an error — the skill must never guess that a 1:1
+    # is off-limits. State the consequence plainly, point at the setting, and move on.
+    where = str(src) if src else '<toolkit>/harvest-exclude.txt'
+    print(f"Step 2: no exclude rules set — all {len(listing)} recording(s) above will be read, "
+          "1:1s included. Every proposed edit still needs your item-by-item approval in Step 7 "
+          "before anything is written.\n"
+          f"        To never read a meeting type at all, add patterns to {where} "
+          "(see references/harvest-exclude.example.txt).")
+PYEOF
+```
+
+**Hard rules for this filter:**
+- It runs on the *listing* only. Never call `get_meeting_transcript` or `get_meeting_summary`
+  before it has run — the whole point is that excluded content is never read.
+- Never silently drop. Every exclusion prints the title and the reason that matched.
+- **Never infer an exclusion.** Only rules the user wrote down exclude anything. Do not skip a
+  meeting because its title looks like a 1:1, because it has two attendees, or because it seems
+  personal — an unconfigured run reads everything and says so. Guessing here would silently lose
+  real strategy conversations, and the user cannot debug a skip they were never told about.
+- No rules configured is a normal state, not a failure. Report it and continue.
+
+**If `--dry-run` was passed: stop here.** Print the keep/skip lists, state that no transcript
+was fetched and nothing was written, and exit. This answers "what would this read?" without
+reading it.
+
+For each recording in `to_fetch.json`, call `get_meeting_summary` and `get_meeting_transcript` to get the full content. Stash in `/tmp/harvest-meeting-ctx/meetings.json` as a list of:
 
 ```json
 {"recording_id": "...", "title": "...", "url": "...", "summary": "...", "transcript_url": "...", "attendees": [...]}
@@ -440,11 +643,21 @@ Heartbeat: `Step 2: loaded N meeting(s) for YYYY-MM-DD: <comma-separated titles>
 
 If N == 0, heartbeat `Step 2: no meetings for YYYY-MM-DD, nothing to harvest` and exit step (the rest of the pipeline can't run with no input).
 
+If N == 0 *because everything was excluded*, say that instead — `Step 2: all M recording(s) for
+YYYY-MM-DD were excluded by harvest-exclude.txt, nothing to harvest` — so an over-broad denylist
+pattern is distinguishable from a genuinely empty day.
+
 ### Mode: `--fathom-url <url>`
 
-Call the Fathom connector's `get_recording_by_url` with the URL (live per-machine tool name, as above). Then `get_meeting_summary` and `get_meeting_transcript`. Stash same as above (single-item list).
+Call the Fathom connector's `get_recording_by_url` with the URL (live per-machine tool name, as above). **Then run the same exclusion check from the `--date` mode against that single recording's title and invitees**, before fetching its content. A direct URL is a deliberate act, so a match here is a confirmation prompt rather than a hard skip:
 
-Heartbeat: `Step 2: loaded 1 meeting from URL: <title>`
+> ⚠ "<title>" matches your harvest-exclude rule (`title matched "1:1"`). Harvest it anyway? (y/N)
+
+Default is **no**. Only on explicit `y` do you call `get_meeting_summary` /
+`get_meeting_transcript`. Stash same as above (single-item list).
+
+Heartbeat: `Step 2: loaded 1 meeting from URL: <title>` — or
+`Step 2: URL matches an exclude rule, declined, nothing fetched`.
 
 ### Mode: `--week-audit`
 
@@ -897,6 +1110,21 @@ PYEOF
 
 Pull Fathom meetings in the week window via MCP, compare against meeting titles in `harvest_commits[*].subject`. List meetings not found in any commit subject.
 
+**Apply `harvest-exclude.txt` here too, with the same loader as Step 2.** This mode pulls the
+week's meetings and prints their titles in the audit report, so without the filter it would (a)
+read meetings the user asked never to be read, and (b) list an excluded meeting as "unharvested"
+every week — nagging them to harvest the exact thing they excluded, and echoing its title into a
+report. Both defeat the setting.
+
+Rules for the week window:
+- Build the week's `created_after` / `created_before` from **local** midnight boundaries, same as
+  Step 2 — construct each boundary from its own naive wall-clock time.
+- Filter the listing through the denylist **before** requesting summaries.
+- Excluded meetings are **not** counted as unharvested and **not** listed by title. Report them
+  only as an aggregate count, so the exclusion is visible without leaking what was excluded:
+  `{E} excluded by your harvest-exclude rules (not listed)`.
+- Omit that line entirely when `E == 0`.
+
 ### 9c. Audit report — always displayed
 
 ```
@@ -905,6 +1133,7 @@ Week YYYY-Www KB audit:
 Activity:
   - {N} harvest commits, {M} edits across {K} topic files
   - {J} SLT-recorded meetings; {I} harvested ({J-I} unharvested — listed below)
+  - {E} excluded by your harvest-exclude rules (not listed)   ← omit this line when E == 0
 
 Unharvested meetings:
   - YYYY-MM-DD "<title>": no harvest commits reference this meeting

@@ -1,4 +1,7 @@
 .env
+# Your personal harvest denylist — private by design, never shared to the template.
+# Seed it from skills/harvest-meeting/references/harvest-exclude.example.txt
+harvest-exclude.txt
 .claude/settings.local.json
 __pycache__/
 *.pyc
