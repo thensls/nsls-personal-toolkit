@@ -160,6 +160,30 @@ Skip if no goals are active.
 
 ### Step 2: Synthesize
 
+**🔢 Business numbers — read these FIRST, before writing anything else in this step.**
+
+This read is structural, not optional, and it comes before achievements, learnings, or priorities. It exists because of a measured pattern (ledger **P002**, "business numbers absent from the weekly field of view"): weekly reviews measure the operating system exhaustively and the business almost never, while the instrumentation to surface the numbers already exists.
+
+Report the current value, the direction since last week, and — for each — **what decision it would change**. A number with no decision attached is a vanity metric; say so and drop it.
+
+| # | Number | Where it lives |
+|---|---|---|
+| 1 | Revenue vs. plan | NetSuite / finance review |
+| 2 | Enrollment pace vs. the fall curve | HubSpot / Hex (Summit RSVP P&L app) |
+| 3 | Response rate (the 0→2→5→7 ladder) | Gary push dashboard |
+| 4 | Society engagement — signups, track completion, **returning visits / coach use** | Society Pulse, PostHog |
+| 5 | Cash position + runway | Finance |
+
+**Rules:**
+- **Never write "not available" without naming the owner and the ask.** A number you can't get is a delegation, not a footnote. If Society Pulse can't answer returning visits, that's the dashboard gap — record it as an ask with a name on it.
+- **Prefer the decision-relevant number over the available one.** Volume, send counts, and totals describe activity; conversion, return, and retention describe whether it's working. If the only number on offer is activity, write that down as the finding.
+- **Owners report movement and what they learned, not volume.** If a workstream produced neither a moved number nor a nameable learning for 4+ weeks, flag it as a **resourcing decision** (prioritize / shrink to maintenance / stop) rather than a reporting problem. That's a personnel call, and it belongs in front of the builder, not buried.
+- If a per-team KPI sheet exists at `$OBSIDIAN_VAULT_PATH/10-strategy/kpis/`, read it instead of this generic list — it's the canonical set, named by the builder.
+
+Carry this read into Step 3's priorities. **P002 closes when this read happens because the template forced it, not because the builder happened to look.**
+
+---
+
 **Achievements:** Scan all Work Log bullets across the week. Pick the 5-8 most impactful — things that shipped, decisions that moved the needle, external commitments met. Prefer concrete outcomes with numbers over activity descriptions.
 
 **Learnings:** Look for:
