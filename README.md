@@ -23,6 +23,22 @@ NSLS_PERSONAL_REPO=https://github.com/<your-github>/nsls-personal-toolkit.git \
   curl -fsSL https://raw.githubusercontent.com/<your-github>/nsls-personal-toolkit/main/install.sh | bash
 ```
 
+## Updates
+
+Updates apply themselves: a SessionStart hook fast-forwards the toolkit every time
+you start Claude Code.
+
+**If you installed before that hook shipped**, run this once to catch up — the hook
+can only start working after it has arrived on your machine:
+
+```bash
+git -C ~/.claude/local-plugins/nsls-personal-toolkit pull --ff-only
+```
+
+If you've edited skills in place, commit those changes — a fast-forward can't run
+over a dirty tree. The hook now tells you when that's blocking an update instead of
+skipping quietly.
+
 ## Skills
 
 | Skill | Trigger | What it does |

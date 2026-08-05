@@ -191,8 +191,24 @@ if [[ "${yn:-y}" =~ ^[Yy] ]]; then
 
   # Auto-start at login is macOS-only (launchd). Windows users: see
   # docs/windows-setup.md for a Task Scheduler / startup-shortcut recipe.
+  #
+  # Same stdin rule as the companion prompt above — a bare `read` under
+  # `curl … | bash` eats the following lines of this script. This one is
+  # macOS-only, so on a Mac it used to break the tail of the installer.
+  # Default here stays **no**: installing a launchd login item is a system-level
+  # change, so a run with nobody to ask must not do it silently.
+  # NSLS_AUTOSTART_COMPANION=1 opts in without a prompt.
   if [ "$OS_CLASS" = "macos" ]; then
-    read -p "Auto-start the companion at login? [y/N] " auto
+    if [ -n "${NSLS_AUTOSTART_COMPANION:-}" ]; then
+      auto="y"
+    elif [ -t 0 ]; then
+      read -p "Auto-start the companion at login? [y/N] " auto || auto="n"
+    elif { : </dev/tty; } 2>/dev/null; then
+      read -p "Auto-start the companion at login? [y/N] " auto </dev/tty || auto="n"
+    else
+      auto="n"
+      echo "No terminal detected — skipping the login item (set NSLS_AUTOSTART_COMPANION=1 to enable)."
+    fi
     if [[ "${auto:-n}" =~ ^[Yy] ]]; then
       install_companion_launchd
     fi

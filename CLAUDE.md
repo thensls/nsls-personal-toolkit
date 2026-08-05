@@ -89,9 +89,36 @@ Common modifications:
 - **Different time tracking?** Modify `close-week` to output your team's format
 - **Don't want any of this?** Delete the whole plugin. The org toolkit works independently.
 
+## How Updates Reach a Builder
+
+`hooks/hooks.json` registers a **SessionStart** hook that `git pull --ff-only`s the
+plugin dir on every Claude Code session start, then syncs skill pointers into
+`~/.claude/skills/`. `install.sh` clones from `thensls/nsls-personal-toolkit` by
+default (override with `NSLS_PERSONAL_REPO`), so for a standard install `origin`
+*is* upstream and a merge to `main` reaches everyone on their next session.
+
+Two things to know:
+
+- **`hooks/session-start.py` was unregistered for a long time.** Nothing pointed at
+  it — not `install.sh`, not `install.ps1`, not `plugin.json` — so the toolkit never
+  actually auto-updated and every fix had to be pulled by hand. `hooks/hooks.json`
+  is what wires it in. Don't delete that file assuming it's redundant.
+- **An existing install can't self-update into having this hook** — it has to arrive
+  by pull first. Anyone installed before it shipped needs one catch-up:
+  ```bash
+  git -C ~/.claude/local-plugins/nsls-personal-toolkit pull --ff-only
+  ```
+  After that, updates flow on their own.
+
+`--ff-only` refuses on a dirty tree or a diverged branch, and `## Customizing`
+below actively invites editing skills in place — so that's a normal state, not an
+edge case. It used to fail silently; now the hook prints one line naming the
+reason. If you edit skills locally, commit your changes so fast-forwards keep
+working.
+
 ## Keeping Your Fork Updated
 
-If Kevin adds improvements to the template, you can pull them selectively:
+If you run your own fork, you can pull template improvements selectively:
 ```bash
 git remote add upstream https://github.com/thensls/nsls-personal-toolkit.git
 git fetch upstream
