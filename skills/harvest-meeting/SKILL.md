@@ -145,15 +145,24 @@ STOP before Step 1:
 
 **Otherwise** (`--date` / `--fathom-url`), `--dry-run` is a *pre-flight* flag, not a mode: it runs
 Step 0, then **skips Step 1 entirely and jumps straight to Step 2's listing + exclusion filter**,
-prints the keep/skip lists, and stops before a single transcript is fetched. It must never fetch
-content, write to the KB, commit, or push.
+prints the keep/skip lists, and stops before a single transcript is fetched.
+
+**Exactly what dry-run guarantees:** it never fetches meeting content, never reads an excluded
+recording, never creates or modifies a KB file, never commits, and never pushes.
+
+**What it does still do:** Step 0's allowlist check runs `git fetch origin main` in the KB clone
+(then `git show origin/main:_data/kb_authors.txt`), which updates `FETCH_HEAD` and remote-tracking
+refs. That is Git metadata, not KB content — no commit, no push, working tree untouched. It is
+deliberately kept: routing (company KB vs local KB) is one of the things dry-run reports, and
+resolving it from the toolkit's stale fallback allowlist instead would let dry-run name the wrong
+destination. An accurate preview is worth a `FETCH_HEAD` write.
 
 > ⚠️ **Skipping Step 1 is load-bearing, not an optimization.** Step 1a clones or `git pull`s the
 > company KB, and for a first-run local KB it does `mkdir -p`, copies the seed, and makes a
-> `local KB: initial scaffold` commit. Running it would make `--dry-run` mutate disk and create a
-> commit — breaking the guarantee above. Dry-run needs only identity/routing (Step 0) and the
-> meeting listing (Step 2); it never touches topic files or the rubric, so Step 1's context load
-> is genuinely unnecessary.
+> `local KB: initial scaffold` commit. That is a real content mutation and a commit — categorically
+> different from a fetch of refs — so running Step 1 would break the guarantee above. Dry-run needs
+> only identity/routing (Step 0) and the meeting listing (Step 2); it never touches topic files or
+> the rubric, so Step 1's context load is genuinely unnecessary.
 
 Then check whether the current user is an SLT writer.
 
