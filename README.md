@@ -25,11 +25,13 @@ NSLS_PERSONAL_REPO=https://github.com/<your-github>/nsls-personal-toolkit.git \
 
 ## Updates
 
-Updates apply themselves: a SessionStart hook fast-forwards the toolkit every time
-you start Claude Code.
+Updates apply themselves: the installer registers a SessionStart hook in
+`~/.claude/settings.json` that fast-forwards the toolkit every time you start
+Claude Code.
 
-**If you installed before that hook shipped**, run this once to catch up — the hook
-can only start working after it has arrived on your machine:
+**If you installed before that hook shipped**, catch up once — the hook can only
+start working after it's on your machine. Re-running the installer registers it,
+or just pull:
 
 ```bash
 git -C ~/.claude/local-plugins/nsls-personal-toolkit pull --ff-only

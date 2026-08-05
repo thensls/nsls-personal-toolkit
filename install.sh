@@ -64,6 +64,75 @@ else
   git clone "$REPO_URL" "$PLUGIN_DIR"
 fi
 
+# --- Enable the plugin and register the auto-update hook in settings.json ---
+#
+# This is what makes updates actually arrive. `hooks/hooks.json` in the plugin
+# root is the documented location, but a *locally enabled* plugin (as opposed to
+# a marketplace install) does not reliably load bundled hooks — notably on Claude
+# Code desktop. The builder toolkit hit the same wall and solved it by merging
+# into the global settings.json; do the same here and treat hooks.json as the
+# secondary path.
+#
+# `~/.claude/local-plugins/` is not a Claude Code convention at all — it's just
+# where this project keeps its checkout — so nothing loads it automatically
+# unless settings.json says so.
+#
+# The hook is a bare `git` invocation on purpose: no python, no bash, nothing
+# that Windows might lack. Pointer sync (which does need python) is registered
+# separately below and is allowed to be absent.
+SETTINGS="$HOME/.claude/settings.json"
+if [ -f "$SETTINGS" ]; then
+  PLUGIN_DIR="$PLUGIN_DIR" python3 - <<'PYEOF' 2>/dev/null || echo "  Note: could not update settings.json — see README (Updates) to add the hook by hand"
+import json, os
+from pathlib import Path
+
+plugin_dir = os.environ["PLUGIN_DIR"]
+path = Path(os.path.expanduser("~/.claude/settings.json"))
+
+# utf-8-sig: an older PowerShell installer may have left a BOM, which plain
+# utf-8 would choke on.
+with open(path, encoding="utf-8-sig") as f:
+    cfg = json.load(f)
+
+cfg.setdefault("enabledPlugins", {})["nsls-personal-toolkit@local"] = True
+
+PULL_CMD = f'git -C "{plugin_dir}" pull --ff-only --quiet'
+SYNC_CMD = f'python3 "{plugin_dir}/hooks/session-start.py" --no-pull'
+WANTED = [
+    ("nsls-personal-toolkit\" pull", {"type": "command", "command": PULL_CMD,
+     "timeout": 20, "statusMessage": "Updating personal toolkit..."}),
+    ("nsls-personal-toolkit/hooks/session-start.py", {"type": "command",
+     "command": SYNC_CMD, "timeout": 20}),
+]
+
+hooks = cfg.setdefault("hooks", {})
+session_start = hooks.setdefault("SessionStart", [])
+startup = next((e for e in session_start if str(e.get("matcher", "")).startswith("startup")), None)
+if startup is None:
+    startup = {"matcher": "startup", "hooks": []}
+    session_start.append(startup)
+hook_list = startup.setdefault("hooks", [])
+
+added = 0
+for marker, entry in WANTED:
+    if not any(marker in h.get("command", "") for h in hook_list):
+        hook_list.append(entry)
+        added += 1
+
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2)
+
+# Verify by re-reading — never trust the exit code alone. On stock Win11 a bare
+# `python`/`python3` can be the Store stub, which exits 0 having done nothing.
+chk = json.load(open(path, encoding="utf-8-sig"))
+ok = chk.get("enabledPlugins", {}).get("nsls-personal-toolkit@local")
+print(f"  Enabled plugin + registered {added} auto-update hook(s)." if ok
+      else "  Note: settings.json write did not take effect")
+PYEOF
+else
+  echo "  Note: no settings.json yet — run this installer again after your first Claude Code session"
+fi
+
 # Fire an install event to the Automation Tracker (best-effort, never blocks).
 # Tracks personal-toolkit installs and auto-registers brand-new builders
 # server-side. install_source must be exactly "personal-toolkit" — the server

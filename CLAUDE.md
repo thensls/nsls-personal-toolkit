@@ -91,24 +91,41 @@ Common modifications:
 
 ## How Updates Reach a Builder
 
-`hooks/hooks.json` registers a **SessionStart** hook that `git pull --ff-only`s the
-plugin dir on every Claude Code session start, then syncs skill pointers into
-`~/.claude/skills/`. `install.sh` clones from `thensls/nsls-personal-toolkit` by
-default (override with `NSLS_PERSONAL_REPO`), so for a standard install `origin`
-*is* upstream and a merge to `main` reaches everyone on their next session.
+**`~/.claude/local-plugins/` is not a Claude Code convention** — it's just this
+project's checkout location. Nothing there loads automatically. A plugin living
+outside a skills directory is *locally enabled* via
+`enabledPlugins: {"nsls-personal-toolkit@local": true}` in `~/.claude/settings.json`,
+and a locally enabled plugin **does not reliably load its bundled `hooks/hooks.json`**
+(notably on Claude Code desktop). The builder toolkit hit this and works around it
+the same way.
+
+So updates ride on **two** registrations, primary first:
+
+1. **`~/.claude/settings.json` → `hooks.SessionStart`**, written by `install.sh` /
+   `install.ps1`. The pull entry is a bare `git` call on purpose — no python, no
+   bash, so neither a missing Git Bash nor the Microsoft-Store python stub can
+   defeat it. This is the path that actually fires.
+2. **`hooks/hooks.json`** in the plugin root — the documented location, kept as a
+   fallback for surfaces that do load bundled hooks. Don't rely on it alone.
+
+`install.sh` clones from `thensls/nsls-personal-toolkit` by default (override with
+`NSLS_PERSONAL_REPO`), so for a standard install `origin` *is* upstream and a merge
+to `main` reaches everyone whose hook is registered.
 
 Two things to know:
 
 - **`hooks/session-start.py` was unregistered for a long time.** Nothing pointed at
   it — not `install.sh`, not `install.ps1`, not `plugin.json` — so the toolkit never
-  actually auto-updated and every fix had to be pulled by hand. `hooks/hooks.json`
-  is what wires it in. Don't delete that file assuming it's redundant.
-- **An existing install can't self-update into having this hook** — it has to arrive
-  by pull first. Anyone installed before it shipped needs one catch-up:
+  auto-updated and every fix had to be pulled by hand.
+- **An existing install can't self-update into having the hook** — it has to arrive
+  first. Either re-run the installer, or one catch-up pull:
   ```bash
   git -C ~/.claude/local-plugins/nsls-personal-toolkit pull --ff-only
   ```
-  After that, updates flow on their own.
+  On a machine with the **builder** toolkit, its SessionStart hook is already
+  registered and already self-updates, so shipping the personal-toolkit pull there
+  (`SYNC_PLUGINS` in the builder's `hooks/session-start.py` lists both toolkits but
+  `git_pull()` only pulls its own dir) reaches those builders with no action at all.
 
 `--ff-only` refuses on a dirty tree or a diverged branch, and `## Customizing`
 below actively invites editing skills in place — so that's a normal state, not an
