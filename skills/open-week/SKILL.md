@@ -748,16 +748,15 @@ The weekly note must include a Learning Plan section after the Top 3:
 
 ### Step 5.5: Visual companion handoff
 
-**Resolving the binary path** (same lookup as open-day Step 8):
+**Resolving the binary** (same helper as open-day Step 8 — it resolves the binary and, if the toolkit source is present but the companion venv was never built, builds it on first use):
 ```bash
-TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
-[ -x "$TC" ] || TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/Scripts/toolkit-companion.exe"  # Windows
-[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
 ```
+The first run on a machine may take ~10–30s while it builds; never print the build output.
 
 **Skip this step entirely if any of these is true:**
 - `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
-- The companion binary cannot be found
+- `$TC` came back empty — the companion can't be provisioned here (reason on stderr, detail in `companion/.install.log`)
 - The companion is not running and cannot be started
 - This is a backfill run (not the current week)
 

@@ -96,12 +96,11 @@ The close routes through the **CLI companion** by default (Step 0.5 starts it if
 
 **HARD RULE — fresh confirmation, every time.** Never synthesize/close without a fresh builder confirmation *this session*: either the companion click (via the `wait-done` listener armed below) or a typed "done". A `close_ready: 1` already present in the frontmatter from a previous session is **stale** — do not treat it as consent; send the builder to the companion link and wait. (A stale flag may still pick *which date* to close — see the pending-close scan — but never *whether* to synthesize it.)
 
-**Resolving the binary path** (same lookup as open-day Step 8):
+**Resolving the binary** (same helper as open-day Step 8 — it resolves the binary and, if the toolkit source is present but the companion venv was never built, builds it on first use):
 ```bash
-TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
-[ -x "$TC" ] || TC="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/Scripts/toolkit-companion.exe"  # Windows
-[ -x "$TC" ] || TC="$(command -v toolkit-companion 2>/dev/null)"
+TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
 ```
+If `$TC` comes back **empty**, the companion genuinely can't run here — the script prints the reason on stderr and logs detail to `companion/.install.log`. Fall back to the chat close. The first run on a machine may take ~10–30s while it builds; never print the build output.
 
 **The companion is ON by default, and close-day routes you to it.** Skip this step (close as a pure CLI ritual, straight to Step 0.6) ONLY when the builder passed **`-b`** (bypass the companion this run — close in chat), OR `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. **Note:** in close-day `-v` means *verbose* (see Output Discipline), NOT visual-off — the flag to close without the companion is **`-b`**.
 

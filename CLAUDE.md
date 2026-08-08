@@ -31,9 +31,19 @@ To reconfigure later (change Slack ID, Airtable key, etc.), say `/personal-setup
 
 ## Web Companion
 
-The companion runs at `http://localhost:7777`. It is optional — install with `install.sh` or `cd companion && pip install -e .`.
+The companion runs at `http://localhost:7777`. Anyone with the toolkit installed gets it: the day skills **build it on first use** if it isn't there yet, so no separate install step is required. `install.sh` still sets it up up front, and `cd companion && pip install -e .` still works by hand.
 
-The binary is installed into a venv and is **not on PATH** in a fresh shell. The venv binary dir is OS-specific: `companion/.venv/bin/toolkit-companion` on macOS/Linux, `companion/.venv/Scripts/toolkit-companion.exe` on Windows. To run it: invoke that full path, activate the venv first, or (Unix) symlink it to `~/.local/bin/`. Skills resolve the correct path automatically — see open-day Step 8 for the platform-aware lookup. Windows users: see `docs/windows-setup.md`.
+The binary is installed into a venv and is **not on PATH** in a fresh shell. The venv binary dir is OS-specific: `companion/.venv/bin/toolkit-companion` on macOS/Linux, `companion/.venv/Scripts/toolkit-companion.exe` on Windows.
+
+**Never hand-roll that lookup.** `companion/ensure-companion.sh` is the single resolver every skill calls — it checks all three locations, builds the venv when the source is present but the companion was never installed, and prints the binary path (empty output = genuinely unavailable, fall back to chat):
+
+```bash
+TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
+```
+
+It is a no-op costing three stats once the companion exists; the first build takes ~10–30s and logs to `companion/.install.log`. `--force` retries after a failed build (failures cool down for 24h so a broken toolchain can't slow every morning). Windows users: see `docs/windows-setup.md`.
+
+*Why it exists:* installing the companion used to be an interactive prompt in the installers, and under the documented `curl … | bash` path that `read` consumed the script's own next line and killed the installer after "Done!" had printed. Builders were left with `companion/` source, no `.venv`, and day skills that silently fell back to chat forever. Both installers now only prompt when a terminal is actually reachable and install by default otherwise (`NSLS_SKIP_COMPANION=1` opts out).
 
 Habits live in `30-habits/habits.md`; daily ticks accumulate in `30-habits/log.md` (append-only). The streak rule is documented in `skills/close-day/SKILL.md` and implemented in `companion/streak.py`. Both must stay in sync.
 
@@ -79,9 +89,68 @@ Common modifications:
 - **Different time tracking?** Modify `close-week` to output your team's format
 - **Don't want any of this?** Delete the whole plugin. The org toolkit works independently.
 
+## How Updates Reach a Builder
+
+**`~/.claude/local-plugins/` is not a Claude Code convention** — it's just this
+project's checkout location, and it appears nowhere in the plugin docs. A plugin
+outside a skills directory is *locally enabled* via
+`enabledPlugins: {"nsls-personal-toolkit@local": true}` in `~/.claude/settings.json`.
+
+Whether a locally enabled plugin loads its bundled `hooks/hooks.json` is **not
+something to rely on**. The builder toolkit's installer states both that local
+enable "loads skills/commands/hooks" *and* that a locally enabled plugin "does not
+reliably load bundled hooks (especially on Claude Code desktop)" — and it resolves
+the contradiction in practice by registering its hooks in the global
+`settings.json`. We do the same, and ship no `hooks/hooks.json` at all: two
+registrations would mean two concurrent `git pull`s racing for `.git/index.lock`
+and two non-atomic pointer writes, for no added coverage.
+
+**The single registration** is `~/.claude/settings.json` → `hooks.SessionStart`,
+written idempotently by `install.sh` / `install.ps1`:
+
+- The pull entry is a bare `git` call on purpose — no python, no bash, so neither a
+  missing Git Bash nor the Microsoft-Store python stub can defeat it.
+- `matcher` is `startup|resume`, not `startup` — a resumed session must update too.
+- Both installers **append their own entry and never touch another**. The builder
+  toolkit registers into this same array; an earlier version of the PowerShell block
+  dropped whole entries whose commands merely mentioned our path, which silently
+  deleted the builder toolkit's hook on any machine where `install.sh` ran first.
+- `install.sh` verifies the write *outside* the python heredoc, via a printed
+  sentinel. Verifying inside it is worthless against the Store-stub interpreter that
+  exits 0 having run nothing — the check never executes, so the installer would
+  report neither success nor failure.
+
+`install.sh` clones from `thensls/nsls-personal-toolkit` by default (override with
+`NSLS_PERSONAL_REPO`), so for a standard install `origin` *is* upstream and a merge
+to `main` reaches everyone whose hook is registered.
+
+### What pulls this toolkit today — it differs by platform
+
+| Machine | Personal toolkit auto-pulled? |
+| :-- | :-- |
+| Windows + builder toolkit | **Yes, already.** The builder's `hooks/session-start.ps1` loops `@($BuilderDir, $PersonalDir)` and pulls both. |
+| macOS/Linux + builder toolkit | **No.** The builder's `hooks/session-start.py` lists both in `SYNC_PLUGINS` (pointer sync) but `git_pull()` pulls only its own dir. |
+| Either, personal toolkit only | Only once this installer has registered the hook above. |
+
+So the cheapest way to cover existing macOS/Linux builders is to make the builder
+toolkit's `git_pull()` iterate `SYNC_PLUGINS` the way its PowerShell counterpart
+already does — that hook is already registered and already self-updates, so it
+reaches them with no action on their part.
+
+**An existing install can't self-update into having the hook** — it has to arrive
+first. Either re-run the installer, or one catch-up pull:
+
+```bash
+git -C ~/.claude/local-plugins/nsls-personal-toolkit pull --ff-only
+```
+
+Note `hooks/session-start.py` sat unregistered for a long time — nothing pointed at
+it, so on macOS/Linux this toolkit never auto-updated and every fix had to be
+pulled by hand.
+
 ## Keeping Your Fork Updated
 
-If Kevin adds improvements to the template, you can pull them selectively:
+If you run your own fork, you can pull template improvements selectively:
 ```bash
 git remote add upstream https://github.com/thensls/nsls-personal-toolkit.git
 git fetch upstream

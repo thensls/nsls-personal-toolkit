@@ -64,6 +64,92 @@ else
   git clone "$REPO_URL" "$PLUGIN_DIR"
 fi
 
+# --- Enable the plugin and register the auto-update hook in settings.json ---
+#
+# This is what makes updates actually arrive. `hooks/hooks.json` in the plugin
+# root is the documented location, but a *locally enabled* plugin (as opposed to
+# a marketplace install) does not reliably load bundled hooks — notably on Claude
+# Code desktop. The builder toolkit hit the same wall and solved it by merging
+# into the global settings.json; do the same here and treat hooks.json as the
+# secondary path.
+#
+# `~/.claude/local-plugins/` is not a Claude Code convention at all — it's just
+# where this project keeps its checkout — so nothing loads it automatically
+# unless settings.json says so.
+#
+# The hook is a bare `git` invocation on purpose: no python, no bash, nothing
+# that Windows might lack. Pointer sync (which does need python) is registered
+# separately below and is allowed to be absent.
+SETTINGS="$HOME/.claude/settings.json"
+if [ -f "$SETTINGS" ] && [ -n "$PY" ]; then
+  # Use "$PY" (python3 → python), not a hardcoded python3: on Windows Git Bash
+  # python3 often doesn't exist, and the sentinel check below is OUTSIDE the
+  # heredoc so a Store-stub interpreter that exits 0 having run nothing is
+  # detected rather than reported as success.
+  _settings_out="$(PLUGIN_DIR="$PLUGIN_DIR" PY_BIN="$PY" "$PY" - <<'PYEOF' 2>/dev/null
+import json, os
+from pathlib import Path
+
+plugin_dir = os.environ["PLUGIN_DIR"]
+py_bin = os.environ["PY_BIN"]
+path = Path(os.path.expanduser("~/.claude/settings.json"))
+
+# utf-8-sig: an older PowerShell installer may have left a BOM, which plain
+# utf-8 would choke on.
+with open(path, encoding="utf-8-sig") as f:
+    cfg = json.load(f)
+
+cfg.setdefault("enabledPlugins", {})["nsls-personal-toolkit@local"] = True
+
+# Absolute interpreter path, so the entry can't be broken later by PATH order.
+PULL_CMD = f'git -C "{plugin_dir}" pull --ff-only --quiet'
+SYNC_CMD = f'"{py_bin}" "{plugin_dir}/hooks/session-start.py" --no-pull'
+PULL_MARKER = f'{plugin_dir}" pull'
+SYNC_MARKER = "nsls-personal-toolkit/hooks/session-start.py"
+
+hooks = cfg.setdefault("hooks", {})
+session_start = hooks.setdefault("SessionStart", [])
+
+# Idempotency is checked across EVERY entry, and we only ever append our own
+# entry. Two rules learned the hard way:
+#   - never mutate or filter another entry: the builder toolkit registers its
+#     SessionStart hook in this same array, and dropping it would kill its
+#     auto-update, pointer sync and tracker ping.
+#   - never append into someone else's entry either, or the Windows installer
+#     (which matches on entry contents) can't tell ours from theirs.
+def already(marker):
+    return any(marker in h.get("command", "")
+               for e in session_start if isinstance(e, dict)
+               for h in e.get("hooks", []) if isinstance(h, dict))
+
+new_hooks = []
+if not already(PULL_MARKER):
+    new_hooks.append({"type": "command", "command": PULL_CMD, "timeout": 20,
+                      "statusMessage": "Updating personal toolkit..."})
+if not already(SYNC_MARKER):
+    new_hooks.append({"type": "command", "command": SYNC_CMD, "timeout": 20})
+
+if new_hooks:
+    # "startup|resume" — a resumed session must update too; startup-only leaves
+    # long-lived sessions frozen.
+    session_start.append({"matcher": "startup|resume", "hooks": new_hooks})
+
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, indent=2)
+
+chk = json.load(open(path, encoding="utf-8-sig"))
+if chk.get("enabledPlugins", {}).get("nsls-personal-toolkit@local"):
+    print(f"NSLS_SETTINGS_OK Enabled plugin + registered {len(new_hooks)} auto-update hook(s).")
+PYEOF
+)"
+  case "$_settings_out" in
+    *NSLS_SETTINGS_OK*) echo "  ${_settings_out#*NSLS_SETTINGS_OK }" ;;
+    *) echo "  Note: could not update settings.json — see README (Updates) to add the hook by hand" ;;
+  esac
+else
+  echo "  Note: no settings.json (or no Python) — see README (Updates) to register the hook"
+fi
+
 # Fire an install event to the Automation Tracker (best-effort, never blocks).
 # Tracks personal-toolkit installs and auto-registers brand-new builders
 # server-side. install_source must be exactly "personal-toolkit" — the server
@@ -108,7 +194,33 @@ echo "  $PLUGIN_DIR/skills/<name>/SKILL.md"
 echo ""
 
 # Optional: install web companion
-read -p "Install the web companion (browser-based UI)? [Y/n] " yn
+#
+# NEVER `read` from stdin here. The documented install path is `curl … | bash`,
+# which makes stdin the *script itself* — a bare `read` then swallows the next
+# lines of this file as the "answer", mangling the control flow that follows
+# (observed: it ate the `if` below and died with a syntax error, after "Done!"
+# had already printed). That is how builders ended up with companion/ source,
+# no .venv, and an install that looked like it succeeded — every later /open-day
+# silently fell back to chat.
+#
+# So: ask on the terminal directly when there is one, and when there's no
+# terminal at all (CI, an agent driving the installer) install without asking,
+# because every day skill expects the companion to exist.
+# NSLS_SKIP_COMPANION=1 is the explicit opt-out.
+if [ -n "${NSLS_SKIP_COMPANION:-}" ]; then
+  yn="n"
+  echo "NSLS_SKIP_COMPANION set — skipping the web companion."
+elif [ -t 0 ]; then
+  read -p "Install the web companion (browser-based UI)? [Y/n] " yn || yn="y"
+elif { : </dev/tty; } 2>/dev/null; then
+  # Piped install, but the user's terminal is still reachable — prompt there.
+  # (Test by *opening* /dev/tty, not `[ -r /dev/tty ]`: the node can exist and
+  # pass -r in a container while opening it fails with ENXIO.)
+  read -p "Install the web companion (browser-based UI)? [Y/n] " yn </dev/tty || yn="y"
+else
+  yn="y"
+  echo "No terminal detected — installing the web companion (set NSLS_SKIP_COMPANION=1 to skip)."
+fi
 if [[ "${yn:-y}" =~ ^[Yy] ]]; then
   if [ -n "$PY" ]; then
     COMPANION_DIR="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion"
@@ -165,8 +277,24 @@ if [[ "${yn:-y}" =~ ^[Yy] ]]; then
 
   # Auto-start at login is macOS-only (launchd). Windows users: see
   # docs/windows-setup.md for a Task Scheduler / startup-shortcut recipe.
+  #
+  # Same stdin rule as the companion prompt above — a bare `read` under
+  # `curl … | bash` eats the following lines of this script. This one is
+  # macOS-only, so on a Mac it used to break the tail of the installer.
+  # Default here stays **no**: installing a launchd login item is a system-level
+  # change, so a run with nobody to ask must not do it silently.
+  # NSLS_AUTOSTART_COMPANION=1 opts in without a prompt.
   if [ "$OS_CLASS" = "macos" ]; then
-    read -p "Auto-start the companion at login? [y/N] " auto
+    if [ -n "${NSLS_AUTOSTART_COMPANION:-}" ]; then
+      auto="y"
+    elif [ -t 0 ]; then
+      read -p "Auto-start the companion at login? [y/N] " auto || auto="n"
+    elif { : </dev/tty; } 2>/dev/null; then
+      read -p "Auto-start the companion at login? [y/N] " auto </dev/tty || auto="n"
+    else
+      auto="n"
+      echo "No terminal detected — skipping the login item (set NSLS_AUTOSTART_COMPANION=1 to enable)."
+    fi
     if [[ "${auto:-n}" =~ ^[Yy] ]]; then
       install_companion_launchd
     fi

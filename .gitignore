@@ -13,3 +13,10 @@ __pycache__/
 
 # Throwaway vault for `open day -t` / `close day -t` — never real data.
 companion-test-vault/
+
+# Per-machine companion build — created by install.sh / install.ps1, or on first
+# use by companion/ensure-companion.sh. Never committed.
+.venv/
+companion/.install.log
+companion/.install-failed
+companion/.install.lock

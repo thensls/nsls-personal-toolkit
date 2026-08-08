@@ -23,6 +23,24 @@ NSLS_PERSONAL_REPO=https://github.com/<your-github>/nsls-personal-toolkit.git \
   curl -fsSL https://raw.githubusercontent.com/<your-github>/nsls-personal-toolkit/main/install.sh | bash
 ```
 
+## Updates
+
+Updates apply themselves: the installer registers a SessionStart hook in
+`~/.claude/settings.json` that fast-forwards the toolkit every time you start
+Claude Code.
+
+**If you installed before that hook shipped**, catch up once — the hook can only
+start working after it's on your machine. Re-running the installer registers it,
+or just pull:
+
+```bash
+git -C ~/.claude/local-plugins/nsls-personal-toolkit pull --ff-only
+```
+
+If you've edited skills in place, commit those changes — a fast-forward can't run
+over a dirty tree. The hook now tells you when that's blocking an update instead of
+skipping quietly.
+
 ## Skills
 
 | Skill | Trigger | What it does |
@@ -35,16 +53,26 @@ NSLS_PERSONAL_REPO=https://github.com/<your-github>/nsls-personal-toolkit.git \
 | person-intelligence | "person intel [name]" | Build relationship profiles, track 1:1 context |
 | obsidian-setup | "set up Obsidian" | Set up an Obsidian knowledge base with templates |
 
-## Optional: Web Companion
+## Web Companion
 
 A browser-based view onto your toolkit data, running locally at `http://localhost:7777`.
 
-Install during the main `install.sh` flow when prompted, or later:
+**You don't need to install this separately.** `install.sh` sets it up, and if you
+skipped it — or installed the toolkit before the companion existed — the first
+`/open-day` builds it for you (~10–30s, once) and opens it. That's the default;
+`open day -v` stays in chat for a run, `open day visual off forever` disables it.
+
+To set it up ahead of time, or to repair it:
 
 ```bash
-cd ~/.claude/local-plugins/nsls-personal-toolkit/companion
-pip install -e .
-toolkit-companion serve
+bash ~/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh
+```
+
+That prints the path to the `toolkit-companion` binary (it lives in a venv, so it
+isn't on your PATH). To start it by hand:
+
+```bash
+"$(bash ~/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh)" serve
 ```
 
 The companion shows your Day, Week, and Streaks views with tappable checkboxes and a 30-day habit heatmap. It reads and writes the same Obsidian vault your CLI skills do, in real time. The CLI keeps working exactly as before — the companion is purely additive.
