@@ -49,6 +49,7 @@ consent, ~30 seconds) and fall through to Engine B for this run:
 
 **Engine B — browser (works with zero setup when Chrome tools are connected).** Read the
 user's own Google Calendar web UI, which renders any org colleague via "Meet with".
+Availability only — creating the event in Step 5 still needs the Calendar connector.
 
 **Engine C — manual.** No gws scope, no browser: print the 10-second human recipe
 (Google Calendar → left sidebar → "Meet with… → Search for people" → type the name) and
@@ -67,6 +68,12 @@ Heartbeat: `Step 0: engines — gws:✓|✗ browser:✓|✗ → using A|B|C`
 - **Duration** — default 30 minutes.
 - **Window** — default: the next 5 business days, 09:00–17:00 in the user's primary
   calendar timezone. Honor anything the user said ("this week", "Monday", "mornings").
+  Weekdays-only is a DEFAULT, not a law: if the user names a weekend day or a window
+  that is only weekend dates, set `"weekdays_only": false` in Step 3's input so
+  Saturday/Sunday slots are generated.
+- **Title** — the user's words if they gave any; otherwise default to
+  `<first names> — <topic, or "sync">`. Either way the title appears verbatim in the
+  Step 5 manifest, so it is explicitly approved before any invite exists.
 - **Extra busy calendars** — if `~/.config/nsls/meet-with-extra-calendars.txt` exists,
   every non-comment line is a calendar id whose busy times count against the USER's
   availability (e.g. a personal/second-business calendar). Include them silently — never
@@ -76,8 +83,13 @@ Heartbeat: `Step 1: N attendees (<emails>), M min, window <start>→<end> <tz>, 
 
 ## Step 2: Collect busy intervals
 
-**Engine A (gws):** one freebusy call covers everyone — attendees, the user, and extra
-calendars:
+**One authoritative source per calendar — never two.** Colleagues' busy comes from
+Engine A or B. The user's primary calendar and every extra calendar come **only** from
+the filtered connector `list_events` read below — do NOT also request them in the
+freebusy call. (Mixing both sources lets an event the filter excludes — declined,
+cancelled, marked Free — sneak back in through the freebusy union and kill valid slots.)
+
+**Engine A (gws):** one freebusy call covers all **colleagues**:
 
 ```bash
 set -o pipefail
@@ -85,7 +97,7 @@ gws calendar freebusy query --json '{
   "timeMin": "<window start, ISO with offset>",
   "timeMax": "<window end, ISO with offset>",
   "timeZone": "<tz>",
-  "items": [{"id": "<attendee1>"}, {"id": "<attendee2>"}, {"id": "<user>"}, {"id": "<extra1>"}]
+  "items": [{"id": "<attendee1>"}, {"id": "<attendee2>"}]
 }' | grep -v -i keyring
 ```
 
@@ -100,9 +112,21 @@ gws calendar freebusy query --json '{
 user's browser, use "Meet with… → Search for people" to add each attendee, and read
 their column per day in the window (zoom on cramped regions; full-detail calendars show
 titles, free/busy-only calendars show "busy" blocks — both give exact boundaries).
-Record intervals; never screenshot-guess ambiguous edges — zoom until the boundary is
-legible. Colleague event details seen this way are for scheduling math only — don't echo
-titles into the conversation unless the user asks.
+
+**Proof-of-load is required before a column counts.** For each attendee, all three must
+be visually confirmed: (1) the autocomplete resolved them to the expected `@` address
+and a chip/entry was added, (2) a column headed with their name/avatar is rendered, and
+(3) the day grid inside that column actually painted (hour lines visible — zoom if
+unsure). A column with a loaded grid and zero blocks is a genuinely free day; an
+unresolved name, missing column, error state, or half-rendered grid is **UNKNOWN — never
+free**: fall to Engine C for that person. Never screenshot-guess ambiguous edges — zoom
+until the boundary is legible. Colleague event details seen this way are for scheduling
+math only — don't echo titles into the conversation unless the user asks.
+
+Engine B covers **availability only** — booking in Step 5 still needs the Calendar
+connector's `create_event`. If that connector is absent, stop after Step 4: present the
+slots plus the exact manifest and tell the user to create it themselves (say precisely
+what's missing — don't half-book).
 
 **The user's own busy (all engines):** connector `list_events` on their primary calendar
 and each extra calendar. Skip events that don't block: `transparency: transparent`
@@ -120,64 +144,107 @@ Deterministic math, not vibes. Write the collected data to
 
 ```json
 {"window": {"start": "2026-08-17T00:00:00-04:00", "end": "2026-08-21T23:59:00-04:00",
-            "tz": "America/New_York", "duration_min": 30,
+            "tz": "America/New_York", "duration_min": 30, "weekdays_only": true,
             "day_start": "09:00", "day_end": "17:00"},
  "busy": {"dadams@nsls.org": [["2026-08-17T12:00:00-04:00", "2026-08-17T13:00:00-04:00"]],
-          "davowood@nsls.org": []}}
+          "davowood@nsls.org": [], "admin@focus.ceo": []}}
 ```
+
+(`busy` keys: colleagues carry Engine A/B intervals; the user's primary + extra
+calendars carry the filtered `list_events` intervals. `weekdays_only: false` when the
+user asked for a weekend.)
 
 ```bash
 python3 - <<'PYEOF'
 import json, pathlib
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
+from zoneinfo import ZoneInfo
 
 cfg = json.loads(pathlib.Path('/tmp/meet-with-ctx/busy.json').read_text())
 w = cfg['window']
+tz = ZoneInfo(w['tz'])
 dur = timedelta(minutes=w['duration_min'])
+weekdays_only = w.get('weekdays_only', True)
 iso = datetime.fromisoformat
 
-# Merge everyone's busy into one sorted interval list
-blocks = sorted((iso(a), iso(b)) for ivs in cfg['busy'].values() for a, b in ivs)
-merged = []
-for a, b in blocks:
-    if merged and a <= merged[-1][1]:
-        merged[-1][1] = max(merged[-1][1], b)
-    else:
-        merged.append([a, b])
+def hm(t):  # cross-platform 12h format (no %-I on Windows)
+    return f"{t.hour % 12 or 12}:{t.minute:02d}"
 
-def free(s, e):
-    return all(e <= a or s >= b for a, b in merged)
+def merge(ivs):
+    out = []
+    for a, b in sorted((iso(a), iso(b)) for a, b in ivs):
+        if out and a <= out[-1][1]:
+            out[-1][1] = max(out[-1][1], b)
+        else:
+            out.append([a, b])
+    return out
+
+person = {who: merge(ivs) for who, ivs in cfg['busy'].items()}
+merged = merge([iv for ivs in cfg['busy'].values() for iv in ivs])
+
+def blockers(s, e):
+    return [who for who, ivs in person.items()
+            if any(not (e <= a or s >= b) for a, b in ivs)]
 
 start, end = iso(w['start']), iso(w['end'])
 dsh, dsm = map(int, w['day_start'].split(':'))
 deh, dem = map(int, w['day_end'].split(':'))
-slots, day = [], start
-while day.date() <= end.date() and len(slots) < 12:
-    if day.weekday() < 5:  # business days only
-        t = day.replace(hour=dsh, minute=dsm, second=0, microsecond=0)
-        day_end = day.replace(hour=deh, minute=dem, second=0, microsecond=0)
-        while t + dur <= day_end:
-            if t >= start and t + dur <= end and free(t, t + dur):
-                tight = any(b == t or a == t + dur for a, b in merged)
-                slots.append((t, t + dur, tight))
-            t += timedelta(minutes=30)  # candidate starts on :00 / :30
-    day += timedelta(days=1)
 
-for i, (s, e, tight) in enumerate(slots[:5], 1):
-    flag = "  (tight — back-to-back for someone)" if tight else ""
-    print(f"[{i}] {s:%a %b %-d, %-I:%M}–{e:%-I:%M %p}{flag}")
-print(f"({len(slots)} viable slots in window)" if slots else
-      "NO slot clears everyone — widen the window or drop an attendee.")
+# Iterate LOCAL calendar dates and build each day's bounds with ZoneInfo.
+# Never advance a fixed-offset datetime across days: a window crossing a DST
+# change would then evaluate 09:00 slots at 08:00/10:00 real local time.
+def day_slots(only_near_misses=False):
+    found, capped = [], False
+    d, last = start.astimezone(tz).date(), end.astimezone(tz).date()
+    while d <= last and not capped:
+        if not (weekdays_only and d.weekday() >= 5):
+            t = datetime.combine(d, time(dsh, dsm), tzinfo=tz)
+            day_end = datetime.combine(d, time(deh, dem), tzinfo=tz)
+            while t + dur <= day_end:
+                if t >= start and t + dur <= end:
+                    who = blockers(t, t + dur)
+                    ok = (len(who) == 1) if only_near_misses else (not who)
+                    if ok:
+                        found.append((t, t + dur, who))
+                        if len(found) >= 12:
+                            capped = True
+                            break
+                t += timedelta(minutes=30)  # candidate starts on :00 / :30
+        d += timedelta(days=1)
+    return found, capped
+
+slots, capped = day_slots()
+if slots:
+    for i, (s, e, _) in enumerate(slots[:5], 1):
+        tight = any(b == s or a == e for a, b in merged)
+        flag = "  (tight — back-to-back for someone)" if tight else ""
+        print(f"[{i}] {s:%a %b %d}, {hm(s)}–{hm(e)} {e:%p} {s.tzname()}{flag}")
+    print(f"({len(slots)}{'+' if capped else ''} viable slots in window)")
+else:
+    def clipped_hours(ivs):
+        tot = timedelta()
+        for a, b in ivs:
+            lo, hi = max(a, start), min(b, end)
+            if hi > lo:
+                tot += hi - lo
+        return tot.total_seconds() / 3600
+    load = {who: clipped_hours(ivs) for who, ivs in person.items()}
+    top = max(load, key=load.get) if load else '?'
+    print(f"NO slot clears everyone. Bottleneck: {top} ({load.get(top, 0):.1f} busy hrs in window).")
+    near, _ = day_slots(only_near_misses=True)
+    for s, e, who in near[:2]:
+        print(f"  near-miss: {s:%a} {hm(s)}–{hm(e)} {e:%p} — only {who[0]} is busy")
 PYEOF
 ```
 
-Heartbeat: `Step 3: N viable slots, presenting top 5`
+Heartbeat: `Step 3: N viable slots, presenting top 5` (say `12+` when the scan capped)
 
 ## Step 4: Present and pick
 
 Numbered list, user picks a number (or asks for a different window — loop back to
-Step 2 with the new window). If zero slots, say which attendee is the bottleneck
-(most busy-hours in window) and offer the two least-blocked near-misses.
+Step 2 with the new window). Zero slots: Step 3 already names the bottleneck (most
+busy-hours clipped to the window) and up to two near-misses (slots blocked by exactly
+one person) — present those and offer to widen the window or drop an attendee.
 
 ## Step 5: Approval gate, create, verify
 
