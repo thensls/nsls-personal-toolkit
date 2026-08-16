@@ -7,8 +7,10 @@
 <div class="nsls-banner">
   <span class="font-medium">Got it — Claude's logged your plan.</span> Mark your progress here as you go.
   When you're ready to wrap up, click
-  <button class="nsls-btn-gold" style="margin:0 .35rem" hx-post="/close-ready"
-          hx-target="closest .nsls-banner" hx-swap="outerHTML"
-          hx-on:htmx:response-error="window.__toolkitErrorToast(event)">I'm done — close my day</button>
+  <div style="margin-top:.9rem">
+    <button class="nsls-btn-gold" hx-post="/close-ready"
+            hx-target="closest .nsls-banner" hx-swap="outerHTML"
+            hx-on:htmx:response-error="window.__toolkitErrorToast(event)">I'm done — close my day</button>
+  </div>
 </div>
 {% endif %}

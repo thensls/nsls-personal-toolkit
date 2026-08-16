@@ -10,8 +10,12 @@
   {% include "_components/plan_your_day.html" %}
 
   <div class="mt-6 flex justify-end">
+    {# Scroll to top after the swap: without this the browser keeps the old
+       scroll offset (and restores focus into whatever row was last touched),
+       so the Command Center lands halfway down the page. #}
     <button hx-post="/lock-in" hx-vals='{"phase":"morning"}'
             hx-select="main" hx-target="main" hx-swap="outerHTML"
+            hx-on:htmx:after-swap="document.activeElement && document.activeElement.blur(); window.scrollTo(0, 0)"
             class="nsls-btn-gold">Done — show Command Center →</button>
   </div>
 </div>
