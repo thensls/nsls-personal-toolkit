@@ -266,6 +266,7 @@ Check if today's daily note already exists and contains AI suggestions from last
 
 Look for `### AI Suggested: Top 3` and `### AI Suggested: Delegate These` sections. If found, extract both — these are the AI's overnight strategic recommendations.
 
+
 **2f. This week's stack rank (if strategy layer active)**
 
 Read the latest file from:
@@ -287,7 +288,7 @@ gcal_find_my_free_time(
 
 This returns all free blocks >= 30 min between 7 AM and 8 PM. Used in Step 5 for scheduling.
 
-**2i. Slack follow-up scan**
+**2h. Slack follow-up scan**
 
 If `data_sources.slack: true` in the builder profile, scan recent Slack to surface threads where the builder owes a reply or made a commitment they may not have acted on.
 
@@ -339,7 +340,7 @@ If the list is empty, omit the section entirely. If a candidate appears in last 
 - Group by recipient, not by message (one line per person if multiple messages)
 - Surface up to 5 outstanding asks and 5 unverified commitments — beyond that the list becomes noise
 
-**2h. Learning inbox ingestion**
+**2i. Learning inbox ingestion**
 
 If `learning_capture_method` in the builder profile is set to `slack`, scrape the builder's Slack self-DMs for URLs:
 
@@ -361,31 +362,61 @@ Also read:
 - `$OBSIDIAN_VAULT_PATH/40-learning/_weekly-plan.md` — today's micro-learning assignment
 - `$OBSIDIAN_VAULT_PATH/40-learning/_inbox.md` — count of unprocessed links for active goals
 
-**2i. Open PRs on watched repos**
+**2j. Completed-work sweep — what's already done**
 
-Surface open pull requests on repos the builder maintains so they don't sit forgotten. Skip silently if `PR_WATCH_REPOS` is not set in `~/.claude/local-plugins/nsls-personal-toolkit/.env`, or if the `gh` CLI is unavailable.
+⚠️ **This step exists because task boards lie.** Asana due dates and GitHub cards keep showing work as open long after it shipped, because closing them out is manual and nobody does it. Seeding a builder's morning with finished work is worse than useless — it burns their trust in every other suggestion. So before presenting anything, check the sources that record *completion* rather than *intent*.
 
-`PR_WATCH_REPOS` format: comma-separated `owner/repo` pairs.
-Example: `PR_WATCH_REPOS=thensls/nsls-builder-toolkit,thensls/nsls-personal-toolkit`
+Run these in order and stop as soon as an item is confidently resolved. Both are cheap; neither requires scraping session transcripts.
 
-```bash
-REPOS=$(grep '^PR_WATCH_REPOS=' ~/.claude/local-plugins/nsls-personal-toolkit/.env 2>/dev/null | cut -d= -f2- | tr -d ' ')
-# Safety: must have a non-empty list AND it must contain a slash (owner/repo).
-# Without this, `gh search prs --state open` would query all of GitHub.
-if [ -n "$REPOS" ] && [[ "$REPOS" == *"/"* ]] && command -v gh >/dev/null; then
-  gh search prs --state open --repo "$REPOS" --limit 30 \
-    --json number,title,author,repository,createdAt,isDraft \
-    2>/dev/null
-fi
+**1. The builder's own recent daily notes (primary — they already have this).** A builder who runs `/close-day` is recording completion every evening. Read the last ~10 notes in `01-daily/` and collect:
+
+- `### Done` subsections under Morning Check-in (companion-written dispositions)
+- checked Top 3 / Bonus items (`- [x]`)
+- anything in `## Work Log` phrased as shipped/merged/finished
+
+This is the highest-precision source because it's the builder's own hand, scoped to their actual work. **It is only as fresh as their last close-day** — so check the date of the most recent note first. If the vault has a gap of more than a few days, say so in one line and lean on source 2 for the gap.
+
+**2. The most recent quicknote (covers the gap, and a whole week at once).** For builders who post a weekly quicknote, it's self-authored, names every live project, and carries a percent-complete per line — one search covers seven days and survives a stale vault:
+
+```
+slack_search_public_and_private(
+  query="from:<@$SLACK_USER_ID> quick note",
+  sort="timestamp",
+  limit=5,
+  include_context=false
+)
 ```
 
-Categorize results into two buckets:
-- **Yours sitting open** — `author.login == $GITHUB_USERNAME`. These are PRs the builder opened that haven't merged. Flag any older than 7 days.
-- **Waiting on you** — everything else, treated as needing the builder's review.
+Lines reading `100% DONE`, `shipped`, `merged`, or sitting under a `WINS` heading are completions. **A project that has silently dropped out of the quicknote is a different signal** — usually killed or deprioritized, not finished. Flag it as "no longer appearing"; never record it as an achievement.
 
-Skip the entire section in Step 3 if both buckets are empty.
+**Deliberately NOT swept: Claude Code / cowork session transcripts.** Grepping session `.jsonl` files is slow and low-precision — transcripts are full of plans, abandoned attempts, and things the builder decided *against*, all phrased in completion language. The two sources above are faster and honest. If a builder's vault is stale *and* they post no quicknote, the correct answer is to say the completion data isn't there — not to guess from transcripts.
 
-**2j. SLT Meeting Actions — open items from the SLT knowledge base**
+**How to present what you find — as pre-checked Done rows, never as silent deletions:**
+
+Every item judged already-complete still goes into the candidate pool, in its own subsection, **with the Done control already checked** so the builder sees the call you made and can reverse it in one click.
+
+**The mechanism is the `### Done` subsection — there is no marker for this.** The companion sets a suggestion's state to `done` when its text also appears under `### Done` in the Morning Check-in (`_build_plan_context` in `companion/server.py`). So write the item **twice**: once in the candidate subsection so it renders as a row, and once under `### Done` so that row comes up pre-checked and struck through.
+
+```markdown
+### AI Suggested: Likely already done
+1. Ship the Instructional Design skill — quicknote 2026-08-15: "instructional-design skill now shipped"
+2. Builder Kit reinforcement — quicknote 2026-08-15: "Builder Kit repo (100% DONE)"
+
+### Done
+- Ship the Instructional Design skill
+- Builder Kit reinforcement
+```
+
+The `### Done` line must match the candidate's text closely enough to normalize-match (`_norm_suggestion`), so keep the bare task text there and put the evidence citation only on the candidate line.
+
+Rules:
+- **Always cite the evidence inline** — source + date + the quoted phrase. The builder needs to audit the call, and a bare "likely done" is unauditable.
+- **Never hide the item.** Suppressing it silently means a genuinely-open task disappears with no trace. Pre-checked and visible is the honest default; the builder unchecks if you got it wrong.
+- **Only today's note pre-checks; prior days bury.** `_recent_dispositions` tombstones anything marked Done/Deleted in the *previous* week's notes, so a correctly-completed item won't resurface tomorrow — and if the builder unchecks a wrong call today, no tombstone is written. This is why pre-checking is safe and silent suppression is not.
+- **Separate "done" from "gone."** Work that vanished from the quicknote without a completion signal goes under `### AI Suggested: Possibly dropped` instead, and is **not** added to `### Done` — the builder confirms the kill rather than having it recorded as an achievement.
+- If a source disagrees with the board, **trust the completion source** and say so in one line — the board is the thing that's stale.
+
+**2k. SLT Meeting Actions — open items from the SLT knowledge base**
 
 Pull the builder's open Meeting Actions from the SLT Meeting Intelligence base. Symmetric with `/close-day` Step 1h. These are action items from SLT meetings tracked separately from Asana — many have no due date but are time-sensitive (retreat prep, offsite logistics, quarterly deliverables).
 
@@ -393,7 +424,7 @@ Pull the builder's open Meeting Actions from the SLT Meeting Intelligence base. 
 
 Run the gate now, in order:
 
-1. Read `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If frontmatter does NOT contain `slt_member: true`, **skip this entire step (2j) and continue to Step 3.** Do not read `AIRTABLE_API_KEY`. Do not run any Bash command that references it. Do not attempt the call "just to see if it works."
+1. Read `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. If frontmatter does NOT contain `slt_member: true`, **skip this entire step (2k) and continue to Step 3.** Do not read `AIRTABLE_API_KEY`. Do not run any Bash command that references it. Do not attempt the call "just to see if it works."
 2. If the profile is missing or unreadable, treat that as `slt_member: false` and skip.
 3. Only if `slt_member: true`: check `$AIRTABLE_API_KEY` is non-empty. If empty, skip with a one-line note to the builder ("SLT integration enabled in profile but `AIRTABLE_API_KEY` is empty — run `/personal-setup` to add it"), then continue to Step 3.
 4. Only after both checks pass, proceed to the query below. Use `source .env` (never inline `export KEY=value`) — see `CLAUDE.md` "Handling Secrets."
@@ -448,7 +479,7 @@ my_actions = [r for r in all_records if os.environ.get('BUILDER_NAME', '') in (r
 
 **Sanity check:** Total open actions across all assignees should return 50-100+. If 0 or errors, formula reverted to field IDs — switch back to the pattern above.
 
-**2k. Apple Health — yesterday's body metrics**
+**2l. Apple Health — yesterday's body metrics**
 
 If the `apple-health` MCP is configured (`~/.claude.json` contains `mcpServers.apple-health`), pull yesterday's summary:
 
@@ -503,7 +534,7 @@ Reading the result:
 
 Skip the band silently if the script is missing or returns fewer than 5 days of history.
 
-**2l. Quarterly goal anchor cues**
+**2m. Quarterly goal anchor cues**
 
 Read active personal goal files from `$OBSIDIAN_VAULT_PATH/10-strategy/goals/*.md` (skip `personal-goals.md`, `work-goals.md`, anything in `archive/`). Filter to `status: active` AND `category: personal`.
 
@@ -543,10 +574,10 @@ Present to the builder. If AI suggestions were seeded by close-day, show them fi
 
 ### Yesterday's body
 Sleep: [Xh Ym] ([Z]% restorative) · Exercise: [N] min · Steps: [N,NNN]
-[HRV band line from the `hrv_band.py` call in Step 2k — omit entirely if the script is unavailable or history is under 5 days]
+[HRV band line from the `hrv_band.py` call in Step 2l — omit entirely if the script is unavailable or history is under 5 days]
 
 ### Goal cues today
-*Populated from Step 2l. Skip entirely if no anchors fire today.*
+*Populated from Step 2m. Skip entirely if no anchors fire today.*
 
 For each `goal_cues` entry:
 - **[Goal title]** — anchor fires today ([fires_today_because]). Action: **[weekly_action]** at [anchor time/event].
@@ -668,7 +699,7 @@ Notes never touch the vault — both return only distilled, sensitivity-screened
   If a person appears in both, fold into one block under their name.
 
 ### Slack follow-ups
-*Populated only if Step 2i found anything. Outstanding asks and unverified commitments surface here so the day starts with the threads visible.*
+*Populated only if Step 2h found anything. Outstanding asks and unverified commitments surface here so the day starts with the threads visible.*
 
 ### Morning Top 3 (fresh from Asana + calendar + carry-overs)
 1. [P1 — explain why it's #1]
@@ -689,15 +720,23 @@ Notes never touch the vault — both return only distilled, sensitivity-screened
 
 *+[N] in strategic backlog. Full list in Airtable `${SLT_BASE_ID}/tblasgjUjadHCqzrg`.*
 
-### Open PRs ([waiting] waiting, [yours] yours)
+### Sprint board ([N] in progress, [N] this sprint)
 
-*Skip this entire section if both lists are empty.*
+*From Step 2j. Skip this entire section if no board is configured or it returns nothing.*
 
-**Waiting on your review:**
-- `repo#NN` — author — Title (opened YYYY-MM-DD, [N]d open)
+**In progress:**
+- `repo#NN` — Title
 
-**Yours sitting open:**
-- `repo#NN` — Title (opened YYYY-MM-DD, [N]d open) ⚠️ if >7d
+**This sprint:**
+- `repo#NN` — Title
+
+### Likely already done ([N])
+
+*From Step 2j. Skip if nothing came back. Each line cites its evidence — the builder is auditing your call, not taking it on faith.*
+
+- ~~[Item]~~ — [source] [date]: "[quoted phrase]"
+
+*[N] more no longer appear in the quicknote — possibly dropped rather than finished.*
 
 ### Also on the plate
 - [ ] [Due today / Do today tasks]
@@ -743,7 +782,7 @@ Also check the teach/delegate/do ladder: if a priority is maintenance work on a 
 
 You set your actual Top 3, energy level, and vitality intentions. The AI and morning suggestions are starting points — you may adopt, modify, or completely replace them.
 
-### Step 4a: SLT → Asana shadow creation (if SLT actions were pulled in Step 2i)
+### Step 4a: SLT → Asana shadow creation (if SLT actions were pulled in Step 2k)
 
 After the builder confirms their Top 3 and before scheduling, check whether any Top 3 item corresponds to an open SLT Meeting Action, and whether the builder wants any overdue/retreat-critical SLT items mirrored to Asana for today's flow.
 
@@ -939,6 +978,17 @@ hrv_ms: 61
 ### AI Suggested: Delegate These
 [preserved from close-day seed if it existed]
 
+### AI Suggested: Likely already done
+[from Step 2j — each line carries its evidence citation. Every item here MUST
+ also be listed under `### Done` below, which is what pre-checks its row.]
+
+### AI Suggested: Possibly dropped
+[from Step 2j — vanished from the quicknote with no completion signal. These
+ are NOT added to `### Done`; the builder confirms the kill themselves.]
+
+### Done
+[bare task text only, one per line, matching the "Likely already done" entries]
+
 <!-- AI-Suggested item format — write each item as a PLAIN numbered line:
        1. <item text> <!--e:0.75-->
      • NEVER a checkbox (`1. [ ] text`) — these are suggestions, not tasks;
@@ -1018,8 +1068,8 @@ The companion advances the status from there: "Lock in →" sets `status: active
 **Do not hand-author the habits files.** `habits.md`/`log.md` have a single owner and a single format: the companion's `ensure_vault_structure` seeds them from `templates/habits.md.template` and `templates/log.md.template` (the companion runs this on every startup; it never overwrites existing files). If the files are missing here (e.g. companion not installed yet), seed them by copying those exact templates verbatim — never invent a "simpler" inline structure, which is what caused the earlier format drift. The canonical shape is `## Active` / `## Archived` with `- id:` / `name:` / `frequency:` entries.
 
 **Health frontmatter rules:**
-- The eight `sleep_*`, `exercise_min`, `steps`, `active_energy_kcal`, `hrv_ms` keys come from Step 2k. Use YAML `null` for any value Apple Health didn't provide for yesterday (e.g., `hrv_ms: null`).
-- If Step 2k was skipped entirely (no MCP, no data), omit the whole frontmatter block AND drop the "Yesterday:" line from Morning Check-in.
+- The eight `sleep_*`, `exercise_min`, `steps`, `active_energy_kcal`, `hrv_ms` keys come from Step 2l. Use YAML `null` for any value Apple Health didn't provide for yesterday (e.g., `hrv_ms: null`).
+- If Step 2l was skipped entirely (no MCP, no data), omit the whole frontmatter block AND drop the "Yesterday:" line from Morning Check-in.
 - **If the daily note already exists** (close-day seeded it last night) and has existing frontmatter, merge: update the health keys, preserve everything else. If it has no frontmatter, prepend the block.
 - These keys are graphable via the Obsidian Tracker plugin or Dataview — they're stored in structured frontmatter specifically so trends across daily notes can be charted without re-parsing the body.
 
