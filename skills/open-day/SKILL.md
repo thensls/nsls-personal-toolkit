@@ -266,6 +266,21 @@ Check if today's daily note already exists and contains AI suggestions from last
 
 Look for `### AI Suggested: Top 3` and `### AI Suggested: Delegate These` sections. If found, extract both — these are the AI's overnight strategic recommendations.
 
+> **🛑 Delegation gate — check the profile before writing this section.** Read
+> `delegate_suggestions` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`.
+> When it is `false`/`off`, **omit the `### AI Suggested: Delegate These` section
+> entirely** — do not write an empty heading, and never suggest delegation in chat
+> either. When the field is absent but the profile has a `primary_client`, treat
+> that as a contractor engagement and default to **off**; ask once whether they
+> want delegate suggestions rather than generating them.
+>
+> Why: a contractor has no one to delegate to. They were engaged to do the work,
+> and the people around them are the client's staff, not their reports. Handing
+> them a list that reassigns the client's employees is worse than noise — it
+> proposes something outside their authority and reads as presumptuous if the
+> note is ever shared.
+
+(If the gate is off, extract only `Top 3` and ignore any legacy Delegate section still present in an older note.)
 
 **2f. This week's stack rank (if strategy layer active)**
 
@@ -588,7 +603,7 @@ For each `goal_cues` entry:
 2. [AI suggestion 2]
 3. [AI suggestion 3]
 
-**Delegate:**
+**Delegate:** *(omit this whole block when the delegation gate is off)*
 1. [Delegate item 1] → [Person]
 2. [Delegate item 2] → [Person]
 3. [Delegate item 3] → [Person]
@@ -976,7 +991,8 @@ hrv_ms: 61
 [preserved from close-day seed if it existed]
 
 ### AI Suggested: Delegate These
-[preserved from close-day seed if it existed]
+[preserved from close-day seed if it existed — OMIT this heading entirely when
+ the delegation gate is off; see Step 2e]
 
 ### AI Suggested: Likely already done
 [from Step 2j — each line carries its evidence citation. Every item here MUST

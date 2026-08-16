@@ -867,7 +867,21 @@ Source: `${SLT_BASE_ID}/tblasgjUjadHCqzrg` — pulled fresh this evening.
 - **Sent Slack:** Summarize by conversation thread/topic, not individual messages. Skip trivial messages ("ok", "thanks", single emoji). Focus on decisions, coordination, and substantive discussions. Group DMs with personal contacts (family) should be noted briefly or omitted — the builder can decide. Flag any coaching/leadership conversations as those are often important context.
 - **Never re-suggest what the builder killed.** Before writing the AI Suggested sections, read the `### Deleted` / `### Done` / `### Dismissed` subsections from the **last 7 days** of daily notes. Do not suggest anything that matches one of those items — match on *meaning*, not exact wording (the companion also drops exact/normalized matches, but a paraphrase only you can catch). A builder who deleted "Give 3 Breaths a real project home" on Tuesday must not see it re-suggested Thursday because the same underlying signal still exists.
 - **AI Suggested Top 3:** Generate 3 strategic priorities for tomorrow based on carry-overs, meeting action items, deadlines, and Asana. Filter for items that are (a) high-impact/high-leverage, (b) fit the builder's unique seat — relationship decisions, strategic judgment calls, cross-team visibility, contract/legal calls. Explain *why* each is builder-only and what it blocks/unlocks. **When a suggestion derives from an incomplete item that had a time estimate, append its `<!--e:X-->` marker (remaining hours as of close) to the suggestion line** — the companion strips it from display and pre-fills the estimate field when the builder takes the item.
-- **AI Suggested Delegate:** Generate 3 important items someone else could own. Name the person and why they're the right fit. The builder's role becomes review/approve, not execute. Look for: operational tasks with a clear domain owner, first-draft work where the builder adds value in editing not creating, technical setup that doesn't require strategic judgment.
+- **AI Suggested Delegate:** **Gated — see the delegation gate below.** When enabled, generate 3 important items someone else could own. Name the person and why they're the right fit. The builder's role becomes review/approve, not execute. Look for: operational tasks with a clear domain owner, first-draft work where the builder adds value in editing not creating, technical setup that doesn't require strategic judgment.
+> **🛑 Delegation gate — check the profile before writing this section.** Read
+> `delegate_suggestions` from `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`.
+> When it is `false`/`off`, **omit the `### AI Suggested: Delegate These` section
+> entirely** — do not write an empty heading, and never suggest delegation in chat
+> either. When the field is absent but the profile has a `primary_client`, treat
+> that as a contractor engagement and default to **off**; ask once whether they
+> want delegate suggestions rather than generating them.
+>
+> Why: a contractor has no one to delegate to. They were engaged to do the work,
+> and the people around them are the client's staff, not their reports. Handing
+> them a list that reassigns the client's employees is worse than noise — it
+> proposes something outside their authority and reads as presumptuous if the
+> note is ever shared.
+
 - **My Top 3:** Always left blank for the builder to fill in manually after reviewing the AI suggestions. The builder may adopt, modify, or completely replace the AI suggestions.
 - **Never pre-fill `### Bonus`.** The next-day seed writes only the `### AI Suggested: …` candidate pool + `## Carrying Over` — never a `### Bonus` pile. Everything is a *priority candidate*; the builder demotes to Bonus with one click in the companion the next morning (open-day's Seeding Principle). A carry-over dropped straight into Bonus can only be promoted by copy/paste, so don't create that trap. The `### AI Suggested: Top 3` picks are the AI's 3 strongest; genuine extra carry-overs still surface via `## Carrying Over`, which open-day folds into the same candidate pool.
 
