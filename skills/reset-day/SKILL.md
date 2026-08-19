@@ -70,11 +70,18 @@ vault** instead of your real vault — the `companion-test-vault` that `open day
 hard safety guard so it can **never** delete real data.
 
 **Before any read or delete**, resolve the companion binary (same helper open-day
-Step 8 uses — it builds the venv on first use if the toolkit source is present but
-the companion was never installed), point the vault at the test vault, and
-*assert* it:
+Step 8 uses — it builds the venv on first use, and when the machine has no
+Python ≥3.10 it first downloads the toolkit's own private runtime; a first build
+can take a few minutes — warn the builder up front, don't abort), point the
+vault at the test vault, and *assert* it:
+
+Run `--check` first; if it prints `build` or `build-python`, warn the builder
+(one line: "~30 seconds" / "a few minutes — it's fetching its own Python, one
+time only") before the real call, and give that call a 10-minute timeout for
+`build-python`:
 
 ```bash
+STATE="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh" --check)"
 TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
 [ -n "$TC" ] || { echo "ABORT: no companion binary — cannot verify the test vault"; exit 1; }
 export OBSIDIAN_VAULT_PATH="$("$TC" test-vault)"

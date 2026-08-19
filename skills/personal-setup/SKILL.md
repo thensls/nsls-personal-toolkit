@@ -87,9 +87,17 @@ it now — otherwise `visual_mode` is on but the binary is missing, and every
 
 **One command, idempotent.** `companion/ensure-companion.sh` does the whole job —
 resolves the binary if it already exists (a no-op), otherwise creates the venv and
-runs the editable install from the right directory, then prints the binary path:
+runs the editable install from the right directory, then prints the binary path.
+When the machine has no Python ≥3.10 anywhere (stock macOS ships 3.9), it first
+downloads the toolkit's own checksum-pinned private CPython into
+`companion/.python-runtime/` — user-space, no admin password — and builds with
+that. **Never send anyone to python.org.** Run `--check` first: `build` → warn
+"one-time setup, ~30 seconds"; `build-python` → warn "it's fetching its own
+Python — a few minutes, just this once" and give the real call a 10-minute
+timeout:
 
 ```bash
+STATE="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh" --check)"
 TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
 [ -n "$TC" ] && "$TC" --help >/dev/null && echo "visual companion ready: $TC"
 ```
@@ -97,13 +105,16 @@ TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-c
 - **Path printed** → say "visual companion ready" (or "already installed" if it
   returned instantly) and continue to Step 2.
 - **Empty output** → it couldn't be provisioned. The script prints the reason on
-  stderr and logs detail to `companion/.install.log`; read that before guessing.
+  stderr and logs detail to `companion/.install.log`; read that before guessing,
+  and give the builder the reason in one plain sentence — no options menu.
   Re-run with `--force` after fixing the cause.
 
 Note it **verifies the interpreter actually runs** `>=3.10` rather than trusting
 that `python` exists — which is what catches the stock-Win11 Microsoft-Store stub
-that prints "Python was not found" and **exits 0 while doing nothing**. If no
-usable interpreter is found it exits without creating a half-built venv.
+that prints "Python was not found" and **exits 0 while doing nothing**. And when
+NO usable interpreter exists anywhere, it does not give up — it downloads the
+toolkit's own checksum-pinned CPython into `companion/.python-runtime/` and
+builds with that (the `build-python` state above).
 
 <details>
 <summary>Equivalent manual steps (only if the script is unavailable)</summary>
@@ -118,10 +129,12 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e . -q
 ```
 
-**Windows (PowerShell)** — use the FULL interpreter path, for the stub reason above:
+**Windows (PowerShell)** — use a FULL interpreter path (any Python ≥3.10 works;
+the toolkit's own provisioned runtime at
+`companion\.python-runtime\python\python.exe` counts), for the stub reason above:
 ```powershell
 cd "$env:USERPROFILE\.claude\local-plugins\nsls-personal-toolkit\companion"
-& "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe" -m venv .venv
+py -3 -m venv .venv
 & ".venv\Scripts\python.exe" -m pip install -e . -q
 ```
 
@@ -129,18 +142,20 @@ Either way, **verify by running `toolkit-companion --help`** at the resulting pa
 rather than trusting pip's exit code.
 </details>
 
-**If Python 3.12 isn't installed** (that `Python312\python.exe` path is missing —
-this depends on the Builder Toolkit installer having provisioned it), stop and tell
-the builder plainly: *"Python 3.12 not found — run the org installer first, or
-`winget install Python.Python.3.12`, then re-run `/personal-setup`."* Visual mode
-stays unavailable until Python 3.12 is present; they can use `open day visual off`
-to skip it meanwhile. For any other install failure, same fallback — retry, or
-`open day visual off`.
+**Manual Python installation is a last resort, never the first move** — the
+script provisions its own Python on every supported platform. Only two outcomes
+justify suggesting it: `--check` printed `no-python` (downloads disabled or an
+unsupported platform), or repeated `--force` retries keep failing while online.
+Then — and only then — say: *"The visual companion needs Python 3.10+ and
+couldn't set it up itself on this machine — `winget install Python.Python.3.12`
+(Windows) or the org installer, then re-run `/personal-setup`."* Meanwhile
+`open day visual off` skips visual mode. Never open with that instruction.
 
-> The `install.ps1` / `install.sh` installers also offer this, but behind an
-> interactive prompt that agent-driven and piped (`iex`/`bash`) installs skip —
-> so provision it here too. Full Windows details, including auto-start at login,
-> live in [`docs/windows-setup.md`](../../docs/windows-setup.md).
+> The `install.ps1` / `install.sh` installers provision the companion too — and
+> they now install it **by default** when no terminal is reachable
+> (`NSLS_SKIP_COMPANION=1` opts out), so piped and agent-driven installs no
+> longer skip it. Full Windows details, including auto-start at login, live in
+> [`docs/windows-setup.md`](../../docs/windows-setup.md).
 
 ## Step 2: Connect Accounts — ~2 min
 

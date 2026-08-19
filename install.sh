@@ -27,9 +27,17 @@ install_companion_launchd() {
   local plugin_dir="$HOME/.claude/local-plugins/nsls-personal-toolkit"
   local plist_dest="$HOME/Library/LaunchAgents/com.nsls.toolkit-companion.plist"
 
+  # Prefer the companion venv's interpreter (>=3.10 by construction) — a stock
+  # Mac's system 3.9 cannot parse install_helper.py's `str | None` type hints.
+  local helper_py="${COMPANION_PY:-$PY}"
+  if [ -z "$helper_py" ]; then
+    echo "✗ No Python available for the launchd helper — skipping auto-start."
+    return 1
+  fi
+
   # Resolve vault path via Python (handles env var, builder-profile, and prompt)
   local vault_path
-  vault_path=$("$PY" "$plugin_dir/companion/install_helper.py" resolve-vault)
+  vault_path=$("$helper_py" "$plugin_dir/companion/install_helper.py" resolve-vault)
   if [ -z "$vault_path" ] || [ ! -d "$vault_path/01-daily" ]; then
     echo "✗ Could not find a vault with 01-daily/ at: $vault_path"
     echo "  Set OBSIDIAN_VAULT_PATH or add the vault to builder-profile.md, then re-run install."
@@ -37,7 +45,7 @@ install_companion_launchd() {
   fi
 
   # Generate the plist via Python (handles quoting correctly)
-  "$PY" "$plugin_dir/companion/install_helper.py" write-plist \
+  "$helper_py" "$plugin_dir/companion/install_helper.py" write-plist \
     --vault "$vault_path" \
     --dest "$plist_dest"
 
@@ -81,12 +89,37 @@ fi
 # that Windows might lack. Pointer sync (which does need python) is registered
 # separately below and is allowed to be absent.
 SETTINGS="$HOME/.claude/settings.json"
-if [ -f "$SETTINGS" ] && [ -n "$PY" ]; then
+_SETTINGS_REGISTERED=0
+COMPANION_PY=""
+
+# A function, not inline: on a machine with NO usable Python this step must be
+# re-runnable AFTER the companion step below provisions one — its venv
+# interpreter then fills in for the missing system Python.
+register_settings() {
+  if [ ! -f "$SETTINGS" ] || [ -z "$PY" ]; then
+    echo "  Note: no settings.json (or no Python) — see README (Updates) to register the hook"
+    return 0
+  fi
   # Use "$PY" (python3 → python), not a hardcoded python3: on Windows Git Bash
   # python3 often doesn't exist, and the sentinel check below is OUTSIDE the
   # heredoc so a Store-stub interpreter that exits 0 having run nothing is
   # detected rather than reported as success.
-  _settings_out="$(PLUGIN_DIR="$PLUGIN_DIR" PY_BIN="$PY" "$PY" - <<'PYEOF' 2>/dev/null
+  #
+  # Capture via a temp file, NOT _out="$( <<heredoc )": bash 3.2 — stock macOS
+  # /bin/bash, which is what the documented `curl … | bash` runs — mis-scans
+  # quote characters inside a command substitution that contains a heredoc. An
+  # apostrophe in a Python comment below was enough to kill the WHOLE installer
+  # at parse time ("syntax error near unexpected token '('"), before a single
+  # line ran. `|| true` keeps a Python failure (e.g. unparseable settings.json)
+  # on the graceful "add the hook by hand" path instead of dying under set -e.
+  # mktemp or nothing: a predictable /tmp fallback name would be a symlink
+  # hazard. Every supported platform (macOS, Linux, Git Bash) ships mktemp.
+  _settings_tmp="$(mktemp 2>/dev/null || true)"
+  if [ -z "$_settings_tmp" ]; then
+    echo "  Note: could not update settings.json (mktemp unavailable) — see README (Updates) to add the hook by hand"
+    return 0
+  fi
+  PLUGIN_DIR="$PLUGIN_DIR" PY_BIN="$PY" "$PY" - >"$_settings_tmp" 2>/dev/null <<'PYEOF' || true
 import json, os
 from pathlib import Path
 
@@ -141,14 +174,16 @@ chk = json.load(open(path, encoding="utf-8-sig"))
 if chk.get("enabledPlugins", {}).get("nsls-personal-toolkit@local"):
     print(f"NSLS_SETTINGS_OK Enabled plugin + registered {len(new_hooks)} auto-update hook(s).")
 PYEOF
-)"
+  _settings_out="$(cat "$_settings_tmp" 2>/dev/null || true)"
+  rm -f "$_settings_tmp"
   case "$_settings_out" in
-    *NSLS_SETTINGS_OK*) echo "  ${_settings_out#*NSLS_SETTINGS_OK }" ;;
+    *NSLS_SETTINGS_OK*)
+      _SETTINGS_REGISTERED=1
+      echo "  ${_settings_out#*NSLS_SETTINGS_OK }" ;;
     *) echo "  Note: could not update settings.json — see README (Updates) to add the hook by hand" ;;
   esac
-else
-  echo "  Note: no settings.json (or no Python) — see README (Updates) to register the hook"
-fi
+}
+register_settings
 
 # Fire an install event to the Automation Tracker (best-effort, never blocks).
 # Tracks personal-toolkit installs and auto-registers brand-new builders
@@ -222,57 +257,63 @@ else
   echo "No terminal detected — installing the web companion (set NSLS_SKIP_COMPANION=1 to skip)."
 fi
 if [[ "${yn:-y}" =~ ^[Yy] ]]; then
-  if [ -n "$PY" ]; then
-    COMPANION_DIR="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion"
-    VENV_DIR="$COMPANION_DIR/.venv"
-    # Create the venv the rest of this block already assumes exists (it resolves
-    # companion/.venv/bin/toolkit-companion below). Without it, `pip install -e .`
-    # on an externally-managed (PEP-668/Homebrew) Python errors with
-    # "externally-managed-environment", -q hides it, and the companion silently
-    # never builds — every /open-day then falls back to plain chat.
-    if [ ! -x "$VENV_DIR/bin/python" ] && [ ! -x "$VENV_DIR/Scripts/python.exe" ]; then
-      "$PY" -m venv "$VENV_DIR"
-    fi
-    if [ "$OS_CLASS" = "windows" ]; then
-      VENV_PY="$VENV_DIR/Scripts/python.exe"
-    else
-      VENV_PY="$VENV_DIR/bin/python"
-    fi
-    [ -x "$VENV_PY" ] || VENV_PY="$PY"
-    (cd "$COMPANION_DIR" && "$VENV_PY" -m pip install -e . -q)
+  # Delegate to the same resolver every day-skill uses. It finds a usable
+  # Python beyond PATH (Homebrew, python.org framework, pyenv, the Windows
+  # launcher) and — when the machine has none >=3.10 at all (stock macOS ships
+  # 3.9) — first downloads the toolkit's own checksum-pinned CPython runtime
+  # into companion/.python-runtime/, then creates the venv and runs the
+  # editable install. This replaces a hand-rolled venv block that died under
+  # `set -e` on Python-3.9-only machines (pip rejects requires-python>=3.10),
+  # killing the whole install mid-run. Never fatal now: a machine that can't
+  # build today (offline) finishes installing cleanly, and the first /open-day
+  # builds the companion through this same script.
+  # LOCAL_ONLY: never let a stale toolkit-companion on PATH (e.g. an old
+  # ~/.local/bin symlink) masquerade as this checkout's build. --force: running
+  # the installer is an explicit retry, so it bypasses the resolver's 24h
+  # post-failure cooldown.
+  companion_bin="$(NSLS_COMPANION_LOCAL_ONLY=1 bash "$PLUGIN_DIR/companion/ensure-companion.sh" --force)" || companion_bin=""
+  # Trust nothing that doesn't run: the resolver's fast path stats files only.
+  if [ -n "$companion_bin" ] && ! "$companion_bin" --help >/dev/null 2>&1; then
+    echo "  ⚠ Resolved companion at $companion_bin does not run — treating as not built."
+    companion_bin=""
+  fi
+  if [ -n "$companion_bin" ]; then
     echo "✓ Installed nsls-toolkit-companion CLI"
-
+    # The venv interpreter that owns the binary: used for the launchd helper
+    # below (a stock Mac's 3.9 cannot parse install_helper.py's type hints) and
+    # to register settings when this machine had no usable Python at all.
+    COMPANION_PY="$(dirname "$companion_bin")/python"
+    [ -x "$COMPANION_PY" ] || COMPANION_PY="$(dirname "$companion_bin")/python.exe"
+    [ -x "$COMPANION_PY" ] || COMPANION_PY=""
+    if [ "$_SETTINGS_REGISTERED" -eq 0 ] && [ -n "$COMPANION_PY" ]; then
+      PY="$COMPANION_PY"
+      register_settings
+    fi
     if [ "$OS_CLASS" = "windows" ]; then
-      # On Windows the console script is companion/.venv/Scripts/toolkit-companion.exe.
-      # Symlinks need admin/developer mode, so don't try — the skills resolve
-      # the Scripts/ path directly.
-      win_bin="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/Scripts/toolkit-companion.exe"
+      # Symlinks need admin/developer mode on Windows, so don't try — the
+      # skills resolve the venv's Scripts/ path directly.
       echo "  ℹ Windows: the companion binary is at"
-      echo "      $win_bin"
+      echo "      $companion_bin"
       echo "    The skills resolve this automatically; no symlink needed."
     else
-      # Externally-managed Python forces pip into a venv, so the binary lives at
-      # companion/.venv/bin/toolkit-companion and is NOT on PATH in fresh shells.
+      # The binary lives inside the venv and is NOT on PATH in fresh shells.
       # Symlink it to ~/.local/bin (on $PATH by default in modern shells).
-      venv_bin="$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/.venv/bin/toolkit-companion"
-      if [ -x "$venv_bin" ]; then
-        mkdir -p "$HOME/.local/bin"
-        link_target="$HOME/.local/bin/toolkit-companion"
-        if [ -L "$link_target" ] || [ ! -e "$link_target" ]; then
-          ln -sf "$venv_bin" "$link_target"
-          echo "✓ Symlinked toolkit-companion → $link_target"
-          case ":$PATH:" in
-            *":$HOME/.local/bin:"*) ;;
-            *) echo "  ℹ ~/.local/bin is not on PATH. Add this to your shell rc:"
-               echo "      export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
-          esac
-        else
-          echo "  ⚠ $link_target already exists and is not a symlink; skipping. Run by full path or remove the file."
-        fi
+      mkdir -p "$HOME/.local/bin"
+      link_target="$HOME/.local/bin/toolkit-companion"
+      if [ -L "$link_target" ] || [ ! -e "$link_target" ]; then
+        ln -sf "$companion_bin" "$link_target"
+        echo "✓ Symlinked toolkit-companion → $link_target"
+        case ":$PATH:" in
+          *":$HOME/.local/bin:"*) ;;
+          *) echo "  ℹ ~/.local/bin is not on PATH. Add this to your shell rc:"
+             echo "      export PATH=\"\$HOME/.local/bin:\$PATH\"" ;;
+        esac
+      else
+        echo "  ⚠ $link_target already exists and is not a symlink; skipping. Run by full path or remove the file."
       fi
     fi
   else
-    echo "⚠ python not found; skipping companion install. Install Python 3.10+ and re-run."
+    echo "  ⚠ Companion not built yet (reason above). Not fatal — it will build itself on the first /open-day."
   fi
 
   # Auto-start at login is macOS-only (launchd). Windows users: see
@@ -284,7 +325,9 @@ if [[ "${yn:-y}" =~ ^[Yy] ]]; then
   # Default here stays **no**: installing a launchd login item is a system-level
   # change, so a run with nobody to ask must not do it silently.
   # NSLS_AUTOSTART_COMPANION=1 opts in without a prompt.
-  if [ "$OS_CLASS" = "macos" ]; then
+  # Offered only when the local companion actually built — a login item
+  # pointing at a binary that doesn't exist would fail every boot.
+  if [ "$OS_CLASS" = "macos" ] && [ -n "${companion_bin:-}" ]; then
     if [ -n "${NSLS_AUTOSTART_COMPANION:-}" ]; then
       auto="y"
     elif [ -t 0 ]; then

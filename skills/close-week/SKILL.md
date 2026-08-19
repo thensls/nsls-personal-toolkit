@@ -35,11 +35,18 @@ Calculate:
 
 ### Step 0.5: Check the visual companion
 
-**Resolving the binary** (same helper as open-day Step 8 — it resolves the binary and, if the toolkit source is present but the companion venv was never built, builds it on first use):
+**Resolving the binary** (same helper as open-day Step 8 — builds the venv on first use; when the machine has no Python ≥3.10 it first downloads the toolkit's own private runtime — never send anyone to python.org). Three steps, **in this order**:
+
+1. Ask what a real run would do:
+```bash
+STATE="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh" --check)"
+```
+2. Warn BEFORE any wait: `build` → one-time setup, ~30 seconds. `build-python` → it's fetching its own Python, a few minutes just this once. (`ready` → say nothing.)
+3. Resolve — with a 10-minute timeout when the check said `build-python`:
 ```bash
 TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
 ```
-The first run on a machine may take ~10–30s while it builds; never print the build output.
+Never print the build output; if `$TC` is empty, the stderr reason becomes the FIRST sentence of your reply (one plain line, no options menu).
 
 **Only run this step if the target Friday is this Friday** (i.e., closing the current week). The companion shows data based on the current weekly note — if closing a past week, skip silently.
 
