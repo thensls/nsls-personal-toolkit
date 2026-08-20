@@ -119,7 +119,7 @@ If `$TC` comes back **empty**, the companion genuinely can't run here — surfac
 
 **Real browser, not the app panel.** Tell the builder to open the link in an actual browser tab (Chrome/Safari), **not** the Claude Code desktop "panel"/embedded view — edits made in the panel don't reach the local server and are lost silently (the companion shows an orange warning banner when it detects this). If the page won't load, use `http://127.0.0.1:<port>` — some machines resolve `localhost` to IPv6, which the IPv4-only server refuses.
 
-1. **Resolve `"$TC"`** (above). If it can't be found, or you're not on a surface that can run a local server, **skip silently** and close in chat.
+1. **Resolve `"$TC"`** (above). Silent skip is ONLY for surfaces that can't run a local server. On a CLI surface, an empty `$TC` still closes in chat — but the resolver's stderr reason becomes the FIRST sentence of your reply (one plain line), per the rule above; a resolution failure is never silent.
 2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Starting:`, wait ~3 seconds and re-run status once. If it reports `Not running`, start it **with the harness's run-in-background facility** (Bash `run_in_background` — never a bare `&`, which dies when the tool call's shell exits and takes the server with it):
    ```bash
    # serve auto-detects the test vault from OBSIDIAN_VAULT_PATH and starts the

@@ -129,14 +129,17 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e . -q
 ```
 
-**Windows (PowerShell)** — use a FULL interpreter path (any Python ≥3.10 works;
-the toolkit's own provisioned runtime at
-`companion\.python-runtime\python\python.exe` counts), for the stub reason above:
+**Windows (PowerShell)** — use a FULL interpreter path to a Python that is
+**provably ≥3.10** (shown here with the toolkit's own provisioned runtime), for
+the stub reason above:
 ```powershell
 cd "$env:USERPROFILE\.claude\local-plugins\nsls-personal-toolkit\companion"
-py -3 -m venv .venv
+& "$env:USERPROFILE\.claude\local-plugins\nsls-personal-toolkit\companion\.python-runtime\python\python.exe" -m venv .venv
 & ".venv\Scripts\python.exe" -m pip install -e . -q
 ```
+No `.python-runtime` on the machine yet? Pin the launcher to an explicit
+version — `py -3.12 -m venv .venv` — **never bare `py -3`**, which can silently
+select a 3.9 and fail the companion's ≥3.10 requirement at install time.
 
 Either way, **verify by running `toolkit-companion --help`** at the resulting path
 rather than trusting pip's exit code.
