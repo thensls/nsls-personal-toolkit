@@ -299,7 +299,7 @@ Slack window titles follow the pattern: `ChannelOrPerson (DM|Channel) - theNSLS 
 | `(DM)` with a single person name | **Management / People** (default for 1:1 DMs) |
 | `(DM)` with multiple people (group DM) | **Management / People** |
 | Channel contains `marketing`, `lifecycle`, `life-cycle`, `brand`, `content`, `social` | **Marketing / Sales** |
-| Channel contains `product`, `engineering`, `tech`, `dev`, `ai-workbench`, `cs-tech` | **Product Management** |
+| Channel contains `product`, `engineering`, `tech`, `dev`, `ai-workbench`, `cs-tech`, `github`, `feedback` | **Product Management** |
 | Channel contains `leadership`, `slt`, `executive` | **Management / People** |
 | Channel contains `general`, `random`, `announcements` | **Admin / Ops** |
 | `Threads` | **Management / People** (usually follow-ups on DMs) |
@@ -342,6 +342,31 @@ Zoom window titles just say "Zoom Meeting" and Google Meet shows the meeting nam
 | `Charles Schwab`, `Schwab`, `chase.com`, `Chase`, `Mercury`, `Monarch`, `IRS`, `irs.gov`, `SBA`, `sba.gov` | **Personal — EXCLUDE** |
 | Any brokerage, bank, tax, loan, or personal finance site | **Personal — EXCLUDE** |
 | Unknown/other | Admin / Ops (catch-all) |
+
+**Local title overrides — apply these BEFORE the catch-all.** Some window titles
+need a category the table cannot infer: internal initiatives, and tools whose
+titles carry no recognisable app suffix so no keyword matches them. Keep those
+in `~/.claude/close-day-title-overrides.txt` — one `pattern → Category` per
+line, `#` for comments, absent file means no overrides. Read it every run.
+
+They live outside this repo on purpose. The overrides that matter most name
+internal work that may be unannounced, and this repo is public; a categorisation
+rule is not worth disclosing a project through.
+
+**⚠️ Catch-all audit — do this before publishing Time Allocation.** `Chrome
+(other)` and `Google Docs` are where miscategorisation hides, because a bare app
+title matches no keyword and falls through to Admin / Ops. **Any single window
+title above ~5% of the day's captures must be categorised by hand, not by the
+table** — check it against the overrides file first, and add it there if it is
+going to recur.
+
+Two real misses on 2026-08-14/15 motivated this: a management-initiative doc
+(1,044 captures — 29% of Friday, the day's single largest object) and an
+internal strategy tool (922 captures Saturday) both fell to Admin / Ops. Friday
+reported 20% management time when the truth was 45%. Neither had a keyword, and
+nothing flagged it — the number simply came out wrong.
+
+When you override, footnote it in the note so the figure stays auditable.
 
 **IMPORTANT — Personal finance exclusion:** Always exclude ALL personal finance captures from the report and from all totals before computing percentages or hours. Company finance tools (NetSuite, Ramp) ARE included.
 
