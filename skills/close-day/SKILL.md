@@ -299,7 +299,7 @@ Slack window titles follow the pattern: `ChannelOrPerson (DM|Channel) - theNSLS 
 | `(DM)` with a single person name | **Management / People** (default for 1:1 DMs) |
 | `(DM)` with multiple people (group DM) | **Management / People** |
 | Channel contains `marketing`, `lifecycle`, `life-cycle`, `brand`, `content`, `social` | **Marketing / Sales** |
-| Channel contains `product`, `engineering`, `tech`, `dev`, `ai-workbench`, `cs-tech` | **Product Management** |
+| Channel contains `product`, `engineering`, `tech`, `dev`, `ai-workbench`, `cs-tech`, `github`, `feedback` | **Product Management** |
 | Channel contains `leadership`, `slt`, `executive` | **Management / People** |
 | Channel contains `general`, `random`, `announcements` | **Admin / Ops** |
 | `Threads` | **Management / People** (usually follow-ups on DMs) |
@@ -341,7 +341,11 @@ Zoom window titles just say "Zoom Meeting" and Google Meet shows the meeting nam
 | `Ramp` | Admin / Ops |
 | `Charles Schwab`, `Schwab`, `chase.com`, `Chase`, `Mercury`, `Monarch`, `IRS`, `irs.gov`, `SBA`, `sba.gov` | **Personal — EXCLUDE** |
 | Any brokerage, bank, tax, loan, or personal finance site | **Personal — EXCLUDE** |
+| `Founder to CEO`, `authority transition`, `Alignment Portal` | Management / People — founder/CEO-transition work. **Do not let the generic `- Google Docs` rule claim these**; they are the highest-stakes management artifacts and land in Admin / Ops by default. |
+| `Strategy Studio`, `Bet Studio`, `Battle Map`, `market.nsls`, `LOP Intelligence` | Product Management — the strategy/bets surface. Titles carry no `- Google …` suffix, so the catch-all claims them otherwise. |
 | Unknown/other | Admin / Ops (catch-all) |
+
+**⚠️ Catch-all audit — do this before publishing Time Allocation.** The `Chrome (other)` and `Google Docs` buckets are where miscategorization hides, because a bare app title matches no keyword and falls through to Admin / Ops. **Any single window title above ~5% of the day's captures must be categorized by hand, not by the table.** Two real misses on 2026-08-14/15: the *Founder to CEO Authority Transition* doc (1,044 captures — 29% of Friday, the day's largest object) and *Strategy Studio* (922 captures Saturday) both landed in Admin / Ops, which reported Friday as 20% management when the truth was 45%. When you override, footnote the override in the note so the number is auditable.
 
 **IMPORTANT — Personal finance exclusion:** Always exclude ALL personal finance captures from the report and from all totals before computing percentages or hours. Company finance tools (NetSuite, Ramp) ARE included.
 
