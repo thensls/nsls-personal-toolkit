@@ -17,9 +17,16 @@ Sunday evening or Monday morning, before the first meeting of the week.
 
 ## Asana Reference
 
-Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env`:
 - **Workspace GID:** `$ASANA_WORKSPACE_GID`
 - **User GID:** `$ASANA_USER_GID`
+
+**Select the two keys — never open the whole `.env`**, which also holds `ANTHROPIC_API_KEY`,
+`FATHOM_API_KEY` and `AIRTABLE_API_KEY`; reading it whole copies those into the conversation
+transcript:
+
+```bash
+grep -E '^(ASANA_WORKSPACE_GID|ASANA_USER_GID)=' ~/.claude/local-plugins/nsls-personal-toolkit/.env
+```
 
 ## Role Context
 

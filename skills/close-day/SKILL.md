@@ -29,7 +29,22 @@ Synthesize the builder's full day from seven data sources into a daily note and 
 
 ## Builder Context
 
-Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env` before running any subsequent step, then substitute `${VAR_NAME}` references throughout this skill with the actual values:
+Read these before running any subsequent step, then substitute `${VAR_NAME}` references throughout this skill with the actual values.
+
+**Read only the keys you need — never the whole file.** `.env` also holds
+`ANTHROPIC_API_KEY`, `FATHOM_API_KEY` and `AIRTABLE_API_KEY`. Opening it whole copies those
+secrets into the conversation transcript, which is written to disk and, on a hosted surface,
+leaves the machine. None of the six keys below is a secret, so select them explicitly:
+
+```bash
+grep -E '^(OBSIDIAN_VAULT_PATH|SLACK_USER_ID|ASANA_WORKSPACE_GID|ASANA_USER_GID|PEOPLE_OPS_BASE_ID|SLT_BASE_ID)=' \
+  ~/.claude/local-plugins/nsls-personal-toolkit/.env
+```
+
+This is the same rule as `CLAUDE.md` § *Handling Secrets*, one step earlier: that rule keeps
+key **values** out of commands, this one keeps them out of the transcript entirely. Steps that
+genuinely need a key (1h, 7d) still `source` the file inside a single Bash call and reference
+only the variable *name* — that is fine, because the value never renders.
 
 - `${OBSIDIAN_VAULT_PATH}` — vault location (used by daily note writes + session log scans)
 - `${SLACK_USER_ID}` — Slack user ID (used in `from:` / `to:` search queries)
