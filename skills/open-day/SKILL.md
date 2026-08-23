@@ -580,6 +580,59 @@ goal_cues = [{
 
 Skip this step silently if no goal files exist or none fire today.
 
+**2n. Issue-tracker sweep — the board where projects actually live**
+
+*Personal customization. Appended as the last 2-series step so it never renumbers
+the shared ones, keeping this fork's diff against upstream to a single block.*
+
+For builders who track project work on a GitHub **Projects board** rather than
+(or alongside) Asana, sweep it too. The board's status column (`Backlog` /
+`This Sprint` / `In Progress` / `Done`) is richer signal than a due date,
+because due dates go stale the moment a sprint slips while the column keeps
+getting moved.
+
+Skip silently if neither var is set in `~/.claude/local-plugins/nsls-personal-toolkit/.env`,
+or if `gh` is unavailable.
+
+- `ISSUE_WATCH_PROJECT` — `owner/number` of a GitHub Projects v2 board. Example: `ISSUE_WATCH_PROJECT=thensls/37`
+- `ISSUE_WATCH_REPOS` — comma-separated `owner/repo` pairs for plain issue sweeps.
+
+```bash
+ENVF=~/.claude/local-plugins/nsls-personal-toolkit/.env
+PROJ=$(grep '^ISSUE_WATCH_PROJECT=' "$ENVF" 2>/dev/null | cut -d= -f2- | tr -d ' "')
+REPOS=$(grep '^ISSUE_WATCH_REPOS=' "$ENVF" 2>/dev/null | cut -d= -f2- | tr -d ' "')
+ME=$(grep '^GITHUB_USERNAME=' "$ENVF" 2>/dev/null | cut -d= -f2- | tr -d ' "')
+
+# Board sweep. Guard on the owner/number shape so a malformed value can't
+# become an unscoped query.
+if [ -n "$PROJ" ] && [[ "$PROJ" == */* ]] && command -v gh >/dev/null; then
+  gh project item-list "${PROJ#*/}" --owner "${PROJ%/*}" --limit 100 --format json 2>/dev/null
+fi
+
+# Plain issue sweep. Must be non-empty AND contain a slash — without this,
+# `gh search issues` would query all of GitHub.
+if [ -n "$REPOS" ] && [[ "$REPOS" == */* ]] && command -v gh >/dev/null; then
+  gh search issues --state open --repo "$REPOS" --assignee "$ME" --limit 30 \
+    --json number,title,repository,updatedAt 2>/dev/null
+fi
+```
+
+Keep only the builder's own items and rank by status column:
+- **In Progress** — strongest Top-3 candidates; already started.
+- **This Sprint** — committed for the sprint but not started.
+- **Backlog** — candidates, ranked below both of the above.
+- **Done** — never seed as a candidate. Feed these into Step 2j as completion
+  evidence instead.
+
+**Dedupe against Asana before seeding.** On many setups the board and Asana
+mirror each other, so the same work arrives twice under slightly different
+titles. Collapse to one candidate and prefer the board's wording plus its
+status column — the status is the part Asana doesn't carry.
+
+**Then run it through Step 2j.** The board is exactly the kind of source that
+goes stale, so nothing from here is presented until the completion sweep has
+had a look at it. Board status is a ranking signal, not proof of openness.
+
 ### Step 3: Draft Morning Check-in
 
 Present to the builder. If AI suggestions were seeded by close-day, show them first:
