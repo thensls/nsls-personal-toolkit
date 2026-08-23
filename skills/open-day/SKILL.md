@@ -429,7 +429,24 @@ Every item judged already-complete still goes into the candidate pool, in its ow
 - Builder Kit reinforcement
 ```
 
-The `### Done` line must match the candidate's text closely enough to normalize-match (`_norm_suggestion`), so keep the bare task text there and put the evidence citation only on the candidate line.
+**Getting the match right — this is easy to get wrong.** The companion runs
+`_clean_ai_item` on every candidate line, which **cuts the text at the first
+` — ` / ` - ` separator** and keeps only what precedes it. So a candidate written
+`Ship the skill — quicknote 8/15: "shipped"` displays and keys as
+`Ship the skill`. The `### Done` line must equal **that truncated form** —
+bare task text, no citation. Writing the full cited line into `### Done`
+verbatim does NOT match and silently leaves the row unchecked (observed
+2026-08-23). Keep the evidence on the candidate line only; it still displays,
+because truncation affects the matching key, not the rendered row.
+
+**Expect fewer pre-checked rows than you listed, and don't fight it.**
+`_recent_dispositions` buries anything marked Done/Deleted/Dismissed in the
+previous **7 days** of notes. So an item the builder already closed last week
+will not appear at all — correctly; it is finished and gone. Only completions
+they have *not* already dispositioned surface as pre-checked rows. If your
+"Likely already done" list is mostly items from the last week's `### Done`
+sections, you are re-deriving work the builder already closed: check the recent
+notes first (source 1) and leave those out.
 
 Rules:
 - **Always cite the evidence inline** — source + date + the quoted phrase. The builder needs to audit the call, and a bare "likely done" is unauditable.
