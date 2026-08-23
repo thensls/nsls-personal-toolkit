@@ -29,7 +29,22 @@ Synthesize the builder's full day from seven data sources into a daily note and 
 
 ## Builder Context
 
-Read these from `~/.claude/local-plugins/nsls-personal-toolkit/.env` before running any subsequent step, then substitute `${VAR_NAME}` references throughout this skill with the actual values:
+Read these before running any subsequent step, then substitute `${VAR_NAME}` references throughout this skill with the actual values.
+
+**Read only the keys you need — never the whole file.** `.env` also holds
+`ANTHROPIC_API_KEY`, `FATHOM_API_KEY` and `AIRTABLE_API_KEY`. Opening it whole copies those
+secrets into the conversation transcript, which is written to disk and, on a hosted surface,
+leaves the machine. None of the six keys below is a secret, so select them explicitly:
+
+```bash
+grep -E '^(OBSIDIAN_VAULT_PATH|SLACK_USER_ID|ASANA_WORKSPACE_GID|ASANA_USER_GID|PEOPLE_OPS_BASE_ID|SLT_BASE_ID)=' \
+  ~/.claude/local-plugins/nsls-personal-toolkit/.env
+```
+
+This is the same rule as `CLAUDE.md` § *Handling Secrets*, one step earlier: that rule keeps
+key **values** out of commands, this one keeps them out of the transcript entirely. Steps that
+genuinely need a key (1h, 7d) still `source` the file inside a single Bash call and reference
+only the variable *name* — that is fine, because the value never renders.
 
 - `${OBSIDIAN_VAULT_PATH}` — vault location (used by daily note writes + session log scans)
 - `${SLACK_USER_ID}` — Slack user ID (used in `from:` / `to:` search queries)
@@ -96,11 +111,18 @@ The close routes through the **CLI companion** by default (Step 0.5 starts it if
 
 **HARD RULE — fresh confirmation, every time.** Never synthesize/close without a fresh builder confirmation *this session*: either the companion click (via the `wait-done` listener armed below) or a typed "done". A `close_ready: 1` already present in the frontmatter from a previous session is **stale** — do not treat it as consent; send the builder to the companion link and wait. (A stale flag may still pick *which date* to close — see the pending-close scan — but never *whether* to synthesize it.)
 
-**Resolving the binary** (same helper as open-day Step 8 — it resolves the binary and, if the toolkit source is present but the companion venv was never built, builds it on first use):
+**Resolving the binary** (same helper as open-day Step 8 — it builds the venv on first use, and when the machine has no Python ≥3.10 it first downloads the toolkit's own private runtime; never send anyone to python.org). Three steps, **in this order**:
+
+1. Ask what a real run would do:
+```bash
+STATE="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh" --check)"
+```
+2. Warn BEFORE any wait: `build` → *"One-time setup — building your visual companion (~30 seconds)."* `build-python` → *"One-time setup — your visual companion is fetching its own Python and building itself; a few minutes, just this once."* (`ready` → say nothing.)
+3. Resolve — with a 10-minute timeout when the check said `build-python`:
 ```bash
 TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
 ```
-If `$TC` comes back **empty**, the companion genuinely can't run here — the script prints the reason on stderr and logs detail to `companion/.install.log`. Fall back to the chat close. The first run on a machine may take ~10–30s while it builds; never print the build output.
+If `$TC` comes back **empty**, the companion genuinely can't run here — surface the stderr reason as the FIRST sentence of your reply (one plain line, no options menu; detail lands in `companion/.install.log`) and fall back to the chat close. Never print the build output.
 
 **The companion is ON by default, and close-day routes you to it.** Skip this step (close as a pure CLI ritual, straight to Step 0.6) ONLY when the builder passed **`-b`** (bypass the companion this run — close in chat), OR `visual_mode: off` is set in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. **Note:** in close-day `-v` means *verbose* (see Output Discipline), NOT visual-off — the flag to close without the companion is **`-b`**.
 
@@ -112,7 +134,7 @@ If `$TC` comes back **empty**, the companion genuinely can't run here — the sc
 
 **Real browser, not the app panel.** Tell the builder to open the link in an actual browser tab (Chrome/Safari), **not** the Claude Code desktop "panel"/embedded view — edits made in the panel don't reach the local server and are lost silently (the companion shows an orange warning banner when it detects this). If the page won't load, use `http://127.0.0.1:<port>` — some machines resolve `localhost` to IPv6, which the IPv4-only server refuses.
 
-1. **Resolve `"$TC"`** (above). If it can't be found, or you're not on a surface that can run a local server, **skip silently** and close in chat.
+1. **Resolve `"$TC"`** (above). Silent skip is ONLY for surfaces that can't run a local server. On a CLI surface, an empty `$TC` still closes in chat — but the resolver's stderr reason becomes the FIRST sentence of your reply (one plain line), per the rule above; a resolution failure is never silent.
 2. **Check status, and start it if needed.** Run `"$TC" status` (add `--test` in test mode — see the `-t` section; the test companion is on port 7788). If it reports `Starting:`, wait ~3 seconds and re-run status once. If it reports `Not running`, start it **with the harness's run-in-background facility** (Bash `run_in_background` — never a bare `&`, which dies when the tool call's shell exits and takes the server with it):
    ```bash
    # serve auto-detects the test vault from OBSIDIAN_VAULT_PATH and starts the
@@ -292,7 +314,7 @@ Slack window titles follow the pattern: `ChannelOrPerson (DM|Channel) - theNSLS 
 | `(DM)` with a single person name | **Management / People** (default for 1:1 DMs) |
 | `(DM)` with multiple people (group DM) | **Management / People** |
 | Channel contains `marketing`, `lifecycle`, `life-cycle`, `brand`, `content`, `social` | **Marketing / Sales** |
-| Channel contains `product`, `engineering`, `tech`, `dev`, `ai-workbench`, `cs-tech` | **Product Management** |
+| Channel contains `product`, `engineering`, `tech`, `dev`, `ai-workbench`, `cs-tech`, `github`, `feedback` | **Product Management** |
 | Channel contains `leadership`, `slt`, `executive` | **Management / People** |
 | Channel contains `general`, `random`, `announcements` | **Admin / Ops** |
 | `Threads` | **Management / People** (usually follow-ups on DMs) |
@@ -335,6 +357,31 @@ Zoom window titles just say "Zoom Meeting" and Google Meet shows the meeting nam
 | `Charles Schwab`, `Schwab`, `chase.com`, `Chase`, `Mercury`, `Monarch`, `IRS`, `irs.gov`, `SBA`, `sba.gov` | **Personal — EXCLUDE** |
 | Any brokerage, bank, tax, loan, or personal finance site | **Personal — EXCLUDE** |
 | Unknown/other | Admin / Ops (catch-all) |
+
+**Local title overrides — apply these BEFORE the catch-all.** Some window titles
+need a category the table cannot infer: internal initiatives, and tools whose
+titles carry no recognisable app suffix so no keyword matches them. Keep those
+in `~/.claude/close-day-title-overrides.txt` — one `pattern → Category` per
+line, `#` for comments, absent file means no overrides. Read it every run.
+
+They live outside this repo on purpose. The overrides that matter most name
+internal work that may be unannounced, and this repo is public; a categorisation
+rule is not worth disclosing a project through.
+
+**⚠️ Catch-all audit — do this before publishing Time Allocation.** `Chrome
+(other)` and `Google Docs` are where miscategorisation hides, because a bare app
+title matches no keyword and falls through to Admin / Ops. **Any single window
+title above ~5% of the day's captures must be categorised by hand, not by the
+table** — check it against the overrides file first, and add it there if it is
+going to recur.
+
+Two real misses on 2026-08-14/15 motivated this: a management-initiative doc
+(1,044 captures — 29% of Friday, the day's single largest object) and an
+internal strategy tool (922 captures Saturday) both fell to Admin / Ops. Friday
+reported 20% management time when the truth was 45%. Neither had a keyword, and
+nothing flagged it — the number simply came out wrong.
+
+When you override, footnote it in the note so the figure stays auditable.
 
 **IMPORTANT — Personal finance exclusion:** Always exclude ALL personal finance captures from the report and from all totals before computing percentages or hours. Company finance tools (NetSuite, Ramp) ARE included.
 

@@ -35,11 +35,18 @@ Calculate:
 
 ### Step 0.5: Check the visual companion
 
-**Resolving the binary** (same helper as open-day Step 8 — it resolves the binary and, if the toolkit source is present but the companion venv was never built, builds it on first use):
+**Resolving the binary** (same helper as open-day Step 8 — builds the venv on first use; when the machine has no Python ≥3.10 it first downloads the toolkit's own private runtime — never send anyone to python.org). Three steps, **in this order**:
+
+1. Ask what a real run would do:
+```bash
+STATE="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh" --check)"
+```
+2. Warn BEFORE any wait: `build` → one-time setup, ~30 seconds. `build-python` → it's fetching its own Python, a few minutes just this once. (`ready` → say nothing.)
+3. Resolve — with a 10-minute timeout when the check said `build-python`:
 ```bash
 TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
 ```
-The first run on a machine may take ~10–30s while it builds; never print the build output.
+Never print the build output; if `$TC` is empty, the stderr reason becomes the FIRST sentence of your reply (one plain line, no options menu).
 
 **Only run this step if the target Friday is this Friday** (i.e., closing the current week). The companion shows data based on the current weekly note — if closing a past week, skip silently.
 
@@ -215,6 +222,8 @@ Plus the weekly summary line matching the builder's `time_tracking_mode`:
 - `doing-vs-orchestrating`: "Doing vs. Orchestrating: X% building, X% managing/meeting, X% admin/research"
 - `deep-vs-meetings`: "Deep work ratio: X% focused, X% collaboration, X% meetings/admin"
 - `department-balance`: "Department focus: X% [primary], X% [secondary], X% other"
+
+**Capture the weekly total as `work_hours_total`** (a number, hours) for the frontmatter in Step 5. This is *total work time* — the bold **Week** total after adding any off-screen/in-person/travel hours that Familiar can't see (per the builder's total-work-time convention), **not** just screen-active hours. If the week had significant uncaptured in-person work, add it by hand and note the adjustment in the Time Allocation prose. This feeds the "Total weekly work hours" chart in `03-meta/weekly-health-trends.md`.
 
 **Priorities vs. Reality:** Pull Monday's Top 3 from the daily note. For each, assess:
 - **Done** — clear evidence in Work Log
@@ -528,6 +537,8 @@ Write Output A to `02-weekly/YYYY-[W]WW.md`. Include the AI-Suggested Next Week 
 **Also write Output B (Quick Notes) into the weekly note** as a `### Quick Notes` section at the end, after the AI-Suggested sections. This allows the visual companion to display a copy-to-clipboard block so the builder can paste directly into their Coach journal without scrolling through chat. Format the section as plain text (no markdown formatting inside it).
 
 Set `status: closed` in the weekly note frontmatter. This signals the companion to switch to `week-results` mode, which shows the read-only results dashboard with the Quick Notes copy button.
+
+Also write `work_hours_total: <number>` into the frontmatter (from Step 2's Time Allocation total). This is read by the "Total weekly work hours" chart in `03-meta/weekly-health-trends.md`; omit the key only if the week has no defensible total (e.g., no Familiar data and no in-person estimate) rather than writing a guess.
 
 If the companion is running, tell the builder:
 > Weekly note written. The companion has your quick notes ready to copy at `<url>/week`.

@@ -53,6 +53,19 @@ Habits live in `30-habits/habits.md`; daily ticks accumulate in `30-habits/log.m
 
 When a skill calls an HTTP API that reads an API key from the environment (e.g., `AIRTABLE_API_KEY`, `FATHOM_API_KEY`):
 
+- **Never read the whole `.env` file.** This is the first rule because it fires before any of
+  the others: several skills need only non-secret config from `.env` (`OBSIDIAN_VAULT_PATH`,
+  `SLACK_USER_ID`, the Asana GIDs, the Airtable base IDs), but the same file holds
+  `ANTHROPIC_API_KEY`, `FATHOM_API_KEY` and `AIRTABLE_API_KEY`. Opening it with the Read tool —
+  or `cat` — copies every key into the conversation transcript, which is written to disk and,
+  on a hosted surface, leaves the machine. The rules below then protect nothing, because the
+  leak already happened at read time. Select the keys you need instead:
+  ```bash
+  grep -E '^(OBSIDIAN_VAULT_PATH|SLACK_USER_ID|SLT_BASE_ID)=' \
+    ~/.claude/local-plugins/nsls-personal-toolkit/.env
+  ```
+  If a skill's text says "read these from `.env`" without naming a selection, treat that as the
+  same class of bug as an inline `export` — fix it, don't follow it.
 - **Never** inline the secret value in a Bash command. Patterns like `export AIRTABLE_API_KEY=patW...; python3 -c "..."` echo the literal key into the tool log, the conversation transcript on disk, and any request logs upstream. That key is then leaked even if it was previously private.
 - **Always** source the env file first, then reference only the variable name:
   ```bash
