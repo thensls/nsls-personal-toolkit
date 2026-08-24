@@ -15,7 +15,10 @@ Exit codes:
     0   DUE           — no recent sweep; run the full pipeline
     10  FRESH         — a finalized sweep is newer than the interval; do nothing
     11  NEEDS_FINALIZE— a recent sweep ran but was never finalized; run
-                        `biweekly_sweep.py --finalize` only, do NOT re-sweep
+                        `biweekly_sweep.py --finalize` only, do NOT re-sweep.
+                        NOTE: a recorded *failure* (non-zero exit_code or a
+                        non-null error) returns DUE instead, at any age — a
+                        failure is not a sweep and must not suppress retries.
     2   ERROR         — status file unreadable/malformed; treat as a real failure
 
 Usage:
@@ -71,6 +74,23 @@ def decide(status_path, interval_days, today):
 
     if last is None:
         return DUE, f"DUE: {status_path} has no sweep_date or timestamp."
+
+    # A recorded FAILURE is not a sweep.
+    #
+    # record_failure() writes `finalized: true` + `complete: false` with a non-zero
+    # exit_code. That combination used to fall through to the NEEDS_FINALIZE branch
+    # below, which tells the wrapper "finalize only, do NOT re-sweep" — so a single
+    # failed run suppressed every retry until interval_days elapsed, and the next
+    # scheduled firing then saw a "recent sweep" and skipped. One 2026-08-23 timeout
+    # bought a would-be second outage on top of a 30-day one. Check this BEFORE the
+    # age gate so a failure always retries, at whatever cadence the scheduler fires.
+    if status.get("exit_code") not in (0, None) or status.get("error"):
+        return (
+            DUE,
+            f"DUE: the last record for {last} is a FAILED run "
+            f"(exit_code={status.get('exit_code')!r}, error={status.get('error')!r}) — "
+            "a failure is not a sweep; retrying rather than finalizing.",
+        )
 
     age = (today - last).days
     finalized = bool(status.get("finalized")) and bool(status.get("complete"))

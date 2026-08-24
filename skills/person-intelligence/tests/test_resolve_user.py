@@ -38,12 +38,23 @@ FIXTURE_EMPLOYEES = [
 ]
 
 
+_EMPTY_ENV = Path(tempfile.mkdtemp(prefix="pi-test-env-")) / "empty.env"
+_EMPTY_ENV.write_text("", encoding="utf-8")
+
+
 def run_with_env(env, fixture_path=None):
     """Run resolve_user.py with a fresh env. Returns (stdout, stderr, exit_code).
 
     When fixture_path is provided, monkey-patches ORG_CHART_PATHS via a small wrapper.
     """
-    full_env = {**os.environ, **env}
+    # Point load_dotenv_local at an empty .env so the real one cannot supply what these
+    # tests are asserting is absent. resolve_user.py imports load_dotenv_local, whose rule is
+    # "already-set vars always win" (`if key not in os.environ`), so *popping* a var below is
+    # exactly what lets ~/.claude/local-plugins/nsls-personal-toolkit/.env fill it back in —
+    # which is why "missing email env" exited 0 instead of 1 and the BUILDER_EMAIL fallback
+    # never got exercised. load_dotenv_local returns on the first candidate that exists, so an
+    # empty override file stops the real .env from being read at all.
+    full_env = {**os.environ, **env, "PERSONAL_TOOLKIT_ENV": str(_EMPTY_ENV)}
     # Strip any inherited values we want to control.
     for k in ("OPERATING_USER_EMAIL", "BUILDER_EMAIL"):
         if k not in env:

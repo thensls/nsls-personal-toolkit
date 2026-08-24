@@ -202,7 +202,8 @@ The sweep must run **on your own machine, under your own credentials**. Everythi
 Both platforms call one script, so there is no shell-vs-PowerShell logic to drift apart:
 
 ```
-scheduler (weekly)  →  scheduled_sweep.py  →  claude -p  →  the sweep pipeline
+scheduler (weekly)  →  sweep_launchd_wrapper.sh  →  scheduled_sweep.py  →  claude -p  →  the sweep pipeline
+                       (macOS only; Windows calls scheduled_sweep.py directly)
 ```
 
 [`scripts/scheduled_sweep.py`](scripts/scheduled_sweep.py) does four things:
@@ -211,6 +212,14 @@ scheduler (weekly)  →  scheduled_sweep.py  →  claude -p  →  the sweep pipe
 2. If due, runs `claude -p` headless with a self-contained prompt and a **scoped** tool allowlist (`Bash(python3.12 *)`, Read, Write, Edit, Glob, Grep, Skill) — deliberately not `--dangerously-skip-permissions`.
 3. Verifies the run actually finalized. A zero exit is not proof of work, so it re-runs `--finalize` if the status file doesn't show a complete sweep for today.
 4. Records every outcome — success, failure, timeout, `claude` not on PATH — to `~/.cache/person-intelligence/sweep-cron.log` and, on failure, into `last-sweep-status.json` so `/open-day` surfaces it the next morning.
+
+On macOS the scheduler calls [`scripts/sweep_launchd_wrapper.sh`](scripts/sweep_launchd_wrapper.sh) rather than python directly. It is the **pre-Python guard**: `scheduled_sweep.py` records its own failures, but anything that killed the job *before* Python started was completely invisible — launchd appends raw child stderr to `StandardErrorPath` with **no timestamp**, nothing reaches `sweep-cron.log`, and nothing is written to `last-sweep-status.json`, so no skill surfaces it and no staleness signal fires.
+
+That happened. On 2026-08-09 and 2026-08-16 the plist invoked python against a `scheduled_sweep.py` that had not shipped yet (it landed 2026-08-21). Both Sundays died instantly with a bare, undated `can't open file` line, `sweep-cron.log` showed a clean 21-day gap with no explanation, and the roster went **30 days stale against a 12-day cadence while every dashboard reported healthy**. The plist and the scripts deploy independently, so that window recurs on any install, reinstall, branch switch, or partial pull.
+
+The wrapper validates its preconditions (`scheduled_sweep.py` present; **python3.12** reachable, or a `python3` that self-reports >= 3.12 — `scheduled_sweep.py` derives the headless tool allowlist from the interpreter's *file name*, so a binary named `python3` makes the agent's `python3.12 ...` calls fail the allowlist and the run produces nothing), timestamps its own output, brackets the child's undated output with dated banners, and **writes a real failure record when it cannot start** — which `sweep_due.py` then retries on. Set `PI_CACHE_DIR` to redirect both the wrapper's and the child's cache dir when testing.
+
+**A recorded failure is not a sweep.** `sweep_due.py` returns **DUE** for any status record carrying a non-zero `exit_code` or a non-null `error`, checked *before* the age gate. Before 2026-08-23 a failure record (`finalized: true` + `complete: false`) classified as `NEEDS_FINALIZE` — "finalize only, do not re-sweep" — so one timeout suppressed every retry until the interval elapsed, and the next firing then saw a "recent sweep" and skipped. Pinned by [`tests/test_sweep_due.py`](tests/test_sweep_due.py).
 
 **Fire weekly, not biweekly.** Standard cron and launchd cannot express "every other Sunday" — in the day-of-week field `0/2` expands to `0,2,4,6`, i.e. Sunday, Tuesday, Thursday, Saturday. So the scheduler fires every Sunday and `sweep_due.py` gates it down: it skips unless the last **finalized** sweep is ≥ 12 days old. Twelve rather than fourteen gives a two-day grace window, so a missed Sunday doesn't push the cadence out to 21 days.
 
@@ -221,7 +230,9 @@ scheduler (weekly)  →  scheduled_sweep.py  →  claude -p  →  the sweep pipe
 ```bash
 cp skills/person-intelligence/setup/com.nsls.person-intelligence-sweep.plist \
    ~/Library/LaunchAgents/
-# Edit the plist: replace YOUR_USERNAME throughout, confirm your python3.12 path
+# Edit the plist: replace YOUR_USERNAME throughout. No absolute python path to set —
+# sweep_launchd_wrapper.sh resolves the interpreter itself (it needs python3.12
+# reachable on the plist's PATH, or a python3 reporting >= 3.12).
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist
 ```
 
@@ -249,11 +260,14 @@ Trigger:    Weekly, Sunday, 6:47 AM
 
 Check "Run task as soon as possible after a scheduled start is missed" — laptops are asleep at 6:47 AM. The freshness gate makes a late catch-up run safe.
 
+> ⚠️ **Known parity gap.** There is no PowerShell equivalent of `sweep_launchd_wrapper.sh`, so on Windows a failure that happens *before* `scheduled_sweep.py` starts (missing script, no python on PATH) is still silent — no timestamped log line and no status record. The `sweep_due.py` retry fix is platform-independent and does apply. A `sweep_task_wrapper.ps1` is the obvious follow-up.
+
 ### Manual control
 
 - **Run now, ignoring the gate:** `python3.12 scripts/scheduled_sweep.py --force`
 - **See what it would do:** `python3.12 scripts/scheduled_sweep.py --dry-run`
 - **Run interactively instead:** `/person-intelligence biweekly sweep` — no scheduler involved
+- **Test the scheduler chain without touching real state:** `PI_CACHE_DIR=/tmp/pi-test bash scripts/sweep_launchd_wrapper.sh --dry-run --force` — then assert `~/.cache/person-intelligence/sweep-cron.log` did **not** grow. Setting the variable is not proof of isolation; check the production artifact.
 - **Pause (vacation):** `launchctl bootout gui/$(id -u)/com.nsls.person-intelligence-sweep` (Mac) or disable the task (Windows)
 - **Resume:** `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist`
 
