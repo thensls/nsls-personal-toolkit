@@ -7,6 +7,7 @@ Outputs JSON to stdout with confirmed (3+ matches) and suggested (1-2 matches) p
 
 import json
 import os
+import re
 import sys
 
 
@@ -20,6 +21,24 @@ def load_keyword_map():
     return data
 
 
+def _matcher(keyword):
+    """Compile a keyword into a WORD-BOUNDARY matcher.
+
+    Plain substring matching silently mis-attributed projects. Two real cases from the
+    2026-08-23 sweep: the keyword `HR` matched "Ant**hr**opic billing review" and tagged it
+    `people-ops`; `board` matched "dash**board** redesign" and tagged it
+    `board-intelligence`. Nothing errored — the wrong project just appeared in a person's
+    profile with the sentence as its evidence, which reads as a finding.
+
+    Acronyms are additionally matched CASE-SENSITIVELY. An all-caps keyword of five
+    characters or fewer is an initialism (HR, CAC, LTV, ARPM, MVP, JIRA, CPO, COO, TAM, CPM,
+    NCO); lowercasing those makes them collide with ordinary words far more often than it
+    catches a real mention.
+    """
+    flags = 0 if (keyword.isupper() and len(keyword) <= 5) else re.IGNORECASE
+    return re.compile(r"\b" + re.escape(keyword) + r"\b", flags)
+
+
 def truncate(text, length=80):
     if len(text) <= length:
         return text
@@ -28,6 +47,7 @@ def truncate(text, length=80):
 
 def infer_projects(input_data):
     keyword_map = load_keyword_map()
+    compiled = {p: [_matcher(k) for k in kws] for p, kws in keyword_map.items()}
 
     # Collect all input items
     all_items = []
@@ -37,18 +57,12 @@ def infer_projects(input_data):
 
     results = {}
 
-    for project, keywords in keyword_map.items():
+    for project, matchers in compiled.items():
         matches = 0
         evidence = []
 
         for item in all_items:
-            item_lower = item.lower()
-            matched = False
-            for kw in keywords:
-                if kw.lower() in item_lower:
-                    matched = True
-                    break
-            if matched:
+            if any(m.search(item) for m in matchers):
                 matches += 1
                 evidence.append(truncate(item))
 
