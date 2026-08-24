@@ -149,14 +149,33 @@ def build_pulse_input(manifest, vault_path):
         #
         # Fall back to the manifest when the profile has no date (no file yet, or a profile
         # predating the field) so a missing frontmatter key degrades rather than blanks.
+        # Prefer the profile only when its value actually PARSES. Gating on truthiness alone
+        # meant a malformed date (`TBD`, `unknown`, a typo) beat a perfectly good manifest
+        # date, days_since() returned None, and the prompt rendered the person as never
+        # synthesized — trading a stale number for no number, which is worse.
         profile_synth = (profile or {}).get("frontmatter", {}).get("last-synthesized") or None
-        synthesized = profile_synth or rel.get("last_synthesized")
+        manifest_synth = rel.get("last_synthesized")
+        if days_since(profile_synth) is not None:
+            synthesized, synth_source = profile_synth, "profile"
+        elif days_since(manifest_synth) is not None:
+            synthesized, synth_source = manifest_synth, "manifest"
+        else:
+            # Neither parses. Keep whatever the profile said so a malformed value stays
+            # visible in the structured input instead of silently becoming "never", and
+            # announce it — a bad date in a profile is a data bug worth seeing.
+            synthesized, synth_source = profile_synth or manifest_synth, "unparseable"
+            if profile_synth:
+                print(
+                    f"WARN: {rel['name']}: unparseable last-synthesized "
+                    f"{profile_synth!r} in profile; manifest has {manifest_synth!r}",
+                    file=sys.stderr,
+                )
         entry = {
             "name": rel["name"],
             "relationship_type": rel.get("relationship_type", "peer"),
             "last_synthesized": synthesized,
             "days_since_synth": days_since(synthesized),
-            "synth_date_source": "profile" if profile_synth else "manifest",
+            "synth_date_source": synth_source,
             "fathom_new_meetings": rel.get("fathom", {}).get("count", 0),
             "has_obsidian_file": rel.get("has_obsidian_file", False),
         }

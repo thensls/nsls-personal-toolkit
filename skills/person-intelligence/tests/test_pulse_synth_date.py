@@ -132,3 +132,39 @@ def test_the_rendered_prompt_shows_the_profile_date(tmp_path):
     rendered = gtp.build_user_prompt(pulse_input, "TEMPLATE")
     assert f"Last synthesized: {TODAY} (0 days ago)" in rendered
     assert LAST_MONTH not in rendered, "the stale manifest date must not reach the model"
+
+# ---------------------------------------------------------------------------------------
+# malformed profile dates (Macroscope, 2026-08-24)
+# ---------------------------------------------------------------------------------------
+
+
+def test_malformed_profile_date_does_not_beat_a_valid_manifest_date(tmp_path, capsys):
+    """A degradation the profile-preference fix itself introduced.
+
+    Gating on truthiness meant `last-synthesized: TBD` won over a good manifest date,
+    days_since() returned None, and the prompt rendered the person as NEVER synthesized —
+    trading a stale number for no number, which is worse than the original bug.
+    """
+    for bad in ("TBD", "unknown", "2026-13-45", "yesterday", "2026/08/23"):
+        vault = _vault(tmp_path / bad.replace("/", "-"), "Bad Date", [f"last-synthesized: {bad}"])
+        rows = _rows(_manifest("Bad Date", LAST_MONTH), vault)
+        assert rows[0]["last_synthesized"] == LAST_MONTH, f"{bad!r} should not win"
+        assert rows[0]["days_since_synth"] == 31, f"{bad!r} lost the manifest date"
+        assert rows[0]["synth_date_source"] == "manifest"
+
+
+def test_both_unparseable_keeps_the_raw_value_visible_and_warns(tmp_path, capsys):
+    """A malformed date must stay visible rather than silently becoming 'never'."""
+    vault = _vault(tmp_path, "Bad Both", ["last-synthesized: TBD"])
+    rows = _rows(_manifest("Bad Both", "also-garbage"), vault)
+    assert rows[0]["last_synthesized"] == "TBD"
+    assert rows[0]["days_since_synth"] is None
+    assert rows[0]["synth_date_source"] == "unparseable"
+    assert "unparseable last-synthesized" in capsys.readouterr().err
+
+
+def test_malformed_manifest_date_does_not_break_a_good_profile_date(tmp_path):
+    vault = _vault(tmp_path, "Good Profile", [f"last-synthesized: {TODAY}"])
+    rows = _rows(_manifest("Good Profile", "not-a-date"), vault)
+    assert rows[0]["last_synthesized"] == TODAY
+    assert rows[0]["synth_date_source"] == "profile"
