@@ -6,6 +6,11 @@ frontmatter (health, last-synthesized) + the most recent journal entry,
 assembles structured input, and produces a team-pulse markdown digest via
 a single Claude API call.
 
+The manifest supplies the ROSTER. The profile supplies the STATE — health,
+scores, and the last-synthesized date. The manifest is built at plan time, so
+its own `last_synthesized` is the previous cycle's value and must not be used
+for staleness; see build_pulse_input().
+
 The digest is the cross-relational layer — patterns ACROSS the team rather
 than per-profile. Per-profile updates live in each `30-people/[Name].md`.
 
@@ -132,11 +137,26 @@ def build_pulse_input(manifest, vault_path):
     relationships = []
     for rel in manifest.get("relationships", []):
         profile = load_profile_data(vault_path, rel["name"])
+        # The PROFILE is authoritative for when synthesis last ran; the manifest is not.
+        #
+        # biweekly_sweep builds the manifest at PLAN time, before anything is written, so
+        # `rel["last_synthesized"]` is the value from the PREVIOUS cycle. Every other field
+        # here already comes from the profile (health, health_score, health_last_assessed) —
+        # this one didn't, so a freshly completed sweep reported all 28 people as ~31 days
+        # stale on the day they were synthesized, and the digest's staleness commentary was
+        # written against numbers a month out of date. Caught 2026-08-24 by hand-correcting
+        # the manifest; fixed here so the next digest doesn't need that.
+        #
+        # Fall back to the manifest when the profile has no date (no file yet, or a profile
+        # predating the field) so a missing frontmatter key degrades rather than blanks.
+        profile_synth = (profile or {}).get("frontmatter", {}).get("last-synthesized") or None
+        synthesized = profile_synth or rel.get("last_synthesized")
         entry = {
             "name": rel["name"],
             "relationship_type": rel.get("relationship_type", "peer"),
-            "last_synthesized": rel.get("last_synthesized"),
-            "days_since_synth": days_since(rel.get("last_synthesized")),
+            "last_synthesized": synthesized,
+            "days_since_synth": days_since(synthesized),
+            "synth_date_source": "profile" if profile_synth else "manifest",
             "fathom_new_meetings": rel.get("fathom", {}).get("count", 0),
             "has_obsidian_file": rel.get("has_obsidian_file", False),
         }
