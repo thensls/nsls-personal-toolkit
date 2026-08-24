@@ -246,6 +246,10 @@ def main():
     redirect_map = build_redirect_map(Path(os.environ.get("OBSIDIAN_VAULT_PATH", "")).expanduser())
     _vault = Path(os.environ.get("OBSIDIAN_VAULT_PATH", "")).expanduser()
     untracked = build_untracked_set(_vault)
+    # Names that some redirect points AT — i.e. canonical identities the vault has declared.
+    # Any org-chart record resolving to one of these IS that person, whichever order the
+    # records happen to arrive in. Precomputed once; add() runs in a loop.
+    redirect_targets = {v.lower() for v in redirect_map.values()}
 
     def add(emp, reason):
         raw_name = emp.get("name", "")
@@ -267,15 +271,26 @@ def main():
             return
         if key_email and key_email in seen_emails:
             return
-        # Dedup by resolved name when there is no email to key on, OR when a redirect
-        # proved these are the same human. One person can hold two org-chart emails (an
-        # agency address plus a work one), and email-only dedup let both through and
-        # double-listed them under one name.
+        # Dedup by resolved name when any of these proves the records are one human:
+        #   * this record was itself canonicalized by a vault redirect, or
+        #   * there is no email to key on, or
+        #   * the resolved name is a redirect TARGET — a canonical identity the vault has
+        #     declared, so anything landing on it is that person.
+        # One person can hold two org-chart emails (an agency address plus a work one), and
+        # email-only dedup let both through and double-listed them under one name.
+        #
+        # The redirect-target check is what makes this ORDER-INDEPENDENT. With only the
+        # via_redirect test, "redirected record first, canonical record second" left both
+        # tracked (the second has an email and no redirect of its own), while the reverse
+        # order merged correctly — so the roster size depended on org-chart ordering.
         #
         # But do NOT merge on a bare name collision between two records that each carry a
-        # DIFFERENT known email and were not linked by a redirect — those are two people
-        # who happen to share a name, and merging drops the second one silently.
-        if key_name in seen_names and (via_redirect or not key_email):
+        # DIFFERENT known email, where neither was linked by a redirect and the name is not a
+        # declared canonical identity — those are two people who happen to share a name, and
+        # merging drops the second one silently.
+        if key_name in seen_names and (
+            via_redirect or not key_email or key_name in redirect_targets
+        ):
             warnings.append(
                 f"Merged a second org-chart record onto '{name}' ({reason}): "
                 f"email {emp_email or '<none>'} resolves to an already-tracked person"

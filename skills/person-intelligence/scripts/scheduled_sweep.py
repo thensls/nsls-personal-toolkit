@@ -196,7 +196,10 @@ def _write_transcript(cache_dir, exit_code, stdout, stderr):
     warning, "exited 1") to explain 12m35s of work, and reconstructing what the run had
     actually completed was impossible.
     """
-    transcript = cache_dir / f"claude-run-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}.log"
+    # Microseconds, not just seconds: a manually forced run overlapping the scheduled one —
+    # or a retry inside the same second — otherwise overwrites the earlier run's transcript,
+    # destroying exactly the diagnostic evidence this function exists to preserve.
+    transcript = cache_dir / f"claude-run-{datetime.now(timezone.utc):%Y%m%d-%H%M%S-%f}.log"
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
         transcript.write_text(

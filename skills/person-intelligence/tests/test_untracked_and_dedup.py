@@ -129,6 +129,7 @@ FIXTURE = [
 
 
 def _run(tmp_path, employees, vault=None, env=None):
+    tmp_path.mkdir(parents=True, exist_ok=True)
     fixture = tmp_path / "org-chart.json"
     fixture.write_text(json.dumps(employees), encoding="utf-8")
     wrapper = f"""
@@ -233,3 +234,85 @@ def test_untracked_key_relationship_absent_from_org_chart_is_excluded(tmp_path):
     assert "Former Coach" not in names, names
     assert "Still Here" in names, names
     assert any("key_relationship_external" in w for w in data["warnings"])
+
+# --------------------------------------------------------------------------------------
+# order independence (Macroscope, 2026-08-23, second round)
+# --------------------------------------------------------------------------------------
+
+_REDIRECT_VAULT = {
+    "Formal Name.md": (
+        '---\ntype: person-redirect\ncanonical_profile: "[[Casual Name]]"\n'
+        "preferred_name: Casual Name\n---\n\n# Formal Name\n"
+    ),
+    "Casual Name.md": "---\nemail: casual@example.com\n---\n\n# Casual Name\n",
+}
+
+
+def _two_records_in_order(first, second):
+    """Org chart holding BOTH the Rippling-spelled record and the canonical-name record."""
+    recs = {
+        "Formal Name": {
+            "name": "Formal Name",
+            "email": "formal@example.com",
+            "manager": "Test User",
+            "manages": [],
+        },
+        "Casual Name": {
+            "name": "Casual Name",
+            "email": "casual@example.com",
+            "manager": "Test User",
+            "manages": [],
+        },
+    }
+    user = {
+        "name": "Test User",
+        "email": "test@example.com",
+        "manager": "Boss",
+        "manages": [first, second],
+    }
+    return [user, recs[first], recs[second]]
+
+
+def test_redirect_dedup_is_order_independent(tmp_path):
+    """The roster size must not depend on org-chart ordering.
+
+    With only the `via_redirect` test, "redirected record first, canonical second" left
+    BOTH tracked — the second record has its own email and no redirect of its own — while
+    the reverse order merged correctly. Same two records, two different rosters.
+    """
+    vault = _vault(tmp_path / "vault", _REDIRECT_VAULT)
+    counts = {}
+    for order in (("Formal Name", "Casual Name"), ("Casual Name", "Formal Name")):
+        data = _run(
+            tmp_path / ("wd-" + order[0].replace(" ", "")),
+            _two_records_in_order(*order),
+            vault=vault,
+        )
+        names = [r["name"] for r in data["relationships"]]
+        counts[order] = names
+        assert "Formal Name" not in names, (order, names)
+        assert names.count("Casual Name") == 1, (order, names)
+
+    a, b = counts.values()
+    assert sorted(a) == sorted(b), counts
+
+
+def test_unrelated_name_collision_still_tracks_both(tmp_path):
+    """Order-independence must not be bought by merging genuinely different people.
+
+    Neither record is redirected and the name is not a declared canonical identity,
+    so both must survive.
+    """
+    vault = _vault(tmp_path / "vault", _REDIRECT_VAULT)
+    employees = [
+        {
+            "name": "Test User",
+            "email": "test@example.com",
+            "manager": "Boss",
+            "manages": ["Alpha One"],
+        },
+        {"name": "Alpha One", "email": "a1@example.com", "manager": "Test User", "manages": []},
+    ]
+    data = _run(tmp_path, employees, vault=vault)
+    assert not any("Merged a second" in w for w in data["warnings"]), data["warnings"]
+    assert "Alpha One" in [r["name"] for r in data["relationships"]]
