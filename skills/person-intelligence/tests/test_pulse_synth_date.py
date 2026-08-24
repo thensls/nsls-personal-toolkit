@@ -159,12 +159,45 @@ def test_both_unparseable_keeps_the_raw_value_visible_and_warns(tmp_path, capsys
     rows = _rows(_manifest("Bad Both", "also-garbage"), vault)
     assert rows[0]["last_synthesized"] == "TBD"
     assert rows[0]["days_since_synth"] is None
-    assert rows[0]["synth_date_source"] == "unparseable"
-    assert "unparseable last-synthesized" in capsys.readouterr().err
+    assert rows[0]["synth_date_source"] == "unusable"
+    assert "unparseable" in capsys.readouterr().err
 
 
 def test_malformed_manifest_date_does_not_break_a_good_profile_date(tmp_path):
     vault = _vault(tmp_path, "Good Profile", [f"last-synthesized: {TODAY}"])
     rows = _rows(_manifest("Good Profile", "not-a-date"), vault)
     assert rows[0]["last_synthesized"] == TODAY
+    assert rows[0]["synth_date_source"] == "profile"
+
+
+def test_a_future_profile_date_does_not_win(tmp_path, capsys):
+    """Macroscope, round 2 on this PR.
+
+    A typo'd year parses perfectly and then renders as "-365 days ago", silently corrupting
+    the cadence analysis the digest is written from. Unusable for the same reason `TBD` is,
+    so it has to fail the same gate.
+    """
+    future = (date.today() + timedelta(days=365)).isoformat()
+    vault = _vault(tmp_path, "Future", [f"last-synthesized: {future}"])
+    rows = _rows(_manifest("Future", LAST_MONTH), vault)
+    assert rows[0]["last_synthesized"] == LAST_MONTH
+    assert rows[0]["days_since_synth"] == 31
+    assert rows[0]["synth_date_source"] == "manifest"
+    assert "in the future" in capsys.readouterr().err
+
+
+def test_a_future_manifest_date_is_also_rejected(tmp_path):
+    """The manifest side needs the same gate, or the fallback reintroduces the bug."""
+    future = (date.today() + timedelta(days=10)).isoformat()
+    vault = _vault(tmp_path, "Both Bad", ["last-synthesized: TBD"])
+    rows = _rows(_manifest("Both Bad", future), vault)
+    assert rows[0]["days_since_synth"] is None
+    assert rows[0]["synth_date_source"] == "unusable"
+
+
+def test_today_is_still_usable(tmp_path):
+    """Age 0 must pass the non-negative gate — an off-by-one here breaks every fresh sweep."""
+    vault = _vault(tmp_path, "Fresh", [f"last-synthesized: {TODAY}"])
+    rows = _rows(_manifest("Fresh", LAST_MONTH), vault)
+    assert rows[0]["days_since_synth"] == 0
     assert rows[0]["synth_date_source"] == "profile"

@@ -132,6 +132,20 @@ def days_since(iso_date_string):
         return None
 
 
+def usable_age(iso_date_string):
+    """days_since() constrained to a date that can actually be reported as an age.
+
+    Returns a NON-NEGATIVE day count, or None when the value is missing, unparseable, or
+    in the FUTURE. A future date parses perfectly well and then renders as "-365 days ago",
+    which silently corrupts the digest's cadence analysis — so it is unusable for the same
+    reason `TBD` is, and has to be rejected by the same gate.
+    """
+    age = days_since(iso_date_string)
+    if age is None or age < 0:
+        return None
+    return age
+
+
 def build_pulse_input(manifest, vault_path):
     """Assemble structured input for the digest synthesis call."""
     relationships = []
@@ -155,21 +169,27 @@ def build_pulse_input(manifest, vault_path):
         # synthesized — trading a stale number for no number, which is worse.
         profile_synth = (profile or {}).get("frontmatter", {}).get("last-synthesized") or None
         manifest_synth = rel.get("last_synthesized")
-        if days_since(profile_synth) is not None:
+        # Announce a bad profile date whether or not the manifest saves us. A malformed or
+        # future `last-synthesized` is a data bug in the vault; the fact that a fallback
+        # covered it this run does not make it not a bug, and swallowing it is how it stays
+        # in the file for months.
+        if profile_synth and usable_age(profile_synth) is None:
+            why = "in the future" if days_since(profile_synth) is not None else "unparseable"
+            print(
+                f"WARN: {rel['name']}: last-synthesized {profile_synth!r} is {why}; "
+                f"manifest has {manifest_synth!r}",
+                file=sys.stderr,
+            )
+
+        if usable_age(profile_synth) is not None:
             synthesized, synth_source = profile_synth, "profile"
-        elif days_since(manifest_synth) is not None:
+        elif usable_age(manifest_synth) is not None:
             synthesized, synth_source = manifest_synth, "manifest"
         else:
-            # Neither parses. Keep whatever the profile said so a malformed value stays
-            # visible in the structured input instead of silently becoming "never", and
-            # announce it — a bad date in a profile is a data bug worth seeing.
-            synthesized, synth_source = profile_synth or manifest_synth, "unparseable"
-            if profile_synth:
-                print(
-                    f"WARN: {rel['name']}: unparseable last-synthesized "
-                    f"{profile_synth!r} in profile; manifest has {manifest_synth!r}",
-                    file=sys.stderr,
-                )
+            # Neither side yields a usable age. Keep whatever the profile said so a bad
+            # value stays VISIBLE in the structured input rather than silently becoming
+            # "never".
+            synthesized, synth_source = profile_synth or manifest_synth, "unusable"
         entry = {
             "name": rel["name"],
             "relationship_type": rel.get("relationship_type", "peer"),
