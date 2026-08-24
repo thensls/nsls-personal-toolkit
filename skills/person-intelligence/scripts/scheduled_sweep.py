@@ -76,13 +76,29 @@ whether the team-pulse digest was written."""
 
 
 def log(cache_dir, message):
-    """Append a timestamped line to the cron log and echo it to stdout."""
+    """Append a timestamped line to the cron log and echo it to stdout.
+
+    The file append is BEST-EFFORT and must never raise. `log()` is called from error
+    handlers — including the one guarding transcript writing — so an OSError escaping here
+    propagates out of run_claude() and main() never gets to record the sweep failure. A full
+    or read-only cache dir would therefore turn a recorded failure into a bare traceback with
+    no status file: the exact silent-failure class this module exists to prevent, triggered by
+    the logging of it.
+
+    stdout is unconditional and comes first, so the message still reaches launchd.log via
+    StandardOutPath even when the cron log cannot be written.
+    """
     stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
     line = f"[{stamp}] {message}"
     print(line, flush=True)
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    with (cache_dir / LOG_NAME).open("a", encoding="utf-8") as fh:
-        fh.write(line + "\n")
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        with (cache_dir / LOG_NAME).open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except OSError as exc:
+        # Announce the degradation on stdout rather than swallowing it — a silently
+        # unwritable log is how you end up trusting an empty log later.
+        print(f"[{stamp}] WARN: could not append to {LOG_NAME}: {exc}", flush=True)
 
 
 def record_failure(cache_dir, sweep_date, error):
@@ -104,24 +120,36 @@ def record_failure(cache_dir, sweep_date, error):
         if prior > str(sweep_date):
             return
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(
-            {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "sweep_date": str(sweep_date),
-                "exit_code": 1,
-                "error": error,
-                "relationships_processed": 0,
-                "complete": False,
-                "finalized": True,
-                "source": "scheduled_sweep",
-            },
-            indent=2,
+    # Recording the failure must not itself raise. main() calls this on the way to returning
+    # a non-zero exit code; a traceback here loses both the status record AND the exit code,
+    # so the scheduler would report nothing at all.
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(
+                {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "sweep_date": str(sweep_date),
+                    "exit_code": 1,
+                    "error": error,
+                    "relationships_processed": 0,
+                    "complete": False,
+                    "finalized": True,
+                    "source": "scheduled_sweep",
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
         )
-        + "\n",
-        encoding="utf-8",
-    )
+    except OSError as exc:
+        # Loud on stderr: launchd captures it, and an unrecordable failure is worse than the
+        # failure it was trying to record — the next run has no idea a sweep was attempted.
+        print(
+            f"FATAL: could not write {path} to record the sweep failure ({exc}). "
+            "The freshness gate will see no failure record and may treat the cycle as fresh.",
+            file=sys.stderr,
+        )
 
 
 def sweep_finalized_for(cache_dir, sweep_date):
