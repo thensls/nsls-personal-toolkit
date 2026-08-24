@@ -85,12 +85,19 @@ PY
 
   # No usable interpreter at all — the emergency path. Hand-rolled JSON so the failure is
   # still visible to every reader of the status file.
+  #
+  # `reason` embeds ${PATH} and filesystem paths, so it can carry a backslash or a double
+  # quote. Interpolating it raw produced invalid JSON, which made sweep_due.py return ERROR
+  # instead of recognising a failure and retrying it — i.e. the unescaped string could defeat
+  # the very retry this record exists to trigger. Escape backslashes first, then quotes.
+  json_reason="${reason//\\/\\\\}"
+  json_reason="${json_reason//\"/\\\"}"
   cat >"${STATUS_FILE}" <<EOF
 {
   "timestamp": "$(stamp)",
   "sweep_date": "$(date -u +%Y-%m-%d)",
   "exit_code": 1,
-  "error": "${reason}",
+  "error": "${json_reason}",
   "relationships_processed": 0,
   "complete": false,
   "finalized": true,
@@ -116,11 +123,21 @@ if [ ! -f "${SWEEP_PY}" ]; then
   fail "scheduled_sweep.py not found at ${SWEEP_PY} — the plist and the script are deployed separately; one of them is out of date (bad install, partial pull, or branch switch)."
 fi
 
+# The pipeline needs 3.12 specifically, and not merely for syntax: scheduled_sweep.py derives
+# the headless tool allowlist from the interpreter's FILE NAME (`Bash(<name> *)`), while the
+# sweep prompt and the skill instruct the agent to invoke `python3.12`. Hand it a binary called
+# `python3` and every Bash call the agent makes is DENIED by the allowlist — the sweep starts,
+# burns a run, and produces nothing. So accept `python3.12` by name, or a `python3` that
+# self-reports >= 3.12; never a bare unknown-version `python3`.
 PY_BIN=""
-for cand in python3.12 python3; do
-  if command -v "${cand}" >/dev/null 2>&1; then PY_BIN="$(command -v "${cand}")"; break; fi
-done
-[ -n "${PY_BIN}" ] || fail "no python3.12 or python3 on PATH (${PATH}) — launchd starts with a minimal PATH."
+if command -v python3.12 >/dev/null 2>&1; then
+  PY_BIN="$(command -v python3.12)"
+elif command -v python3 >/dev/null 2>&1 \
+  && python3 -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3, 12) else 1)' 2>/dev/null; then
+  PY_BIN="$(command -v python3)"
+  log "WARN: no python3.12 on PATH; using ${PY_BIN} which reports $(python3 -V 2>&1). The headless allowlist is derived from this binary's name, so verify the sweep's Bash calls are not denied."
+fi
+[ -n "${PY_BIN}" ] || fail "no python3.12 (and no python3 >= 3.12) on PATH (${PATH}) — launchd starts with a minimal PATH."
 
 command -v claude >/dev/null 2>&1 \
   || log "WARN: \`claude\` is not on PATH (${PATH}). scheduled_sweep.py will record a 127 failure."

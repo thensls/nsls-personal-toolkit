@@ -9,8 +9,11 @@
     3. cp this file to ~/Library/LaunchAgents/
     4. launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist
 
-  You no longer need to hardcode a python3.12 path — sweep_launchd_wrapper.sh finds the
-  interpreter itself and records a real failure if it cannot.
+  You no longer need to hardcode an absolute python path — sweep_launchd_wrapper.sh resolves
+  the interpreter itself and records a real failure if it cannot. It does require python3.12 to
+  be reachable on the PATH below (or a python3 that reports >= 3.12): scheduled_sweep.py derives
+  the headless tool allowlist from the interpreter's file name, so a binary named `python3` makes
+  the agent's `python3.12 ...` calls fail the allowlist and the sweep produces nothing.
 
   Verify without waiting for Sunday:
     launchctl kickstart -p gui/$(id -u)/com.nsls.person-intelligence-sweep

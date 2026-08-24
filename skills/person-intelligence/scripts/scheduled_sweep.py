@@ -179,6 +179,36 @@ def _benign_note(line):
     return ""
 
 
+
+def _as_text(raw):
+    """TimeoutExpired.stdout/.stderr are str under text=True and bytes otherwise."""
+    if raw is None:
+        return ""
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8", "replace")
+    return raw
+
+
+def _write_transcript(cache_dir, exit_code, stdout, stderr):
+    """Persist the FULL claude output. The 5-line cron-log tails cannot diagnose anything.
+
+    The 2026-08-23 failure left exactly three lines ("Request timed out", a connectors
+    warning, "exited 1") to explain 12m35s of work, and reconstructing what the run had
+    actually completed was impossible.
+    """
+    transcript = cache_dir / f"claude-run-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}.log"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        transcript.write_text(
+            f"# exit={exit_code}\n\n===== STDOUT =====\n{stdout or ''}\n"
+            f"\n===== STDERR =====\n{stderr or ''}\n",
+            encoding="utf-8",
+        )
+        log(cache_dir, f"Full claude transcript: {transcript}")
+    except OSError as exc:
+        log(cache_dir, f"WARN: could not write the claude transcript: {exc}")
+
+
 def run_claude(cache_dir, interpreter, dry_run):
     cmd = [
         "claude",
@@ -203,25 +233,17 @@ def run_claude(cache_dir, interpreter, dry_run):
     except FileNotFoundError:
         log(cache_dir, "FAIL: `claude` not found on PATH for the scheduler's environment.")
         return 127
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as exc:
         log(cache_dir, f"FAIL: claude -p exceeded {CLAUDE_TIMEOUT_SECONDS}s and was killed.")
+        # A wedged run is the case that needs a transcript MOST — it is the only evidence of
+        # how far the sweep got before it hung — and it used to be the one case that returned
+        # before writing one. TimeoutExpired carries whatever was captured before the kill;
+        # with text=True those are str, but normalise defensively since they are bytes when a
+        # caller omits it.
+        _write_transcript(cache_dir, 124, _as_text(exc.stdout), _as_text(exc.stderr))
         return 124
 
-    # Always persist the FULL transcript. The 5-line tails below are for the cron log; they
-    # are not enough to diagnose anything. The 2026-08-23 failure left exactly three lines
-    # ("Request timed out", a connectors warning, "exited 1") to explain 12m35s of work, and
-    # reconstructing what the run had actually completed was impossible.
-    transcript = cache_dir / f"claude-run-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}.log"
-    try:
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        transcript.write_text(
-            f"# exit={proc.returncode}\n\n===== STDOUT =====\n{proc.stdout or ''}\n"
-            f"\n===== STDERR =====\n{proc.stderr or ''}\n",
-            encoding="utf-8",
-        )
-        log(cache_dir, f"Full claude transcript: {transcript}")
-    except OSError as exc:
-        log(cache_dir, f"WARN: could not write the claude transcript: {exc}")
+    _write_transcript(cache_dir, proc.returncode, proc.stdout, proc.stderr)
 
     tail = (proc.stdout or "").strip().splitlines()[-5:]
     for line in tail:

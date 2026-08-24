@@ -114,16 +114,30 @@ def build_untracked_set(vault_path):
         return untracked
     for path in sorted(people_dir.rglob("*.md")):
         try:
-            head = path.read_text(encoding="utf-8")[:4000]
+            text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
-        if not _re.search(r"^tracked:\s*false\s*$", head, _re.MULTILINE | _re.IGNORECASE):
+        # Only the leading YAML frontmatter block counts. Scanning a fixed-size prefix was
+        # wrong in both directions: prose in the BODY saying `tracked: false` silently
+        # dropped an active relationship, and frontmatter longer than the cutoff was
+        # truncated so a genuinely archived person stayed in the roster.
+        fm = _frontmatter(text)
+        if fm is None:
+            continue
+        if not _re.search(r"^tracked:[ \t]*false[ \t]*$", fm, _re.MULTILINE | _re.IGNORECASE):
             continue
         untracked.add(path.stem.lower())
-        m = _re.search(r"^email:[ \t]*(\S+)[ \t]*$", head, _re.MULTILINE)
-        if m:
+        for m in _re.finditer(r"^email(?:_alt)?:[ \t]*(\S+)[ \t]*$", fm, _re.MULTILINE):
             untracked.add(m.group(1).strip().strip('"').strip("'").lower())
     return untracked
+
+
+def _frontmatter(text):
+    """Return the leading YAML frontmatter body, or None when the file has none."""
+    import re as _re
+
+    m = _re.match(r"\A\ufeff?---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", text, _re.DOTALL)
+    return m.group(1) if m else None
 
 
 def preferred_name(name, redirect_map):
@@ -234,7 +248,12 @@ def main():
     untracked = build_untracked_set(_vault)
 
     def add(emp, reason):
-        name = preferred_name(emp.get("name", ""), redirect_map)
+        raw_name = emp.get("name", "")
+        name = preferred_name(raw_name, redirect_map)
+        # True only when the vault's redirect map actually canonicalized this record onto
+        # another identity. Two unrelated people who merely share an ordinary name are NOT
+        # the same human, and merging them would silently drop the second from the sweep.
+        via_redirect = name != raw_name
         emp_email = emp.get("email", "")
         # Deduplicate by email when known, by name otherwise.
         key_email = emp_email.lower() if emp_email else None
@@ -248,16 +267,28 @@ def main():
             return
         if key_email and key_email in seen_emails:
             return
-        # Dedup by resolved name EVEN when an email is present. After preferred_name()
-        # two records with the same canonical name are the same human by construction, and
-        # one person can hold two org-chart emails (a personal/agency address plus an
-        # @nsls.org one). Email-only dedup let both through and double-listed them.
-        if key_name in seen_names:
+        # Dedup by resolved name when there is no email to key on, OR when a redirect
+        # proved these are the same human. One person can hold two org-chart emails (an
+        # agency address plus a work one), and email-only dedup let both through and
+        # double-listed them under one name.
+        #
+        # But do NOT merge on a bare name collision between two records that each carry a
+        # DIFFERENT known email and were not linked by a redirect — those are two people
+        # who happen to share a name, and merging drops the second one silently.
+        if key_name in seen_names and (via_redirect or not key_email):
             warnings.append(
                 f"Merged a second org-chart record onto '{name}' ({reason}): "
-                f"email {emp_email or '<none>'} resolves to an already-tracked person."
+                f"email {emp_email or '<none>'} resolves to an already-tracked person"
+                f"{' via a vault redirect' if via_redirect else ''}."
             )
             return
+        if key_name in seen_names:
+            warnings.append(
+                f"NAME COLLISION: '{name}' ({reason}, {emp_email}) shares a name with an "
+                "already-tracked person but has a different email and no vault redirect "
+                "linking them. Tracking both. If they ARE the same person, add a "
+                "`type: person-redirect` stub; if not, no action needed."
+            )
         if key_email:
             seen_emails.add(key_email)
         seen_names.add(key_name)
@@ -312,6 +343,16 @@ def main():
             # Route through the same dedup gate `add()` uses, or an org-chart entry
             # already added under the preferred name gets duplicated here.
             if name.lower() in seen_names:
+                continue
+            # Same untracked gate `add()` applies. Without this, archiving someone who is
+            # in KEY_RELATIONSHIPS but absent from the org chart (a departed contractor,
+            # a former coach) left them in the sweep forever — the exact class of bug the
+            # gate exists to close, reintroduced through the one branch that skips add().
+            if name.lower() in untracked:
+                warnings.append(
+                    f"Skipped '{name}' (key_relationship_external): marked `tracked: false` "
+                    "in the vault. Remove them from KEY_RELATIONSHIPS to stop the lookup too."
+                )
                 continue
             seen_names.add(name.lower())
             relationships.append(

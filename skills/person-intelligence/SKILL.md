@@ -217,7 +217,7 @@ On macOS the scheduler calls [`scripts/sweep_launchd_wrapper.sh`](scripts/sweep_
 
 That happened. On 2026-08-09 and 2026-08-16 the plist invoked python against a `scheduled_sweep.py` that had not shipped yet (it landed 2026-08-21). Both Sundays died instantly with a bare, undated `can't open file` line, `sweep-cron.log` showed a clean 21-day gap with no explanation, and the roster went **30 days stale against a 12-day cadence while every dashboard reported healthy**. The plist and the scripts deploy independently, so that window recurs on any install, reinstall, branch switch, or partial pull.
 
-The wrapper validates its preconditions (interpreter present, `scheduled_sweep.py` present), timestamps its own output, brackets the child's undated output with dated banners, and **writes a real failure record when it cannot start** — which `sweep_due.py` then retries on. Set `PI_CACHE_DIR` to redirect both the wrapper's and the child's cache dir when testing.
+The wrapper validates its preconditions (`scheduled_sweep.py` present; **python3.12** reachable, or a `python3` that self-reports >= 3.12 — `scheduled_sweep.py` derives the headless tool allowlist from the interpreter's *file name*, so a binary named `python3` makes the agent's `python3.12 ...` calls fail the allowlist and the run produces nothing), timestamps its own output, brackets the child's undated output with dated banners, and **writes a real failure record when it cannot start** — which `sweep_due.py` then retries on. Set `PI_CACHE_DIR` to redirect both the wrapper's and the child's cache dir when testing.
 
 **A recorded failure is not a sweep.** `sweep_due.py` returns **DUE** for any status record carrying a non-zero `exit_code` or a non-null `error`, checked *before* the age gate. Before 2026-08-23 a failure record (`finalized: true` + `complete: false`) classified as `NEEDS_FINALIZE` — "finalize only, do not re-sweep" — so one timeout suppressed every retry until the interval elapsed, and the next firing then saw a "recent sweep" and skipped. Pinned by [`tests/test_sweep_due.py`](tests/test_sweep_due.py).
 
@@ -230,8 +230,9 @@ The wrapper validates its preconditions (interpreter present, `scheduled_sweep.p
 ```bash
 cp skills/person-intelligence/setup/com.nsls.person-intelligence-sweep.plist \
    ~/Library/LaunchAgents/
-# Edit the plist: replace YOUR_USERNAME throughout. No python path to set —
-# sweep_launchd_wrapper.sh resolves the interpreter itself.
+# Edit the plist: replace YOUR_USERNAME throughout. No absolute python path to set —
+# sweep_launchd_wrapper.sh resolves the interpreter itself (it needs python3.12
+# reachable on the plist's PATH, or a python3 reporting >= 3.12).
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist
 ```
 
