@@ -91,6 +91,41 @@ def build_redirect_map(vault_path):
     return mapping
 
 
+def build_untracked_set(vault_path):
+    """Names the vault has explicitly marked `tracked: false` (archived/out-of-scope).
+
+    The roster is built from org-chart.json, which is a Rippling mirror and the arbiter of
+    *current-staff* status. It is NOT the arbiter of *tracked-relationship* status: it carries
+    departed contractors and people who were never a managed relationship, and it grew a batch
+    of `title: Contractor` rows in Aug 2026 that re-added four people the vault had already
+    resolved. Archiving a profile has to actually remove someone from the sweep, or the archive
+    is decoration.
+
+    Reads `30-people/**` (including `_archive/`) so the private vault stays the control surface
+    and no person's name is ever hardcoded into this repo.
+    """
+    import re as _re
+
+    untracked = set()
+    if not vault_path or str(vault_path) == ".":
+        return untracked
+    people_dir = vault_path / "30-people"
+    if not people_dir.is_dir():
+        return untracked
+    for path in sorted(people_dir.rglob("*.md")):
+        try:
+            head = path.read_text(encoding="utf-8")[:4000]
+        except (UnicodeDecodeError, OSError):
+            continue
+        if not _re.search(r"^tracked:\s*false\s*$", head, _re.MULTILINE | _re.IGNORECASE):
+            continue
+        untracked.add(path.stem.lower())
+        m = _re.search(r"^email:[ \t]*(\S+)[ \t]*$", head, _re.MULTILINE)
+        if m:
+            untracked.add(m.group(1).strip().strip('"').strip("'").lower())
+    return untracked
+
+
 def preferred_name(name, redirect_map):
     seen = set()
     while name in redirect_map and name not in seen:
@@ -195,6 +230,8 @@ def main():
     # email to match on — which double-lists the person and leaves a phantom "never
     # assessed" row in the health dashboard.
     redirect_map = build_redirect_map(Path(os.environ.get("OBSIDIAN_VAULT_PATH", "")).expanduser())
+    _vault = Path(os.environ.get("OBSIDIAN_VAULT_PATH", "")).expanduser()
+    untracked = build_untracked_set(_vault)
 
     def add(emp, reason):
         name = preferred_name(emp.get("name", ""), redirect_map)
@@ -202,9 +239,24 @@ def main():
         # Deduplicate by email when known, by name otherwise.
         key_email = emp_email.lower() if emp_email else None
         key_name = name.lower()
+        # Explicitly untracked (archived / out-of-scope) — the vault overrides the org chart.
+        if key_name in untracked or (key_email and key_email in untracked):
+            warnings.append(
+                f"Skipped '{name}' ({reason}): marked `tracked: false` in the vault. "
+                "org-chart.json still lists them; the archive is the arbiter here."
+            )
+            return
         if key_email and key_email in seen_emails:
             return
-        if not key_email and key_name in seen_names:
+        # Dedup by resolved name EVEN when an email is present. After preferred_name()
+        # two records with the same canonical name are the same human by construction, and
+        # one person can hold two org-chart emails (a personal/agency address plus an
+        # @nsls.org one). Email-only dedup let both through and double-listed them.
+        if key_name in seen_names:
+            warnings.append(
+                f"Merged a second org-chart record onto '{name}' ({reason}): "
+                f"email {emp_email or '<none>'} resolves to an already-tracked person."
+            )
             return
         if key_email:
             seen_emails.add(key_email)
@@ -284,6 +336,12 @@ def main():
         "relationships": relationships,
         "relationship_count": len(relationships),
         "warnings": warnings,
+        "untracked_excluded_count": len(
+            [w for w in warnings if "marked `tracked: false`" in w]
+        ),
+        "records_merged_count": len(
+            [w for w in warnings if "Merged a second org-chart record" in w]
+        ),
         "org_chart_age_days": resolve_user.org_chart_age_days(path),
     }
 

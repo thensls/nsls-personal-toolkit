@@ -158,6 +158,27 @@ def allowed_tools(interpreter):
     ]
 
 
+
+# stderr lines that always appear and never mean anything, annotated inline so a post-mortem
+# does not chase them. The connectors warning cost real diagnostic time on 2026-08-23.
+_BENIGN_STDERR = (
+    (
+        "connectors are disabled",
+        "  [BENIGN: expected. ANTHROPIC_API_KEY in the toolkit .env is what makes this run "
+        "self-contained, and it takes precedence over the claude.ai login. The sweep's "
+        "--allowedTools carries no MCP tools and its scripts call Fathom/Airtable REST "
+        "directly, so connectors are irrelevant here. NOT a cause of failure.]",
+    ),
+)
+
+
+def _benign_note(line):
+    for needle, note in _BENIGN_STDERR:
+        if needle in line:
+            return note
+    return ""
+
+
 def run_claude(cache_dir, interpreter, dry_run):
     cmd = [
         "claude",
@@ -186,13 +207,29 @@ def run_claude(cache_dir, interpreter, dry_run):
         log(cache_dir, f"FAIL: claude -p exceeded {CLAUDE_TIMEOUT_SECONDS}s and was killed.")
         return 124
 
+    # Always persist the FULL transcript. The 5-line tails below are for the cron log; they
+    # are not enough to diagnose anything. The 2026-08-23 failure left exactly three lines
+    # ("Request timed out", a connectors warning, "exited 1") to explain 12m35s of work, and
+    # reconstructing what the run had actually completed was impossible.
+    transcript = cache_dir / f"claude-run-{datetime.now(timezone.utc):%Y%m%d-%H%M%S}.log"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        transcript.write_text(
+            f"# exit={proc.returncode}\n\n===== STDOUT =====\n{proc.stdout or ''}\n"
+            f"\n===== STDERR =====\n{proc.stderr or ''}\n",
+            encoding="utf-8",
+        )
+        log(cache_dir, f"Full claude transcript: {transcript}")
+    except OSError as exc:
+        log(cache_dir, f"WARN: could not write the claude transcript: {exc}")
+
     tail = (proc.stdout or "").strip().splitlines()[-5:]
     for line in tail:
         log(cache_dir, f"claude: {line}")
     if proc.returncode != 0:
         err = (proc.stderr or "").strip().splitlines()[-5:]
         for line in err:
-            log(cache_dir, f"claude stderr: {line}")
+            log(cache_dir, f"claude stderr: {line}{_benign_note(line)}")
     return proc.returncode
 
 

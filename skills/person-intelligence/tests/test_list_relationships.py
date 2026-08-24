@@ -63,13 +63,32 @@ FIXTURE_EMPLOYEES = [
 ]
 
 
+# An empty .env that list_relationships.py will load INSTEAD of the real one.
+#
+# list_relationships.py imports load_dotenv_local, whose rule is "already-set vars always
+# win" — i.e. `if key not in os.environ`. So *popping* a var from the test env is precisely
+# what lets the real ~/.claude/local-plugins/nsls-personal-toolkit/.env supply it: the key is
+# now absent, so .env fills it back in. These tests looked isolated and were not. They asserted
+# 2 relationships from a 6-person fixture and got 19, because the developer's real
+# KEY_RELATIONSHIPS and INCLUDE_MANAGEMENT_PEERS were being loaded underneath them.
+#
+# load_dotenv_local checks PERSONAL_TOOLKIT_ENV first and returns on the first file that
+# exists, so pointing it at an empty file stops the real .env from ever being read. That kills
+# the whole leak class rather than the two variables someone happened to think of.
+_EMPTY_ENV = Path(tempfile.mkdtemp(prefix="pi-test-env-")) / "empty.env"
+_EMPTY_ENV.write_text("", encoding="utf-8")
+
+
 def run(env, fixture_path):
-    full_env = {**os.environ, **env}
+    full_env = {**os.environ, **env, "PERSONAL_TOOLKIT_ENV": str(_EMPTY_ENV)}
     for k in (
         "OPERATING_USER_EMAIL",
         "BUILDER_EMAIL",
         "INCLUDE_MANAGEMENT_PEERS",
         "KEY_RELATIONSHIPS",
+        # Read by build_untracked_set(); an ambient value would make the roster depend on
+        # whatever is in the developer's real vault.
+        "OBSIDIAN_VAULT_PATH",
     ):
         if k not in env:
             full_env.pop(k, None)
