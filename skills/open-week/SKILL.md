@@ -289,7 +289,21 @@ Parse both when present. Classify against this week's Monday (`week_start`) and 
 | `week_end` < due ≤ `week_end + 7d` | **next week** | 🟡 one heads-up line in Goal Checkpoints; no escalation |
 | due > `week_end + 7d` | **future** | silent — counted in the heartbeat only |
 
-A checkpoint is a *decision*, not a task: it is forced into the **candidate pool**, never auto-written as a Top 3 priority. The builder still chooses. If they decline it two weeks running while it is overdue, say so plainly once — that is the signal the goal has stopped being scored honestly.
+A checkpoint is a *decision*, not a task: it is forced into the **candidate pool**, never auto-written as a Top 3 priority. The builder still chooses.
+
+**Decline history — the persistence this needs.** "Declined two weeks running" is only sayable if declines are recorded, so they are, in the weekly note's own frontmatter (the same place Step 5 already writes health aggregates):
+
+```yaml
+checkpoints_declined: [vo2_max]     # overdue checkpoints offered this week and not taken
+checkpoints_escalated: [vo2_max]    # the once-only notice has already been spent
+```
+
+- **Step 4** is where a decline becomes a fact: if an `overdue` checkpoint was offered in the candidate pool and the builder's chosen Top 3 does not include it, append that goal's `slug` to `checkpoints_declined`. Not choosing it *is* the decline — do not ask a second time to confirm.
+- **Step 1h** reads `checkpoints_declined` and `checkpoints_escalated` from the **two most recent existing weekly notes** (`02-weekly/*.md`, by filename sort — not "the last two calendar weeks", because a skipped week has no file).
+- **The notice fires once, and only when all three hold:** the checkpoint is still `overdue`; the slug appears in `checkpoints_declined` in *both* of those two notes; and it appears in `checkpoints_escalated` in *neither*. Then say it plainly, once, and Step 5 writes the slug into this week's `checkpoints_escalated` so it is never repeated.
+- **Fewer than two prior weekly notes exist** → the condition cannot be evaluated. Say so in the heartbeat (`decline history: 1 prior week only — escalation not evaluable`) rather than treating absence as "no declines".
+
+Carrying that state is what makes the sentence honest; without it the skill would be asserting a behavior it cannot perform.
 
 **Prove the check ran (it is otherwise vacuous).** Emit a one-line heartbeat every time, including the zero case:
 
@@ -307,7 +321,13 @@ Carry forward per goal: `checkpoint_due`, `checkpoint_label`, `checkpoint_class`
 - If metric goal is trending wrong direction (current < baseline OR weekly trend negative for 3+ weeks): flag "trajectory needs review".
 - If `weeks_remaining` ≤ 2 AND `progress_pct` < 50%: flag "behind on this — accelerate or rescope".
 
-Skip 1h entirely if no goal files exist or none are active.
+**Skip rule — heartbeat first, then skip.** If no goal files exist or none are active, skip the rest of 1h — but **emit the zero-case heartbeat before skipping**, plus any malformed-key warning:
+
+```
+Step 1h: 0 active goals — no checkpoint check possible (skipping 1h)
+```
+
+A bare skip is the bug this whole sub-step guards against: it makes *the check never ran* indistinguishable from *the check ran and found nothing*. The heartbeat is unconditional; only the work after it is skippable.
 
 ### Step 1.5: Strategy layer check
 
@@ -690,6 +710,8 @@ Overdue and due-this-week checkpoints go into the Recommended Top 3 **candidate 
 
 The builder adjusts the Top 3, accepts or rejects coaching, and commits to the week's focus.
 
+**Record goal-checkpoint declines (feeds Step 1h next week).** For every checkpoint Step 1h classed `overdue` and offered in the candidate pool: if the committed Top 3 does not include it, append that goal's `slug` to `checkpoints_declined` for Step 5 to write. Not choosing it *is* the decline — don't ask again to confirm, and don't record a decline for a `due` or `next_week` checkpoint (only overdue ones accumulate). If the builder took it, record nothing.
+
 ### Step 4.5: Relationship Health Check Trigger
 
 After weekly priorities are set, check `$OBSIDIAN_VAULT_PATH/30-people/*.md` for the most recent `health_last_assessed` date across all scored profiles.
@@ -785,6 +807,9 @@ hit_sleep_target: false      # sleep_total_avg >= 7.0
 hit_sleep_stretch: false     # sleep_total_avg >= 7.5
 hit_restorative_target: true # sleep_restorative_avg_pct >= 25
 hit_consistency_target: true # sleep_consistency_stddev <= 1.0
+# Goal-checkpoint decline history (Step 1h reads these from the 2 most recent weekly notes)
+checkpoints_declined: []     # slugs of overdue checkpoints offered this week and not chosen (from Step 4)
+checkpoints_escalated: []    # slugs whose once-only two-week notice has been spent
 ---
 ```
 
