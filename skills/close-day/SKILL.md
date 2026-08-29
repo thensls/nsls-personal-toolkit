@@ -771,6 +771,9 @@ Match activity to projects using these signals (in priority order):
 
 Use the project mappings from `~/.claude/skills/log/SKILL.md` as the source of truth.
 
+Read `skills/close-week/references/portfolio-attribution.md` for the quadrant
+vocabulary and the mode-inference verbs. Do not invent quadrant values.
+
 ### Step 3: Draft the daily note
 
 Generate in this format (matching the builder's existing `01-daily/` structure):
@@ -875,8 +878,25 @@ Source: `${SLT_BASE_ID}/tblasgjUjadHCqzrg` — pulled fresh this evening.
 [Single paragraph listing action names separated by • for scanability. Only bullet individually if ≤5 items.]
 
 ## Projects Touched
-- [[20-projects/[slug]|[slug]]] — [1-line summary of what happened]
-- [[20-projects/[slug]|[slug]]] — [1-line summary]
+- [[20-projects/[slug]|[slug]]] — [1-line summary of what happened] · 2.5h · growth-driver · 80% offense
+- [[20-projects/[slug]|[slug]]] — [1-line summary] · 0.5h · uncategorized · 0% offense
+
+**The tail is machine-read; emit real values, never the placeholder brackets.**
+`companion/portfolio.py` parses `· <X.X>h · <quadrant> · <NN>% offense` exactly
+as written, so a line still carrying `[X.X]h` or `[quadrant]` does not parse and
+that project's hours drop out of the weekly roll-up. (Close-week reports skipped
+lines at its confirm gate, so this surfaces — but a week later, and only if
+someone reads it.) The separators are a middle dot `·` and an em dash `—`; a
+hyphen or an en dash in their place does not parse either. Only the summary text
+and the slug are freeform.
+
+Hours come from the same Familiar attribution that produced Time Allocation.
+Quadrant is the project's `portfolio-category` frontmatter — **provisional**,
+because close-week's confirm gate may override it when the week's activity says
+otherwise. Offense/defense split is inferred from this note's own Work Log
+bullets using the vocabulary in
+`skills/close-week/references/portfolio-attribution.md`. A project with no
+`portfolio-category` renders `· uncategorized ·` and is **not** guessed.
 
 ## Carrying Over
 - [Unfinished items from Claude tasks, meeting action items, or Asana overdue]

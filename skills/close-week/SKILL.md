@@ -190,6 +190,40 @@ Carry this read into Step 3's priorities. **P002 closes when this read happens b
 
 ---
 
+**Step 2a — Portfolio attribution.** Runs here, before Achievements and Project Progress, because the quadrant grouping drives how both are written. The judgment calls (mode-inference verbs, meeting-topic→quadrant mapping, the confirm-gate table format) live in `skills/close-week/references/portfolio-attribution.md` — read it, don't re-derive it. The arithmetic lives in `companion/portfolio.py` and is **run, not re-derived**: this step builds a JSON payload and pipes it to `python3 -m companion.portfolio`, then renders the JSON that comes back. Never compute a quadrant total, a percentage, or a flag by hand — if the module didn't say it, it isn't in the output.
+
+1. **Project rows.** Parse each of the 7 daily notes with the module's parse mode — one run per note, the note's markdown on stdin:
+
+   ```bash
+   python3 -m companion.portfolio --parse-daily < "$OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md"
+   ```
+
+   It returns `project_weeks` (one row per well-formed `## Projects Touched` line) plus `skipped_lines` / `skipped_count`. Do **not** hand-roll a regex for this — the format contract between close-day and close-week is verified in exactly one place, and that place is this parser.
+
+   Collapse multiple days' rows for the same project into one project-week row: sum `hours`, weight-average `offense_pct` by hours. A row with no `portfolio-category` stays `uncategorized` (parses to quadrant `null`) — never guessed into a bucket.
+
+   **Carry every day's `skipped_count` to the confirm gate (step 3), including the zeros.** A skipped line is a project's hours disappearing from the week with no other signal — the same silent failure the flags exist to catch, one layer up. Report it as, e.g., "Tue: 3 of 4 lines parsed — 1 skipped: `<the raw line>`", and offer to fix the daily note before continuing.
+
+2. **Meeting rows.** For each meeting from Step 1a's `## Meetings` data, collapse recurring meetings to one bucket per name (per `portfolio-attribution.md` §4). If a recurring meeting already has an entry in `~/.claude/portfolio-meeting-cache.json`, pre-fill its row from the cache (still editable at the confirm gate). Otherwise resolve it through the cascade: an attendee match in `~/.claude/portfolio-role-map.txt` (role) → the Fathom summary's topic sections (topic — may split across quadrants) → the meeting's mapped project's `portfolio-category` (project) → `unresolved`. Record which rule fired as `resolved_by` for every row.
+
+3. **Confirm gate.** Present the PROPOSED table exactly as formatted in `portfolio-attribution.md` §4 — project rows plus meeting rows, every cell editable. Above the table, print the per-day parse line from step 1 (`N of M lines parsed`, with the raw text of anything skipped). **Write nothing before the user confirms.** Rejecting the whole table is a valid outcome: the weekly note gets no `## Portfolio Allocation` section, rather than a guessed one.
+
+4. **On confirm, build the payload and run the module.** Payload keys (see `portfolio-attribution.md` §7 for the full shape and a worked example): `project_weeks` (from step 1, post-confirm), `meeting_rows` (from step 2, post-confirm), `history`, `driver_hours`, `held_hours`.
+   - `history`: read the prior 1-2 closed weekly notes' frontmatter — `portfolio_by_quadrant` / `portfolio_by_mode` (written back by this skill's Step 5) — and **rekey each entry before it goes into the payload**: the frontmatter's `portfolio_by_quadrant` becomes the entry's `by_quadrant`, and `portfolio_by_mode` becomes `by_mode`. This is not optional bookkeeping — `_totals_from_history_entry()` in `companion/portfolio.py` reads only the unprefixed keys via `.get("by_quadrant")` / `.get("by_mode")`; a history entry still carrying the `portfolio_` prefix misses both, reads as an empty week, and silently kills the reliability-starvation and rising-defense-share flags while looking exactly like "no flags fired." Each `history` entry, after rekeying, looks like: `{"by_quadrant": {"growth-driver": 14.0, ...}, "by_mode": {"offense": 12.0, "defense": 8.5}}` — most recent week first. No prior data — first week on this pipeline, or a skipped week — means `"history": []`; `evaluate_flags` treats missing history as "no data," never as a manufactured zero.
+   - `driver_hours` / `held_hours`: sum this week's confirmed project hours by each project's `portfolio-role` frontmatter (`driver` vs. `held`).
+
+   ```bash
+   python3 -m companion.portfolio <<'JSON'
+   {"project_weeks": [...], "meeting_rows": [...], "history": [...], "driver_hours": 0.0, "held_hours": 0.0}
+   JSON
+   ```
+
+5. **Write back, only now.** Append any newly-resolved recurring meetings to `~/.claude/portfolio-meeting-cache.json`.
+
+6. **Render, don't recompute.** The module's stdout (`by_quadrant`, `by_mode`, `by_quadrant_mode`, `unresolved_hours`, `total_hours`, `percentages`, `mode_percentages`, `quadrant_mode_percentages`, `unresolved_pct`, `flags`) is the entire content of the `## Portfolio Allocation` section (Output A, template below) and the quadrant grouping used in Project Progress (both outputs). Every figure in those sections traces back to this one call — including every percentage, which is why there is nothing left for this step to divide.
+
+---
+
 **Achievements:** Scan all Work Log bullets across the week. Pick the 5-8 most impactful — things that shipped, decisions that moved the needle, external commitments met. Prefer concrete outcomes with numbers over activity descriptions.
 
 **Learnings:** Look for:
@@ -199,7 +233,7 @@ Carry this read into Step 3's priorities. **P002 closes when this read happens b
 - Process improvements discovered
 - "I wish I had..." moments from carry-overs that piled up
 
-**Project Progress:** For each project that appeared in any daily note's `## Projects Touched`, summarize the week's movement. Status = on-track (touched 2+ days or key milestone hit), needs-attention (touched but blocked), stalled (not touched despite being active).
+**Project Progress:** For each project that appeared in any daily note's `## Projects Touched`, summarize the week's movement. Status = on-track (touched 2+ days or key milestone hit), needs-attention (touched but blocked), stalled (not touched despite being active). Group the result by portfolio quadrant, using the confirmed quadrant from Step 2a (not the raw frontmatter default) — see the Output A and Output B templates below for the exact grouped shape. Never omit an empty quadrant; print it with "0h, nothing moved" instead.
 
 **Time Allocation:** Aggregate Familiar data across all 5 (or 7) days using the same work categories and time calculation algorithm from `/close-day`:
 
@@ -421,6 +455,40 @@ Write to: `$OBSIDIAN_VAULT_PATH/02-weekly/YYYY-[W]WW.md`
 
 Full format with Dataview queries for projects touched/not touched.
 
+**Include `## Portfolio Allocation` whenever Step 2a's confirm gate was confirmed**, immediately after the Business Numbers table and before Achievements (Step 2a runs there for exactly this reason). If the builder rejected the whole table at the confirm gate, this section is omitted entirely from the weekly note — per Step 2a #3, a rejected table produces no section, never a guessed one. When it is included, populate it from Step 2a's module output — every cell is a value the module returned, never a hand computation:
+
+```markdown
+## Portfolio Allocation
+
+| Quadrant | Hours | % | Offense / Defense | Top items |
+|---|---|---|---|---|
+| ① Growth driver | 0.0h | 0% | — | — |
+| ② Operating efficiency | 0.0h | 0% | — | — |
+| ③ Hygiene | 0.0h | 0% | — | — |
+| ④ Reliability | 0.0h | 0% | — | — |
+| Cross-cutting | 0.0h | 0% | — | — |
+| Unresolved | 0.0h | 0% | — | — |
+
+**Week Offense / Defense: X% / Y%** (project work only — meetings carry a quadrant, not a mode)
+
+**Flags:**
+- [one line per flag from the module's `flags`, or "none this week"]
+```
+
+**Filling the columns.** Every one comes from the module's stdout, and none of them is a division this step performs:
+
+| Column | Source |
+|---|---|
+| Hours | `by_quadrant[q]`, and `unresolved_hours` for the last row |
+| % | `percentages[q]`, and `unresolved_pct` for the last row |
+| Offense / Defense | `quadrant_mode_percentages[q]` — **but first check `by_quadrant_mode[q]`.** If its offense and defense hours are both `0.0`, that quadrant recorded no mode: print `—`, never `0% / 0%` |
+| Top items | the 1-2 largest confirmed project or meeting rows in that quadrant, by hours, from Step 2a's confirmed table — names only, no new numbers |
+| Week Offense / Defense | `mode_percentages` |
+
+A row's Hours and its Offense / Defense do not cover the same hours: Hours include that quadrant's meeting time, mode covers only its project time. Say so in one line beneath the table so nobody reads the split as a partition of the row. The Cross-cutting and Unresolved rows have no mode by construction and always print `—`.
+
+Never omit a quadrant row, including one with 0h — an omitted row is exactly how reliability disappears from view. The Unresolved row always appears, even at 0h, and is never folded into any quadrant; its hours count toward the week total (`total_hours` includes `unresolved_hours`), so every quadrant's `%` is a true share of the whole week, not just the resolved subset.
+
 **If strategy layer is active**, include the following sections in the weekly note after "Priorities vs. Reality":
 - Stack Rank vs Reality
 - Push/Protect
@@ -442,9 +510,19 @@ Learnings:
 - [What I'd do differently or insight gained]
 - [Pattern noticed across the week]
 
-Project Progress:
-[Project]: [on-track/needs-attention/stalled] — [1-line summary]
-[Project]: [status] — [1-line]
+Project Progress (by portfolio quadrant):
+(1) Growth driver - Xh
+  <project>: <status> - <one line>
+(2) Operating efficiency - Xh
+  <project>: <status> - <one line>
+(3) Hygiene - Xh
+  <project>: <status> - <one line>
+(4) Reliability - Xh
+  <project>: <status> - <one line>
+Cross-cutting - Xh
+  <project>: <status> - <one line>
+Unresolved - Xh
+  <meeting/item>: <one line>
 
 Time Allocation:
 - Meetings: Xh (Y%)
@@ -461,6 +539,8 @@ Priorities vs. Reality:
 Insight of the Week:
 [One sentence — the sharpest non-obvious thing the week's data revealed. Specific, declarative, anchored.]
 ```
+
+When a quadrant has no project movement, print the quadrant heading with `- 0h, nothing moved` rather than omitting it. This includes Cross-cutting and Unresolved — Unresolved dropping out of the copy-paste journal is the same silent-failure the flags exist to catch. An omitted quadrant (or an omitted Unresolved line) is how reliability disappears. Quadrant hours and grouping come from Step 2a's confirmed output, not a fresh guess at synthesis time.
 
 **Output B.5: Per-goal weekly reflection** (interactive — appended to each goal file's Weekly Log)
 
@@ -523,6 +603,7 @@ These seed into the weekly note so `/open-week` can reference them alongside its
 - Project progress should flag what needs CEO attention, not just list updates.
 - Time allocation should make the user think: "Am I spending time on what matters?"
 - Priorities vs. Reality is the accountability moment — be honest.
+- **Group Project Progress by portfolio quadrant in both Output A and Output B, reading each project's confirmed quadrant from Step 2a. Never omit an empty quadrant.**
 
 ### Step 4: Present to user
 
@@ -539,6 +620,8 @@ Write Output A to `02-weekly/YYYY-[W]WW.md`. Include the AI-Suggested Next Week 
 Set `status: closed` in the weekly note frontmatter. This signals the companion to switch to `week-results` mode, which shows the read-only results dashboard with the Quick Notes copy button.
 
 Also write `work_hours_total: <number>` into the frontmatter (from Step 2's Time Allocation total). This is read by the "Total weekly work hours" chart in `03-meta/weekly-health-trends.md`; omit the key only if the week has no defensible total (e.g., no Familiar data and no in-person estimate) rather than writing a guess.
+
+**Also write `portfolio_by_quadrant` and `portfolio_by_mode` into the frontmatter** — the exact `by_quadrant` and `by_mode` objects Step 2a's module call returned this week. This is the only persistence for portfolio history: next week's Step 2a reads this note's frontmatter back as its `history[0]` entry. **The `portfolio_` prefix exists only to namespace these two keys inside the weekly note's frontmatter (alongside `work_hours_total` and everything else there) — it MUST be stripped back off when the keys are read into the payload's `history` list** (see Step 2a's rekeying instruction). Omit both keys only if Step 2a's confirm gate was rejected this week (no module run happened) — never write a guessed pair.
 
 If the companion is running, tell the builder:
 > Weekly note written. The companion has your quick notes ready to copy at `<url>/week`.
