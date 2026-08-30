@@ -35,15 +35,31 @@ echo "────────────────────────�
 
 # --- Load the allowlist: LIVE from the KB repo (source of truth), shipped copy as fallback ---
 AL=""; AL_SRC=""
+# THREE OUTCOMES, NOT TWO — mirrors live_allowlist() in SKILL.md Step 0.
+# A clone that exists but cannot be REFRESHED is not the same as no clone: the
+# writer may well be on the allowlist, and resolving that to "not SLT" reports a
+# clean negative for a check that was actually blind. A clone still holds the
+# last list it pulled, so prefer stale-but-real over the shipped copy.
+AL_STALE=""
 if [ -d "$KBDIR/.git" ] && git -C "$KBDIR" fetch -q origin main 2>/dev/null \
    && git -C "$KBDIR" show origin/main:_data/kb_authors.txt >"$TMP_AL" 2>/dev/null; then
   AL="$TMP_AL"; AL_SRC="KB repo origin/main:_data/kb_authors.txt (live)"
+elif [ -d "$KBDIR/.git" ] \
+   && { git -C "$KBDIR" show origin/main:_data/kb_authors.txt >"$TMP_AL" 2>/dev/null \
+        || git -C "$KBDIR" show HEAD:_data/kb_authors.txt >"$TMP_AL" 2>/dev/null; }; then
+  AL="$TMP_AL"; AL_STALE=1
+  AL_SRC="KB clone's LAST-KNOWN copy — STALE, could not reach the KB repo"
+elif [ -d "$KBDIR/.git" ]; then
+  bad "the KB clone exists but its _data/kb_authors.txt could not be read at origin/main or HEAD"
+  info "routing is UNKNOWN — this is a blind check, not a 'not SLT' result"
+  info "fix: git -C \"\$OBSIDIAN_VAULT_PATH/60-nsls-knowledge\" fetch origin main"
+  exit 1
 else
   for p in \
     "$HOME/.claude/local-plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt" \
     "$HOME/nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt" \
     "$HOME/.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt"; do
-    [ -f "$p" ] && AL="$p" && AL_SRC="toolkit shipped copy — fallback (couldn't reach KB repo): $p" && break
+    [ -f "$p" ] && AL="$p" && AL_SRC="toolkit shipped copy — pre-clone fallback: $p" && break
   done
 fi
 [ -n "$AL" ] && ok "allowlist: $AL_SRC" || { bad "kb_authors.txt not found (no KB clone, no shipped copy) — is the toolkit installed?"; exit 1; }
@@ -92,8 +108,25 @@ fi
 
 # --- Verdict ---
 echo "─────────────────────────────"
+AL_ENTRIES="$(grep -cvE '^\s*(#|$)' "$AL" 2>/dev/null || echo 0)"
 if [ -n "$MATCH" ]; then
   printf '  ROUTE: \033[32mCOMPANY KB ✓\033[0m  — harvest will commit + push to thensls/nsls-knowledge\n'
+  [ -n "$AL_STALE" ] && info "note: matched against a STALE allowlist — refresh the clone to be certain"
+elif [ "$AL_ENTRIES" -eq 0 ] || [ -n "$AL_STALE" ]; then
+  # A negative drawn from an empty or stale list is a BLIND check, not a result.
+  # The shipped copy is deliberately empty (this repo is public), so "no match"
+  # against it says nothing at all about whether you are on the real allowlist.
+  printf '  ROUTE: \033[33mUNKNOWN ⚠\033[0m  — this check was BLIND, not negative\n'
+  if [ "$AL_ENTRIES" -eq 0 ]; then
+    echo "  The allowlist consulted has no entries: $AL_SRC"
+    echo "  The shipped copy is empty on purpose — this repo is public and a"
+    echo "  populated copy would publish the roster. It cannot answer this question."
+  else
+    echo "  The allowlist consulted is stale: $AL_SRC"
+  fi
+  echo "  Clone or refresh the KB repo, then re-run — do not read this as LOCAL KB:"
+  echo "    git clone https://github.com/thensls/nsls-knowledge.git \"\$OBSIDIAN_VAULT_PATH/60-nsls-knowledge\""
+  echo "    git -C \"\$OBSIDIAN_VAULT_PATH/60-nsls-knowledge\" fetch origin main"
 else
   printf '  ROUTE: \033[33mLOCAL KB ⚠\033[0m  — harvest will NOT reach the shared KB\n'
   echo "  To route to the company KB, either:"
