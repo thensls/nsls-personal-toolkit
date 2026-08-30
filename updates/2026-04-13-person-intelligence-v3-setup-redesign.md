@@ -72,7 +72,7 @@ All 5 skills changed — if you've customized `open-day`, `open-week`, or `close
 
 ## Commits Included
 
-- `fdcaf12` — feat(person-intel): add Lauren Prentiss to Known People Registry
+- `fdcaf12` — feat(person-intel): add Lauren Vance to Known People Registry
 - `9af792b` — feat(person-intel): add personal facts extraction to meeting summarizer
 - `2e55136` — feat(open-day): add relationship context block with coaching goals for today's meetings
 - `f925994` — feat(close-day): add coaching check-in with evidence logging after work summary

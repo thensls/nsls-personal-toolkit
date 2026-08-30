@@ -14,11 +14,11 @@ deepened: 2026-06-11
 
 **Key changes from the deepening pass:**
 1. **Phase 1 re-scoped to a one-day slice** — zero scripts, zero server changes, zero cadence edits. SKILL.md conventions only; scripts promoted later only if the convention proves unreliable.
-2. **"Phase 0" renamed Phase 3a** — the self-scope server endpoint gates nothing until non-exec rollout; Kevin gets full value without it.
+2. **"Phase 0" renamed Phase 3a** — the self-scope server endpoint gates nothing until non-exec rollout; Marcus gets full value without it.
 3. **Coaching budget made enforceable** — role-coach emits cues to `~/.cache/role-coach/cues.json`; the existing `surface_actions_for_day.py` arbiter grows a second input pool (≤1 role-coach cue, totals stay 3 daily / 5 weekly). The weekly cap (open-week Step 4.6) was missing from v1 entirely.
 4. **`fetch_scoped_evidence.py` deleted from the design** — Python can't call MCP. Signal/Hex evidence follows the established orchestrator-calls-MCP-then-pipes-to-normalizer pattern; Airtable reuses existing per-source fetchers.
 5. **Coaching pattern upgraded with behavior-change evidence** — if-then implementation intentions (d=.65), elicit-before-prescribe (MI), task-vs-self phrasing (Kluger & DeNisi), affirmation-first ordering, polymorphic delivery, an explicit go-silent rung, and "zero is a valid dose."
-6. **Full ledger state machine specified** — 7 states, escalation keyed to `cycles-open`, contested mechanics with evidence-class re-open, 3-active-pattern cap, lapse detection (the silent-drop catcher Kevin's human-coach tracker lacked).
+6. **Full ledger state machine specified** — 7 states, escalation keyed to `cycles-open`, contested mechanics with evidence-class re-open, 3-active-pattern cap, lapse detection (the silent-drop catcher Marcus's human-coach tracker lacked).
 7. **Security hardening section added** — 2 critical (`?as=` trust model, unredacted interview answers), 4 high (cache/tmp lifecycle, tier-drop purge, manager-memo confidentiality, memo retention), 3 medium findings with mitigations.
 8. **Write-ownership contract** — role-profile = the seat; operating-memo/personal-profile = the person (only /self-insight writes those); role-coach reads both, writes only `role-coaching/`.
 9. **Floor + horizon (2026-06-11 revision):** coaching tracks both the role you have (`role-profile.md`) and the role you want (`role-trajectory.md`) — "here's how you get to the next milestone on the way to X." The trajectory is optional (mastery-in-seat is a valid answer), milestone-gated, and treated as sensitive content.
@@ -27,11 +27,11 @@ deepened: 2026-06-11
 
 A standalone coaching skill that any NSLS employee can run from the personal toolkit. It resolves who you are (title, role, accountabilities, role strategy), scopes its evidence to the size of your seat (IC → your own Quick Notes; manager → your team; exec/CEO → all of Signal + LOPs + SLT meeting intelligence + Hex business metrics), and coaches you on the best way to contribute from that seat — with a memory, so advice compounds instead of repeating.
 
-**Two role files, one coaching stance.** The skill reads the seat you have (`role-profile.md` — the floor: accountabilities you're paid for today) and the seat you want (`role-trajectory.md` — the horizon: target role + the milestones between here and there). Coaching always comes from both: perform the floor, advance the horizon. "Here's how you get to the next milestone on your way to X" is the default frame, not a special case — Kevin's CEO-in-waiting situation (floor: title "Ignite"; horizon: CEO, gated on contracting) is just the first instance. A user with no target role runs in **mastery mode**: the horizon is depth in the current seat, and the trajectory file is simply absent.
+**Two role files, one coaching stance.** The skill reads the seat you have (`role-profile.md` — the floor: accountabilities you're paid for today) and the seat you want (`role-trajectory.md` — the horizon: target role + the milestones between here and there). Coaching always comes from both: perform the floor, advance the horizon. "Here's how you get to the next milestone on your way to X" is the default frame, not a special case — Marcus's CEO-in-waiting situation (floor: title "Ignite"; horizon: CEO, gated on contracting) is just the first instance. A user with no target role runs in **mastery mode**: the horizon is depth in the current seat, and the trajectory file is simply absent.
 
-The coaching pattern is the one proven in Kevin's 2026-06-11 leadership review session: evidence sweep → stated-priorities-vs-observed-behavior diff → blind spots at two altitudes → strengths/traps with a crowding-out test → concrete moves with forcing functions → follow-through tracking. This plan codifies that pattern so it works for a CS rep's seat as well as the CEO's.
+The coaching pattern is the one proven in Marcus's 2026-06-11 leadership review session: evidence sweep → stated-priorities-vs-observed-behavior diff → blind spots at two altitudes → strengths/traps with a crowding-out test → concrete moves with forcing functions → follow-through tracking. This plan codifies that pattern so it works for a CS rep's seat as well as the CEO's.
 
-**Not Kevin-specific.** Kevin is the first user (role: CEO-in-waiting, scope: everything), but the design premise is that the role file, not the skill, carries the role.
+**Not Marcus-specific.** Marcus is the first user (role: CEO-in-waiting, scope: everything), but the design premise is that the role file, not the skill, carries the role.
 
 ## Problem Statement
 
@@ -57,13 +57,13 @@ The coaching pattern is the one proven in Kevin's 2026-06-11 leadership review s
 #### Role resolution (Step 0) — precedence order
 
 1. **`10-strategy/role-coaching/role-profile.md`** (vault) — the seat you have, self-described framing included. Created on first run via interview (see UX Appendix §1); user-editable; re-read every run.
-1b. **`10-strategy/role-coaching/role-trajectory.md`** (vault, optional) — the seat you want: target role, why, ordered milestones with gates ("contracting signed", "owns a P&L line", "has run a hiring loop end-to-end"), evidence of readiness so far. For Kevin: target = CEO, current milestone = contract executed. Where the target role maps to the NSLS job framework (Heather/Jenna's leveling work), milestones reference the framework's next-level expectations rather than inventing parallel criteria. Absent file = mastery mode, stated in the heartbeat.
+1b. **`10-strategy/role-coaching/role-trajectory.md`** (vault, optional) — the seat you want: target role, why, ordered milestones with gates ("contracting signed", "owns a P&L line", "has run a hiring loop end-to-end"), evidence of readiness so far. For Marcus: target = CEO, current milestone = contract executed. Where the target role maps to the NSLS job framework (Heather/Mara's leveling work), milestones reference the framework's next-level expectations rather than inventing parallel criteria. Absent file = mastery mode, stated in the heartbeat.
 2. **People Ops Airtable** — Employees (`role_title`, `level`, `role_master_doc_url`, `scorecard_doc_url`) → ScoreCard → Accountabilities + Competencies. Canonical for *what the seat owns*. Pre-fills the interview so users confirm rather than type.
 3. **org-chart.json** (builder toolkit `_shared/context/`) — canonical for *structure*: `manager`, `manages[]`, `department`. Freshness check (warn >7 days, reuse `resolve_user.py` pattern).
 
 **Conflicts are surfaced, never silently resolved** — but disclosure is gated (security M7): surface title conflicts the user's own answers create; never reveal a not-yet-announced *manager* change through the conflict prompt. Contractors / people missing from org-chart (e.g., Lauren) get the interview path: self-described role, reduced-confidence coaching, never a fabricated ScoreCard. Role-tier change detected at resolve time → archive coaching log + **purge evidence cache rows above the new tier** (security H3), restart baseline.
 
-**Phase 1 simplification:** for Kevin, role-profile.md is hand-seeded (10 lines). The interview flow, ScoreCard pre-fill, and conflict machinery ship in Phase 3 when non-Kevin users arrive.
+**Phase 1 simplification:** for Marcus, role-profile.md is hand-seeded (10 lines). The interview flow, ScoreCard pre-fill, and conflict machinery ship in Phase 3 when non-Marcus users arrive.
 
 #### Scope ladder (Step 1) — enforcement is server-side, always
 
@@ -87,7 +87,7 @@ The codified pattern, scaled by tier. Steps 1–6 below are the v1 skeleton; the
 2b. **Trajectory readiness check** (when role-trajectory.md exists) — the current milestone's gate diffed against evidence: what this cycle produced that a promotion case could cite, what the gate still lacks. The floor is never sacrificed to the horizon: if floor accountabilities slipped while horizon work advanced, that *is* the week's gap (a next-role case built on a neglected current seat is self-defeating, and the coaching says so).
 3. **Two-altitude blind spots** — cycle-level (this week) + horizon-level (quarter for ICs/managers; strategy for execs). With a trajectory on file, horizon-level explicitly includes milestone drift: a milestone untouched for 4+ cycles gets named.
 4. **Strengths/traps with the crowding-out test** — a strength is named *with* the thing it displaces, evidenced, not moralized.
-5. **Moves with forcing functions** — every recommendation names a date, an artifact, or a person. When a trajectory exists, weekly/deep output includes **at least one milestone move**: a this-cycle action that produces citable evidence toward the current gate (not "grow toward the role" — "run the Q3 budget review solo and have Anish countersign the output").
+5. **Moves with forcing functions** — every recommendation names a date, an artifact, or a person. When a trajectory exists, weekly/deep output includes **at least one milestone move**: a this-cycle action that produces citable evidence toward the current gate (not "grow toward the role" — "run the Q3 budget review solo and have Devan countersign the output").
 5b. **Trajectory honesty rules** — the coach never implies the org owes the user the target role; it coaches *evidence-building*, not entitlement ("your case for X will cite..."). If the milestones haven't moved in 2 consecutive quarters, deep mode asks the renegotiation question directly: is this still the role you want, or is mastery mode the honest answer? Aspiration drift left unexamined is the trajectory-file version of a zombie pattern.
 6. **Memory check** — patterns from `coaching-log.md` (full state machine in Memory Appendix).
 
@@ -134,7 +134,7 @@ framework-ref: <job-framework level/role, when one maps>
 One paragraph, the user's words.
 ## Milestones (ordered; current = first unchecked)
 - [x] Permanent-CEO offer extended (2026-05-22)
-- [ ] Contract executed — gate: signed agreement; evidence so far: Keith engaged 5/26, comp memo to Cory due 6/12
+- [ ] Contract executed — gate: signed agreement; evidence so far: Keith engaged 5/26, comp memo to Dana due 6/12
 - [ ] First board cycle owned end-to-end as CEO — gate: Aug meeting run solo
 ## Readiness evidence ledger
 Dated pointers a promotion/transition case could cite. Pointers, never quotes.
@@ -179,12 +179,12 @@ Every caller: heartbeat echo first, fenced slash invocation, "after the skill re
 
 ## Implementation Phases
 
-### Phase 1 — The one-day slice: standalone `/role-coach`, T3/T4, Kevin (NO scripts, NO server work, NO cadence edits)
+### Phase 1 — The one-day slice: standalone `/role-coach`, T3/T4, Marcus (NO scripts, NO server work, NO cadence edits)
 - `skills/role-coach/SKILL.md` — orchestrates everything as conventions: read hand-seeded role-profile.md → evidence sweep via existing `signal_*` MCP tools + existing Airtable fetchers + vault reads, heartbeat per source → coaching pattern per `references/coaching-pattern.md` → rubric checklist → render for approval (UX §4) → append to `coaching-log.md` per the Memory Appendix schema. (**No `disable-model-invocation`** in frontmatter.)
 - `references/coaching-pattern.md` — the 6-step pattern + all Research Insights rules (they're prompt patterns; they cost nothing).
 - Modes: `--week` and `--deep` only. Daily mode is deferred — it's the most nag-prone surface; weekly must prove out first.
 - Hand-seeded `role-profile.md` (10 lines) **and `role-trajectory.md`** (target: CEO; milestone 1: contract executed — the gates already exist in the nsls-ceo-transition project doc, just transcribe them); empty `coaching-log.md` seeded from the 6/11 memo's crowd-out list.
-- Success: Kevin runs `/role-coach --deep` and gets the 6/11-quality review reproducibly; `--week` lands the said/did/gap block + Horizon block.
+- Success: Marcus runs `/role-coach --deep` and gets the 6/11-quality review reproducibly; `--week` lands the said/did/gap block + Horizon block.
 
 ### Phase 2 — Cadence integration + budget arbiter
 - cues.json + the `surface_actions_for_day.py` second pool (the one genuine code change; small, in person-intelligence's surfacer)
@@ -212,7 +212,7 @@ Open design questions: employee↔member identity join (auth.nsls.org `sub`?); S
 
 ## Acceptance Criteria
 
-- [ ] Phase 1 loop works end-to-end for Kevin with zero new scripts: role → scoped evidence → coaching → approval → ledger
+- [ ] Phase 1 loop works end-to-end for Marcus with zero new scripts: role → scoped evidence → coaching → approval → ledger
 - [ ] Trajectory: weekly/deep output contains exactly one milestone move (if-then form) when role-trajectory.md exists; mastery mode (no file) renders no horizon content and no prompt to create one; milestone check-offs go through the approval flow; daily cues never name the target role (H1b)
 - [ ] Floor-before-horizon: a test week where floor accountabilities slipped while horizon work advanced produces a gap line naming the slip, not a celebration of milestone progress
 - [ ] Every coaching claim in a memo carries a citation; uncitable claims absent
@@ -223,14 +223,14 @@ Open design questions: employee↔member identity join (auth.nsls.org `sub`?); S
 - [ ] Cadence: open-day total ≤3 with ≤1 role-coach cue; open-week total ≤5; zero-evidence days produce heartbeat skips
 - [ ] Approval flow: section-by-section accept/edit/contest/decline; decline discards with one-line log
 - [ ] Scope: T1 user cannot elicit teammate data through any prompt; 403s degrade with heartbeats; tier drop purges cache
-- [ ] Kevin (T4), one manager (T2), one IC (T1) each complete a weekly cycle (Phases 1→3)
+- [ ] Marcus (T4), one manager (T2), one IC (T1) each complete a weekly cycle (Phases 1→3)
 
 ## Dependencies & Risks
 
 | Risk | Mitigation |
 |------|------------|
 | Signal self-scope endpoint slips | T1 degraded mode ships anyway: ScoreCard + vault coaching with explicit "no Signal evidence" banner |
-| CEO org-wide coaching perceived as surveillance | Cory's CPM framing — manager accountability, not monitoring; coaching output is about the *user's* contribution; evidence stays aggregate below T2 scope; rubric on output; H4/H5 confidentiality + retention |
+| CEO org-wide coaching perceived as surveillance | Dana's CPM framing — manager accountability, not monitoring; coaching output is about the *user's* contribution; evidence stays aggregate below T2 scope; rubric on output; H4/H5 confidentiality + retention |
 | Advice fatigue / nagging | go-silent rung, polymorphic delivery, contested state, zero-is-valid-dose, surfacer decay reuse — and daily mode deferred until weekly proves out |
 | Cadence-skill bloat | thin callers, one-line cues, single arbiter-enforced budget |
 | org-chart/Airtable drift | freshness warnings; Airtable gotchas doc (field IDs, Python-side filtering) |
@@ -249,7 +249,7 @@ Max 5 questions; only Q3–Q5 require typing (Airtable/org-chart pre-fill makes 
 
 Here's what the org systems say about you:
   Title:        Ignite (People Ops, level L4)
-  Reports to:   Gary Tuerack
+  Reports to:   Warren Aldrich
   You manage:   — (no direct reports in org-chart.json)
   Accountable for (ScoreCard, updated 2026-04-12): [3 items]
 
@@ -292,16 +292,16 @@ Zero case: `🪑 Role lens: log scanned, 0 open patterns relevant today.`
 ### Role Coaching — week of Jun 8
 **Said:** #1 priority = ship L2 activation experiment (stack rank, Mon).
 **Did:** 11h on retreat logistics, 1.5h on activation (calendar + Quick Notes, Jun 8–12).
-**Gap:** Your #1 got 9% of the week. Logistics is delegable to Jenna; the experiment is not.
+**Gap:** Your #1 got 9% of the week. Logistics is delegable to Mara; the experiment is not.
 
 **Pattern ledger:**
   ↗ "IC work crowds goal work" — week 3, escalating. Forcing function: book the Tue block before Monday standup.
   ✓ "No Hex data before reviews" — closed (pulled the card both reviews this week).
-  ⏸ "Avoids Gary escalations" — contested 5/28, suppressed pending new evidence class.
+  ⏸ "Avoids Warren escalations" — contested 5/28, suppressed pending new evidence class.
 
 **Horizon — CEO, gate: contract executed:**
-  Evidence this week: comp memo sent to Cory 6/12 ✓. Still open: Keith's redline.
-  Milestone move for next week: when Keith replies, I will turn it same-day and copy Cory.
+  Evidence this week: comp memo sent to Dana 6/12 ✓. Still open: Keith's redline.
+  Milestone move for next week: when Keith replies, I will turn it same-day and copy Dana.
 ```
 
 (The Horizon block renders only when role-trajectory.md exists and only in weekly/deep modes; one milestone, one evidence line, one if-then move. Mastery mode renders nothing here — no nag to acquire an ambition.)
@@ -309,7 +309,7 @@ Status grammar: `↗ escalating / → steady / ↘ improving / ✓ closed / ⏸ 
 
 ### §4 Deep memo approval flow
 Present full memo in-session, then **section-by-section** approval ("all" accepts the rest). Per section: **Accept / Edit / Contest a claim / Decline section**.
-- Contest: claim stays, marked inline — `> ⏸ CONTESTED (Kevin, 2026-06-11): "<reason>" — suppressed until new evidence class.` Ledger row flips to contested. Contested ≠ deleted.
+- Contest: claim stays, marked inline — `> ⏸ CONTESTED (Marcus, 2026-06-11): "<reason>" — suppressed until new evidence class.` Ledger row flips to contested. Contested ≠ deleted.
 - Decline: section discarded entirely; one-line log entry; no ghost copies.
 - Close: `Writing memos/2026-06-11-deep.md (5 accepted, 1 declined, 2 claims contested). Log: 3 patterns seeded, 1 closed.`
 
@@ -324,7 +324,7 @@ Wrong: *"Great job this week! You're really crushing it!"* (adjectives doing the
 
 ## Memory Appendix — coaching-log.md design (2026-06-11)
 
-**Prior-art findings:** Kevin's human-coach tracker (45 commitments) failed three ways a state machine fixes: silent drops surfaced only at audit (→ time-based `lapsed`), no aging on 12 open items (→ `cycles-open` counter), and rows were *moves* so the same pattern reappeared as 3 separate commitments (→ **rows are patterns; moves attach to patterns**). The shipped loop-closure ledger contributes ids, idempotent reconcile, and `surfaced` counts; person-intelligence contributes the section format. Format is **markdown sections** (not a table, not JSON) because contesting requires human editing in Obsidian; the file is validated on every run, malformed edits get a heartbeat warning.
+**Prior-art findings:** Marcus's human-coach tracker (45 commitments) failed three ways a state machine fixes: silent drops surfaced only at audit (→ time-based `lapsed`), no aging on 12 open items (→ `cycles-open` counter), and rows were *moves* so the same pattern reappeared as 3 separate commitments (→ **rows are patterns; moves attach to patterns**). The shipped loop-closure ledger contributes ids, idempotent reconcile, and `surfaced` counts; person-intelligence contributes the section format. Format is **markdown sections** (not a table, not JSON) because contesting requires human editing in Obsidian; the file is validated on every run, malformed edits get a heartbeat warning.
 
 ### Schema (one `###` block per pattern)
 ```markdown
@@ -333,8 +333,8 @@ state: open | first-named: 2026-06-11 | last-evidence: 2026-06-11 | cycles-open:
 **Pattern**: Comp/role decisions reach verbal agreement; the written close lags weeks.
 **Move (current)**: When a comp/role agreement happens verbally, I will send a written recap same-day.   # if-then form, user-restated
 **Evidence**: (dated pointers, never quotes; cap 5)
-- 2026-06-11: Gary comp framework verbally agreed ~5/06, no artifact by 6/11 (memos/2026-06-11-deep.md §4)
-**History**: 2026-06-11 proposed (deep) → confirmed by Kevin
+- 2026-06-11: Warren comp framework verbally agreed ~5/06, no artifact by 6/11 (memos/2026-06-11-deep.md §4)
+**History**: 2026-06-11 proposed (deep) → confirmed by Marcus
 ```
 File frontmatter: `runs: N`, `tier: T4`, `active_count`. Role change archives the file to `memos/archive/coaching-log-<role>-<date>.md`.
 
@@ -352,10 +352,10 @@ File frontmatter: `runs: N`, `tier: T4`, `active_count`. Role change archives th
 ### Escalation ladder (keyed to cycles-open; `surfaced` enforces phrasing variety)
 - **Rung 0 (1–2 cycles):** normal raise; at `surfaced ≥ 2`, verbatim repeat forbidden — reframe or stay silent.
 - **Rung 1 (3 cycles):** age flag + feedforward tense + forcing function escalates to artifact-with-date; output shifts from advice to question.
-- **Rung 2 (6 cycles):** forcing function adds a named person (role-profile's challenge team — Cory/Gary for Kevin); weekly block demands a state change: recommit with a *new* move, contest, or close-on-purpose. No decision after 2 more cycles → forced triage line that cannot be skipped.
+- **Rung 2 (6 cycles):** forcing function adds a named person (role-profile's challenge team — Dana/Warren for Marcus); weekly block demands a state change: recommit with a *new* move, contest, or close-on-purpose. No decision after 2 more cycles → forced triage line that cannot be skipped.
 
 ### Cold start & cap
-Run 1 = interview + inventory, zero patterns. Run 2 = proposals allowed, no escalation. **Cap: 3 active** (`open`+`progressing`) — maps to the 3-action budget; Kevin's own data argues the ceiling (the "max 5 projects" commitment failed at 14; ≤3 live commitments stuck). At cap, the skill proposes a **swap**, never a 4th.
+Run 1 = interview + inventory, zero patterns. Run 2 = proposals allowed, no escalation. **Cap: 3 active** (`open`+`progressing`) — maps to the 3-action budget; Marcus's own data argues the ceiling (the "max 5 projects" commitment failed at 14; ≤3 live commitments stuck). At cap, the skill proposes a **swap**, never a 4th.
 
 ### Trajectory interplay
 Milestone *state* lives in role-trajectory.md (checkboxes + evidence ledger), not in the coaching log — milestones are goals, patterns are behaviors. The ledger participates two ways: (1) patterns may carry `lens: horizon` when the recurring behavior blocks a milestone specifically ("avoids the contract chase" is a pattern; "contract executed" stays a milestone); horizon patterns count against the same 3-active cap — the horizon doesn't get a separate nag budget. (2) Deep mode runs the **2-quarter renegotiation check**: no milestone movement across two quarterly memos → the memo's Trajectory section asks the keep/park/mastery question outright, and `status: parked` silences all horizon coaching without deleting the ambition.

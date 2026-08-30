@@ -16,7 +16,7 @@ Also handles the decay + dismiss model:
   - Status updates are persisted back to coaching_actions.json
 
 Usage:
-    python3.12 surface_actions_for_day.py --people "Adam Stone,Gary Tuerack,Lauren Prentiss"
+    python3.12 surface_actions_for_day.py --people "Adam Ferris,Warren Aldrich,Lauren Vance"
     python3.12 surface_actions_for_day.py --people-stdin   # read newline-separated names
     python3.12 surface_actions_for_day.py --weekly         # cap 5, broader scope
 

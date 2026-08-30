@@ -5,7 +5,7 @@ in sync with the builder toolkit's org-chart.json.
 Reads `org-chart.json`. For each employee, finds the matching `30-people/*.md`
 file in the Obsidian vault. Updates only an allowlist of frontmatter fields.
 **Never touches the body** of any file, and never touches frontmatter fields
-outside the allowlist (so Kevin's curated tags, health scores, role descriptions,
+outside the allowlist (so Marcus's curated tags, health scores, role descriptions,
 and human-authored sections all stay put).
 
 Usage:
@@ -118,8 +118,8 @@ def canonical_from_redirect(text):
 def build_redirect_map(people_dir):
     """Map every redirect's own name -> the canonical (preferred) name.
 
-    Rippling stores formal names ("Jordyn Tannenbaum", "Jana Amsellem") for people who
-    go by a preferred name ("Jordan Tannenbaum", "Red Akasha"). Without this map the sync
+    Rippling stores formal names ("Jordyn Sutter", "Jana Kessler") for people who
+    go by a preferred name ("Jamie Sutter", "Robin Alder"). Without this map the sync
     writes the Rippling spelling into every report's `manager:` field, silently reverting
     the preferred name across the vault.
     """
@@ -170,6 +170,67 @@ def compute_proposed_fields(emp, redirect_map=None):
         # or the Rippling spelling overwrites the preferred name on every report.
         proposed["manager"] = yaml_quote(preferred(emp["manager"], redirect_map))
     return proposed
+
+
+def existing_email(path):
+    """The file's current frontmatter `email`, lowercased, or "" if absent."""
+    try:
+        fm_lines, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+    except OSError:
+        return ""
+    if not fm_lines:
+        return ""
+    val, _ = read_field(fm_lines, "email")
+    return (val or "").strip().strip('"').strip("'").lower()
+
+
+def resolve_collisions(path_to_emps):
+    """Pick ONE org-chart record per target file, and never churn a contested `email`.
+
+    Two org-chart records can resolve to the same profile: one person holding an agency
+    address plus an @nsls.org one, filed under a formal first name that a person-redirect
+    stub points at the canonical file. The main loop used to visit both and write `email`
+    from each in turn, so the field oscillated between the two addresses on every run and
+    never converged — a diff that is never clean, forever.
+
+    Rules, in order:
+      1. If exactly one record maps to the file, it wins outright.
+      2. Otherwise the record whose email already matches the file's `email` wins. This is
+         what makes the sync IDEMPOTENT: once a human has chosen a primary address, the
+         record carrying it wins every subsequent run.
+      3. If none matches (a brand-new file, or a curated address in neither record), pick
+         deterministically by sorted name and DROP `email` from that record's proposals, so
+         the sync never picks the primary address on the person's behalf.
+
+    Returns (chosen, collisions) where chosen is {path: (emp, drop_email)}.
+    """
+    chosen, collisions = {}, []
+    for path, emps in path_to_emps.items():
+        if len(emps) == 1:
+            chosen[path] = (emps[0], False)
+            continue
+        current = existing_email(path)
+        match = [e for e in emps if (e.get("email") or "").lower() == current] if current else []
+        if match:
+            winner, drop_email = match[0], False
+            note = f"kept the file's existing email ({current})"
+        else:
+            winner = sorted(emps, key=lambda e: e.get("name", ""))[0]
+            drop_email = True
+            note = "no record matches the file's email — leaving `email` untouched"
+        chosen[path] = (winner, drop_email)
+        collisions.append(
+            {
+                "file": path.name,
+                "records": sorted(
+                    f"{e.get('name','?')} <{e.get('email','')}>" for e in emps
+                ),
+                "winner": f"{winner.get('name','?')} <{winner.get('email','')}>",
+                "email_written": not drop_email,
+                "note": note,
+            }
+        )
+    return chosen, collisions
 
 
 def follow_redirect(path, people_dir):
@@ -231,7 +292,7 @@ def build_email_index(people_dir):
             continue
         # Redirect stubs carry the canonical person's email on purpose. Indexing them
         # lets filename sort order decide which file wins — that is how "Jordyn
-        # Tannenbaum.md" beat "Jordan Tannenbaum.md". Never index a redirect.
+        # Sutter.md" beat "Jamie Sutter.md". Never index a redirect.
         if is_redirect(text):
             continue
         fm_lines, _ = parse_frontmatter(text)
@@ -246,13 +307,15 @@ def build_email_index(people_dir):
     return index
 
 
-def diff_employee(emp, path, redirect_map=None):
+def diff_employee(emp, path, redirect_map=None, drop_email=False):
     """Return list of (field, old, new) tuples for this employee's file."""
     text = path.read_text(encoding="utf-8")
     fm_lines, _ = parse_frontmatter(text)
     if not fm_lines:
         return []
     proposed = compute_proposed_fields(emp, redirect_map)
+    if drop_email:
+        proposed.pop("email", None)
     changes = []
     for field in SYNC_FIELDS:
         if field not in proposed:
@@ -330,12 +393,27 @@ def main():
         "changes_by_file": {},
     }
 
+    # Group by TARGET FILE first. Two org-chart records can land on one profile, and
+    # writing both in sequence is what made `email` oscillate. See resolve_collisions().
+    path_to_emps = {}
     for emp in employees:
         path = find_obsidian_file(emp, people_dir, email_index)
         if path is None:
             summary["employees_without_obsidian_file"].append(emp.get("name", "?"))
             continue
-        changes = diff_employee(emp, path, redirect_map)
+        path_to_emps.setdefault(path, []).append(emp)
+
+    chosen, collisions = resolve_collisions(path_to_emps)
+    summary["record_collisions"] = collisions
+    if collisions:
+        print("Multiple org-chart records resolved to one profile:")
+        for c in collisions:
+            print(f"  {c['file']}: {' + '.join(c['records'])}")
+            print(f"    -> {c['winner']}; {c['note']}")
+        print()
+
+    for path, (emp, drop_email) in chosen.items():
+        changes = diff_employee(emp, path, redirect_map, drop_email)
         if not changes:
             summary["files_unchanged"] += 1
             continue

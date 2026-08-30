@@ -14,7 +14,7 @@ execution: code
 ## Goal Capsule
 
 - **Objective:** Make the `thensls/nsls-knowledge` markdown KB browsable and understandable to employees through a website centered on an interactive KPI driver map, queryable by the Signal bot through an MCP server, and kept current by both AI (meeting harvest) and humans (git-backed browser editing) — with git remaining the single source of truth.
-- **Product authority:** Kevin Prentiss.
+- **Product authority:** Marcus Vance.
 - **Open blockers:** None blocking planning. Tech direction is set (custom Next.js app on Vercel; in-app editor committing through `kb-gateway` gated by NSLS SSO; v1 shows structure + definitions + narratives, not live values). Remaining items are deferred to planning — see Outstanding Questions.
 
 ## Product Contract
@@ -174,7 +174,7 @@ graph LR
 - **KTD7 — Rendering = `react-markdown` + `remark-gfm` + `remark-wiki-link` + `gray-matter`** in async Server Components; `remark-wiki-link` `pageResolver`/`hrefTemplate` maps `[[Metric Name]]` → `/kpi/<slug>`.
 - **KTD8 — Auth mirrors track-studio.** `openid-client` v6 + `jose` A256GCM JWE session cookie, `middleware.ts` gates all routes except `/api/auth/*`, identity keyed on `(iss, sub)` never email. Client registration JSON handed to an admin (Tier 3); env read at call-time; graceful `auth_not_configured` until the secret lands in Doppler.
 - **KTD9 — Content freshness.** Website reads a build-time checkout of `nsls-knowledge`; a GitHub webhook on commit triggers Vercel on-demand revalidation so harvest/editor commits appear without a manual redeploy.
-- **KTD10 — Owner map via frontmatter.** The stakeholder owner lives in each article's `owner:` frontmatter as a person wikilink (`owner: "[[Ashleigh Smith]]"` — the live convention); `get_owner` resolves topic→owner from it (stripping the wikilink), with a fallback default owner. No separate owner store.
+- **KTD10 — Owner map via frontmatter.** The stakeholder owner lives in each article's `owner:` frontmatter as a person wikilink (`owner: "[[Priya Nakamura]]"` — the live convention); `get_owner` resolves topic→owner from it (stripping the wikilink), with a fallback default owner. No separate owner store.
 - **KTD11 — Live schema is richer than planned; carry it.** The KB evolved past the plan's snapshot: ~70 populated files (not 30 stubs), node types `theme|kpi|rubric|sub-rubric|channel|l2|l3`, and fields `lop_level`, `provisional`/`proposed_by`, `collaborators`, `audience`, `harvest_source`/`harvest_model`/`harvest_stats`, `project_home`. The website's frontmatter model and the MCP tools carry these (e.g., the map can badge L1/L2 levels and provisional nodes).
 
 ### High-Level Technical Design
@@ -495,4 +495,4 @@ Phased delivery; U-IDs stable. Phases 1–2 unblock 3–5.
 - **MCP-on-Vercel is stateless** — long-lived streaming sessions aren't guaranteed; if the bot needs persistent sessions, move `app/mcp/route.ts` to a small Railway service (same query core, no rework).
 - **Naive-parser blast radius** — the U5 list-parse change touches the shared parser; the regression tests guard existing scalar behavior. Coordinate with the harvest pipeline (also a kb-gateway consumer).
 - **Write-back sensitivity** — U18 puts employee-sourced content into the shared company KB; the rubric gate + mandatory human review are the controls. Do not auto-commit.
-- **Content authoring is partly human** — U3's KPI definitions need SLT/Kevin input; the plan structures and seeds them but the substance is a content task, not just code.
+- **Content authoring is partly human** — U3's KPI definitions need SLT/Marcus input; the plan structures and seeds them but the substance is a content task, not just code.

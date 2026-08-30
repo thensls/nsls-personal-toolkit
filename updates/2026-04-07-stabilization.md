@@ -14,7 +14,7 @@ backfilled: true
 
 ## Why
 
-The earliest shared versions of the toolkit had three friction points: `/setup` collided with the builder toolkit's `/setup`, some skill files were broken pointers instead of actual content, and Obsidian paths were hardcoded to Kevin's vault. This release cleans all three — you can safely install alongside the builder toolkit and the skills work with your own vault path.
+The earliest shared versions of the toolkit had three friction points: `/setup` collided with the builder toolkit's `/setup`, some skill files were broken pointers instead of actual content, and Obsidian paths were hardcoded to Marcus's vault. This release cleans all three — you can safely install alongside the builder toolkit and the skills work with your own vault path.
 
 ## What Changed
 

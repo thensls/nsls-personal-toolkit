@@ -264,15 +264,70 @@ goals = [{
     "hit_rate_28d": "8/12",
     "end": "2026-06-30",
     "weeks_remaining": 5,
+    "checkpoint_due": "2026-09-21",          # None when the key is absent
+    "checkpoint_label": "Re-baseline at current altitude; then decide the target",
+    "checkpoint_class": "due",               # overdue | due | next_week | future | none
+    "checkpoint_days_out": 3,                # negative when overdue
 }, ...]
 ```
+
+**Goal checkpoints — a dated decision the goal owes itself.**
+
+A goal's *measurement basis* can go stale independently of its progress: the baseline was taken under conditions that no longer hold (a move, an injury, a changed instrument), so continuing to score against it produces a confident wrong answer. That decision needs a date, and the date needs somewhere to surface. Two optional frontmatter keys carry it:
+
+```yaml
+checkpoint_due: 2026-09-21
+checkpoint_label: "Re-baseline at current altitude; then decide the target"
+```
+
+Parse both when present. Classify against this week's Monday (`week_start`) and Sunday (`week_end`):
+
+| Condition | Class | Behavior |
+|---|---|---|
+| `checkpoint_due` < `week_start` | **overdue** | 🔴 render in Goal Checkpoints; **force into the Recommended Top 3 candidate pool** |
+| `week_start` ≤ due ≤ `week_end` | **due** | 🟠 render in Goal Checkpoints; **force into the Top 3 candidate pool** |
+| `week_end` < due ≤ `week_end + 7d` | **next week** | 🟡 one heads-up line in Goal Checkpoints; no escalation |
+| due > `week_end + 7d` | **future** | silent — counted in the heartbeat only |
+
+A checkpoint is a *decision*, not a task: it is forced into the **candidate pool**, never auto-written as a Top 3 priority. The builder still chooses.
+
+**Decline history — the persistence this needs.** "Declined two weeks running" is only sayable if declines are recorded, so they are, in the weekly note's own frontmatter (the same place Step 5 already writes health aggregates):
+
+```yaml
+checkpoints_declined: [vo2_max]     # overdue checkpoints offered this week and not taken
+checkpoints_escalated: [vo2_max]    # the once-only notice has already been spent
+```
+
+- **Step 4** is where a decline becomes a fact: if an `overdue` checkpoint was offered in the candidate pool and the builder's chosen Top 3 does not include it, append that goal's `slug` to `checkpoints_declined`. Not choosing it *is* the decline — do not ask a second time to confirm.
+- **Step 1h** reads `checkpoints_declined` and `checkpoints_escalated` from the **two most recent existing weekly notes** (`02-weekly/*.md`, by filename sort — not "the last two calendar weeks", because a skipped week has no file).
+- **The notice fires once, and only when all three hold:** the checkpoint is still `overdue`; the slug appears in `checkpoints_declined` in *both* of those two notes; and it appears in `checkpoints_escalated` in *neither*. Then say it plainly, once, and Step 5 writes the slug into this week's `checkpoints_escalated` so it is never repeated.
+- **Fewer than two prior weekly notes exist** → the condition cannot be evaluated. Say so in the heartbeat (`decline history: 1 prior week only — escalation not evaluable`) rather than treating absence as "no declines".
+
+Carrying that state is what makes the sentence honest; without it the skill would be asserting a behavior it cannot perform.
+
+**Prove the check ran (it is otherwise vacuous).** Emit a one-line heartbeat every time, including the zero case:
+
+```
+Step 1h: 4 active goals · 1 carries a checkpoint · 1 due this week (vo2_max, 2026-09-21) · 0 overdue
+Step 1h: 4 active goals · 0 carry a checkpoint key — nothing to surface
+```
+
+Never render an empty Goal Checkpoints section and never let a parse failure read as "none due". If `checkpoint_due` is present but unparseable as `YYYY-MM-DD`, surface it as a malformed-key warning naming the goal file — do not skip it silently, and do not guess the date.
+
+Carry forward per goal: `checkpoint_due`, `checkpoint_label`, `checkpoint_class` (`overdue` / `due` / `next_week` / `future` / `none`), `checkpoint_days_out` (negative when overdue).
 
 **Coaching signals** to surface in Step 3 per goal:
 - If `hit_rate_7d` < 50% AND not "no data yet": include the coaching question pattern.
 - If metric goal is trending wrong direction (current < baseline OR weekly trend negative for 3+ weeks): flag "trajectory needs review".
 - If `weeks_remaining` ≤ 2 AND `progress_pct` < 50%: flag "behind on this — accelerate or rescope".
 
-Skip 1h entirely if no goal files exist or none are active.
+**Skip rule — heartbeat first, then skip.** If no goal files exist or none are active, skip the rest of 1h — but **emit the zero-case heartbeat before skipping**, plus any malformed-key warning:
+
+```
+Step 1h: 0 active goals — no checkpoint check possible (skipping 1h)
+```
+
+A bare skip is the bug this whole sub-step guards against: it makes *the check never ran* indistinguishable from *the check ran and found nothing*. The heartbeat is unconditional; only the work after it is skippable.
 
 ### Step 1.5: Strategy layer check
 
@@ -583,6 +638,7 @@ For each active personal goal:
   - Progress: [baseline] → [current] / [target] [unit] ([progress_pct]%)
   - Last 7 days: [hit rate description, e.g., "2/3 anchor days hit"]
   - This week: **[weekly action commitment]** at [anchor]
+  - [If checkpoint_class is overdue/due/next_week: `⏳ Checkpoint [due date] — [checkpoint_label]`]
   - [Coaching question if hit_rate_7d < 50% OR trajectory_warning]
 
 *If coaching signals fire, surface them as questions, not blame. Examples:*
@@ -590,12 +646,30 @@ For each active personal goal:
 > "[Goal] metric has trended down 3 weeks straight. Time to revisit the protocol, the anchor, or the target?"
 > "[Goal] has 2 weeks left and you're at 30% of target. Accelerate, rescope, or graduate to next quarter?"
 
+### Goal Checkpoints
+
+*Populated from Step 1h. **Render this section only when at least one goal is `overdue`, `due`, or `next_week`.** When nothing qualifies, omit the heading entirely and say so in the Step 1h heartbeat instead — an empty section reads as "checked and clear" whether or not the check actually ran.*
+
+- 🔴 **Overdue — [goal title]** · was due [date], [N] days ago
+  - [checkpoint_label]
+  - Open `10-strategy/goals/[file].md` → the checkpoint section carries the actual decisions
+  - *Until this is answered, every reading is scored against a baseline that no longer applies.*
+- 🟠 **Due this week — [goal title]** · [date] ([weekday])
+  - [checkpoint_label]
+  - Open `10-strategy/goals/[file].md` for the decisions
+- 🟡 **Next week — [goal title]** · [date]. No action needed now.
+
+Overdue and due-this-week checkpoints go into the Recommended Top 3 **candidate pool**. They are decisions, so they are offered, never auto-assigned.
+
 ### Calendar Reality
 - [N] meetings this week ([X] hours)
 - Key meetings: [list external/board/candidate meetings]
 - Estimated deep work windows: [identify gaps in calendar]
 
 ### Recommended Top 3
+
+*Candidate-pool rule: any goal checkpoint classed `overdue` or `due` (Step 1h) enters this pool and must be offered explicitly. A checkpoint is a decision the builder owns — offer it, don't assign it.*
+
 1. **[Priority]** — [why this week, what "done" looks like]
    - Asana tasks: [link to related tasks]
    - Time needed: ~[X] hours
@@ -635,6 +709,8 @@ For each active personal goal:
 ### Step 4: Builder reviews and sets priorities
 
 The builder adjusts the Top 3, accepts or rejects coaching, and commits to the week's focus.
+
+**Record goal-checkpoint declines (feeds Step 1h next week).** For every checkpoint Step 1h classed `overdue` and offered in the candidate pool: if the committed Top 3 does not include it, append that goal's `slug` to `checkpoints_declined` for Step 5 to write. Not choosing it *is* the decline — don't ask again to confirm, and don't record a decline for a `due` or `next_week` checkpoint (only overdue ones accumulate). If the builder took it, record nothing.
 
 ### Step 4.5: Relationship Health Check Trigger
 
@@ -731,6 +807,9 @@ hit_sleep_target: false      # sleep_total_avg >= 7.0
 hit_sleep_stretch: false     # sleep_total_avg >= 7.5
 hit_restorative_target: true # sleep_restorative_avg_pct >= 25
 hit_consistency_target: true # sleep_consistency_stddev <= 1.0
+# Goal-checkpoint decline history (Step 1h reads these from the 2 most recent weekly notes)
+checkpoints_declined: []     # slugs of overdue checkpoints offered this week and not chosen (from Step 4)
+checkpoints_escalated: []    # slugs whose once-only two-week notice has been spent
 ---
 ```
 

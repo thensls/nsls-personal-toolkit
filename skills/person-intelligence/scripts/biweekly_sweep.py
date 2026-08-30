@@ -52,8 +52,8 @@ def utc_now_iso():
 def resolve_canonical_name(vault_path, person_name):
     """If a person's profile is a redirect stub, return the canonical name it points to.
 
-    Rippling stores a formal name (e.g. "Jana Amsellem") for someone who goes by a
-    preferred name (e.g. "Red Akasha"). The formal-name file is a
+    Rippling stores a formal name (e.g. "Jana Kessler") for someone who goes by a
+    preferred name (e.g. "Robin Alder"). The formal-name file is a
     `type: person-redirect` stub pointing at the canonical profile. Following it
     keeps the manifest from double-listing the person and from false-flagging the
     stub as "never synthesized." Returns the original name when there's no redirect.

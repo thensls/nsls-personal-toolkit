@@ -9,7 +9,7 @@ def _load():
 
 def test_how_to_support_is_regenerated_not_preserved():
     sp = _load()
-    existing = "## How to Support Red Akasha\n\n**Remove friction:** old advice\n\n## Personal\n\nx\n"
+    existing = "## How to Support Robin Alder\n\n**Remove friction:** old advice\n\n## Personal\n\nx\n"
     human = sp.extract_human_authored_sections(existing)
     headings = [h["heading"] for h in human]
     assert not any("How to Support" in h for h in headings)  # NOT preserved -> regenerated

@@ -91,7 +91,7 @@ class TestLegacyInference:
         """One filled slot among blanks must NOT flip to Command Center —
         extraction drops blank rows, so the old all-have-text check was
         vacuously true after the first slot and the view jumped mid-planning
-        (2026-07-08, Davo). Only a genuinely full Top 3 implies command."""
+        (2026-07-08, a builder). Only a genuinely full Top 3 implies command."""
         md = "## Morning Check-in\n\n### My Top 3\n1. [ ] first task\n2. [ ]\n3. [ ]\n"
         assert _detect_day_state(md, [{"text": "first task", "checked": False}]) == "coach-morning"
 
@@ -169,7 +169,7 @@ def test_lock_in_response_shows_locked_banner(client_no_status):
     """The /lock-in response itself must render the locked-in banner — it
     used to omit day_status from the template context, so the builder locked
     in and was immediately told their plan 'isn't locked in yet'
-    (2026-07-11, Davo, real vault)."""
+    (2026-07-11, a builder, real vault)."""
     c = client_no_status
     c.post("/set-top-3", data={"index": "0", "text": "first priority"})
     html = c.post("/lock-in", data={"phase": "morning"}).get_data(as_text=True)

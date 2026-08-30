@@ -164,7 +164,7 @@ status: active
 # --- 3. streaks over calendar days, not log rows ---
 
 def test_gap_days_break_streak():
-    """Davo's weights log: ticks on 3 days spread over a month showed '3d'."""
+    """a builder's weights log: ticks on 3 days spread over a month showed '3d'."""
     log = [
         DayResult("2026-06-03", 1.0),
         DayResult("2026-06-28", 1.0),

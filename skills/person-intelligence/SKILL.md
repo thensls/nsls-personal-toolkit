@@ -20,7 +20,7 @@ Scripts live at: `~/.claude/local-plugins/nsls-personal-toolkit/skills/person-in
 
 ## Quick Start
 
-"Synthesize Gary Tuerack" or "person intel on Adam Stone" -- the pipeline runs automatically.
+"Synthesize Warren Aldrich" or "person intel on Adam Ferris" -- the pipeline runs automatically.
 
 ## Pipeline
 
@@ -38,7 +38,7 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
   --email {email} --list
 ```
 
-**Airtable SLT** (if SLT member -- Gary, Adam, Ashleigh, Michael, Anish, Kevin):
+**Airtable SLT** (if SLT member -- Warren, Adam, Priya, Michael, Devan, Marcus):
 ```bash
 python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/fetch_airtable_slt.py "{name}" > /tmp/person-intel-slt.json
 ```
@@ -48,7 +48,7 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
 python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/fetch_airtable_people_ops.py "{name}" > /tmp/person-intel-people-ops.json
 ```
 
-**Signal — Quick Notes** (when `SIGNAL_INGEST=1` AND the person is `signal_eligible` — has an `@nsls.org` email, `tracking_reason` is not `key_relationship_external`, and the name is not in `SIGNAL_EXCLUDE` (default `{"Cory Capoccia"}` — this is how board members are excluded); see `list_relationships.py`):
+**Signal — Quick Notes** (when `SIGNAL_INGEST=1` AND the person is `signal_eligible` — has an `@nsls.org` email, `tracking_reason` is not `key_relationship_external`, and the name is not in `SIGNAL_EXCLUDE` (no default — set in `.env`; this is how board members are excluded. **Unset fails closed**: nobody is `signal_eligible` until it is configured, because a warning alone would not stop the sweep); see `list_relationships.py`):
 
 Phase 1 is MCP-in-session — *you* (the orchestrator) call the `signal_*` MCP tools, bundle
 their raw JSON, and pipe it to `fetch_signal.py`, which caches the raw (cache-only, never the
@@ -64,7 +64,7 @@ python3.12 .../scripts/fetch_signal.py --list-reports
 ```
 
 Then include the normalized output as the `signal` field in the synthesize payload (Step 5).
-**Scope: any tracked person who is `signal_eligible`** (has an `@nsls.org` email, `tracking_reason` is not `key_relationship_external`, and the name is not in `SIGNAL_EXCLUDE` — default `{"Cory Capoccia"}` — this is how board members are excluded). **Raw Quick Notes never enter the vault** — `fetch_signal.py`
+**Scope: any tracked person who is `signal_eligible`** (has an `@nsls.org` email, `tracking_reason` is not `key_relationship_external`, and the name is not in `SIGNAL_EXCLUDE` — no default, set in `.env`; this is how board members are excluded. **Unset fails closed**: nobody is eligible until it is configured). **Raw Quick Notes never enter the vault** — `fetch_signal.py`
 drops HR/health/comp items mechanically, and `synthesize_profile.py` applies the KB
 sensitive-content rubric to what remains. Distilled into `## Signal Read` + advisory `## How to Support`.
 Signal-derived coaching evidence surfaces as `<!-- DIGEST -->` comments for biweekly approval, never written into Coaching Goals directly.
@@ -75,7 +75,7 @@ and relationship context — coaching, not the number.
 
 **Existing Obsidian profiles** (vault at `$OBSIDIAN_VAULT_PATH`):
 - `30-people/{Name}.md` (display name with spaces)
-- `10-slt/members/{slug}.md` (lowercase hyphenated, e.g., `gary-tuerack.md`)
+- `10-slt/members/{slug}.md` (lowercase hyphenated, e.g., `warren-aldrich.md`)
 - `20-projects/board-intelligence/members/{Name}.md` (display name with spaces)
 
 ### Step 3: Fetch and summarize meetings
@@ -90,7 +90,7 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
 # Summarize each meeting (one Claude API call per meeting).
 # NOTE: fetch_fathom_1on1s.py does NOT emit person_name — you must inject it.
 # The name goes through the ENVIRONMENT, never interpolated into the -c source:
-# an apostrophe (Michael O'Brien) would otherwise break both the shell quoting
+# an apostrophe (Michael Osei) would otherwise break both the shell quoting
 # and the Python string.
 export PI_PERSON_NAME='{Name}'
 while IFS= read -r line; do
@@ -101,7 +101,7 @@ done < /tmp/person-intel-meetings.jsonl > /tmp/person-intel-summaries.jsonl
 ```
 
 If the name itself contains an apostrophe, set it with a here-doc or `read -r`
-rather than single quotes — `export PI_PERSON_NAME="Michael O'Brien"`.
+rather than single quotes — `export PI_PERSON_NAME="Michael Osei"`.
 
 🛑 **`person_name` is effectively required — always inject it.** `fetch_fathom_1on1s.py`
 matches on `calendar_invitees`, so the results include **group meetings** (SLT Standing,
@@ -110,8 +110,8 @@ Sprint Retro, Society Sprint Start, Manager Preview Meeting), not just 1:1s. If
 which on a group title profiles whoever dominated the conversation and writes their traits
 into this person's profile.
 
-*This happened on 2026-07-27: Jordan Perry's and Julia Botz's material landed in Lauren
-Prentiss's profile, and Kimberly Campbell's in LaShaundra Randolph's. Both profiles had to
+*This happened on 2026-07-27: Taylor Reece's and Julia Renner's material landed in Lauren
+Vance's profile, and Kimberly Ortiz's in Nadia Whitfield's. Both profiles had to
 be restored from backup and re-synthesized.* The script now refuses to guess when the title
 yields no name, and warns when it does infer — but the caller injecting `person_name`
 explicitly is the actual fix.
@@ -180,7 +180,7 @@ If confirmed, add to the profile AND update the project's `collaborators:` front
 
 For confirmed projects, update `$OBSIDIAN_VAULT_PATH/20-projects/{project}/{project}.md` frontmatter:
 ```yaml
-collaborators: ["[[Gary Tuerack]]", "[[Cory Capoccia]]"]
+collaborators: ["[[Warren Aldrich]]", "[[Dana Ashford]]"]
 ```
 
 This enables Obsidian dataview queries in `30-people/` hub files.
@@ -202,7 +202,8 @@ The sweep must run **on your own machine, under your own credentials**. Everythi
 Both platforms call one script, so there is no shell-vs-PowerShell logic to drift apart:
 
 ```
-scheduler (weekly)  →  scheduled_sweep.py  →  claude -p  →  the sweep pipeline
+scheduler (weekly)  →  sweep_launchd_wrapper.sh  →  scheduled_sweep.py  →  claude -p  →  the sweep pipeline
+                       (macOS only; Windows calls scheduled_sweep.py directly)
 ```
 
 [`scripts/scheduled_sweep.py`](scripts/scheduled_sweep.py) does four things:
@@ -211,6 +212,14 @@ scheduler (weekly)  →  scheduled_sweep.py  →  claude -p  →  the sweep pipe
 2. If due, runs `claude -p` headless with a self-contained prompt and a **scoped** tool allowlist (`Bash(python3.12 *)`, Read, Write, Edit, Glob, Grep, Skill) — deliberately not `--dangerously-skip-permissions`.
 3. Verifies the run actually finalized. A zero exit is not proof of work, so it re-runs `--finalize` if the status file doesn't show a complete sweep for today.
 4. Records every outcome — success, failure, timeout, `claude` not on PATH — to `~/.cache/person-intelligence/sweep-cron.log` and, on failure, into `last-sweep-status.json` so `/open-day` surfaces it the next morning.
+
+On macOS the scheduler calls [`scripts/sweep_launchd_wrapper.sh`](scripts/sweep_launchd_wrapper.sh) rather than python directly. It is the **pre-Python guard**: `scheduled_sweep.py` records its own failures, but anything that killed the job *before* Python started was completely invisible — launchd appends raw child stderr to `StandardErrorPath` with **no timestamp**, nothing reaches `sweep-cron.log`, and nothing is written to `last-sweep-status.json`, so no skill surfaces it and no staleness signal fires.
+
+That happened. On 2026-08-09 and 2026-08-16 the plist invoked python against a `scheduled_sweep.py` that had not shipped yet (it landed 2026-08-21). Both Sundays died instantly with a bare, undated `can't open file` line, `sweep-cron.log` showed a clean 21-day gap with no explanation, and the roster went **30 days stale against a 12-day cadence while every dashboard reported healthy**. The plist and the scripts deploy independently, so that window recurs on any install, reinstall, branch switch, or partial pull.
+
+The wrapper validates its preconditions (`scheduled_sweep.py` present; **python3.12** reachable, or a `python3` that self-reports >= 3.12 — `scheduled_sweep.py` derives the headless tool allowlist from the interpreter's *file name*, so a binary named `python3` makes the agent's `python3.12 ...` calls fail the allowlist and the run produces nothing), timestamps its own output, brackets the child's undated output with dated banners, and **writes a real failure record when it cannot start** — which `sweep_due.py` then retries on. Set `PI_CACHE_DIR` to redirect both the wrapper's and the child's cache dir when testing.
+
+**A recorded failure is not a sweep.** `sweep_due.py` returns **DUE** for any status record carrying a non-zero `exit_code` or a non-null `error`, checked *before* the age gate. Before 2026-08-23 a failure record (`finalized: true` + `complete: false`) classified as `NEEDS_FINALIZE` — "finalize only, do not re-sweep" — so one timeout suppressed every retry until the interval elapsed, and the next firing then saw a "recent sweep" and skipped. Pinned by [`tests/test_sweep_due.py`](tests/test_sweep_due.py).
 
 **Fire weekly, not biweekly.** Standard cron and launchd cannot express "every other Sunday" — in the day-of-week field `0/2` expands to `0,2,4,6`, i.e. Sunday, Tuesday, Thursday, Saturday. So the scheduler fires every Sunday and `sweep_due.py` gates it down: it skips unless the last **finalized** sweep is ≥ 12 days old. Twelve rather than fourteen gives a two-day grace window, so a missed Sunday doesn't push the cadence out to 21 days.
 
@@ -221,7 +230,9 @@ scheduler (weekly)  →  scheduled_sweep.py  →  claude -p  →  the sweep pipe
 ```bash
 cp skills/person-intelligence/setup/com.nsls.person-intelligence-sweep.plist \
    ~/Library/LaunchAgents/
-# Edit the plist: replace YOUR_USERNAME throughout, confirm your python3.12 path
+# Edit the plist: replace YOUR_USERNAME throughout. No absolute python path to set —
+# sweep_launchd_wrapper.sh resolves the interpreter itself (it needs python3.12
+# reachable on the plist's PATH, or a python3 reporting >= 3.12).
 launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist
 ```
 
@@ -249,11 +260,14 @@ Trigger:    Weekly, Sunday, 6:47 AM
 
 Check "Run task as soon as possible after a scheduled start is missed" — laptops are asleep at 6:47 AM. The freshness gate makes a late catch-up run safe.
 
+> ⚠️ **Known parity gap.** There is no PowerShell equivalent of `sweep_launchd_wrapper.sh`, so on Windows a failure that happens *before* `scheduled_sweep.py` starts (missing script, no python on PATH) is still silent — no timestamped log line and no status record. The `sweep_due.py` retry fix is platform-independent and does apply. A `sweep_task_wrapper.ps1` is the obvious follow-up.
+
 ### Manual control
 
 - **Run now, ignoring the gate:** `python3.12 scripts/scheduled_sweep.py --force`
 - **See what it would do:** `python3.12 scripts/scheduled_sweep.py --dry-run`
 - **Run interactively instead:** `/person-intelligence biweekly sweep` — no scheduler involved
+- **Test the scheduler chain without touching real state:** `PI_CACHE_DIR=/tmp/pi-test bash scripts/sweep_launchd_wrapper.sh --dry-run --force` — then assert `~/.cache/person-intelligence/sweep-cron.log` did **not** grow. Setting the variable is not proof of isolation; check the production artifact.
 - **Pause (vacation):** `launchctl bootout gui/$(id -u)/com.nsls.person-intelligence-sweep` (Mac) or disable the task (Windows)
 - **Resume:** `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.nsls.person-intelligence-sweep.plist`
 
@@ -342,7 +356,7 @@ The skill pulls signal from four sources. Full scoping and privacy posture in
 | **Fathom** | 1:1 transcripts since the profile's `last-synthesized` date | `FATHOM_API_KEY` env var |
 | **Slack** | DMs + shared-thread messages from the last 14 days | User-authorized MCP (`/connect slack`) |
 | **Gmail** | Threads where both parties are direct participants, last 14 days | User-authorized MCP (`/connect gmail`) |
-| **Signal** | Quick Notes wins/friction/sentiment/goal-health (any tracked person who is `signal_eligible` — has an `@nsls.org` email, `tracking_reason` is not `key_relationship_external`, and the name is not in `SIGNAL_EXCLUDE` (default `{"Cory Capoccia"}` — this is how board members are excluded); see `list_relationships.py`), `SIGNAL_INGEST=1`. Distilled into `## Signal Read` + advisory `## How to Support`. | `signal_*` MCP (Phase 1) |
+| **Signal** | Quick Notes wins/friction/sentiment/goal-health (any tracked person who is `signal_eligible` — has an `@nsls.org` email, `tracking_reason` is not `key_relationship_external`, and the name is not in `SIGNAL_EXCLUDE` (no default — set in `.env`; this is how board members are excluded. **Unset fails closed**: nobody is `signal_eligible` until it is configured, because a warning alone would not stop the sweep); see `list_relationships.py`), `SIGNAL_INGEST=1`. Distilled into `## Signal Read` + advisory `## How to Support`. | `signal_*` MCP (Phase 1) |
 
 Three filters apply before content reaches the synthesizer:
 1. **Third-party name stripping** — names other than you and the target person become role descriptors
@@ -407,9 +421,9 @@ If the builder toolkit isn't installed or `org-chart.json` doesn't exist, skip s
 ```
 📊 Relationship Health — March 22, 2026
 
-  💚 Gary Tuerack     (3.5) — last: Mar 22
-  🟢 Cory Capoccia    (3.2) — last: Mar 22
-  🟢 Adam Stone       (3.0) — last: Mar 22
+  💚 Warren Aldrich     (3.5) — last: Mar 22
+  🟢 Dana Ashford    (3.2) — last: Mar 22
+  🟢 Adam Ferris       (3.0) — last: Mar 22
 
 Any changes? ("all good" to carry forward, or name who shifted)
 ```
@@ -439,7 +453,7 @@ After the relationship scores, prompt with 5 growth questions from Jack's framew
 Journal the reflection. Write it to `$OBSIDIAN_VAULT_PATH/20-projects/leadership-growth/leadership-growth.md`
 under a new `### YYYY-MM-DD` entry in a `## Growth Journal` section.
 
-Also check the most recent Jack Cohen session summary for any open commitments
+Also check the most recent Jack Donnelly session summary for any open commitments
 and surface them: "Jack's last session (date): you committed to X. How did that go?"
 
 ### Journal Entry Format
@@ -514,12 +528,12 @@ After scoring and coaching goal review, check each person's `## Personal` sectio
 - **Stale (60+ days since `Last updated`)**: "[Name]'s personal section was last updated [date]. Anything new?"
 - **Fresh and populated**: Skip — no prompt needed.
 
-Kevin types what he knows. "Skip" moves on. Never pressure.
+Marcus types what he knows. "Skip" moves on. Never pressure.
 
 ### Privacy rules
 
-- Only include facts explicitly stated in transcripts or provided by Kevin — never inferences
-- Sensitive facts (health issues, family conflict, financial) get flagged for Kevin's approval before writing
+- Only include facts explicitly stated in transcripts or provided by Marcus — never inferences
+- Sensitive facts (health issues, family conflict, financial) get flagged for Marcus's approval before writing
 - The personal section is private intelligence — never shared with the person profiled
 
 ## Coaching Goals
@@ -537,7 +551,7 @@ status: active | created: YYYY-MM-DD | dimension: [health dimension]
 **Why**: [1-2 sentences — what the data shows and why this matters]
 
 **Actions**:
-- [ ] [Concrete, observable action Kevin can take]
+- [ ] [Concrete, observable action Marcus can take]
 - [ ] [Another action]
 - [ ] [Another action]
 
@@ -553,16 +567,16 @@ status: completed | created: YYYY-MM-DD | completed: YYYY-MM-DD | dimension: [di
 ### Goal generation rules
 
 - Max 2 active goals per person (one professional, one personal/relational)
-- Goals are about what **Kevin** does differently — not what the other person should do
+- Goals are about what **Marcus** does differently — not what the other person should do
 - Each goal ties to a specific health dimension (lowest-scoring gets priority)
 - Actions must be concrete and observable — things you'd notice in a meeting or Slack message
-- Goals are **proposed by AI, approved by Kevin**. Never auto-written to the profile.
+- Goals are **proposed by AI, approved by Marcus**. Never auto-written to the profile.
 
 ### Goal generation pipeline
 
 **Inputs:**
 1. The person's profile — patterns, evolution arc, working style, what they care about
-2. Kevin's patterns — from Jack's coaching framework (`20-projects/leadership-growth/`), coaching patterns memory ("IC work is my unregulated excitement," hero tendencies)
+2. Marcus's patterns — from Jack's coaching framework (`20-projects/leadership-growth/`), coaching patterns memory ("IC work is my unregulated excitement," hero tendencies)
 3. Health scores — which dimensions are lowest?
 4. Recent Fathom transcripts — what's actually happening in meetings?
 
@@ -572,7 +586,7 @@ status: completed | created: YYYY-MM-DD | completed: YYYY-MM-DD | dimension: [di
   2. Appends evidence lines if found
   3. Proposes goal updates if evidence suggests progress or the goal needs evolving
   4. Proposes new goals if a dimension dropped or a new pattern emerged
-- Kevin approves, edits, or rejects each proposal before anything is written
+- Marcus approves, edits, or rejects each proposal before anything is written
 
 **Presentation format:**
 
@@ -582,9 +596,9 @@ status: completed | created: YYYY-MM-DD | completed: YYYY-MM-DD | dimension: [di
     She opened both meetings and set agendas without prompting.
     → Recommend: upgrade action #1 to "ask her to present sprint status to SLT directly"
 
-  Gary — No active goal. Propose: "Build shared decision framework"
-    targeting alignment (🟢 3). Based on pattern: Gary routes ideas
-    through Kevin that should go directly to SLT members.
+  Warren — No active goal. Propose: "Build shared decision framework"
+    targeting alignment (🟢 3). Based on pattern: Warren routes ideas
+    through Marcus that should go directly to SLT members.
 
   Accept all / Edit / Skip?
 ```
@@ -623,13 +637,13 @@ If no coaching goal exists for this person, skip the 🎯 section and focus on p
 
 | Name | Emails | Sources |
 |------|--------|---------|
-| Gary Tuerack | (check Fathom cache) | Fathom, SLT Airtable, People Ops, Board KB |
-| Cory Capoccia | ccapoccia@nsls.org, cory.capoccia@gmail.com, cory@capocciaoffice.com | Fathom, Board KB |
-| Adam Stone | (check Airtable) | SLT Airtable, People Ops |
-| Ashleigh Smith | (check Airtable) | SLT Airtable, People Ops |
-| Michael O'Brien | (check Airtable) | SLT Airtable, People Ops |
-| Anish Patel | (check Airtable) | SLT Airtable, People Ops, Board KB |
-| Lauren Prentiss | lprentiss@nsls.org | Obsidian daily/weekly notes, cross-profile refs (contractor — not in People Ops) |
+| Warren Aldrich | (check Fathom cache) | Fathom, SLT Airtable, People Ops, Board KB |
+| Dana Ashford | dashford@nsls.org, dana.ashford@gmail.com, dana@ashfordoffice.com | Fathom, Board KB |
+| Adam Ferris | (check Airtable) | SLT Airtable, People Ops |
+| Priya Nakamura | (check Airtable) | SLT Airtable, People Ops |
+| Michael Osei | (check Airtable) | SLT Airtable, People Ops |
+| Devan Kapoor | (check Airtable) | SLT Airtable, People Ops, Board KB |
+| Lauren Vance | evance@nsls.org | Obsidian daily/weekly notes, cross-profile refs (contractor — not in People Ops) |
 
 Update this table as you profile new people.
 

@@ -1,14 +1,14 @@
 # Profile template — current layout
 
-This template documents the structure the synthesizer produces. The Gary Tuerack profile is the gold-standard reference for layout, voice, and depth.
+This template documents the structure the synthesizer produces. The Warren Aldrich profile is the gold-standard reference for layout, voice, and depth.
 
 ## Frontmatter
 
 ```yaml
 ---
 type: person
-tags: [leadership, slt|board|health-good|health-watch|...]  # Kevin/user curated
-role: "Founder & Interim CEO"                                # Kevin's editorial role description
+tags: [leadership, slt|board|health-good|health-watch|...]  # Marcus/user curated
+role: "Founder & Interim CEO"                                # Marcus's editorial role description
 org: NSLS
 last-synthesized: YYYY-MM-DD                                 # advanced by synthesizer only when content updated
 sources: [fathom-1on1s, airtable-slt, airtable-people-ops, slack, gmail, existing-profile]
@@ -203,4 +203,4 @@ The synthesizer follows this order. Sections may be omitted if the data doesn't 
 
 ## Human-authored content
 
-Any section not in the template above is treated as **human-authored** and preserved. The synthesizer reads it, may surface proposed updates in the digest, but never overwrites. Example: Kevin manually added a "## Kevin's Stance: Respect, Protect, Resent" section to Gary's profile on 2026-05-16. The next synthesizer run reads it, proposes updates if the recent data suggests refinements, and keeps the original until Kevin reviews.
+Any section not in the template above is treated as **human-authored** and preserved. The synthesizer reads it, may surface proposed updates in the digest, but never overwrites. Example: Marcus manually added a "## Marcus's Stance: Respect, Protect, Resent" section to Warren's profile on 2026-05-16. The next synthesizer run reads it, proposes updates if the recent data suggests refinements, and keeps the original until Marcus reviews.

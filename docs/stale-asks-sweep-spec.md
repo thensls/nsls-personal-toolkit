@@ -1,13 +1,13 @@
 # Spec: Stale-Asks Sweep (weekly unanswered-inbound pass)
 
-**Status:** proposed · **Author:** Kevin + CC · **Date:** 2026-05-27
+**Status:** proposed · **Author:** Marcus + DA · **Date:** 2026-05-27
 **Targets:** `/open-week` (primary) — optionally `/close-week`
 
 ## Problem
 
 The daily incoming-asks scan added in PR #12 (`close-day` step `1e-pre`, `open-day` equivalent) is scoped to a single day (`on:YYYY-MM-DD`). It only catches asks that arrive **today**. Anything someone asked you earlier that you never answered silently falls off — it's never in "today" again.
 
-Concrete miss (2026-05-26 close): Lillian's contractor-audit request had been pending since **May 7** (re-pinged May 21). The daily scan correctly returned nothing for it because it wasn't a 5/26 message — it took a manual catch. Aged asks are exactly the ones that erode trust, and they're the ones the daily scan structurally cannot see.
+Concrete miss (2026-05-26 close): Simone's contractor-audit request had been pending since **May 7** (re-pinged May 21). The daily scan correctly returned nothing for it because it wasn't a 5/26 message — it took a manual catch. Aged asks are exactly the ones that erode trust, and they're the ones the daily scan structurally cannot see.
 
 ## Goal
 
@@ -41,7 +41,7 @@ For each candidate thread:
 
 ## Filters & dedup
 
-- Exclude bots: SLT EA Bot (`U0ADE2TMZMM`), Signal, any `[BOT]`.
+- Exclude bots: SLT EA Bot (`U0EXAMPLE03`), Signal, any `[BOT]`.
 - Exclude threads where your post-ask reply delivered the thing (link, doc, decision).
 - **Dedup** against: open Asana tasks (name/snippet match) and anything already surfaced by today's `close-day` `1e-pre`.
 - Skip purely social ("hope your weekend was lovely").
@@ -60,7 +60,7 @@ Output section in the open-week note:
 
 ```markdown
 ### Stale asks (unanswered, last 14 days)
-- 🔴 [20d] Lillian Collazo (DM): "complete the contractor tracker + reply" — [permalink]
+- 🔴 [20d] Simone Ferraro (DM): "complete the contractor tracker + reply" — [permalink]
 - 🟠 [9d]  Name (#channel): "can you review X?" — [permalink]
 ```
 
@@ -85,4 +85,4 @@ Description carries the Slack permalink + first-asked date.
 
 - Lives behind `data_sources.slack: true`.
 - Reuse `$SLACK_USER_ID` from `.env` (same var PR #12 introduced).
-- Ship to `nsls-personal-toolkit` repo via PR; then sync into Kevin's local `~/.claude/skills/open-week` (see [close-day fork drift](../../../.claude/projects/-Users-k/memory/project_close_day_skill_drift.md) — the local copies are hand-maintained forks).
+- Ship to `nsls-personal-toolkit` repo via PR; then sync into Marcus's local `~/.claude/skills/open-week` (see [close-day fork drift](../../../.claude/projects/-Users-k/memory/project_close_day_skill_drift.md) — the local copies are hand-maintained forks).

@@ -20,11 +20,11 @@ Usage:
 
 Output:
     {
-      "operating_user": {"name": "Kevin Prentiss", "email": "...", ...},
+      "operating_user": {"name": "Marcus Vance", "email": "...", ...},
       "relationships": [
         {
-          "name": "Adam Stone",
-          "email": "astone@nsls.org",
+          "name": "Adam Ferris",
+          "email": "aferris@nsls.org",
           "slack": "U...",
           "tracking_reason": "direct_report"
         },
@@ -45,8 +45,37 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import load_dotenv_local  # noqa: E402,F401  — load .env into os.environ for cron/non-interactive runs
 import resolve_user  # noqa: E402
 
+# Signal-ingest exclusions (board members, and anyone whose Quick Notes must not
+# reach a coaching profile).
+#
+# The default is EMPTY ON PURPOSE: this repository is PUBLIC, and a real name
+# hardcoded here publishes who is excluded and why. The list is configuration,
+# so it lives in the private .env as SIGNAL_EXCLUDE (comma-separated names).
+#
+# An unset value is NOT "exclude nobody" — it means the control was never
+# configured, which is a blind check, not a clean pass. Announce it loudly
+# rather than silently letting sensitive people through.
+_signal_exclude_raw = os.environ.get("SIGNAL_EXCLUDE")
+
+# Unset != "exclude nobody". Unset means the gate was never configured, and a
+# warning alone is non-blocking — the sweep would run anyway. A privacy control
+# must FAIL CLOSED: with no configuration, nobody is signal_eligible at all.
+#
+# Setting SIGNAL_EXCLUDE to an empty string IS a configuration ("exclude nobody"),
+# and is honoured as such. Only an absent variable fails closed.
+SIGNAL_EXCLUDE_CONFIGURED = _signal_exclude_raw is not None
+if not SIGNAL_EXCLUDE_CONFIGURED:
+    print(
+        "WARNING: SIGNAL_EXCLUDE is unset — FAILING CLOSED.\n"
+        "  No one is signal_eligible until it is configured, so Signal ingest is\n"
+        "  effectively off rather than silently sweeping board members and other\n"
+        "  sensitive relationships into coaching profiles.\n"
+        "  Set SIGNAL_EXCLUDE in .env (comma-separated names; empty string means\n"
+        "  'exclude nobody' if that is genuinely what you want).",
+        file=sys.stderr,
+    )
 SIGNAL_EXCLUDE = {
-    n.strip() for n in os.environ.get("SIGNAL_EXCLUDE", "Cory Capoccia").split(",") if n.strip()
+    n.strip() for n in (_signal_exclude_raw or "").split(",") if n.strip()
 }
 
 
@@ -91,6 +120,55 @@ def build_redirect_map(vault_path):
     return mapping
 
 
+def build_untracked_set(vault_path):
+    """Names the vault has explicitly marked `tracked: false` (archived/out-of-scope).
+
+    The roster is built from org-chart.json, which is a Rippling mirror and the arbiter of
+    *current-staff* status. It is NOT the arbiter of *tracked-relationship* status: it carries
+    departed contractors and people who were never a managed relationship, and it grew a batch
+    of `title: Contractor` rows in Aug 2026 that re-added four people the vault had already
+    resolved. Archiving a profile has to actually remove someone from the sweep, or the archive
+    is decoration.
+
+    Reads `30-people/**` (including `_archive/`) so the private vault stays the control surface
+    and no person's name is ever hardcoded into this repo.
+    """
+    import re as _re
+
+    untracked = set()
+    if not vault_path or str(vault_path) == ".":
+        return untracked
+    people_dir = vault_path / "30-people"
+    if not people_dir.is_dir():
+        return untracked
+    for path in sorted(people_dir.rglob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        # Only the leading YAML frontmatter block counts. Scanning a fixed-size prefix was
+        # wrong in both directions: prose in the BODY saying `tracked: false` silently
+        # dropped an active relationship, and frontmatter longer than the cutoff was
+        # truncated so a genuinely archived person stayed in the roster.
+        fm = _frontmatter(text)
+        if fm is None:
+            continue
+        if not _re.search(r"^tracked:[ \t]*false[ \t]*$", fm, _re.MULTILINE | _re.IGNORECASE):
+            continue
+        untracked.add(path.stem.lower())
+        for m in _re.finditer(r"^email(?:_alt)?:[ \t]*(\S+)[ \t]*$", fm, _re.MULTILINE):
+            untracked.add(m.group(1).strip().strip('"').strip("'").lower())
+    return untracked
+
+
+def _frontmatter(text):
+    """Return the leading YAML frontmatter body, or None when the file has none."""
+    import re as _re
+
+    m = _re.match(r"\A\ufeff?---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", text, _re.DOTALL)
+    return m.group(1) if m else None
+
+
 def preferred_name(name, redirect_map):
     seen = set()
     while name in redirect_map and name not in seen:
@@ -105,6 +183,10 @@ def is_signal_eligible(name, email, tracking_reason):
     Signal is coaching/context only; this only decides whether to ATTEMPT a
     fetch. A no-match still degrades to empty in fetch_signal.py.
     """
+    # Fail closed: an unconfigured exclusion list means the gate cannot be
+    # trusted, so nobody is eligible. See SIGNAL_EXCLUDE_CONFIGURED above.
+    if not SIGNAL_EXCLUDE_CONFIGURED:
+        return False
     email = (email or "").strip().lower()
     if not email.endswith("@nsls.org"):
         return False
@@ -189,23 +271,72 @@ def main():
     seen_names = set()
 
     # Preferred-name map, built from the vault's `type: person-redirect` stubs.
-    # Rippling stores formal names ("Jana Amsellem", "Jordyn Tannenbaum") for people who go
+    # Rippling stores formal names ("Jana Kessler", "Jordyn Sutter") for people who go
     # by something else. Without this, the org-chart name and the preferred name are added as
     # TWO relationships — dedup is by email, and the key-relationship entry usually has no
     # email to match on — which double-lists the person and leaves a phantom "never
     # assessed" row in the health dashboard.
     redirect_map = build_redirect_map(Path(os.environ.get("OBSIDIAN_VAULT_PATH", "")).expanduser())
+    _vault = Path(os.environ.get("OBSIDIAN_VAULT_PATH", "")).expanduser()
+    untracked = build_untracked_set(_vault)
+    # Names that some redirect points AT — i.e. canonical identities the vault has declared.
+    # Any org-chart record resolving to one of these IS that person, whichever order the
+    # records happen to arrive in. Precomputed once; add() runs in a loop.
+    redirect_targets = {v.lower() for v in redirect_map.values()}
 
     def add(emp, reason):
-        name = preferred_name(emp.get("name", ""), redirect_map)
+        raw_name = emp.get("name", "")
+        name = preferred_name(raw_name, redirect_map)
+        # True only when the vault's redirect map actually canonicalized this record onto
+        # another identity. Two unrelated people who merely share an ordinary name are NOT
+        # the same human, and merging them would silently drop the second from the sweep.
+        via_redirect = name != raw_name
         emp_email = emp.get("email", "")
         # Deduplicate by email when known, by name otherwise.
         key_email = emp_email.lower() if emp_email else None
         key_name = name.lower()
+        # Explicitly untracked (archived / out-of-scope) — the vault overrides the org chart.
+        if key_name in untracked or (key_email and key_email in untracked):
+            warnings.append(
+                f"Skipped '{name}' ({reason}): marked `tracked: false` in the vault. "
+                "org-chart.json still lists them; the archive is the arbiter here."
+            )
+            return
         if key_email and key_email in seen_emails:
             return
-        if not key_email and key_name in seen_names:
+        # Dedup by resolved name when any of these proves the records are one human:
+        #   * this record was itself canonicalized by a vault redirect, or
+        #   * there is no email to key on, or
+        #   * the resolved name is a redirect TARGET — a canonical identity the vault has
+        #     declared, so anything landing on it is that person.
+        # One person can hold two org-chart emails (an agency address plus a work one), and
+        # email-only dedup let both through and double-listed them under one name.
+        #
+        # The redirect-target check is what makes this ORDER-INDEPENDENT. With only the
+        # via_redirect test, "redirected record first, canonical record second" left both
+        # tracked (the second has an email and no redirect of its own), while the reverse
+        # order merged correctly — so the roster size depended on org-chart ordering.
+        #
+        # But do NOT merge on a bare name collision between two records that each carry a
+        # DIFFERENT known email, where neither was linked by a redirect and the name is not a
+        # declared canonical identity — those are two people who happen to share a name, and
+        # merging drops the second one silently.
+        if key_name in seen_names and (
+            via_redirect or not key_email or key_name in redirect_targets
+        ):
+            warnings.append(
+                f"Merged a second org-chart record onto '{name}' ({reason}): "
+                f"email {emp_email or '<none>'} resolves to an already-tracked person"
+                f"{' via a vault redirect' if via_redirect else ''}."
+            )
             return
+        if key_name in seen_names:
+            warnings.append(
+                f"NAME COLLISION: '{name}' ({reason}, {emp_email}) shares a name with an "
+                "already-tracked person but has a different email and no vault redirect "
+                "linking them. Tracking both. If they ARE the same person, add a "
+                "`type: person-redirect` stub; if not, no action needed."
+            )
         if key_email:
             seen_emails.add(key_email)
         seen_names.add(key_name)
@@ -261,6 +392,16 @@ def main():
             # already added under the preferred name gets duplicated here.
             if name.lower() in seen_names:
                 continue
+            # Same untracked gate `add()` applies. Without this, archiving someone who is
+            # in KEY_RELATIONSHIPS but absent from the org chart (a departed contractor,
+            # a former coach) left them in the sweep forever — the exact class of bug the
+            # gate exists to close, reintroduced through the one branch that skips add().
+            if name.lower() in untracked:
+                warnings.append(
+                    f"Skipped '{name}' (key_relationship_external): marked `tracked: false` "
+                    "in the vault. Remove them from KEY_RELATIONSHIPS to stop the lookup too."
+                )
+                continue
             seen_names.add(name.lower())
             relationships.append(
                 {
@@ -284,6 +425,12 @@ def main():
         "relationships": relationships,
         "relationship_count": len(relationships),
         "warnings": warnings,
+        "untracked_excluded_count": len(
+            [w for w in warnings if "marked `tracked: false`" in w]
+        ),
+        "records_merged_count": len(
+            [w for w in warnings if "Merged a second org-chart record" in w]
+        ),
         "org_chart_age_days": resolve_user.org_chart_age_days(path),
     }
 

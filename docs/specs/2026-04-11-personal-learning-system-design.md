@@ -204,9 +204,9 @@ The answer configures where `/learn inbox` and `/open-day` scrape from. Store in
 
 Create `40-learning/` folder structure with empty `_inbox.md`, `_learning-goals.md`, and `_weekly-plan.md` during vault setup.
 
-## Link Ingestion (Kevin-specific)
+## Link Ingestion (Marcus-specific)
 
-For Kevin: scrape Slack self-DMs as part of `/open-day` or `/learn inbox`. Use the Slack MCP tool to read recent self-DMs, extract URLs, fetch page titles and summaries (via Firecrawl or web fetch), and append to `_inbox.md`.
+For Marcus: scrape Slack self-DMs as part of `/open-day` or `/learn inbox`. Use the Slack MCP tool to read recent self-DMs, extract URLs, fetch page titles and summaries (via Firecrawl or web fetch), and append to `_inbox.md`.
 
 For the personal toolkit: the ingestion source is configurable based on the onboarding answer. Initial implementation supports Slack self-DMs. Other sources (Apple Notes, email) are future work — the `_inbox.md` format is the same regardless of source, so users can manually paste links there too.
 
@@ -235,7 +235,7 @@ These are suggestions, not assignments. Presented as: "Based on your work this w
 - `40-learning/` data model in Obsidian
 - Integration into `/open-week` (learning question + deep dive scheduling)
 - Integration into `/open-day` (15-min block scheduling)
-- Slack self-DM scraping for link ingestion (Kevin-specific)
+- Slack self-DM scraping for link ingestion (Marcus-specific)
 
 ### Phase 2
 - Media classification upgrade in `/close-day` Familiar analysis

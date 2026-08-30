@@ -32,7 +32,7 @@ The SLT allowlist stops being a *write gate* and becomes a *routing decision*.
    remote later if they want.
 3. **Seeding: ship a starter scaffold.** Bundle a small set of **org-level** seed topic
    files + the rubric `CLAUDE.md`, copied in on first run. Stubs are about NSLS the
-   organization, NOT personal/Kevin-specific.
+   organization, NOT personal/Marcus-specific.
 
 ## Architecture
 
@@ -54,7 +54,7 @@ variables consumed by every later step:
 
 **`looks_misconfigured` case** (an `@nsls.org` email is present but not in the allowlist):
 no longer skips. Routes to local KB, but still prints the existing loud allowlist-gap note
-("if you're actually SLT, ask Kevin to add you to kb_authors.txt + tick Members.is_slt;
+("if you're actually SLT, ask Marcus to add you to kb_authors.txt + tick Members.is_slt;
 meanwhile you're writing to your local KB"). A genuinely-SLT-but-unlisted person is never
 silently demoted without explanation.
 
@@ -96,7 +96,7 @@ Contents:
   - `chapter-network.md`
 
   These are about NSLS the organization so the topic mapper has real targets on day one.
-  **No personal or Kevin-specific stubs.**
+  **No personal or Marcus-specific stubs.**
 
 ### Parameterizing the pipeline
 

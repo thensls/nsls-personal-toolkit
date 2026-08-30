@@ -120,7 +120,7 @@ def test_legacy_dismissed_reads_as_done(client_with_today):
 def test_unplanned_write_ignores_decoy_heading_outside_morning(client_with_today):
     """A `### Unplanned` under `## End of Day` (left by a close pass) must not
     swallow writes: the reader only looks inside Morning Check-in, so writing
-    to the decoy made every added win invisible (2026-07-05, Davo)."""
+    to the decoy made every added win invisible (2026-07-05, a builder)."""
     client, vault = client_with_today
     note = vault / "01-daily" / f"{date.today().isoformat()}.md"
     note.write_text(note.read_text() + "\n## End of Day\n- Energy: medium\n\n### Unplanned\n1. [ ] stranded win\n")
@@ -248,7 +248,7 @@ def test_habit_rename_preserves_id(client_with_today):
 def test_ai_suggestion_strips_leaked_checkbox_and_estimate():
     """open-day sometimes writes suggestions as '1. [ ] text <!--e:X-->';
     neither the checkbox nor the estimate may show in the title (2026-07-13,
-    Davo). The estimate is returned as data instead."""
+    a builder). The estimate is returned as data instead."""
     from companion.server import _extract_ai_suggestions
     md = ("### AI Suggested: Top 3\n"
           "1. [ ] P 3b metrics board <!--e:0.75-->\n"

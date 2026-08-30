@@ -5,7 +5,7 @@ End-to-end verification of /harvest-meeting against the synthetic fixture (2026-
 1. A fresh Claude Code session where the harvest-meeting skill is loaded at startup (this session built the skill but it's not loadable as a slash command until next session)
 2. Interactive user typing `cancel` at the Step 7 approval prompt
 
-Procedure when Kevin runs it (in a future session):
+Procedure when Marcus runs it (in a future session):
 
 1. Open a new Claude session
 2. Stage the fixture again: `bash` the Step 1 Python block from Task 11 of `docs/plans/2026-05-29-kb-harvest.md`

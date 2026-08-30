@@ -42,7 +42,7 @@ instant: it's a single commit to the KB repo, picked up on your next harvest —
 ## Cost to Adopt
 
 **2 min** — pull the one skill. No manual steps, no vault changes. (If you're a *new* SLT writer,
-ask Kevin to add your `@nsls.org` email to `_data/kb_authors.txt` in the KB repo — that's a
+ask Marcus to add your `@nsls.org` email to `_data/kb_authors.txt` in the KB repo — that's a
 one-commit onboarding step on his side, not something you do to your fork.)
 
 ## Safe Merge
