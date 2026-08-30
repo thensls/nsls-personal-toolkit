@@ -1,13 +1,13 @@
 # Task 11 — End-to-End Verification: Actual Output
 
-Run date: 2026-05-30. Driver: Kevin (`kprentiss@nsls.org`). Mode: `--fathom-url` against the
+Run date: 2026-05-30. Driver: Marcus (`mvance@nsls.org`). Mode: `--fathom-url` against the
 staged synthetic fixture (`2026-05-26-slt-sample.md`). Approval response: `cancel` (no KB write).
 
 ## Result vs. expectation
 
 | Step | Expected | Actual | Verdict |
 |---|---|---|---|
-| 0 SLT gate | confirmed | confirmed (`kprentiss@nsls.org` via `kb-repo` scope) | ✅ (after fix — see Finding 1) |
+| 0 SLT gate | confirmed | confirmed (`mvance@nsls.org` via `kb-repo` scope) | ✅ (after fix — see Finding 1) |
 | 1 context | ~60 topics + rubric | 66 topics, rubric 2878 chars | ✅ |
 | 2 load meeting | 1 meeting | 1 (staged fixture) | ✅ |
 | 3 extract | 4 candidates | 4 (1 decision, 1 project, 2 state-change) | ✅ |
@@ -30,7 +30,7 @@ Harvest candidates from 2026-05-26 (1 meeting, 3 candidates after rubric):
       added 'orange' early-warning band ([▶](…?timestamp=922))
 
 [3] 🆕 NEW: ninety-day-check-in-program.md (parent: people-hr, type: l3)
-    + Key Decision: 2026-05-26: 90-day check-in program — Red owns instrumentation,
+    + Key Decision: 2026-05-26: 90-day check-in program — Robin owns instrumentation,
       Heather owns HR side, Q3 2026 launch ([▶](…?timestamp=1800))
 
 ⚠ 1 candidate dropped by rubric:
@@ -44,14 +44,14 @@ Responded `cancel` → no commit. KB unchanged.
 ### Finding 1 — SLT gate silently skipped harvest for everyone (FIXED)
 Step 0 resolved identity via a bare `git config user.email`, which reads the config for the
 **current working directory**. close-day runs from `~` (not a git repo), so it fell back to the
-**global** config — Kevin's personal gmail, which is not in `kb_authors.txt`. Result:
+**global** config — Marcus's personal gmail, which is not in `kb_authors.txt`. Result:
 `slt_writer: False` → the entire harvest was silently skipped, regardless of Step 4c being wired.
 This is the "silent skip = indistinguishable from broken" failure mode.
 
 **Fix:** Step 0 now resolves candidate identities from all stable, cwd-independent scopes
 (`kb-repo`, `--global`, `toolkit-repo`, `$GIT_AUTHOR_EMAIL`) and treats the user as an SLT writer
 if any matches the allowlist. It heartbeats every scope checked. Also set the KB clone's local
-identity to `kprentiss@nsls.org` so harvest commits are correctly attributed to the org (they
+identity to `mvance@nsls.org` so harvest commits are correctly attributed to the org (they
 were previously authored as gmail) and the gate matches via the `kb-repo` scope.
 
 ### Finding 2 — `state_change → current_state REPLACE` can clobber unrelated content (NEEDS DECISION)

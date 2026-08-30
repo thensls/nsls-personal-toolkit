@@ -3,8 +3,8 @@
 fetch_airtable_slt.py -- pull all SLT meeting intelligence for one member from Airtable.
 
 Usage:
-  python3.12 fetch_airtable_slt.py "Gary Tuerack"
-  python3.12 fetch_airtable_slt.py "Adam Stone"
+  python3.12 fetch_airtable_slt.py "Warren Aldrich"
+  python3.12 fetch_airtable_slt.py "Adam Ferris"
 
 Output: JSON to stdout.  Status messages to stderr.
 

@@ -1060,7 +1060,7 @@ def client_with_today(tmp_path):
 
 ### Bonus
 1. Board email
-2. Review Maya's PR
+2. Review Nora's PR
 
 ### Habits
 - [ ] **Walk**

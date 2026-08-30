@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-08
 **Status:** Approved (design); pending implementation plan
-**Author:** Kevin Prentiss + Claude Code
+**Author:** Marcus Vance + Claude Code
 
 ## Problem
 
@@ -41,7 +41,7 @@ meeting evidence. Signal informs coaching and relationship *context*, not the nu
    Support Growth. Generated from Signal + meeting evidence. Advisory only — never
    auto-writes the user-curated Coaching Goals.
 2. **Broaden scope.** Attempt Signal for every tracked person with an NSLS email who
-   is not board/external (excludes Cory Capoccia, Joe Cupka, and no-email externals).
+   is not board/external (excludes Dana Ashford, Joe Marsh, and no-email externals).
    No-match degrades to a silent skip (already handled by `fetch_signal.py`).
 3. **Weave into relationship context.** Prompt change so job-satisfaction signal
    informs the broader narrative (What Energizes/Concerns Them, relational patterns),
@@ -68,7 +68,7 @@ meeting evidence. Signal informs coaching and relationship *context*, not the nu
 - `list_relationships.py`: add a derived boolean `signal_eligible`, defined by ONE
   rule: `email` is a non-empty `@nsls.org` address AND `tracking_reason !=
   key_relationship_external` AND name not in `SIGNAL_EXCLUDE` (default set = known
-  board members, currently `{"Cory Capoccia"}`; overridable via env). Board members
+  board members, currently `{"Dana Ashford"}`; overridable via env). Board members
   have an nsls.org email but no Quick Notes, so this is a defensive exclude — it
   avoids even attempting a fetch for people who structurally have no Signal data.
 - `biweekly_sweep.py`: set `signal_ingest_planned = signal_eligible` (was

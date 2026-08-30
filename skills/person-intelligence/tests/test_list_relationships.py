@@ -294,9 +294,9 @@ def test_signal_eligible_rule():
     # direct report with nsls email -> eligible
     assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True
     # SLT peer with nsls email -> eligible
-    assert lr.is_signal_eligible("Adam Stone", "astone@nsls.org", "peer") is True
+    assert lr.is_signal_eligible("Adam Ferris", "aferris@nsls.org", "peer") is True
     # board member on the exclude list -> not eligible
-    assert lr.is_signal_eligible("Cory Capoccia", "ccapoccia@nsls.org", "key_relationship") is False
+    assert lr.is_signal_eligible("Dana Ashford", "dashford@nsls.org", "key_relationship") is False
     # external (no nsls email) -> not eligible
     assert lr.is_signal_eligible("Red External", "", "key_relationship_external") is False
     # non-nsls email -> not eligible

@@ -33,7 +33,7 @@ New `## Brain Dump` section in the daily note, seeded each morning by `/open-day
 Detects completed task evidence in your Claude sessions, Familiar captures, and meeting transcripts. Surfaces "you finished [X] but didn't mark it done in Asana" prompts.
 
 ### `close-day` — Fathom API URL warning
-Prevents using the wrong Fathom domain (a real issue Kevin hit).
+Prevents using the wrong Fathom domain (a real issue Marcus hit).
 
 ### `close-week` and `open-week` — cross-week signal tracking
 Every weekly note gets a `## Insight Reflection` (full-shape synthesis of the week). `/open-week` reads the last N weeks' reflections and flags themes that appear repeatedly: "This is week 3 of '[theme]' in your reflection — that's structural."

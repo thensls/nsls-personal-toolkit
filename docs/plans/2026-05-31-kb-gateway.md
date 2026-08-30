@@ -478,8 +478,8 @@ import auth
 
 def test_member_for_token_hashes_and_matches():
     tok = "secret-token-123"
-    registry = {hashlib.sha256(tok.encode()).hexdigest(): {"email": "k@nsls.org", "name": "Kevin"}}
-    assert auth.member_for_token(registry, tok) == {"email": "k@nsls.org", "name": "Kevin"}
+    registry = {hashlib.sha256(tok.encode()).hexdigest(): {"email": "k@nsls.org", "name": "Marcus"}}
+    assert auth.member_for_token(registry, tok) == {"email": "k@nsls.org", "name": "Marcus"}
 
 def test_member_for_token_unknown_returns_none():
     assert auth.member_for_token({}, "nope") is None
@@ -743,7 +743,7 @@ async def test_commit_changes_happy_path():
     s = FakeSession(q)
     sha = await github_repo.commit_changes(s, "tok", "o/r", "main",
                                            {"a.md": "hello"}, "msg",
-                                           {"name": "Kevin", "email": "k@nsls.org"})
+                                           {"name": "Marcus", "email": "k@nsls.org"})
     assert sha == "NEWCOMMIT"
     assert s.patched[0]["sha"] == "NEWCOMMIT" and s.patched[0]["force"] is False
 
@@ -992,7 +992,7 @@ import github_repo
 def client_setup(monkeypatch):
     tok = "tok-kevin"
     monkeypatch.setattr(config, "TOKEN_REGISTRY",
-                        {hashlib.sha256(tok.encode()).hexdigest(): {"email": "k@nsls.org", "name": "Kevin"}})
+                        {hashlib.sha256(tok.encode()).hexdigest(): {"email": "k@nsls.org", "name": "Marcus"}})
 
     async def fake_gh_token(request): return "ghtok"
     monkeypatch.setattr(handlers, "_gh_token", fake_gh_token)
@@ -1052,7 +1052,7 @@ async def test_commit_real_attributes_to_member(aiohttp_client, client_setup):
     r = await client.post("/kb/commit", headers={"Authorization": f"Bearer {tok}"}, json=body)
     data = await r.json()
     assert data["commit_sha"] == "NEWSHA"
-    assert captured["author"] == {"name": "Kevin", "email": "k@nsls.org"}
+    assert captured["author"] == {"name": "Marcus", "email": "k@nsls.org"}
     assert "- 2026-05-26: New one ([▶](https://f/x?timestamp=5))" in captured["changed"]["b2c.md"]
 
 
@@ -1091,7 +1091,7 @@ In GitHub → Org `thensls` → Settings → Developer settings → GitHub Apps 
 - Install it on the org, **scoped to only `nsls-knowledge`**.
 - Record the **App ID** and **Installation ID**; generate + download a **private key** (.pem).
 
-Heartbeat to the user: "Need the org owner (you or Davo) to create `nsls-kb-gateway`, install it on `nsls-knowledge` only, and hand me App ID + Installation ID + the .pem."
+Heartbeat to the user: "Need the org owner (you or Reuben) to create `nsls-kb-gateway`, install it on `nsls-knowledge` only, and hand me App ID + Installation ID + the .pem."
 
 - [ ] **Step 2: Create the GitHub repo and push**
 
@@ -1127,20 +1127,20 @@ git add README.md && git commit -q -m "docs: deploy notes" && git push origin ma
 
 **Files:** none (validation).
 
-- [ ] **Step 1: Issue a temporary token for Kevin and add to `KB_TOKENS`**
+- [ ] **Step 1: Issue a temporary token for Marcus and add to `KB_TOKENS`**
 
 ```bash
 TOK=$(python3.12 -c "import secrets; print(secrets.token_urlsafe(32))")
 HASH=$(python3.12 -c "import hashlib,sys; print(hashlib.sha256(sys.argv[1].encode()).hexdigest())" "$TOK")
 echo "token (give to setup): $TOK"
-echo "registry entry: {\"$HASH\": {\"email\": \"kprentiss@nsls.org\", \"name\": \"Kevin Prentiss\"}}"
+echo "registry entry: {\"$HASH\": {\"email\": \"mvance@nsls.org\", \"name\": \"Marcus Vance\"}}"
 ```
 Put the registry entry into Doppler `KB_TOKENS` and redeploy.
 
 - [ ] **Step 2: Verify identity + context**
 
 ```bash
-curl -fsS -H "Authorization: Bearer $TOK" "$KB_GATEWAY_URL/kb/whoami"      # {"email":"kprentiss@nsls.org",...}
+curl -fsS -H "Authorization: Bearer $TOK" "$KB_GATEWAY_URL/kb/whoami"      # {"email":"mvance@nsls.org",...}
 curl -fsS -H "Authorization: Bearer $TOK" "$KB_GATEWAY_URL/kb/context" | python3.12 -c "import sys,json; d=json.load(sys.stdin); print('topics', len(d['topics']), 'rubric', len(d['rubric']), 'head', d['head_sha'][:7])"
 ```
 Expected: ~66 topics, non-empty rubric, a head sha.
@@ -1301,8 +1301,8 @@ stores your gateway URL + personal token in the toolkit `.env`.
 The personal toolkit `.env` is at `~/.claude/local-plugins/nsls-personal-toolkit/.env`.
 
 ## Step 2: Ask the user for their values
-- `KB_GATEWAY_URL` (the gateway's public URL — same for everyone; ask Kevin if unknown).
-- `KB_GATEWAY_TOKEN` (the personal token Kevin issued you, via 1Password).
+- `KB_GATEWAY_URL` (the gateway's public URL — same for everyone; ask Marcus if unknown).
+- `KB_GATEWAY_TOKEN` (the personal token Marcus issued you, via 1Password).
 
 ## Step 3: Write them to .env (idempotent — replace if present)
 ```bash
@@ -1317,7 +1317,7 @@ rm -f "$ENV.bak"
 ```bash
 curl -fsS -H "Authorization: Bearer $KB_GATEWAY_TOKEN" "$KB_GATEWAY_URL/kb/whoami"
 ```
-Expected: your `{email, name, is_slt:true}`. If 401, the token is wrong — ask Kevin to reissue.
+Expected: your `{email, name, is_slt:true}`. If 401, the token is wrong — ask Marcus to reissue.
 ````
 
 - [ ] **Step 2: Issue the 7 SLT tokens and populate `KB_TOKENS`**
@@ -1325,10 +1325,10 @@ Expected: your `{email, name, is_slt:true}`. If 401, the token is wrong — ask 
 ```bash
 PYTHONPATH=/tmp/pptx_deps python3.12 - <<'PY'
 import secrets, hashlib, json
-slt = {"kprentiss@nsls.org":"Kevin Prentiss","mobrien@nsls.org":"Michael O'Brien",
-       "gtuerack@nsls.org":"Gary Tuerack","astone@nsls.org":"Adam Stone",
-       "hdarnell@nsls.org":"Heather Darnell","asmith@nsls.org":"Ashleigh Smith",
-       "cbyers@nsls.org":"Chelsea Byers"}
+slt = {"mvance@nsls.org":"Marcus Vance","mosei@nsls.org":"Michael Osei",
+       "waldrich@nsls.org":"Warren Aldrich","aferris@nsls.org":"Adam Ferris",
+       "hvoss@nsls.org":"Heather Voss","pnakamura@nsls.org":"Priya Nakamura",
+       "cward@nsls.org":"Chelsea Ward"}
 registry, plain = {}, {}
 for email, name in slt.items():
     t = secrets.token_urlsafe(32)
@@ -1353,9 +1353,9 @@ git commit -q -m "feat(kb-setup): configure KB Gateway URL + per-member token"
 
 **Files:** none (validation) + plan/spec status.
 
-- [ ] **Step 1: Kevin runs a real single-candidate harvest**
+- [ ] **Step 1: Marcus runs a real single-candidate harvest**
 
-Run `/kb-setup` (Kevin's token), then `/harvest-meeting --fathom-url <a-recent-meeting>`. Approve exactly one low-stakes candidate.
+Run `/kb-setup` (Marcus's token), then `/harvest-meeting --fathom-url <a-recent-meeting>`. Approve exactly one low-stakes candidate.
 
 - [ ] **Step 2: Verify the commit on GitHub**
 
@@ -1363,7 +1363,7 @@ Run `/kb-setup` (Kevin's token), then `/harvest-meeting --fathom-url <a-recent-m
 cd "$OBSIDIAN_VAULT_PATH/60-nsls-knowledge" && git fetch -q origin
 git log origin/main -1 --format='%an <%ae> | %cn | %s'
 ```
-Expected: author = `Kevin Prentiss <kprentiss@nsls.org>`, committer = the App, subject `harvest: …`.
+Expected: author = `Marcus Vance <mvance@nsls.org>`, committer = the App, subject `harvest: …`.
 
 - [ ] **Step 3: Verify a stale-base rejection path**
 

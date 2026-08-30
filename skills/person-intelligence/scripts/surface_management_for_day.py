@@ -18,8 +18,8 @@ Scope: today's direct-report attendees only. The full-team friction scan is
 open-week's job (signal_team_summary), not a daily 10-call sweep.
 
 Usage:
-    echo "Chelsea Byers\\nTrina Limpert" | surface_management_for_day.py --people-stdin
-    surface_management_for_day.py --people "Chelsea Byers,Trina Limpert"
+    echo "Chelsea Ward\\nTrina Boyd" | surface_management_for_day.py --people-stdin
+    surface_management_for_day.py --people "Chelsea Ward,Trina Boyd"
 
 Reads SIGNAL via fetch_signal.py --fetch (token-direct). Honors SIGNAL_INGEST.
 Output: JSON. Status → stderr.
@@ -45,7 +45,7 @@ def log(m: str) -> None:
 
 def report_index() -> list[dict]:
     """Direct reports with aliases + signal slug. Resolves person-redirect stubs
-    so a calendar attendee using a preferred name (Red Akasha) maps to the
+    so a calendar attendee using a preferred name (Robin Alder) maps to the
     Rippling-name slug Signal knows (jana-amsellem)."""
     out = subprocess.check_output(
         ["python3.12", str(SCRIPT_DIR / "fetch_signal.py"), "--list-reports"],

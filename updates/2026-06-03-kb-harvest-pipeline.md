@@ -45,7 +45,7 @@ it after a meeting, or let it ride along on your `/close-day` and `/close-week`.
 
 ## Cost to Adopt
 
-**15 min** — a one-time setup: get added to the KB allowlist + repo (ask Kevin), then clone the
+**15 min** — a one-time setup: get added to the KB allowlist + repo (ask Marcus), then clone the
 KB repo into your vault and set your git identity. After that it runs from `/close-day`,
 `/close-week`, or `/harvest-meeting` with zero extra steps. (Or just run `/personal-setup`,
 which now does the clone + identity for you.)
@@ -86,7 +86,7 @@ Everything here is independently adoptable:
 
 ## Manual Steps
 
-- [ ] Ask Kevin to (a) add your `@nsls.org` email to `kb_authors.txt` and (b) add your GitHub
+- [ ] Ask Marcus to (a) add your `@nsls.org` email to `kb_authors.txt` and (b) add your GitHub
       account as a collaborator on `thensls/nsls-knowledge`. Both are quick.
 - [ ] Clone the KB into your vault (note: repo is `nsls-knowledge`, folder is `60-nsls-knowledge`):
       ```bash

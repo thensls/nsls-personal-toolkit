@@ -212,7 +212,7 @@ def test_wait_for_status_close_ready_also_fires_on_closed(tmp_path):
 def test_wait_close_ready_does_not_fire_on_stale_flag(tmp_path):
     """A close_ready:1 already present at arm time must NOT fire instantly —
     that stale-flag instant-return was misread as a 'clock jump' (2026-07-13,
-    Davo). It should wait for the next real transition."""
+    a builder). It should wait for the next real transition."""
     from companion.cli import wait_for_status
     (tmp_path / "01-daily").mkdir(parents=True)
     (tmp_path / "01-daily" / "2026-07-11.md").write_text(

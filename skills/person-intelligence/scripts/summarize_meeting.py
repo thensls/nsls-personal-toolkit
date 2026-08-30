@@ -140,8 +140,8 @@ def main():
         # A group / recurring meeting title cannot identify a subject. Inferring one here
         # silently profiles whoever dominated the conversation and writes their traits into
         # someone else's profile — a real incident on 2026-07-27, where a Sprint Retro and a
-        # Manager Preview Meeting put Jordan Perry's and Kimberly Campbell's material into
-        # Lauren Prentiss's and LaShaundra Randolph's profiles. Refuse instead of guessing.
+        # Manager Preview Meeting put Taylor Reece's and Kimberly Ortiz's material into
+        # Lauren Vance's and Nadia Whitfield's profiles. Refuse instead of guessing.
         if inferred == UNKNOWN_SUBJECT:
             print(
                 "ERROR: person_name not provided and it cannot be inferred from the title "

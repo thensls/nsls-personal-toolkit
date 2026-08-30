@@ -83,7 +83,7 @@ if [ -d "$KBDIR/.git" ]; then
   if git -C "$KBDIR" ls-remote origin -h refs/heads/main >/dev/null 2>&1; then
     ok "push access: GitHub reachable + authorized"
   else
-    bad "push access FAILED — you likely need collaborator access on thensls/nsls-knowledge (ask Kevin) or GitHub auth (gh auth login)"
+    bad "push access FAILED — you likely need collaborator access on thensls/nsls-knowledge (ask Marcus) or GitHub auth (gh auth login)"
   fi
 else
   bad "clone MISSING at $KBDIR"
@@ -97,7 +97,7 @@ if [ -n "$MATCH" ]; then
 else
   printf '  ROUTE: \033[33mLOCAL KB ⚠\033[0m  — harvest will NOT reach the shared KB\n'
   echo "  To route to the company KB, either:"
-  echo "    • ask Kevin to add your @nsls.org email to _data/kb_authors.txt in the KB repo"
+  echo "    • ask Marcus to add your @nsls.org email to _data/kb_authors.txt in the KB repo"
   echo "      (one commit — picked up automatically on your next harvest), OR"
   echo "    • fix a wrong/typo'd git email so a scope above matches, e.g.:"
   echo "        git -C \"\$OBSIDIAN_VAULT_PATH/60-nsls-knowledge\" config user.email you@nsls.org"

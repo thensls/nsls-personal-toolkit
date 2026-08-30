@@ -1,7 +1,7 @@
 # CLI + Web Companion — Design Spec
 
 **Date:** 2026-05-16
-**Author:** Dave Wood (with Claude)
+**Author:** Reuben Cole (with Claude)
 **Status:** Draft — alternative direction to the cowork toolkit (see `2026-05-15-cowork-toolkit-design.md`)
 
 ## Summary
@@ -43,7 +43,7 @@ The CLI continues to be the canonical interface — terminal users get the exper
 
 ## Background
 
-The toolkit's existing CLI experience is text-heavy. Some users (Dave included) find a dense terminal of priorities, schedules, and reflections cognitively heavier than they need. The original goal of the cowork build was a richer visual UI for non-terminal users — but that build carries significant infrastructure cost (artifact + telemetry MCP + skill prompt rewrites for bash-to-MCP).
+The toolkit's existing CLI experience is text-heavy. Some users (Reuben included) find a dense terminal of priorities, schedules, and reflections cognitively heavier than they need. The original goal of the cowork build was a richer visual UI for non-terminal users — but that build carries significant infrastructure cost (artifact + telemetry MCP + skill prompt rewrites for bash-to-MCP).
 
 A local web companion gets most of the same UX benefits with a fraction of the build cost, and an entirely separate set of risks. Both directions are viable. This spec is for the CLI + companion path; the cowork path is documented separately. They are not mutually exclusive long-term, but should be evaluated and built independently.
 

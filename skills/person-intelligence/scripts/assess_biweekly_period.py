@@ -11,12 +11,12 @@ If no meetings happened in the window, returns status="no_data" — the caller
 writes an explicit "No 1:1 this period" row rather than carrying forward.
 
 Usage:
-    echo '{"person_name": "Adam Stone", "email": "astone@nsls.org",
+    echo '{"person_name": "Adam Ferris", "email": "aferris@nsls.org",
            "period_start": "2026-04-13"}' | python3.12 assess_biweekly_period.py
 
 Output JSON shape:
     {
-      "person_name": "Adam Stone",
+      "person_name": "Adam Ferris",
       "period_start": "2026-04-13",
       "period_end": "2026-04-27",
       "meetings_count": N,

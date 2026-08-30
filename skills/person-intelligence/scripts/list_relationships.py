@@ -20,11 +20,11 @@ Usage:
 
 Output:
     {
-      "operating_user": {"name": "Kevin Prentiss", "email": "...", ...},
+      "operating_user": {"name": "Marcus Vance", "email": "...", ...},
       "relationships": [
         {
-          "name": "Adam Stone",
-          "email": "astone@nsls.org",
+          "name": "Adam Ferris",
+          "email": "aferris@nsls.org",
           "slack": "U...",
           "tracking_reason": "direct_report"
         },
@@ -46,7 +46,7 @@ import load_dotenv_local  # noqa: E402,F401  — load .env into os.environ for c
 import resolve_user  # noqa: E402
 
 SIGNAL_EXCLUDE = {
-    n.strip() for n in os.environ.get("SIGNAL_EXCLUDE", "Cory Capoccia").split(",") if n.strip()
+    n.strip() for n in os.environ.get("SIGNAL_EXCLUDE", "Dana Ashford").split(",") if n.strip()
 }
 
 
@@ -238,7 +238,7 @@ def main():
     seen_names = set()
 
     # Preferred-name map, built from the vault's `type: person-redirect` stubs.
-    # Rippling stores formal names ("Jana Amsellem", "Jordyn Tannenbaum") for people who go
+    # Rippling stores formal names ("Jana Kessler", "Jordyn Sutter") for people who go
     # by something else. Without this, the org-chart name and the preferred name are added as
     # TWO relationships — dedup is by email, and the key-relationship entry usually has no
     # email to match on — which double-lists the person and leaves a phantom "never

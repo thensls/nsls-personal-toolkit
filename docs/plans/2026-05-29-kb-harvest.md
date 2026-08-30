@@ -46,7 +46,7 @@ cd ~/nsls-skills/nsls-personal-toolkit && git pull --ff-only
 **Modify:**
 - `skills/close-day/SKILL.md` (plugin) — append Step 4c block (~30 lines, after Step 1c/1h section)
 - `skills/close-week/SKILL.md` (plugin) — append Step 2b block (~30 lines, after Step 2a)
-- `~/.claude/skills/close-day/SKILL.md` (Kevin's local fork) — port Step 4c verbatim
+- `~/.claude/skills/close-day/SKILL.md` (Marcus's local fork) — port Step 4c verbatim
 
 **Read-only references** (no edits in this plan):
 - `$OBSIDIAN_VAULT_PATH/60-nsls-knowledge/CLAUDE.md` — sensitive-content rubric (parsed at runtime)
@@ -98,13 +98,13 @@ Path: `~/nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt
 # SLT members authorized to write to thensls/nsls-knowledge.
 # v1 hardcode — eventually replaced by Airtable `is_slt` field lookup.
 # One email per line, # comments, blank lines ignored.
-kprentiss@nsls.org
-mobrien@nsls.org
-gtuerack@nsls.org
-astone@nsls.org
-hdarnell@nsls.org
-asmith@nsls.org
-cbyers@nsls.org
+mvance@nsls.org
+mosei@nsls.org
+waldrich@nsls.org
+aferris@nsls.org
+hvoss@nsls.org
+pnakamura@nsls.org
+cward@nsls.org
 ```
 
 - [ ] **Step 3: Write skeleton SKILL.md with frontmatter and mode dispatch stub**
@@ -215,15 +215,15 @@ print(f'authors_file: {authors_file}')
 Pass `WRITE_AUTHORIZED` (True/False) through to subsequent steps; they consult it to decide whether to execute write actions.
 ````
 
-- [ ] **Step 2: Verify with a known-good email (Kevin)**
+- [ ] **Step 2: Verify with a known-good email (Marcus)**
 
 ```bash
-git config user.email kprentiss@nsls.org
+git config user.email mvance@nsls.org
 PYTHONPATH=/tmp/pptx_deps python3.12 -c "
 import pathlib
 authors_file = pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt'
 authors = {line.strip() for line in authors_file.read_text().splitlines() if line.strip() and not line.startswith('#')}
-print('kprentiss@nsls.org' in authors)
+print('mvance@nsls.org' in authors)
 "
 ```
 Expected output: `True`
@@ -235,7 +235,7 @@ PYTHONPATH=/tmp/pptx_deps python3.12 -c "
 import pathlib
 authors_file = pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt'
 authors = {line.strip() for line in authors_file.read_text().splitlines() if line.strip() and not line.startswith('#')}
-print('davowood@nsls.org' in authors)
+print('rcole@nsls.org' in authors)
 "
 ```
 Expected output: `False`
@@ -413,9 +413,9 @@ Defer; this mode's data load is handled in Task 11.
 
 - [ ] **Step 2: Verify with a known Fathom date**
 
-Pick a recent date with at least one meeting in Kevin's Fathom. Then in a Claude session:
+Pick a recent date with at least one meeting in Marcus's Fathom. Then in a Claude session:
 ```
-Invoke the Fathom MCP: list_meetings with start_date=2026-05-26, end_date=2026-05-26, owner_email=kprentiss@nsls.org
+Invoke the Fathom MCP: list_meetings with start_date=2026-05-26, end_date=2026-05-26, owner_email=mvance@nsls.org
 Expected: at least 1 result with a recording_id and title
 ```
 
@@ -473,7 +473,7 @@ KINDS:
 DO NOT extract:
 - Status updates without a decision ("chapter retention has been declining")
 - Plans-in-discussion or hypothetical proposals ("we should probably look at pricing")
-- Context, observations, or opinions ("Cory raised a good point")
+- Context, observations, or opinions ("Dana raised a good point")
 - Anything that falls in these never-write categories from the NSLS sensitive-content
   rubric: [paste the never-write categories table from 60-nsls-knowledge/CLAUDE.md]
 
@@ -494,7 +494,7 @@ Transcript: <full transcript>
 
 **Transcript excerpt:**
 > Adam (10:34): "...so I'm proposing we pause the B2B campaign through July to focus on the chapter renewals."
-> Kevin (10:35): "Agreed, let's pause through July. Adam, you'll communicate to the partner contacts?"
+> Marcus (10:35): "Agreed, let's pause through July. Adam, you'll communicate to the partner contacts?"
 > Adam: "Yes, will do this week."
 
 **Expected output:**
@@ -502,7 +502,7 @@ Transcript: <full transcript>
 [{"kind": "decision",
   "text": "Pausing B2B campaign through July to focus on chapter renewals",
   "fathom_timestamp_sec": 634,
-  "speaker": "Kevin Prentiss",
+  "speaker": "Marcus Vance",
   "confidence": 0.95}]
 ```
 
@@ -516,35 +516,35 @@ Transcript: <full transcript>
 [{"kind": "project_definition",
   "text": "90-day check-in program: Red owns instrumentation, Heather owns HR side, Q3 2026 launch target",
   "fathom_timestamp_sec": 922,
-  "speaker": "Heather Darnell",
+  "speaker": "Heather Voss",
   "confidence": 0.9}]
 ```
 
 ### Example 3: A state change
 
 **Transcript excerpt:**
-> Ashleigh (22:10): "Chapter health used to be 3 tiers — green, yellow, red. We expanded to 4 last sprint: green, yellow, orange, red. Orange is the new 'needs intervention soon but not critical yet' band."
+> Priya (22:10): "Chapter health used to be 3 tiers — green, yellow, red. We expanded to 4 last sprint: green, yellow, orange, red. Orange is the new 'needs intervention soon but not critical yet' band."
 
 **Expected output:**
 ```json
 [{"kind": "state_change",
   "text": "Chapter health framework expanded from 3 tiers to 4 (added 'orange' for early intervention)",
   "fathom_timestamp_sec": 1330,
-  "speaker": "Ashleigh Smith",
+  "speaker": "Priya Nakamura",
   "confidence": 0.92}]
 ```
 
 ### Example 4: SHOULD NOT be extracted
 
 **Transcript excerpt:**
-> Kevin (08:15): "I think we have a real problem with chapter retention. We should look at this seriously next month."
+> Marcus (08:15): "I think we have a real problem with chapter retention. We should look at this seriously next month."
 
 This is intent without decision. NOT a candidate. Empty result.
 
 ### Example 5: Sensitive — pre-filter drops it
 
 **Transcript excerpt:**
-> Anish (45:01): "Q1 net margin was 14.2%, up from 11.8% in Q4. Best in two years."
+> Devan (45:01): "Q1 net margin was 14.2%, up from 11.8% in Q4. Best in two years."
 
 This is a profit number. Rubric never-write category. Pre-filter drops it without proposing. Empty result.
 ````
@@ -1100,25 +1100,25 @@ Meeting metadata (mimics Fathom output shape):
   "title": "SLT Standing — synthetic fixture for harvest testing",
   "url": "https://fathom.video/share/SYNTHETIC",
   "meeting_date": "2026-05-26",
-  "attendees": ["Kevin Prentiss", "Ashleigh Smith", "Adam Stone"]
+  "attendees": ["Marcus Vance", "Priya Nakamura", "Adam Ferris"]
 }
 ```
 
 ## Transcript
 
-[00:30] Kevin: "OK let's start. Adam, where are we with B2B?"
+[00:30] Marcus: "OK let's start. Adam, where are we with B2B?"
 [00:35] Adam: "I'm proposing we pause the B2B campaign through July. Chapter renewals need our attention."
-[01:14] Kevin: "Agreed. Pause through July. Adam owns partner communication."
+[01:14] Marcus: "Agreed. Pause through July. Adam owns partner communication."
 [01:30] Adam: "Will do this week."
 
-[15:22] Ashleigh: "Chapter health used to be 3 tiers. Last sprint we moved to 4 — green, yellow, orange, red. Orange is the new early-warning band."
-[15:50] Kevin: "Good. Update the framework doc and chapter dashboards."
+[15:22] Priya: "Chapter health used to be 3 tiers. Last sprint we moved to 4 — green, yellow, orange, red. Orange is the new early-warning band."
+[15:50] Marcus: "Good. Update the framework doc and chapter dashboards."
 
 [22:05] Heather (joined late): "Also wanted to flag — Q1 net margin was 14.2%, up from 11.8% in Q4. Strongest in two years."
-[22:30] Kevin: "Great. Let's hold that detail for the board, not the company-wide update."
+[22:30] Marcus: "Great. Let's hold that detail for the board, not the company-wide update."
 
 [30:00] Adam: "One more — let's start a 90-day check-in program. Red owns instrumentation. Heather owns the HR side. Q3 launch."
-[30:45] Kevin: "Yes. Good. Make it real."
+[30:45] Marcus: "Yes. Good. Make it real."
 
 ## Expected harvest output (for verification)
 
@@ -1197,7 +1197,7 @@ In Claude:
 ```
 
 The skill should:
-1. Step 0: confirm Kevin is an SLT writer
+1. Step 0: confirm Marcus is an SLT writer
 2. Step 1: load 60-nsls-knowledge topic index + rubric, sync local clone
 3. Step 2: load the synthetic meeting (already staged; the URL match should pull from the cache or the skill should accept the staged file)
 4. Step 3: extract ~4 candidates
@@ -1617,7 +1617,7 @@ git commit -m "docs(plans): mark KB harvest plan in-progress" && git push origin
 
 ---
 
-## Task 16: Port Step 4c to Kevin's local close-day fork
+## Task 16: Port Step 4c to Marcus's local close-day fork
 
 **Files:**
 - Modify: `~/.claude/skills/close-day/SKILL.md`
@@ -1664,7 +1664,7 @@ Step 4c (NSLS KB harvest) was ported from the plugin close-day SKILL.md to the l
 
 **Why:** The local close-day is a drifted fork ([[project_close_day_skill_drift]]). Plugin auto-pull doesn't update the local fork; ports happen manually.
 
-**How to apply:** When future plugin close-day changes ship, check whether they need porting to the local fork. The local fork's Step 4c is canonical for Kevin's runs.
+**How to apply:** When future plugin close-day changes ship, check whether they need porting to the local fork. The local fork's Step 4c is canonical for Marcus's runs.
 
 Related: [[feedback_skill_heartbeats]] — Step 4c must heartbeat its skip path.
 ```
@@ -1685,10 +1685,10 @@ Local fork is not under git management. Memory edit is a separate concern from p
 
 ## Task 17: Backfill the 2026-05-19 → 2026-05-29 gap ✅ DONE (2026-05-30)
 
-> **2026-05-30 result:** Backfilled a curated set of 6 meetings (Kevin chose "SLT + curated
+> **2026-05-30 result:** Backfilled a curated set of 6 meetings (Marcus chose "SLT + curated
 > strategic set"). 2 harvest commits to `thensls/nsls-knowledge`, **24 edits**, 1 new topic
 > (`ai-builder-governance`). Rubric dropped ~16 sensitive items across the set (CEO transition,
-> profit/EBITDA, owner-distribution/bonus, named comp/promotions, Gary's legal/divorce, reporting
+> profit/EBITDA, owner-distribution/bonus, named comp/promotions, Warren's legal/divorce, reporting
 > structure, security/PII research, duty-of-care incident). Heavy transcripts were processed by
 > per-meeting subagents (extract→map→dedup→rubric→merge) to keep them out of main context, then a
 > cross-meeting dedup pass collapsed overlapping fall-rollout content before one batch commit.
@@ -1703,8 +1703,8 @@ Local fork is not under git management. Memory edit is a separate concern from p
 >    hand. **Follow-up:** add an acronym-aware title map to Step 8's scaffold, or prompt for the H1.
 >
 > Meetings NOT harvested (excluded as low-KB-signal / mostly never-write): CEO-transition 1:1s (Adam,
-> Cory), coaching/relationship 1:1s (Red ×3, Jack), Gary/Kevin board-budget (financial-figure heavy).
-> One harvested meeting (WGU/Ashleigh impromptu) yielded 0 candidates — pure exploratory swirl.
+> Dana), coaching/relationship 1:1s (Red ×3, Jack), Warren/Marcus board-budget (financial-figure heavy).
+> One harvested meeting (WGU/Priya impromptu) yielded 0 candidates — pure exploratory swirl.
 >
 > Original step-by-step (kept for reference):
 
@@ -1715,10 +1715,10 @@ Local fork is not under git management. Memory edit is a separate concern from p
 
 ```bash
 # In Claude, use Fathom MCP:
-# list_meetings(start_date='2026-05-19', end_date='2026-05-29', owner_email='kprentiss@nsls.org')
+# list_meetings(start_date='2026-05-19', end_date='2026-05-29', owner_email='mvance@nsls.org')
 ```
 
-Kevin reviews the list and nominates the 3–6 meetings that had real strategic content. Specifically include the 2026-05-26 SLT meeting that prompted this whole project.
+Marcus reviews the list and nominates the 3–6 meetings that had real strategic content. Specifically include the 2026-05-26 SLT meeting that prompted this whole project.
 
 - [ ] **Step 2: Run /harvest-meeting on each nominated meeting**
 
@@ -1728,7 +1728,7 @@ For each nominated Fathom URL:
 /harvest-meeting --fathom-url <url>
 ```
 
-Kevin reviews the candidate list, approves/edits/drops as appropriate, allowing commits to land on `main`.
+Marcus reviews the candidate list, approves/edits/drops as appropriate, allowing commits to land on `main`.
 
 - [ ] **Step 3: Verify the KB now reflects the gap**
 
@@ -1760,7 +1760,7 @@ git commit -m "docs(plans): mark KB harvest plan completed; backfill applied" &&
 
 - [ ] **Step 5: Announce to the other 6 SLT**
 
-(Out of code scope; Kevin sends a Slack DM or 1:1 mention to Michael, Gary, Adam, Heather, Ashleigh, Chelsea explaining the new flow.)
+(Out of code scope; Marcus sends a Slack DM or 1:1 mention to Michael, Warren, Adam, Heather, Priya, Chelsea explaining the new flow.)
 
 ---
 
@@ -1788,32 +1788,32 @@ metadata:
 
 NSLS SLT, as of 2026-05-29, has 7 members:
 
-1. Kevin Prentiss (kprentiss@nsls.org) — Head of Product & Technology
-2. Michael O'Brien (mobrien@nsls.org) — Strategic Advisory
-3. Gary Tuerack (gtuerack@nsls.org) — Founder & Interim CEO
-4. Adam Stone (astone@nsls.org) — Head of Marketing
-5. Heather Darnell (hdarnell@nsls.org — needs adding to Airtable Members record) — Director, Human Resources
-6. Ashleigh Smith (asmith@nsls.org) — VP of Client Services
-7. Chelsea Byers (cbyers@nsls.org) — Fractional VP of Operations (FTE go/no-go 2026-06-27)
+1. Marcus Vance (mvance@nsls.org) — Head of Product & Technology
+2. Michael Osei (mosei@nsls.org) — Strategic Advisory
+3. Warren Aldrich (waldrich@nsls.org) — Founder & Interim CEO
+4. Adam Ferris (aferris@nsls.org) — Head of Marketing
+5. Heather Voss (hvoss@nsls.org — needs adding to Airtable Members record) — Director, Human Resources
+6. Priya Nakamura (pnakamura@nsls.org) — VP of Client Services
+7. Chelsea Ward (cward@nsls.org) — Fractional VP of Operations (FTE go/no-go 2026-06-27)
 
-**Note:** Anish Patel is NOT on SLT (memory previously had this wrong). He's the CFO and attends some meetings.
+**Note:** Devan Kapoor is NOT on SLT (memory previously had this wrong). He's the CFO and attends some meetings.
 
 This roster is the hardcoded source for `kb_authors.txt` in [[nsls-builder-toolkit]] until `is_slt` field lands on the SLT MI Airtable Members table.
 ```
 
 Add a pointer to MEMORY.md:
 ```
-- [Canonical SLT roster (7 members, 2026-05-29)](project_slt_roster.md) — Kevin, Michael, Gary, Adam, Heather, Ashleigh, Chelsea; NOT Anish
+- [Canonical SLT roster (7 members, 2026-05-29)](project_slt_roster.md) — Marcus, Michael, Warren, Adam, Heather, Priya, Chelsea; NOT Devan
 ```
 
 - [ ] **Step 3: Fix the stale SLT roster in slt-ops schema doc**
 
-Edit `~/nsls-skills/slt-ops/slt-meeting-agenda/references/airtable-schema.md` — the "SLT Members (for Friday Script)" table. Remove Anish, add Heather and Chelsea, match the canonical 7.
+Edit `~/nsls-skills/slt-ops/slt-meeting-agenda/references/airtable-schema.md` — the "SLT Members (for Friday Script)" table. Remove Devan, add Heather and Chelsea, match the canonical 7.
 
 ```bash
 cd ~/nsls-skills/slt-ops
 git add slt-meeting-agenda/references/airtable-schema.md
-git commit -m "fix(schema): update SLT roster to canonical 7 (no Anish; +Heather, +Chelsea)"
+git commit -m "fix(schema): update SLT roster to canonical 7 (no Devan; +Heather, +Chelsea)"
 git push origin main
 ```
 
@@ -1821,8 +1821,8 @@ git push origin main
 
 In Claude:
 ```
-Update Heather Darnell's record in SLT MI Airtable Members table (tbl9GMiujOzOD7xXn,
-base appHDEHQA4bvlWwQq). Set email field (fldwk1uKgjMxKyUjY) to hdarnell@nsls.org.
+Update Heather Voss's record in SLT MI Airtable Members table (tbl9GMiujOzOD7xXn,
+base appHDEHQA4bvlWwQq). Set email field (fldwk1uKgjMxKyUjY) to hvoss@nsls.org.
 ```
 
 (API call via mcp__claude_ai_Airtable__update_records_for_table.)
@@ -1871,4 +1871,4 @@ Plan complete. Two execution options:
 
 2. **Inline Execution** — Execute in the current session via `superpowers:executing-plans`. Batch with checkpoints. Faster if the engineer wants tight control.
 
-Either way, the plan is bite-sized enough to checkpoint after each task. Recommend pausing for Kevin review after Task 11 (end-to-end verification) before continuing into Tasks 13–17.
+Either way, the plan is bite-sized enough to checkpoint after each task. Recommend pausing for Marcus review after Task 11 (end-to-end verification) before continuing into Tasks 13–17.

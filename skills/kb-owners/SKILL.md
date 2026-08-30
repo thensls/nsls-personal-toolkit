@@ -8,7 +8,7 @@ description: Map owners and contributors across the NSLS Knowledge Base catalog,
 Two jobs against the shared NSLS Knowledge Base (`thensls/nsls-knowledge`):
 
 1. **Owner mapping campaign** (default) — batch through catalog nodes missing an `owner` or `contributors`, suggest a pick with a one-line reason, and write confirmed picks as frontmatter.
-2. **Rename repair** (`--rename "Old Name" "New Name"`) — sweep every root topic file for stale `[[Old Name]]` wikilinks (owner, contributors, any other reference) and fix them in one commit. This is the plan's R5/AE4 rename repair — the concrete trigger was Angelica Villalobos → Angelica Evans (see memory `person_angelica_evans.md`).
+2. **Rename repair** (`--rename "Old Name" "New Name"`) — sweep every root topic file for stale `[[Old Name]]` wikilinks (owner, contributors, any other reference) and fix them in one commit. This is the plan's R5/AE4 rename repair — the concrete trigger was a staff member's legal name change (Morgan Ellis → Morgan Reyes).
 3. **Light links append** (`--links <slug>`) — append reference links to a single node.
 
 This skill only ever writes to the **company** KB. Unlike `harvest-meeting`, there is no local-KB variant: owner mapping and rename repair are only meaningful against the shared catalog and the shared people directory (`_data/employees.json`), which don't exist in a private local KB. If you're not an SLT writer, the skill refuses cleanly rather than scaffolding something you'd have no reason to run this against.
@@ -22,7 +22,7 @@ git clone https://github.com/thensls/nsls-knowledge.git "$OBSIDIAN_VAULT_PATH/60
 git -C "$OBSIDIAN_VAULT_PATH/60-nsls-knowledge" config user.email <you>@nsls.org
 ```
 
-Prerequisites: your `@nsls.org` email is in `skills/harvest-meeting/kb_authors.txt` (this skill reads that same file — not a copy), and your GitHub account is a collaborator on `thensls/nsls-knowledge`. If the clone 404s, ping Kevin.
+Prerequisites: your `@nsls.org` email is in `skills/harvest-meeting/kb_authors.txt` (this skill reads that same file — not a copy), and your GitHub account is a collaborator on `thensls/nsls-knowledge`. If the clone 404s, ping Marcus.
 
 ## Modes
 
@@ -101,7 +101,7 @@ pathlib.Path('/tmp/kb-owners-ctx/gate.json').write_text(json.dumps({'is_slt': is
 **Heartbeat + gate:**
 
 - `slt_writer: True` → "Step 0: SLT writer ({matched_email} via {scope}) → proceeding against the company KB." Continue.
-- `slt_writer: False` and `looks_misconfigured: True` → heartbeat the same allowlist-gap note as harvest-meeting (checked scopes, detected `@nsls.org` emails, "ping Kevin to add you to `kb_authors.txt`"), then **stop — do not write**.
+- `slt_writer: False` and `looks_misconfigured: True` → heartbeat the same allowlist-gap note as harvest-meeting (checked scopes, detected `@nsls.org` emails, "ping Marcus to add you to `kb_authors.txt`"), then **stop — do not write**.
 - `slt_writer: False` and `looks_misconfigured: False` → "Step 0: not on the SLT allowlist — kb-owners only operates on the shared company KB, so there's nothing to do here. This is expected if you're not SLT." Stop cleanly, no error tone.
 
 ## Step 1: Load KB clone + catalog + people directory
@@ -214,7 +214,7 @@ Gather signals programmatically, then ask Claude to synthesize one suggestion pe
 
 1. **`proposed_by`** frontmatter field, if present — strongest signal (someone already flagged themselves as the proposer).
 2. **Sibling-owner mode** — among all nodes sharing this node's `parent`, tally existing `owner` values; a majority owner is a strong suggestion (`"N of M sibling nodes under [[parent]] are owned by X"`).
-3. **Harvest attribution** — `git -C <kb_dir> log --follow --pretty=format:%s -- <slug>.md` to pull every commit subject that touched this file (harvest commits embed meeting titles, e.g. `"harvest: 2026-06-02 Kevin <> Kyle (3 edits)"`). Extract name-like tokens from those subjects and fuzzy-match against `people.json` names; tally frequency.
+3. **Harvest attribution** — `git -C <kb_dir> log --follow --pretty=format:%s -- <slug>.md` to pull every commit subject that touched this file (harvest commits embed meeting titles, e.g. `"harvest: 2026-06-02 Marcus <> Kyle (3 edits)"`). Extract name-like tokens from those subjects and fuzzy-match against `people.json` names; tally frequency.
 4. **Department/topic match** — pass the node's slug/title/parent plus the people directory (name, department, role_title, status) to Claude and ask for a semantic match (e.g. `chapter-health` → Client Services / Member Experience department).
 
 Ask Claude, per node:
@@ -223,7 +223,7 @@ Ask Claude, per node:
 Node: <slug> (type: <type>, parent: <parent>)
 Signals:
   - proposed_by: <value or "none">
-  - sibling owners: <tally, e.g. "Ashleigh Smith (3/4)">
+  - sibling owners: <tally, e.g. "Priya Nakamura (3/4)">
   - harvest attribution (name mentions in commit subjects): <tally>
   - candidate people (name, department, role, active): <compact people list>
 
@@ -346,7 +346,7 @@ print(f"Step 6: committed {head} — {len(edited)} node(s), pushed to origin/mai
 PYEOF
 ```
 
-Repeat Steps 3–6 for the next batch of ~10 until `candidates.json` is exhausted or Kevin stops the campaign.
+Repeat Steps 3–6 for the next batch of ~10 until `candidates.json` is exhausted or Marcus stops the campaign.
 
 ---
 
@@ -356,7 +356,7 @@ The one guardrail exemption in this skill: rename repair runs against **every** 
 
 ### Step R1: Validate the new name
 
-Check `New Name` resolves in `people.json` (exact match, email present). If not found, warn but continue — a rename can legitimately run ahead of the next Rippling sync (this was the actual Angelica Villalobos → Angelica Evans case).
+Check `New Name` resolves in `people.json` (exact match, email present). If not found, warn but continue — a rename can legitimately run ahead of the next Rippling sync (this was the actual Morgan Ellis → Morgan Reyes case).
 
 ### Step R2: Sweep for `[[Old Name]]`
 

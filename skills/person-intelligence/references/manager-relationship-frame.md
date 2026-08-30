@@ -1,6 +1,6 @@
 # Operating user → their manager (upward) frame
 
-This instruction block is appended to the synthesizer's system prompt **only when** `relationship_type == "manager"` — i.e., when synthesizing a profile of the operating user's own boss. The reference example is Kevin Prentiss's profile of Gary Tuerack, updated 2026-05-16 with the "Respect, Protect, Resent" stance pattern.
+This instruction block is appended to the synthesizer's system prompt **only when** `relationship_type == "manager"` — i.e., when synthesizing a profile of the operating user's own boss. The reference example is Marcus Vance's profile of Warren Aldrich, updated 2026-05-16 with the "Respect, Protect, Resent" stance pattern.
 
 The user is the report here, not the manager. The coaching artifacts are aimed at the user's own behavior in the relationship, not at the manager.
 
@@ -12,7 +12,7 @@ Add these sections, in this order, between the standard sections and `## Coachin
 
 ### Section 1: `## My Stance: [emotion], [emotion], [emotion]`
 
-The user's emotional frame for the relationship. Name 2-4 dominant emotions in the headline; develop each one in 1-2 short paragraphs below. **The Kevin → Gary "Respect, Protect, Resent" pattern (added to Gary's profile 2026-05-16) is the structural reference, not the literal content** — each user has different emotions toward their own manager.
+The user's emotional frame for the relationship. Name 2-4 dominant emotions in the headline; develop each one in 1-2 short paragraphs below. **The Marcus → Warren "Respect, Protect, Resent" pattern (added to Warren's profile 2026-05-16) is the structural reference, not the literal content** — each user has different emotions toward their own manager.
 
 Look in the source data for:
 - What emotions does the user repeatedly express about this person?
@@ -54,7 +54,7 @@ After the two sections above, evaluate active coaching goals (if any) in the pro
 
 ## Preserve human-authored content
 
-If the existing profile already has a `## My Stance` section (e.g., Kevin's Gary profile, updated 2026-05-16), **read it carefully and propose updates rather than rewriting from scratch.** The existing emotions named, the existing guardrail, the existing arc framing — these are the user's curated content. If the recent data suggests an adjustment, surface it as a proposed change in the digest, not as a silent overwrite.
+If the existing profile already has a `## My Stance` section (e.g., Marcus's Warren profile, updated 2026-05-16), **read it carefully and propose updates rather than rewriting from scratch.** The existing emotions named, the existing guardrail, the existing arc framing — these are the user's curated content. If the recent data suggests an adjustment, surface it as a proposed change in the digest, not as a silent overwrite.
 
 If a `## Guardrail` exists and the recent data shows the discipline being practiced (or violated), note that in the digest. Don't invent new guardrails without strong evidence.
 
@@ -66,4 +66,4 @@ If a `## Guardrail` exists and the recent data shows the discipline being practi
 - Honest, specific, evidence-cited
 - Plain language, declarative headlines
 - Short sentences. Numbers and quotes over adjectives.
-- The Kevin/Gary 2026-05-16 update is the voice reference — terse, direct, names uncomfortable truths
+- The Marcus/Warren 2026-05-16 update is the voice reference — terse, direct, names uncomfortable truths

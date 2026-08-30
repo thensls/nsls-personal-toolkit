@@ -35,11 +35,11 @@ health: good
 health_score: 3.33
 health_last_assessed: 2026-04-13
 department: Unknown
-email: gtuerack@nsls.org
-slack: U040YTX56DP
+email: waldrich@nsls.org
+slack: U0EXAMPLE02
 ---
 
-# 🟢 Gary Tuerack
+# 🟢 Warren Aldrich
 
 Body content here. The sync MUST NOT touch any of this.
 
@@ -50,21 +50,21 @@ Body content here. The sync MUST NOT touch any of this.
 
 
 SAMPLE_EMPLOYEE = {
-    "name": "Gary Tuerack",
-    "email": "gtuerack@nsls.org",
-    "slack": "U040YTX56DP",
+    "name": "Warren Aldrich",
+    "email": "waldrich@nsls.org",
+    "slack": "U0EXAMPLE02",
     "department": "Executive",
     "title": "Founder & CEO",
     "manager": "",
-    "manages": ["Kevin Prentiss"],
+    "manages": ["Marcus Vance"],
 }
 
 
 def make_vault(profile_content):
-    """Create a temp vault dir with a 30-people/Gary Tuerack.md."""
+    """Create a temp vault dir with a 30-people/Warren Aldrich.md."""
     vault = Path(tempfile.mkdtemp(prefix="sync-test-"))
     (vault / "30-people").mkdir()
-    (vault / "30-people" / "Gary Tuerack.md").write_text(profile_content)
+    (vault / "30-people" / "Warren Aldrich.md").write_text(profile_content)
     return vault
 
 
@@ -125,7 +125,7 @@ def test_read_field():
     print("test_read_field")
     fm, _ = syn.parse_frontmatter(GOLD_PROFILE)
     email, idx = syn.read_field(fm, "email")
-    assert_eq(email, "gtuerack@nsls.org", "email read")
+    assert_eq(email, "waldrich@nsls.org", "email read")
     assert idx >= 0
     health, _ = syn.read_field(fm, "health")
     assert_eq(health, "good", "health read")
@@ -162,10 +162,10 @@ def test_diff_employee_finds_changes():
     print("test_diff_employee_finds_changes")
     vault = make_vault(GOLD_PROFILE)
     try:
-        path = vault / "30-people" / "Gary Tuerack.md"
+        path = vault / "30-people" / "Warren Aldrich.md"
         changes = syn.diff_employee(SAMPLE_EMPLOYEE, path)
-        # email already matches (gtuerack@nsls.org)
-        # slack already matches (U040YTX56DP)
+        # email already matches (waldrich@nsls.org)
+        # slack already matches (U0EXAMPLE02)
         # department: "Unknown" -> "Executive" (change)
         # title: not set -> "Founder & CEO" (change)
         # manager: empty in SAMPLE so skipped
@@ -181,7 +181,7 @@ def test_apply_preserves_body_and_other_fields():
     print("test_apply_preserves_body_and_other_fields")
     vault = make_vault(GOLD_PROFILE)
     try:
-        path = vault / "30-people" / "Gary Tuerack.md"
+        path = vault / "30-people" / "Warren Aldrich.md"
         original = path.read_text(encoding="utf-8")
         changes = syn.diff_employee(SAMPLE_EMPLOYEE, path)
         syn.apply_changes(path, changes)
@@ -218,8 +218,8 @@ def test_email_index_matching():
     try:
         people_dir = vault / "30-people"
         idx = syn.build_email_index(people_dir)
-        assert_eq("gtuerack@nsls.org" in idx, True, "email indexed")
-        assert_eq(idx["gtuerack@nsls.org"].name, "Gary Tuerack.md", "email -> right file")
+        assert_eq("waldrich@nsls.org" in idx, True, "email indexed")
+        assert_eq(idx["waldrich@nsls.org"].name, "Warren Aldrich.md", "email -> right file")
     finally:
         import shutil
         shutil.rmtree(vault)
@@ -232,7 +232,7 @@ def test_find_obsidian_file_by_email():
         people_dir = vault / "30-people"
         idx = syn.build_email_index(people_dir)
         path = syn.find_obsidian_file(SAMPLE_EMPLOYEE, people_dir, idx)
-        assert_eq(path.name, "Gary Tuerack.md", "found by email")
+        assert_eq(path.name, "Warren Aldrich.md", "found by email")
     finally:
         import shutil
         shutil.rmtree(vault)
@@ -248,7 +248,7 @@ def test_find_obsidian_file_by_name_fallback():
         people_dir = vault / "30-people"
         idx = syn.build_email_index(people_dir)
         path = syn.find_obsidian_file(SAMPLE_EMPLOYEE, people_dir, idx)
-        assert_eq(path.name, "Gary Tuerack.md", "found by name fallback")
+        assert_eq(path.name, "Warren Aldrich.md", "found by name fallback")
     finally:
         import shutil
         shutil.rmtree(vault)
@@ -260,7 +260,7 @@ def test_dry_run_doesnt_write():
     vault = make_vault(GOLD_PROFILE)
     chart_path = make_org_chart_file([SAMPLE_EMPLOYEE])
     try:
-        path = vault / "30-people" / "Gary Tuerack.md"
+        path = vault / "30-people" / "Warren Aldrich.md"
         before = path.read_text()
         result = run_script(vault, chart_path, dry_run=True)
         after = path.read_text()
@@ -277,7 +277,7 @@ def test_real_run_writes():
     vault = make_vault(GOLD_PROFILE)
     chart_path = make_org_chart_file([SAMPLE_EMPLOYEE])
     try:
-        path = vault / "30-people" / "Gary Tuerack.md"
+        path = vault / "30-people" / "Warren Aldrich.md"
         before = path.read_text()
         result = run_script(vault, chart_path, dry_run=False)
         after = path.read_text()
