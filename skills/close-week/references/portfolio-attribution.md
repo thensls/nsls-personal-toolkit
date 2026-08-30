@@ -211,9 +211,9 @@ format — verifying that format contract in one place is why the parser exists.
 |---|---|---|
 | `project_weeks` | list of `{project, quadrant, offense_pct, hours}` | one row per project this week |
 | `meeting_rows` | list of `{label, quadrant, resolved_by, hours, splits?}` | `splits`, when present, is a list of `[quadrant, share]` pairs; `quadrant` is `null` when `resolved_by` is `"topic"` (split) or `"unresolved"`. **Shares should sum to 1.0.** Over 1.0 they are normalised (the same rule `resolve_meeting()` applies), so `unresolved_hours` can never go negative and the table can never sum past 100% — and that normalisation runs over **all** the shares, out-of-vocabulary ones included, before any are dropped, so a bad quadrant's share really does reach `unresolved_hours` instead of being absorbed by its neighbours. Under 1.0 the missing share becomes unresolved hours — deliberately, because a share that went missing is time nobody attributed, not time to be absorbed into the quadrants that survived. A **negative** share is not normalised: the whole row goes to unresolved and lands in `rejected` |
-| `history` | list of `{by_quadrant, by_mode}` | most recent week first. **Both keys are REQUIRED, and both must be complete**: `by_quadrant` names all five quadrants, `by_mode` names both modes, every value a non-negative finite number. A prior week that is absent, not an object, missing a quadrant, or only partly readable (`{"offense": 10, "defense": null}`) is **not** history — the module suppresses the ENTIRE list, reads it as `[]`, and reports the reason as a `payload` entry in `rejected`. See "Absent history is never a zero" below for why anything softer manufactures flags |
-| `driver_hours` | number | optional, defaults to `0.0`. A value that is not a finite number reads as `0.0` **and is reported** — see the validation contract |
-| `held_hours` | number | optional, defaults to `0.0`. Same rule |
+| `history` | list of `{by_quadrant, by_mode, by_quadrant_mode?}` | most recent week first. **`by_quadrant` and `by_mode` are REQUIRED, and both must be complete**: `by_quadrant` names all five quadrants, `by_mode` names both modes, every value a non-negative finite number. A prior week that is absent, not an object, missing a quadrant, or only partly readable (`{"offense": 10, "defense": null}`) is **not** history — the module suppresses the ENTIRE list, reads it as `[]`, and reports the reason as a `payload` entry in `rejected`. **`by_quadrant_mode` is optional** (a note written before it was persisted has none) and costs only the assets-decaying flag when absent — that flag is scoped to ① and needs ①'s own mode split; present, it must be well formed or the entry fails like any other. An absent or empty `history` is ALSO reported, for the same reason a malformed one is. See "Absent history is never a zero" below |
+| `driver_hours` | number | optional — but **omitting it does not mean `0.0`**, it means absent, and the held-vs-driver flag is then suppressed and the suppression reported. A value that is not a finite number reads as absent too, and is reported twice: once as an unreadable value, once as the flag it suppressed. Send `0.0` only when you counted and the answer was zero |
+| `held_hours` | number | optional. Same rule |
 
 **Result shape** (what the module prints):
 
@@ -228,9 +228,11 @@ format — verifying that format contract in one place is why the parser exists.
 | `percentages` | same five quadrant keys → share of `total_hours` |
 | `mode_percentages` | `{offense, defense}` → share of the week's *project* hours, i.e. divided by `project_hours`. **These two need not sum to 100%**, and the gap is meaningful: it is project time whose mode nobody could read (an `offense_pct` the module rejected). Dividing instead by `offense + defense` forced them to 100% of a base that had quietly shrunk, hiding exactly that gap |
 | `quadrant_mode_percentages` | same five quadrant keys → `{offense, defense}` shares **within that quadrant's project hours** |
+| `unmoded_hours` | project hours that recorded no mode at all — `project_hours` minus (`by_mode.offense` + `by_mode.defense`). Exactly the slice `mode_percentages`' two shares are missing when they do not reach 100% |
+| `unmoded_pct` | `unmoded_hours` as a share of `project_hours`. Returned so the renderer never has to subtract two percentages by hand to explain the gap |
 | `unresolved_pct` | `unresolved_hours` as a share of `total_hours` |
-| `rejected` | list of `{kind, row, reason}` — everything the module refused to trust. `kind` is `"project"`, `"meeting"`, or `"payload"` (a week-level failure: a rows container that isn't a list, a bad `driver_hours` / `held_hours`, a payload that isn't an object); `row` is the raw input row verbatim; `reason` names the field and value that failed. **Empty on a clean week; when it is not empty the caller must render every entry** — see the validation contract below |
-| `flags` | list of strings, one per fired flag (reliability starvation, operating-efficiency ceiling, rising defense share, held-out-earning-driver) |
+| `rejected` | list of `{kind, row, reason}` — everything the module refused to trust, **plus every flag it could not evaluate**. `kind` is `"project"`, `"meeting"`, or `"payload"` (a week-level failure: a rows container that isn't a list, an unreadable `driver_hours` / `held_hours`, a payload that isn't an object) — and a `payload` entry whose reason ends `did not run this week` is a **flag suppression**, not a malformed row: an absent or empty `history`, a prior week with no growth-driver mode hours, an absent `driver_hours` / `held_hours`, or a payload carrying neither row container at all (an unmeasured week, which is not a week that measured 0h). Those fire on ordinary weeks, not just broken ones, and they are what stops an empty Flags block from reading as "nothing fired". `row` is the raw input row verbatim; `reason` names the field and value that failed. **Empty only when every row was trusted AND every flag could run; when it is not empty the caller must render every entry** — see the validation contract below |
+| `flags` | list of strings, one per fired flag (reliability starvation, operating-efficiency ceiling, assets decaying on ①, held-out-earning-driver) |
 
 ### The validation contract
 
@@ -249,11 +251,15 @@ format — verifying that format contract in one place is why the parser exists.
   `[quadrant, share]` pair. `for q, s in splits` raises on both
 - **a rows container that isn't a list**, and a payload that isn't an object.
   Reading either as empty would lose a whole week of work with no signal
-- **a `driver_hours` / `held_hours` that is not a finite number.** These two
-  feed *only* the held-vs-driver flag, so a bad one reads as `0.0` rather than
-  killing the week summary — that would be disproportionate to what they do.
-  But it is reported, because `0.0` is itself a number that can fire or suppress
-  that flag, and the reason has to sit next to the flag at the confirm gate
+- **a `driver_hours` / `held_hours` that is absent, or not a finite number.**
+  These two feed *only* the held-vs-driver flag, so a bad one must not kill the
+  week summary — that would be disproportionate to what they do. But neither
+  case reads as `0.0`: `0.0` is a number that can *fire* that flag (`held >
+  driver` is the firing condition), so an absent `driver_hours` beside a real
+  `held_hours` manufactured `held projects out-earned drivers (5.0h vs 0.0h)`
+  out of a field nobody supplied. Both cases read as **absent**, the flag is
+  suppressed, and the suppression is reported beside it. A value that was
+  present but unreadable is reported a second time as itself
 
 No value check may be written in `summarize()`. A second copy of the value rules
 there is exactly how these two halves came apart once already.
@@ -351,7 +357,7 @@ neutral value for either trend flag**:
   reliability-starvation flag's firing condition — an unmeasured week thereby
   manufactures "0h for 2 consecutive weeks";
 - a prior week of `{"offense": 10, "defense": null}` has a non-zero mode total
-  and a 0% defense share, which *is* the rising-defense-share flag's firing
+  and a 0% defense share, which *is* the assets-decaying flag's firing
   condition against any current week with defense in it.
 
 So a prior week is either complete and finite — both keys present, all five
@@ -363,6 +369,17 @@ week's slot and compare against the wrong week — inventing a trend rather than
 reading one. The suppression comes back as a `payload` entry in `rejected`,
 because "no flags fired" and "the trend flags could not run" print identically
 otherwise, and those two mean opposite things.
+
+**And an ABSENT history is reported the same way a malformed one is.** That is
+the common case, not the edge one — the first week on the pipeline, a gap week
+(which Step 2a #5 signals by passing `[]`), an extended close, a prior week
+whose Step 2a was rejected, any note predating this pipeline. Reporting only
+the malformed case left the *artifact* — the weekly note, which is what anyone
+reads a month later — identical in both cases, which is the exact failure the
+malformed-case report was written to end. The same rule covers the two flag
+inputs: an absent `driver_hours` / `held_hours` suppresses the held-vs-driver
+flag and says so, and a prior week with no `by_quadrant_mode` suppresses the
+assets-decaying flag and says so.
 
 This is the module-side floor. close-week Step 2a #5's own `history: []` rules —
 for skipped weeks and for an extended close — still apply on top of it: the module
@@ -410,7 +427,12 @@ There is no cell in it that the step divides by hand.
   "history": [
     {"by_quadrant": {"growth-driver": 14.0, "operating-efficiency": 5.0, "hygiene": 1.5,
                      "reliability": 0.0, "cross-cutting": 0.0},
-     "by_mode": {"offense": 12.0, "defense": 8.5}}
+     "by_mode": {"offense": 12.0, "defense": 8.5},
+     "by_quadrant_mode": {"growth-driver": {"offense": 8.0, "defense": 6.0},
+                          "operating-efficiency": {"offense": 4.0, "defense": 0.0},
+                          "hygiene": {"offense": 0.0, "defense": 1.5},
+                          "reliability": {"offense": 0.0, "defense": 0.0},
+                          "cross-cutting": {"offense": 0.0, "defense": 0.0}}}
   ],
   "driver_hours": 12.0,
   "held_hours": 4.0
@@ -450,6 +472,8 @@ There is no cell in it that the step divides by hand.
     "cross-cutting": 0.0
   },
   "mode_percentages": {"offense": 0.638, "defense": 0.362},
+  "unmoded_hours": 0.0,
+  "unmoded_pct": 0.0,
   "quadrant_mode_percentages": {
     "growth-driver": {"offense": 0.7, "defense": 0.3},
     "operating-efficiency": {"offense": 1.0, "defense": 0.0},
@@ -465,12 +489,25 @@ There is no cell in it that the step divides by hand.
 
 (Floats are shown rounded here; the module prints full precision.)
 
-No flags fire here: reliability has hours this week (only the history entry was at
-zero, and the flag needs two consecutive zero weeks); operating-efficiency sits at
-18.4%, under the 40% ceiling; this week's defense share (36.2% — defense hours over
-*project* hours, which is what the flag compares) is lower than last week's (41.5%),
-so nothing is "rising"; and held hours (4.0) don't out-earn driver
-hours (12.0). Note that `atlas` still carries 13.9h in `growth-driver` even though its
+No flags fire here, and nothing is suppressed either: reliability has hours this week
+(only the history entry was at zero, and the flag needs two consecutive zero weeks);
+operating-efficiency sits at 18.4%, under the 40% ceiling; growth-driver's own defense
+share — 3.6h of 12.0h recorded mode hours, 30%, the same number the ① row's
+Offense / Defense column prints — is lower than last week's 6.0h of 14.0h (43%), so
+nothing is "decaying"; and held hours (4.0) don't out-earn driver hours (12.0).
+
+**The flag reads ①, not the week.** Spec §3.6 scopes it to quadrant ① — "defense share
+on ① rising week over week" — and its message names growth drivers by name, so
+comparing the *week-wide* share fired it on a week where ① defense fell and hygiene's
+rose, naming the wrong assets. It is also why the flag and the table can no longer
+print two different numbers both called "the defense share": the flag quotes ①'s own
+share (the ① row's column), while **Week Offense / Defense** divides by `project_hours`
+and says so.
+
+`unmoded_hours` is `0.0` here because every project row had a readable `offense_pct`.
+Reject one — a `150` in that field — and `project_hours` still counts its hours while
+`by_mode` does not, so the two mode shares stop reaching 100% and `unmoded_pct` is the
+number that explains the gap. Note that `atlas` still carries 13.9h in `growth-driver` even though its
 project-week row alone was 12.0h — the project-fallback meeting row (1.0h) and the
 `growth-driver` share of the topic split (0.9h) both land in the same bucket, which is
 exactly the point of running meetings through the same cascade as project time.
@@ -479,6 +516,17 @@ That same example shows why rule 2 above exists. `growth-driver` holds 13.9h but
 12.0h of it is project time, so its 70 / 30 split covers 12.0h, not 13.9h.
 `cross-cutting` has no hours at all and reads `—`. Had a quadrant held *only* meeting
 hours, it too would read `—`: unknown mode, not zero offense.
+
+**A third case to expect: the week-level mode can describe hours that appear in no
+quadrant row.** An `uncategorized` project row (`quadrant: null`) routes its hours to
+**unresolved** but still contributes its offense/defense to `by_mode`, because the mode
+was read even though the bucket was not. So 4h at 100% offense uncategorized plus 6h at
+100% defense growth-driver renders **Week Offense / Defense: 40% / 60%** while no
+quadrant row shows any offense at all — those offense hours are sitting in the
+Unresolved row, which prints `—` by construction. That is arithmetically honest and
+`uncategorized` is a routine close-day output, so it is documented rather than
+"fixed" — but say it in the same line as the Hours-vs-mode note above, because nothing
+else on the page prepares a reader for it.
 
 Close-week is responsible for everything upstream of this call — attributing each
 meeting to a rule, reading `portfolio-category` frontmatter, classifying Work Log

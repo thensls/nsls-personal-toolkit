@@ -503,7 +503,18 @@ WIDE, THEN FILTER.** `list_meetings` has no meeting-time parameter at all (its f
 when the meeting happened. An evening call still processing at local midnight is created
 *outside* the day and is never harvested; an older call re-uploaded today is created *inside* it
 and gets harvested as today's. Query a **creation window padded by 2 days on each side**, then
-keep only the meetings whose own start time falls inside the true local day.
+keep only the meetings whose own **meeting date** is the target day.
+
+> **Filter on the meeting date, because that is the only meeting-time field this tool returns.**
+> `list_meetings` answers with a rendered listing, one line per recording —
+> `- <title> | YYYY-MM-DD | id: <recording_id> | url: <url> | recorded by <name> | <invitees>` —
+> and that bare `YYYY-MM-DD` is its *only* temporal field. There is **no `scheduled_start_time`
+> and no `created_at` on this surface**: `scheduled_start_time` is real but belongs to the Fathom
+> **REST** API (`api.fathom.ai/external/v1`) that `skills/person-intelligence/scripts/` call with
+> an API key — a different surface, and not precedent for this one. Post-filtering on a field the
+> response does not carry does nothing at all, and the ±2d pad then goes unopposed, rendering a
+> **5-day** window as the day. Date-only filtering cannot separate a meeting an hour either side
+> of local midnight; that residual is hours wide, against the four days the unfiltered pad costs.
 
 Compute both windows from the local zone first:
 
@@ -522,9 +533,10 @@ d = sys.argv[1]                                   # YYYY-MM-DD, the user's local
 start_local = datetime.fromisoformat(f'{d}T00:00:00').astimezone()
 end_local   = datetime.fromisoformat(f'{d}T23:59:59').astimezone()
 fmt = lambda t: t.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-# The TRUE day — what a meeting's own start time is tested against below.
-print(f'keep_from: {fmt(start_local)}')
-print(f'keep_to:   {fmt(end_local)}')
+# The TRUE day — the meeting DATE each listed meeting is tested against below.
+# A date, not an instant: the bare YYYY-MM-DD in the listing is the only
+# meeting-time field list_meetings returns.
+print(f'keep_date: {d}')
 # The FETCH window — creation time, padded so a late-created recording of a meeting
 # inside the day is still returned. The pad only widens what comes back; the
 # post-filter is what makes the result the day.
@@ -545,16 +557,15 @@ Parameters:
   - recorded_by:    ["<current user.email>"]
 ```
 
-**Then post-filter the listing on meeting time, before the exclusion filter and before any
-content fetch.** For each returned meeting read `scheduled_start_time` — the field this repo's
-other Fathom readers already use (`skills/person-intelligence/scripts/`) — and keep the meeting
-only when it falls between `keep_from` and `keep_to`. Discard the rest; they are the padding
-doing its job, not this day's meetings.
+**Then post-filter the listing on the meeting date, before the exclusion filter and before any
+content fetch.** Read the `YYYY-MM-DD` on each listing line and keep the meeting only when it
+equals `keep_date`. Discard the rest; they are the padding doing its job, not this day's
+meetings.
 
-> **A meeting whose start time you cannot read is not silently kept or silently dropped.** If a
-> listed meeting carries no `scheduled_start_time`, fall back to judging it by `created_at`
-> against the *unpadded* window — the old behaviour — and report the count:
-> `Step 2: N meeting(s) had no meeting-time field; filtered by creation time instead.`
+> **A listing line whose date you cannot read is not silently kept or silently dropped.** This
+> surface has no second temporal field to fall back on, so **keep it** — dropping a real meeting
+> is the worse error — and say so, naming the titles:
+> `Step 2: N meeting(s) had no readable date; kept unfiltered, check them.`
 
 > ⚠️ **Use these parameter names exactly.** There is no `start_date`, `end_date`, `owner_email`,
 > or `recording_start_time` on this tool — earlier versions of this skill documented the first
@@ -564,14 +575,15 @@ doing its job, not this day's meetings.
 
 **Heartbeat both windows**, so a timezone mismatch is visible instead of looking like a quiet day
 and so the pad is never mistaken for the day: `Step 2: fetch <created_after> → <created_before>
-(±2d pad); kept M of N by meeting time in local day YYYY-MM-DD, <tz>`.
+(±2d pad); kept M of N by meeting date == YYYY-MM-DD, <tz>`. **M must be smaller than N on most
+days** — a ±2d pad that returns nothing to discard usually means the filter did not run.
 
 Stash the raw listing — titles, ids and invitees only, **no transcripts** — at
 `/tmp/harvest-meeting-ctx/listing.json`.
 
-**Now apply the exclusion filter — before fetching any content, and after the meeting-time
+**Now apply the exclusion filter — before fetching any content, and after the meeting-date
 filter above.** The identifying fields `list_meetings` gives you are `recording_id`, `title`,
-`url`, `recorded_by`, `calendar_invitees` and the meeting's own `scheduled_start_time`; Fathom
+`url`, `recorded_by`, `calendar_invitees` and the meeting's bare `YYYY-MM-DD` date; Fathom
 exposes no "private meeting" flag, so exclusion is driven by a user-owned denylist matched on the
 title and invitees.
 
@@ -1151,11 +1163,14 @@ Rules for the week window:
 - **Fetch wide, then filter, same as Step 2.** `created_after` / `created_before` filter Fathom's
   `created_at`, not the meeting's own time, and there is no meeting-time parameter to pass
   instead. Pad the creation window by 2 days on each side, then keep only the meetings whose
-  `scheduled_start_time` falls inside the true local week. Without the post-filter this mode
-  reports a Friday-evening meeting created after midnight as "never harvested" every week, and
-  lists an older re-uploaded call as one of the week's meetings.
-- A listed meeting with no readable `scheduled_start_time` falls back to `created_at` against the
-  *unpadded* week, and the count is reported — never silently kept or dropped.
+  **meeting date** — the bare `YYYY-MM-DD` on each listing line, and the only meeting-time field
+  `list_meetings` returns — falls inside the true local week, inclusive. Without the post-filter
+  this mode reports a Friday-evening meeting created after midnight as "never harvested" every
+  week, and lists an older re-uploaded call as one of the week's meetings; filtered on a field
+  the tool does not return (`scheduled_start_time` is the REST API's, not this one's) it does
+  both anyway, over an 11-day window.
+- A listing line with no readable date is **kept** and reported by title — never silently kept
+  or dropped. There is no second temporal field on this surface to fall back on.
 - Filter the listing through the denylist **before** requesting summaries.
 - Excluded meetings are **not** counted as unharvested and **not** listed by title. Report them
   only as an aggregate count, so the exclusion is visible without leaking what was excluded:

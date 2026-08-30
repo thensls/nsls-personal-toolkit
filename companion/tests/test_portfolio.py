@@ -7,6 +7,21 @@ from companion.portfolio import (
 )
 
 
+# summarize() reports TWO different things in one `rejected` list, because the
+# caller has exactly one place to look: rows it refused to trust, and flags it
+# could not evaluate (absent history, absent driver_hours / held_hours). The
+# second kind fires on almost every payload a unit test writes -- a test
+# payload rarely carries a prior week -- so the row-level assertions below
+# filter it out rather than counting it. `_flag_suppressions` is the other
+# half, asserted directly by the tests that are about it.
+def _flag_suppressions(result):
+    return [r for r in result["rejected"] if "did not run" in r["reason"]]
+
+
+def _row_rejections(result):
+    return [r for r in result["rejected"] if "did not run" not in r["reason"]]
+
+
 def test_quadrant_vocabulary_is_exactly_the_five_spec_values():
     assert QUADRANTS == (
         "growth-driver",
@@ -182,12 +197,18 @@ def test_meetings_carry_no_mode_so_mode_totals_come_only_from_projects():
 from companion.portfolio import evaluate_flags, WeekTotals
 
 
-def _totals(quadrants, offense=1.0, defense=1.0, total=None):
+def _totals(quadrants, offense=1.0, defense=1.0, total=None,
+            quadrant_mode=None):
+    """`quadrant_mode` is the per-quadrant offense/defense split the
+    assets-decaying flag reads (spec 3.6 scopes it to growth-driver). Left
+    out, the week records NO per-quadrant mode hours -- which the flag must
+    read as "nobody measured" and suppress on, never as "0% defense"."""
     base = {q: 0.0 for q in ("growth-driver", "operating-efficiency",
                              "hygiene", "reliability", "cross-cutting")}
     base.update(quadrants)
     return WeekTotals(base, {"offense": offense, "defense": defense}, 0.0,
-                      total if total is not None else sum(base.values()))
+                      total if total is not None else sum(base.values()),
+                      dict(quadrant_mode or {}), (), offense + defense)
 
 
 def test_reliability_starvation_fires_at_two_consecutive_zero_weeks():
@@ -211,10 +232,71 @@ def test_operating_efficiency_over_forty_percent_fires():
 
 
 def test_rising_defense_share_fires():
-    prior = _totals({"growth-driver": 10.0}, offense=9.0, defense=1.0)
-    current = _totals({"growth-driver": 10.0}, offense=5.0, defense=5.0)
+    prior = _totals({"growth-driver": 10.0}, offense=9.0, defense=1.0,
+                    quadrant_mode={"growth-driver": {"offense": 9.0,
+                                                     "defense": 1.0}})
+    current = _totals({"growth-driver": 10.0}, offense=5.0, defense=5.0,
+                      quadrant_mode={"growth-driver": {"offense": 5.0,
+                                                       "defense": 5.0}})
     flags = evaluate_flags(current, [prior], driver_hours=10.0, held_hours=0.0)
     assert any("defense" in f.lower() for f in flags)
+
+
+def test_assets_decaying_is_scoped_to_growth_driver_not_the_whole_week():
+    """Spec 3.6 scopes this flag to quadrant 1, and its message names growth
+    drivers by name. Computed week-wide it fired on a week whose growth-driver
+    defense FELL while hygiene's rose -- naming the wrong assets."""
+    prior = _totals({"growth-driver": 10.0, "hygiene": 10.0},
+                    offense=18.0, defense=2.0,
+                    quadrant_mode={"growth-driver": {"offense": 8.0,
+                                                     "defense": 2.0},
+                                   "hygiene": {"offense": 10.0,
+                                               "defense": 0.0}})
+    # Week-wide defense rose 10% -> 45%; growth-driver defense FELL 20% -> 10%.
+    current = _totals({"growth-driver": 10.0, "hygiene": 10.0},
+                      offense=11.0, defense=9.0,
+                      quadrant_mode={"growth-driver": {"offense": 9.0,
+                                                       "defense": 1.0},
+                                     "hygiene": {"offense": 2.0,
+                                                 "defense": 8.0}})
+    flags = evaluate_flags(current, [prior], driver_hours=20.0, held_hours=0.0)
+    assert not any("decaying" in f for f in flags)
+
+
+def test_assets_decaying_fires_when_growth_driver_defense_rises_alone():
+    """The mirror image: the week-wide share FALLS while growth-driver's own
+    rises. The flag is about quadrant 1, so it must still fire."""
+    prior = _totals({"growth-driver": 10.0, "hygiene": 10.0},
+                    offense=10.0, defense=10.0,
+                    quadrant_mode={"growth-driver": {"offense": 9.0,
+                                                     "defense": 1.0},
+                                   "hygiene": {"offense": 1.0,
+                                               "defense": 9.0}})
+    current = _totals({"growth-driver": 10.0, "hygiene": 10.0},
+                      offense=15.0, defense=5.0,
+                      quadrant_mode={"growth-driver": {"offense": 5.0,
+                                                       "defense": 5.0},
+                                     "hygiene": {"offense": 10.0,
+                                                 "defense": 0.0}})
+    flags = evaluate_flags(current, [prior], driver_hours=20.0, held_hours=0.0)
+    assert any("decaying" in f for f in flags)
+    assert any("growth-driver" in f for f in flags)
+
+
+def test_a_prior_week_with_no_growth_driver_mode_hours_suppresses_and_reports():
+    """A prior note written before by_quadrant_mode was persisted carries no
+    growth-driver mode hours. That is "nobody measured", not "0% defense" --
+    reading it as zero fires the flag against any week with defense in it."""
+    prior = _totals({"growth-driver": 10.0}, offense=9.0, defense=1.0)
+    current = _totals({"growth-driver": 10.0}, offense=5.0, defense=5.0,
+                      quadrant_mode={"growth-driver": {"offense": 5.0,
+                                                       "defense": 5.0}})
+    rejects = []
+    flags = evaluate_flags(current, [prior], driver_hours=10.0, held_hours=0.0,
+                           rejects=rejects)
+    assert not any("decaying" in f for f in flags)
+    assert any("did not run" in r.reason and "growth-driver" in r.reason
+               for r in rejects)
 
 
 def test_held_out_earning_driver_fires():
@@ -253,7 +335,11 @@ def test_summarize_round_trips_a_well_formed_payload_to_quadrant_totals_and_perc
             {"by_quadrant": {"growth-driver": 9.0, "operating-efficiency": 0.0,
                              "hygiene": 0.0, "reliability": 1.0,
                              "cross-cutting": 0.0},
-             "by_mode": {"offense": 9.0, "defense": 1.0}},
+             "by_mode": {"offense": 9.0, "defense": 1.0},
+             # Spec 3.6 scopes the assets-decaying flag to quadrant 1, so the
+             # comparison is growth-driver's own mode split, not the week's.
+             "by_quadrant_mode": {"growth-driver": {"offense": 9.0,
+                                                    "defense": 0.0}}},
         ],
         "driver_hours": 4.0,
         "held_hours": 0.0,
@@ -268,13 +354,16 @@ def test_summarize_round_trips_a_well_formed_payload_to_quadrant_totals_and_perc
     assert result["percentages"]["growth-driver"] == pytest.approx(3.6 / 5.0)
     assert result["percentages"]["reliability"] == pytest.approx(1.0 / 5.0)
     assert isinstance(result["flags"], list)
-    # This assertion depends on the history entry's by_mode content: current
-    # defense share is 1.0/4.0 = 25% (from project hours only -- the meeting
-    # carries no mode); the supplied history recorded a defense share of
-    # 1.0/10.0 = 10%. 25% > 10% is a genuine rise, so the flag fires. Delete
-    # the history entry, or raise its defense hours to >= 2.5 (>= current's
-    # share), and this flag stops firing.
-    assert any("defense" in f.lower() for f in result["flags"])
+    # This assertion depends on the history entry's growth-driver mode split:
+    # this week 'beta' is reliability and 'alpha' is 100% offense, so the only
+    # growth-driver mode hours are alpha's 3.0 offense -- a 0% defense share,
+    # equal to the prior week's 0%, so NOT a rise. The meeting's 0.6 share of
+    # growth-driver carries no mode at all and is deliberately absent from the
+    # comparison.
+    assert not any("decaying" in f for f in result["flags"])
+    # Nothing was suppressed either: every flag input this payload needs is
+    # present, so the flag did not fire because the trend is not there.
+    assert result["rejected"] == []
 
 
 def test_summarize_handles_an_empty_payload_with_zero_totals_and_no_division_by_zero():
@@ -305,15 +394,18 @@ def test_summarize_produces_defense_flag_when_history_by_mode_shows_a_real_rise(
             {"by_quadrant": {"growth-driver": 10.0, "operating-efficiency": 0.0,
                              "hygiene": 0.0, "reliability": 0.0,
                              "cross-cutting": 0.0},
-             "by_mode": {"offense": 9.0, "defense": 1.0}},
+             "by_mode": {"offense": 9.0, "defense": 1.0},
+             "by_quadrant_mode": {"growth-driver": {"offense": 9.0,
+                                                    "defense": 1.0}}},
         ],
         "driver_hours": 10.0,
         "held_hours": 0.0,
     }
     result = summarize(payload)
-    assert any("defense" in f.lower() for f in result["flags"])
+    # growth-driver defense: 10% last week -> 50% this week.
+    assert any("decaying" in f for f in result["flags"])
     # A complete prior week is history, so nothing was suppressed.
-    assert result["rejected"] == []
+    assert _row_rejections(result) == []
 
 
 def test_summarize_with_a_by_mode_less_history_entry_suppresses_history_and_says_so():
@@ -990,10 +1082,10 @@ def test_summarize_exposes_rejected_rows_so_the_confirm_gate_can_show_them():
     }
     result = summarize(payload)
 
-    assert len(result["rejected"]) == 2
-    assert {r["kind"] for r in result["rejected"]} == {"project", "meeting"}
+    assert len(_row_rejections(result)) == 2
+    assert {r["kind"] for r in _row_rejections(result)} == {"project", "meeting"}
     assert all(r["reason"] for r in result["rejected"])
-    assert result["rejected"][0]["row"]["offense_pct"] == 150
+    assert _row_rejections(result)[0]["row"]["offense_pct"] == 150
     assert result["by_mode"]["defense"] >= 0.0
     assert result["unresolved_hours"] == pytest.approx(6.0)
     assert (sum(result["by_quadrant"].values()) + result["unresolved_hours"]
@@ -1006,7 +1098,7 @@ def test_summarize_on_a_clean_payload_returns_an_empty_rejected_list():
                            "offense_pct": 0, "hours": 1.0}],
         "meeting_rows": [],
     })
-    assert result["rejected"] == []
+    assert _row_rejections(result) == []
 
 
 def test_cli_prints_rejected_rows_as_json():
@@ -1020,9 +1112,9 @@ def test_cli_prints_rejected_rows_as_json():
     proc = _run_cli([], payload)
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout)
-    assert len(out["rejected"]) == 1
-    assert out["rejected"][0]["row"]["quadrant"] == "made-up"
-    assert "made-up" in out["rejected"][0]["reason"]
+    assert len(_row_rejections(out)) == 1
+    assert _row_rejections(out)[0]["row"]["quadrant"] == "made-up"
+    assert "made-up" in _row_rejections(out)[0]["reason"]
 
 
 # --- F: the boundary validates TYPE and FINITENESS, not just range -------
@@ -1158,7 +1250,7 @@ def test_summarize_reports_a_malformed_row_instead_of_aborting_the_week():
     assert result["total_hours"] == pytest.approx(4.0)
     assert result["by_quadrant"]["growth-driver"] == pytest.approx(4.0)
     assert all(math.isfinite(v) for v in result["percentages"].values())
-    assert len(result["rejected"]) == 3
+    assert len(_row_rejections(result)) == 3
     assert all(r["reason"] for r in result["rejected"])
     assert (sum(result["by_quadrant"].values()) + result["unresolved_hours"]
             == pytest.approx(result["total_hours"]))
@@ -1175,7 +1267,7 @@ def test_a_rejected_row_carrying_nan_still_serialises_as_valid_json():
     })
     text = json.dumps(result["rejected"], allow_nan=False)   # must not raise
     assert "inf" in text
-    assert result["rejected"][0]["row"]["hours"] == "inf"
+    assert _row_rejections(result)[0]["row"]["hours"] == "inf"
 
 
 def test_cli_still_returns_a_week_when_one_payload_row_is_malformed():
@@ -1194,8 +1286,8 @@ def test_cli_still_returns_a_week_when_one_payload_row_is_malformed():
     assert proc.returncode == 0, proc.stderr
     out = json.loads(proc.stdout)
     assert out["total_hours"] == pytest.approx(1.0)
-    assert len(out["rejected"]) == 1
-    assert out["rejected"][0]["row"]["hours"] == "2"
+    assert len(_row_rejections(out)) == 1
+    assert _row_rejections(out)[0]["row"]["hours"] == "2"
 
 
 def test_parse_daily_note_skips_an_hours_field_that_floats_to_infinity():
@@ -1319,11 +1411,19 @@ def test_the_invariant_survives_randomised_malformed_input():
     # 1e308 / 8e307 / 5e307 are FINITE and their arithmetic is not: 1e308
     # hours at 50% overflows the product, and two 8e307-hour rows overflow
     # the running total. Validating the inputs was never enough.
+    # HUGE INTS, not just huge floats. Python ints are arbitrary-precision
+    # and math.isfinite() converts to float FIRST, so math.isfinite(10**400)
+    # RAISES OverflowError instead of returning False -- the finiteness guard
+    # raising the very exception it exists to prevent, killing the whole week
+    # over one drifted number. The previous corpus had 1e308 but no big int,
+    # which is why 481 green tests missed it.
+    huge_int = 10 ** 400
     numbers = [0.0, 1.0, 2.5, -3.0, 0.25, 1e308, 8e307, 5e307,
+               huge_int, -huge_int, 10 ** 309, 2 ** 1024, 10 ** 308,
                "2", "", None, True, False, [], {}, object(),
                float("nan"), float("inf"), float("-inf")]
     quadrants = sorted(_VALID) + [None, "founder-transition", "", 7]
-    percents = [0, 50, 100, 150, -20, "80", None, True,
+    percents = [0, 50, 100, 150, -20, "80", None, True, huge_int, -huge_int,
                 float("nan"), float("inf")]
 
     for _ in range(400):
@@ -1383,10 +1483,10 @@ def test_a_project_row_missing_a_required_key_is_rejected_not_raised(missing):
     result = summarize({"project_weeks": [row], "meeting_rows": []})
 
     assert result["total_hours"] == 0.0
-    assert len(result["rejected"]) == 1
-    assert result["rejected"][0]["kind"] == "project"
-    assert repr(missing) in result["rejected"][0]["reason"]
-    assert "missing required key" in result["rejected"][0]["reason"]
+    assert len(_row_rejections(result)) == 1
+    assert _row_rejections(result)[0]["kind"] == "project"
+    assert repr(missing) in _row_rejections(result)[0]["reason"]
+    assert "missing required key" in _row_rejections(result)[0]["reason"]
 
 
 @pytest.mark.parametrize("missing", ["label", "resolved_by", "hours"])
@@ -1397,9 +1497,9 @@ def test_a_meeting_row_missing_a_required_key_is_rejected_not_raised(missing):
     result = summarize({"project_weeks": [], "meeting_rows": [row]})
 
     assert result["total_hours"] == 0.0
-    assert len(result["rejected"]) == 1
-    assert result["rejected"][0]["kind"] == "meeting"
-    assert repr(missing) in result["rejected"][0]["reason"]
+    assert len(_row_rejections(result)) == 1
+    assert _row_rejections(result)[0]["kind"] == "meeting"
+    assert repr(missing) in _row_rejections(result)[0]["reason"]
 
 
 def test_a_meeting_row_may_still_omit_quadrant_and_splits():
@@ -1409,7 +1509,7 @@ def test_a_meeting_row_may_still_omit_quadrant_and_splits():
     result = summarize({"meeting_rows": [
         {"label": "adhoc", "resolved_by": "unresolved", "hours": 1.5},
     ]})
-    assert result["rejected"] == []
+    assert _row_rejections(result) == []
     assert result["total_hours"] == pytest.approx(1.5)
     assert result["unresolved_hours"] == pytest.approx(1.5)
 
@@ -1431,7 +1531,7 @@ def test_a_row_missing_a_key_costs_its_own_row_and_nothing_else():
     assert result["total_hours"] == pytest.approx(5.0)
     assert result["by_quadrant"]["growth-driver"] == pytest.approx(4.0)
     assert result["by_quadrant"]["hygiene"] == pytest.approx(1.0)
-    assert len(result["rejected"]) == 2
+    assert len(_row_rejections(result)) == 2
     assert (sum(result["by_quadrant"].values()) + result["unresolved_hours"]
             == pytest.approx(result["total_hours"]))
 
@@ -1451,8 +1551,8 @@ def test_a_malformed_splits_container_is_rejected_not_unpacked(bad_splits):
          "hours": 2.0, "splits": bad_splits},
     ]})
     assert result["total_hours"] == 0.0
-    assert len(result["rejected"]) == 1
-    assert "splits" in result["rejected"][0]["reason"]
+    assert len(_row_rejections(result)) == 1
+    assert "splits" in _row_rejections(result)[0]["reason"]
 
 
 @pytest.mark.parametrize("key", ["project_weeks", "meeting_rows", "history"])
@@ -1461,9 +1561,9 @@ def test_a_non_list_rows_container_is_reported_not_read_as_empty(key):
     silent empty read is a whole week of work vanishing with no signal."""
     result = summarize({key: {"oops": 1}})
     assert result["total_hours"] == 0.0
-    assert len(result["rejected"]) == 1
-    assert result["rejected"][0]["kind"] == "payload"
-    assert key in result["rejected"][0]["reason"]
+    assert len(_row_rejections(result)) == 1
+    assert _row_rejections(result)[0]["kind"] == "payload"
+    assert key in _row_rejections(result)[0]["reason"]
 
 
 @pytest.mark.parametrize("payload", [None, [], "week", 3])
@@ -1471,8 +1571,8 @@ def test_a_payload_that_is_not_an_object_returns_an_empty_week_and_says_so(paylo
     result = summarize(payload)
     assert result["total_hours"] == 0.0
     assert result["flags"] == []
-    assert len(result["rejected"]) == 1
-    assert result["rejected"][0]["kind"] == "payload"
+    assert len(_row_rejections(result)) == 1
+    assert _row_rejections(result)[0]["kind"] == "payload"
 
 
 # --- F (cont.): driver_hours / held_hours ---------------------------------
@@ -1480,11 +1580,12 @@ def test_a_payload_that_is_not_an_object_returns_an_empty_week_and_says_so(paylo
 
 @pytest.mark.parametrize("key", ["driver_hours", "held_hours"])
 @pytest.mark.parametrize("bad", ["4", None, float("nan"), float("inf"), True, []])
-def test_bad_driver_or_held_hours_read_as_zero_and_are_reported(key, bad):
+def test_bad_driver_or_held_hours_read_as_absent_and_are_reported(key, bad):
     """`held_hours > driver_hours` raises TypeError on a string or None, and
-    a NaN compares false forever. These feed only the held-vs-driver flag,
-    so a bad one reads 0.0 -- but it is REPORTED, because 0.0 is itself a
-    number that can fire (or suppress) that flag."""
+    a NaN compares false forever. These feed only the held-vs-driver flag, so
+    a bad one must not cost the week -- but it reads as ABSENT, never as 0.0:
+    0.0 is itself a number that can fire that flag. Reported twice, on
+    purpose: once for the unreadable value, once for the flag it suppressed."""
     payload = {
         "project_weeks": [{"project": "good", "quadrant": "hygiene",
                            "offense_pct": 0, "hours": 3.0}],
@@ -1494,10 +1595,13 @@ def test_bad_driver_or_held_hours_read_as_zero_and_are_reported(key, bad):
     result = summarize(payload)                     # must not raise
 
     assert result["total_hours"] == pytest.approx(3.0)
-    assert len(result["rejected"]) == 1
-    assert result["rejected"][0]["kind"] == "payload"
-    assert key in result["rejected"][0]["reason"]
-    assert "0.0" in result["rejected"][0]["reason"]
+    assert len(_row_rejections(result)) == 1
+    assert _row_rejections(result)[0]["kind"] == "payload"
+    assert key in _row_rejections(result)[0]["reason"]
+    assert "never as 0.0" in _row_rejections(result)[0]["reason"]
+    assert any("held-vs-driver flag did not run" in r["reason"]
+               for r in _flag_suppressions(result))
+    assert not any("held projects out-earned" in f for f in result["flags"])
     json.dumps(result["rejected"], allow_nan=False)
 
 
@@ -1514,7 +1618,7 @@ def test_a_bad_driver_hours_still_lets_the_rest_of_the_week_summarize():
     })
     assert result["total_hours"] == pytest.approx(8.0)
     assert result["by_quadrant"]["reliability"] == pytest.approx(6.0)
-    assert len(result["rejected"]) == 2
+    assert len(_row_rejections(result)) == 2
     # held 0.0 > driver 0.0 is false, so no flag is manufactured either.
     assert not any("out-earned" in f for f in result["flags"])
 
@@ -1527,7 +1631,7 @@ def test_good_driver_and_held_hours_still_fire_the_flag():
         "driver_hours": 1.0,
         "held_hours": 5.0,
     })
-    assert result["rejected"] == []
+    assert _row_rejections(result) == []
     assert any("out-earned" in f for f in result["flags"])
 
 
@@ -1612,7 +1716,7 @@ def test_a_complete_history_pair_still_fires_reliability_starvation():
         "history": [prior],
     })
     assert any("Reliability starving" in f for f in result["flags"])
-    assert result["rejected"] == []
+    assert _row_rejections(result) == []
 
 
 def test_cli_still_returns_a_week_when_a_payload_row_is_missing_a_key():
@@ -1639,8 +1743,12 @@ def test_the_invariant_survives_randomised_malformed_payloads():
     rng = random.Random(20260830)
     # 1e308 and 8e307 are FINITE inputs whose products and sums are not:
     # 1e308 * 50 overflows, and two 8e307-hour rows overflow the week total.
+    # 10**400 and friends are the H1 corpus: a JSON integer literal has no
+    # bound, json.load materialises it as a Python int, and math.isfinite()
+    # RAISES on one rather than returning False.
     values = [0.0, 1.0, 2.5, -3.0, "2", "", None, True, [], {},
-              float("nan"), float("inf"), float("-inf"), 1e308, 8e307, 50]
+              float("nan"), float("inf"), float("-inf"), 1e308, 8e307, 50,
+              10 ** 400, -(10 ** 400), 10 ** 309, 2 ** 1024, 10 ** 308]
     quadrants = ["growth-driver", "hygiene", "cross-cutting", None,
                  "founder-transition", "", 7]
     splits_shapes = [
@@ -1649,6 +1757,9 @@ def test_the_invariant_survives_randomised_malformed_payloads():
         [["growth-driver", "x"]], [["hygiene", 1.0]],
         # Finite shares whose SUM overflows.
         [["growth-driver", 1e308], ["hygiene", 1e308]],
+        # Finite-as-JSON integer shares with no float at all.
+        [["growth-driver", 10 ** 400], ["hygiene", 10 ** 400]],
+        [["growth-driver", 10 ** 308], ["hygiene", 10 ** 308]],
     ]
 
     def drop_keys(row):
@@ -1676,7 +1787,25 @@ def test_the_invariant_survives_randomised_malformed_payloads():
                            "splits": rng.choice(splits_shapes)})
                 for i in range(rng.randint(0, 3))
             ],
-            "history": rng.choice([[], [{}], [None], [{"by_mode": "x"}]]),
+            "history": rng.choice([
+                [], [{}], [None], [{"by_mode": "x"}],
+                # A complete-looking prior week carrying a big int.
+                [{"by_quadrant": {"growth-driver": 10 ** 400,
+                                  "operating-efficiency": 0.0, "hygiene": 0.0,
+                                  "reliability": 0.0, "cross-cutting": 0.0},
+                  "by_mode": {"offense": 10 ** 400, "defense": 1},
+                  "by_quadrant_mode": {"growth-driver": {
+                      "offense": 10 ** 400, "defense": 10 ** 400}}}],
+                [{"by_quadrant": {"growth-driver": 1.0,
+                                  "operating-efficiency": 0.0, "hygiene": 0.0,
+                                  "reliability": 0.0, "cross-cutting": 0.0},
+                  "by_mode": {"offense": 1.0, "defense": 0.0},
+                  "by_quadrant_mode": rng.choice([
+                      None, "x", {"typo": {"offense": 1.0, "defense": 0.0}},
+                      {"growth-driver": {"offense": 1.0}},
+                      {"growth-driver": {"offense": 1.0, "defense": 0.0}},
+                  ])}],
+            ]),
             "driver_hours": rng.choice(values),
             "held_hours": rng.choice(values),
         }
@@ -1690,6 +1819,9 @@ def test_the_invariant_survives_randomised_malformed_payloads():
         assert all(math.isfinite(v) for v in result["percentages"].values())
         assert all(math.isfinite(v) for v in result["by_mode"].values())
         assert all(math.isfinite(v) for v in result["mode_percentages"].values())
+        assert math.isfinite(result["unmoded_hours"])
+        assert math.isfinite(result["unmoded_pct"])
+        assert result["unmoded_hours"] >= 0.0
         assert all(math.isfinite(h)
                    for modes in result["by_quadrant_mode"].values()
                    for h in modes.values())
@@ -1784,7 +1916,7 @@ def test_huge_but_finite_hours_and_percent_do_not_overflow_the_mode_split():
         ],
         "meeting_rows": [],
     })
-    assert result["rejected"] == []
+    assert _row_rejections(result) == []
     assert result["by_mode"]["offense"] == pytest.approx(5e307)
     assert result["by_mode"]["defense"] == pytest.approx(5e307)
     assert math.isfinite(result["total_hours"])
@@ -1842,8 +1974,8 @@ def test_split_shares_that_sum_past_the_finite_range_route_the_row_to_unresolved
     assert result["total_hours"] == pytest.approx(2.0)
     assert result["unresolved_hours"] == pytest.approx(2.0)
     assert all(v == 0.0 for v in result["by_quadrant"].values())
-    assert len(result["rejected"]) == 1
-    assert "finite range" in result["rejected"][0]["reason"]
+    assert len(_row_rejections(result)) == 1
+    assert "finite range" in _row_rejections(result)[0]["reason"]
     json.dumps(result, allow_nan=False)
 
 
@@ -1861,5 +1993,287 @@ def test_a_history_entry_whose_hours_sum_past_the_finite_range_is_suppressed():
         ],
     })
     assert any("history suppressed" in r["reason"] for r in result["rejected"])
-    assert not any("Defense share rose" in f for f in result["flags"])
+    assert not any("decaying" in f for f in result["flags"])
     json.dumps(result, allow_nan=False)
+
+
+# --- H1: a large JSON integer must be REJECTED, never fatal ---------------
+#
+# math.isfinite() converts its argument to float first, so math.isfinite() on
+# an int with more than ~308 digits raises OverflowError rather than returning
+# False. JSON permits an unbounded integer literal and json.load materialises
+# it as a Python int, so one drifted number in a payload used to kill the
+# whole week: the CLI exited 1 with EMPTY stdout and the confirm gate never
+# saw the row that caused it -- the exact failure "nothing raises out of
+# summarize()" exists to prevent.
+
+_BIG_INT = 10 ** 400
+
+
+def test_the_finiteness_guard_returns_false_on_a_huge_int_instead_of_raising():
+    from companion.portfolio import _finite_number
+    assert _finite_number(_BIG_INT) is False
+    assert _finite_number(-_BIG_INT) is False
+    assert _finite_number(10 ** 308) is True          # still inside float range
+    assert _finite_number(2 ** 1024) is False         # just past float max
+
+
+@pytest.mark.parametrize("payload", [
+    pytest.param({"project_weeks": [{"project": "p", "quadrant": "hygiene",
+                                     "offense_pct": 50, "hours": _BIG_INT}]},
+                 id="project-hours"),
+    pytest.param({"project_weeks": [{"project": "p", "quadrant": "hygiene",
+                                     "offense_pct": _BIG_INT, "hours": 2.0}]},
+                 id="offense-pct"),
+    pytest.param({"meeting_rows": [{"label": "m", "quadrant": "hygiene",
+                                    "resolved_by": "role",
+                                    "hours": _BIG_INT}]},
+                 id="meeting-hours"),
+    pytest.param({"meeting_rows": [{"label": "m", "quadrant": None,
+                                    "resolved_by": "topic", "hours": 2.0,
+                                    "splits": [["hygiene", _BIG_INT]]}]},
+                 id="split-share"),
+    pytest.param({"driver_hours": _BIG_INT, "held_hours": 1.0},
+                 id="driver-hours"),
+    pytest.param({"held_hours": _BIG_INT, "driver_hours": 1.0},
+                 id="held-hours"),
+    pytest.param({"history": [{"by_quadrant": {"growth-driver": _BIG_INT,
+                                               "operating-efficiency": 0.0,
+                                               "hygiene": 0.0,
+                                               "reliability": 0.0,
+                                               "cross-cutting": 0.0},
+                               "by_mode": {"offense": 1.0, "defense": 0.0}}]},
+                 id="history-by-quadrant"),
+    pytest.param({"history": [{"by_quadrant": {"growth-driver": 1.0,
+                                               "operating-efficiency": 0.0,
+                                               "hygiene": 0.0,
+                                               "reliability": 0.0,
+                                               "cross-cutting": 0.0},
+                               "by_mode": {"offense": _BIG_INT,
+                                           "defense": 0.0}}]},
+                 id="history-by-mode"),
+    pytest.param({"history": [{"by_quadrant": {"growth-driver": 1.0,
+                                               "operating-efficiency": 0.0,
+                                               "hygiene": 0.0,
+                                               "reliability": 0.0,
+                                               "cross-cutting": 0.0},
+                               "by_mode": {"offense": 1.0, "defense": 0.0},
+                               "by_quadrant_mode": {"growth-driver": {
+                                   "offense": _BIG_INT, "defense": 0.0}}}]},
+                 id="history-by-quadrant-mode"),
+])
+def test_a_huge_json_integer_is_rejected_and_never_kills_the_week(payload):
+    result = summarize(payload)                       # must not raise
+    assert any(r["reason"] for r in result["rejected"])
+    assert math.isfinite(result["total_hours"])
+    assert (sum(result["by_quadrant"].values()) + result["unresolved_hours"]
+            == pytest.approx(result["total_hours"]))
+    json.dumps(result, allow_nan=False)
+
+
+def test_a_huge_json_integer_sum_is_rejected_not_fatal():
+    """Every share finite on its own, their SUM past the float range -- and as
+    ints there is no float for math.isfinite() to inspect at all."""
+    result = summarize({
+        "meeting_rows": [{"label": "m", "quadrant": None,
+                          "resolved_by": "topic", "hours": 2.0,
+                          "splits": [["growth-driver", 10 ** 308],
+                                     ["hygiene", 10 ** 308]]}],
+    })
+    assert result["unresolved_hours"] == pytest.approx(2.0)
+    json.dumps(result, allow_nan=False)
+
+
+def test_cli_still_prints_a_week_when_a_payload_carries_a_huge_json_integer():
+    """End to end: the CLI used to exit 1 with empty stdout on this input."""
+    payload = json.dumps({
+        "project_weeks": [
+            {"project": "good", "quadrant": "growth-driver",
+             "offense_pct": 100, "hours": 4.0},
+            {"project": "drifted", "quadrant": "hygiene",
+             "offense_pct": 50, "hours": int("9" * 400)},
+        ],
+        "meeting_rows": [], "history": [],
+        "driver_hours": 4.0, "held_hours": 0.0,
+    })
+    proc = _run_cli([], payload)
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+    assert out["total_hours"] == pytest.approx(4.0)
+    assert any("drifted" in json.dumps(r["row"]) for r in out["rejected"])
+
+
+# --- H3: an absent driver_hours must suppress the flag, never invent it ---
+
+
+def test_an_absent_driver_hours_suppresses_the_held_vs_driver_flag():
+    """`payload.get(key, 0.0)` could not tell "nobody measured driver hours"
+    from "driver hours are zero", so an absent field manufactured a
+    decision-forcing claim about the builder's own prioritisation."""
+    result = summarize({
+        "project_weeks": [{"project": "p", "quadrant": "hygiene",
+                           "offense_pct": 0, "hours": 5.0}],
+        "meeting_rows": [],
+        "held_hours": 5.0,
+    })
+    assert not any("held projects out-earned" in f for f in result["flags"])
+    assert any("driver_hours" in r["reason"] and "did not run" in r["reason"]
+               for r in result["rejected"])
+
+
+def test_a_present_zero_driver_hours_still_fires_the_flag():
+    """Absent suppresses; MEASURED zero is a real number and still fires."""
+    result = summarize({
+        "project_weeks": [{"project": "p", "quadrant": "hygiene",
+                           "offense_pct": 0, "hours": 5.0}],
+        "meeting_rows": [],
+        "driver_hours": 0.0,
+        "held_hours": 5.0,
+    })
+    assert any("held projects out-earned" in f for f in result["flags"])
+    assert not any("held-vs-driver" in r["reason"] for r in result["rejected"])
+
+
+# --- M4: the table and the flag must not print two different "defense
+# shares". The week line divides by project_hours; the flag divides by
+# growth-driver's own mode hours, which is exactly what the per-quadrant
+# Offense / Defense column renders from.
+
+
+def test_the_decay_flag_agrees_with_the_growth_driver_row_it_sits_beneath():
+    payload = {
+        "project_weeks": [
+            {"project": "alpha", "quadrant": "growth-driver",
+             "offense_pct": 50, "hours": 6.0},
+            # offense_pct rejected: 2h of project hours with NO mode at all.
+            {"project": "beta", "quadrant": "growth-driver",
+             "offense_pct": 150, "hours": 2.0},
+        ],
+        "meeting_rows": [],
+        "history": [
+            {"by_quadrant": {"growth-driver": 6.0, "operating-efficiency": 0.0,
+                             "hygiene": 0.0, "reliability": 0.0,
+                             "cross-cutting": 0.0},
+             "by_mode": {"offense": 6.0, "defense": 0.0},
+             "by_quadrant_mode": {"growth-driver": {"offense": 6.0,
+                                                    "defense": 0.0}}},
+        ],
+        "driver_hours": 8.0, "held_hours": 0.0,
+    }
+    result = summarize(payload)
+
+    # The week line: 3h defense over 8h of project hours = 37.5%, and the
+    # unmoded slice that explains why the two shares do not reach 100%.
+    assert result["mode_percentages"]["defense"] == pytest.approx(0.375)
+    assert result["unmoded_hours"] == pytest.approx(2.0)
+    assert result["unmoded_pct"] == pytest.approx(0.25)
+    # The growth-driver row: 3h defense over 6h of ITS recorded mode hours.
+    row = result["quadrant_mode_percentages"]["growth-driver"]["defense"]
+    assert row == pytest.approx(0.5)
+    # The flag quotes the row's number, not a third one, and says what it is
+    # a share OF. It must never print "50%" beside a table reading 37.5%
+    # with both called "the defense share".
+    decay = [f for f in result["flags"] if "decaying" in f]
+    assert len(decay) == 1
+    assert f"{row:.0%}" in decay[0]
+    assert "recorded mode hours" in decay[0]
+
+
+# --- M6: an ABSENT history must announce itself, not print as "no flags" ---
+
+
+@pytest.mark.parametrize("history,expected", [
+    pytest.param(None, "no `history` key", id="absent"),
+    pytest.param([], "`history` is empty", id="empty"),
+])
+def test_an_absent_or_empty_history_reports_that_the_trend_flags_did_not_run(
+        history, expected):
+    """The first week on the pipeline, a gap week (Step 2a #5 signals it by
+    passing []), an extended close and a rejected prior Step 2a all land
+    here. Reported only for a MALFORMED history, the weekly note read
+    identically to "no flags fired" -- the opposite meaning."""
+    payload = {
+        "project_weeks": [{"project": "p", "quadrant": "growth-driver",
+                           "offense_pct": 50, "hours": 4.0}],
+        "meeting_rows": [], "driver_hours": 4.0, "held_hours": 0.0,
+    }
+    if history is not None:
+        payload["history"] = history
+    result = summarize(payload)
+
+    suppressions = _flag_suppressions(result)
+    assert len(suppressions) == 1
+    assert expected in suppressions[0]["reason"]
+    assert "reliability-starvation" in suppressions[0]["reason"]
+    assert "assets-decaying" in suppressions[0]["reason"]
+    assert suppressions[0]["kind"] == "payload"
+    json.dumps(result, allow_nan=False)
+
+
+def test_a_complete_history_reports_no_suppression_at_all():
+    """The other half: a week that CAN evaluate its flags must not print a
+    suppression line, or the line stops meaning anything."""
+    result = summarize({
+        "project_weeks": [{"project": "p", "quadrant": "growth-driver",
+                           "offense_pct": 50, "hours": 4.0}],
+        "meeting_rows": [],
+        "history": [
+            {"by_quadrant": {"growth-driver": 4.0, "operating-efficiency": 0.0,
+                             "hygiene": 0.0, "reliability": 4.0,
+                             "cross-cutting": 0.0},
+             "by_mode": {"offense": 4.0, "defense": 4.0},
+             "by_quadrant_mode": {"growth-driver": {"offense": 2.0,
+                                                    "defense": 2.0}}},
+        ],
+        "driver_hours": 4.0, "held_hours": 0.0,
+    })
+    assert result["rejected"] == []
+
+
+# --- the "fifth instance" sweep: every remaining unknown-as-zero -----------
+
+
+def test_an_absent_project_weeks_key_does_not_manufacture_reliability_starving():
+    """A payload with NO row containers did not measure a week; it is not a
+    week that measured 0h of reliability. With one valid prior week at zero,
+    reading it as a measured zero fired "0h for 2 consecutive weeks" out of a
+    payload that described no work at all."""
+    history = [{"by_quadrant": {"growth-driver": 5.0,
+                                "operating-efficiency": 0.0, "hygiene": 0.0,
+                                "reliability": 0.0, "cross-cutting": 0.0},
+                "by_mode": {"offense": 5.0, "defense": 0.0}}]
+    absent = summarize({"history": history,
+                        "driver_hours": 0.0, "held_hours": 0.0})
+    assert not any("Reliability starving" in f for f in absent["flags"])
+    assert any("unmeasured week" in r["reason"] for r in absent["rejected"])
+
+    # An EXPLICIT empty week is measured, and still fires -- a real holiday
+    # week with a starved prior week is exactly what the flag is for.
+    measured = summarize({"project_weeks": [], "meeting_rows": [],
+                          "history": history,
+                          "driver_hours": 0.0, "held_hours": 0.0})
+    assert any("Reliability starving" in f for f in measured["flags"])
+
+
+def test_a_week_that_never_names_reliability_suppresses_rather_than_starves():
+    """Direct callers build WeekTotals by hand. A by_quadrant that does not
+    name reliability at all did not measure it, and 0h of reliability IS this
+    flag's firing condition -- the rule has to live in the module, not in
+    prose the next caller has not read."""
+    unnamed = WeekTotals({"growth-driver": 5.0}, {"offense": 5.0,
+                                                  "defense": 0.0}, 0.0, 5.0)
+    rejects = []
+    flags = evaluate_flags(unnamed, [unnamed], driver_hours=5.0,
+                           held_hours=0.0, rejects=rejects)
+    assert not any("Reliability starving" in f for f in flags)
+    assert any("the key is absent, not zero" in r.reason for r in rejects)
+
+
+def test_a_half_written_quadrant_mode_is_not_a_zero_defense_share():
+    """`{"offense": 5.0}` with no `defense` key defaulted to 0.0 reads as a 0%
+    defense share -- and 0% last week fires the flag against any week with
+    defense in it. Absent has to stay absent."""
+    from companion.portfolio import _quadrant_defense_share
+    half = WeekTotals({"growth-driver": 5.0}, {"offense": 5.0, "defense": 0.0},
+                      0.0, 5.0, {"growth-driver": {"offense": 5.0}})
+    assert _quadrant_defense_share(half, "growth-driver") is None

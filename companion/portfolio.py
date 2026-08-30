@@ -35,19 +35,39 @@ def _known_quadrant(value) -> bool:
     return isinstance(value, str) and value in _VALID
 
 
+# The largest magnitude a float can hold. An int beyond it has no float at
+# all, which is why the check below is a comparison and not a conversion.
+_MAX_FLOAT = sys.float_info.max
+
+
 def _finite_number(value) -> bool:
     """True only for a real, finite number.
 
-    Two traps this closes, both of which reached arithmetic before:
+    Three traps this closes, all of which reached arithmetic before:
       * a JSON string ("2") or null passes no type check at all and blows up
         at the first comparison, aborting the WHOLE week over one row;
       * NaN and Infinity pass every `< 0` / range check cleanly and then
-        poison total_hours, the quadrant totals and every percentage.
+        poison total_hours, the quadrant totals and every percentage;
+      * a huge JSON INTEGER made this guard raise the very exception it
+        exists to prevent. Python ints are arbitrary-precision and
+        `math.isfinite()` converts its argument to float FIRST, so
+        `math.isfinite(10**400)` raises OverflowError rather than returning
+        False — and json.load happily materialises an unbounded integer
+        literal. One drifted number in a payload therefore killed the whole
+        week: the CLI exited 1 with empty stdout and the confirm gate never
+        saw the row that caused it. An int is range-checked by COMPARISON
+        instead (Python compares int to float exactly, without converting
+        the int), so it is REJECTED, never fatal. Every later
+        `math.isfinite()` / `float()` in this module runs on a value this
+        function has already passed, so none of them can overflow either —
+        except sums, which are checked through this function too.
     bool is excluded on purpose — Python's bool IS an int, so `True` would
     otherwise be accepted as one hour of work."""
-    return (isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and math.isfinite(value))
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return -_MAX_FLOAT <= value <= _MAX_FLOAT
+    return math.isfinite(value)
 
 
 def _json_safe(value):
@@ -400,8 +420,12 @@ def aggregate(project_weeks: list[ProjectWeek],
         so they cannot overflow (`hours * (pct / 100)`, a factor in [0, 1])
         and the running total is checked BEFORE a row is added to it. Every
         other accumulator is bounded by that total -- sum(by_quadrant) +
-        unresolved == total, and by_mode/by_quadrant_mode sum to the project
-        hours inside it -- so guarding the total guards all of them
+        unresolved == total, and by_mode/by_quadrant_mode sum to AT MOST the
+        project hours inside it -- so guarding the total guards all of them.
+        (At most, not exactly: a project row whose offense_pct was rejected
+        contributes its hours to total_hours and project_hours and no mode
+        hours at all. That gap is deliberate and is what `project_hours`
+        exists to make visible; see _summary().)
 
     A row that fails is REPORTED, never silently corrected: its hours go to
     unresolved and the raw row comes back in WeekTotals.rejected with the
@@ -443,7 +467,7 @@ def aggregate(project_weeks: list[ProjectWeek],
                 "project", _project_row_dict(pw),
                 f"hours is negative ({pw.hours}) — row excluded from the week"))
             continue
-        if not math.isfinite(total + pw.hours):
+        if not _finite_number(total + pw.hours):
             # Finite hours, non-finite SUM. Adding this row would make
             # total_hours (and every percentage divided by it) Infinity,
             # which json.dumps(allow_nan=False) cannot render at all — the
@@ -504,7 +528,7 @@ def aggregate(project_weeks: list[ProjectWeek],
                 "meeting", _meeting_row_dict(row),
                 f"hours is negative ({row.hours}) — row excluded from the week"))
             continue
-        if not math.isfinite(total + row.hours):
+        if not _finite_number(total + row.hours):
             # Same overflow rule as the project loop above, and it fires on
             # meeting hours too: a finite meeting row added to a finite
             # running total can still leave the finite range.
@@ -558,7 +582,7 @@ def aggregate(project_weeks: list[ProjectWeek],
             # reason string has to be true, so the invalid share's hours
             # genuinely land in unresolved.
             total_share = sum(share for _, share in res.splits)
-            if not math.isfinite(total_share):
+            if not _finite_number(total_share):
                 # Every share is finite and non-negative and the SUM still
                 # overflowed. 1.0/inf is 0.0, which would scale every share
                 # to zero and route the row to unresolved with a "shares
@@ -609,23 +633,90 @@ def aggregate(project_weeks: list[ProjectWeek],
 
 RELIABILITY_ZERO_WEEKS = 2
 OPERATING_EFFICIENCY_CEILING = 0.40
+# Spec §3.6 scopes the assets-decaying flag to quadrant ① and nowhere else.
+DECAY_QUADRANT = "growth-driver"
+
+
+def _quadrant_defense_share(week: WeekTotals, quadrant: str) -> float | None:
+    """That quadrant's defense share of its OWN recorded mode hours, or None
+    when it recorded none.
+
+    None means "nobody measured", never "zero defense". Returning 0.0 for an
+    unmeasured quadrant is the firing condition of the flag below against any
+    week with defense in it — the fourth-instance bug one level down.
+
+    The denominator is deliberately the quadrant's own offense + defense
+    hours, which is exactly what the per-quadrant Offense / Defense column
+    renders from (`quadrant_mode_percentages`). The week line's denominator is
+    `project_hours` and it answers a different question; two numbers in one
+    report must not both be called "the defense share"."""
+    modes = week.by_quadrant_mode.get(quadrant)
+    if not isinstance(modes, dict):
+        return None
+    # NO 0.0 DEFAULT on either read. An absent 'defense' key defaulted to 0.0
+    # is a 0% defense share, which is this flag's firing condition against any
+    # week with defense in it -- the same unknown-as-zero shape one level down.
+    offense = modes.get("offense")
+    defense = modes.get("defense")
+    if not _finite_number(offense) or not _finite_number(defense):
+        return None
+    spent = offense + defense
+    if spent <= 0:
+        return None
+    return defense / spent
 
 
 def evaluate_flags(current: WeekTotals, history: list[WeekTotals],
-                   driver_hours: float, held_hours: float) -> list[str]:
+                   driver_hours: float | None, held_hours: float | None,
+                   rejects: list | None = None,
+                   current_measured: bool = True) -> list[str]:
     """Each flag names the decision it forces. A flag with no decision
-    attached does not belong here."""
+    attached does not belong here.
+
+    ABSENT INPUT SUPPRESSES A FLAG AND SAYS SO; it never manufactures one.
+    `driver_hours` / `held_hours` are `None` when the payload did not carry a
+    readable number for them, and `current_measured` is False when the payload
+    carried no row containers at all — an unmeasured week, whose 0h of
+    reliability is not the same fact as a measured week that funded none. A
+    suppressed flag is appended to `rejects` (as a `payload` row the caller
+    already renders) rather than passing silently — "no flags fired" and "that
+    flag could not run" mean opposite things and must not print
+    identically."""
     flags: list[str] = []
 
+    def suppress(row: dict, reason: str) -> None:
+        if rejects is not None:
+            rejects.append(RejectedRow("payload", row, reason))
+
     recent = [current, *history][:RELIABILITY_ZERO_WEEKS]
-    if (len(recent) == RELIABILITY_ZERO_WEEKS
-            and all(w.by_quadrant.get("reliability", 0.0) == 0.0 for w in recent)):
+    # `.get("reliability")` with NO 0.0 default: a week whose by_quadrant does
+    # not name reliability at all did not measure it, and 0h of reliability IS
+    # this flag's firing condition. aggregate() and a validated history entry
+    # both always name all five, so this only bites a hand-built WeekTotals --
+    # which is exactly the caller a prose-only rule would not reach.
+    reliability = [w.by_quadrant.get("reliability") for w in recent]
+    if not current_measured:
+        suppress({"project_weeks": None, "meeting_rows": None},
+                 "this week carried no `project_weeks` and no `meeting_rows` "
+                 "key — an unmeasured week, not a week with 0h in it, so the "
+                 "reliability-starvation flag did not run this week")
+    elif any(not _finite_number(h) for h in reliability):
+        suppress({"by_quadrant": "reliability"},
+                 "a week in the comparison recorded no reliability hours at "
+                 "all (the key is absent, not zero) — the "
+                 "reliability-starvation flag did not run this week")
+    elif (len(recent) == RELIABILITY_ZERO_WEEKS
+            and all(hours == 0.0 for hours in reliability)):
         flags.append(
             f"Reliability starving — 0h for {RELIABILITY_ZERO_WEEKS} consecutive "
             "weeks. Fund it, or say out loud you are not."
         )
 
     if current.total_hours > 0:
+        # The 0.0 default here is safe in the one direction that matters: an
+        # absent operating-efficiency key reads as 0h, which SUPPRESSES this
+        # flag (it needs a share above the ceiling to fire). Absent can never
+        # manufacture it, so it is left as a floor rather than a guard.
         share = current.by_quadrant.get("operating-efficiency", 0.0) / current.total_hours
         if share > OPERATING_EFFICIENCY_CEILING:
             flags.append(
@@ -633,21 +724,41 @@ def evaluate_flags(current: WeekTotals, history: list[WeekTotals],
                 "the output it exists to produce."
             )
 
-    if history and (history[0].by_mode["offense"] + history[0].by_mode["defense"] > 0):
-        # Only compare against a prior week that actually recorded mode
-        # hours. A prior week with no recorded mode data reads as
-        # "unknown", never as "zero defense" — absent history must never
-        # manufacture this flag.
-        def defense_share(w: WeekTotals) -> float:
-            spent = w.by_mode["offense"] + w.by_mode["defense"]
-            return w.by_mode["defense"] / spent if spent else 0.0
-        if defense_share(current) > defense_share(history[0]):
+    # SCOPED TO ①, per spec §3.6 ("defense share on ① rising week over week").
+    # It used to compare the WEEK-WIDE defense share while its message named
+    # growth drivers, so a week where ① defense FELL and hygiene defense rose
+    # fired it and named the wrong assets.
+    if history:
+        prior_share = _quadrant_defense_share(history[0], DECAY_QUADRANT)
+        current_share = _quadrant_defense_share(current, DECAY_QUADRANT)
+        if prior_share is None:
+            suppress(
+                {"history[0].by_quadrant_mode": DECAY_QUADRANT},
+                f"last week recorded no {DECAY_QUADRANT} offense/defense hours "
+                "(the prior week's `by_quadrant_mode` is absent or all zero) — "
+                "the assets-decaying flag did not run this week")
+        elif current_share is None:
+            suppress(
+                {"by_quadrant_mode": DECAY_QUADRANT},
+                f"this week recorded no {DECAY_QUADRANT} offense/defense hours "
+                "— the assets-decaying flag did not run this week")
+        elif current_share > prior_share:
             flags.append(
-                f"Defense share rose to {defense_share(current):.0%} — your best "
-                "assets are decaying under you."
+                f"Defense share on {DECAY_QUADRANT} rose to "
+                f"{current_share:.0%} of its recorded mode hours (last week "
+                f"{prior_share:.0%}) — your best assets are decaying under you."
             )
 
-    if held_hours > driver_hours:
+    absent = [name for name, value in (("driver_hours", driver_hours),
+                                       ("held_hours", held_hours))
+              if value is None]
+    if absent:
+        suppress(
+            {key: None for key in absent},
+            " and ".join(absent) + (" is" if len(absent) == 1 else " are")
+            + " absent from the payload — the held-vs-driver flag did not run "
+              "this week (an unmeasured number is not 0.0)")
+    elif held_hours > driver_hours:
         flags.append(
             f"held projects out-earned drivers ({held_hours:.1f}h vs "
             f"{driver_hours:.1f}h) — the ranking is not what you are doing."
@@ -706,7 +817,7 @@ def _history_entry_problem(entry) -> str | None:
         if not _finite_number(value) or value < 0:
             return (f"'by_quadrant[{key}]' is {_json_safe(value)!r}, not a "
                     "non-negative finite number")
-    if not math.isfinite(sum(raw_quadrant.values())):
+    if not _finite_number(sum(raw_quadrant.values())):
         return "'by_quadrant' hours sum to a value outside the finite range"
 
     raw_mode = entry["by_mode"]
@@ -718,12 +829,49 @@ def _history_entry_problem(entry) -> str | None:
         if not _finite_number(raw_mode[mode]) or raw_mode[mode] < 0:
             return (f"'by_mode[{mode}]' is {_json_safe(raw_mode[mode])!r}, "
                     "not a non-negative finite number")
-    if not math.isfinite(raw_mode["offense"] + raw_mode["defense"]):
+    if not _finite_number(raw_mode["offense"] + raw_mode["defense"]):
         return "'by_mode' hours sum to a value outside the finite range"
+
+    # `by_quadrant_mode` is OPTIONAL, because prior notes written before the
+    # assets-decaying flag was scoped to ① do not carry it. Absent, it costs
+    # only that one flag, which evaluate_flags then suppresses and reports —
+    # it must not invalidate the whole entry and take the reliability
+    # -starvation flag down with it. PRESENT, it is held to the same standard
+    # as everything else here: a half-readable quadrant is a quadrant nobody
+    # measured, and reading its missing half as 0.0 is the same manufactured
+    # flag one level down.
+    if "by_quadrant_mode" in entry:
+        raw_quadrant_mode = entry["by_quadrant_mode"]
+        if not isinstance(raw_quadrant_mode, dict):
+            return ("'by_quadrant_mode' is "
+                    f"{type(raw_quadrant_mode).__name__}, not an object")
+        for key, modes in raw_quadrant_mode.items():
+            if not _known_quadrant(key):
+                return ("'by_quadrant_mode' key "
+                        f"{_json_safe(key)!r} is not a quadrant")
+            if not isinstance(modes, dict):
+                return (f"'by_quadrant_mode[{key}]' is "
+                        f"{type(modes).__name__}, not an object")
+            for mode in _MODES:
+                if mode not in modes:
+                    return f"'by_quadrant_mode[{key}]' is missing {mode!r}"
+                if not _finite_number(modes[mode]) or modes[mode] < 0:
+                    return (f"'by_quadrant_mode[{key}][{mode}]' is "
+                            f"{_json_safe(modes[mode])!r}, not a non-negative "
+                            "finite number")
+            if not _finite_number(modes["offense"] + modes["defense"]):
+                return (f"'by_quadrant_mode[{key}]' hours sum to a value "
+                        "outside the finite range")
     return None
 
 
-def _history_from_payload(entries: list, rejects: list) -> list[WeekTotals]:
+_NO_HISTORY_CONSEQUENCE = (
+    "the reliability-starvation and assets-decaying flags did not run this "
+    "week")
+
+
+def _history_from_payload(entries: list, rejects: list,
+                          absent: bool = False) -> list[WeekTotals]:
     """Validated prior weeks — or none of them.
 
     ONE BAD ENTRY SUPPRESSES THE WHOLE HISTORY. evaluate_flags reads this
@@ -734,9 +882,24 @@ def _history_from_payload(entries: list, rejects: list) -> list[WeekTotals]:
     week as zero. Suppressing everything is the only reading that cannot
     invent a trend.
 
-    The suppression is REPORTED, as a `payload` rejection the caller already
-    has to render. Without it, "no flags fired" and "the trend flags could
-    not run" print identically, and those two mean opposite things."""
+    EVERY suppression is REPORTED, as a `payload` rejection the caller
+    already has to render — the malformed case AND the absent/empty one.
+    Without it, "no flags fired" and "the trend flags could not run" print
+    identically, and those two mean opposite things. The absent case is the
+    COMMON one, not the edge: the first week on the pipeline, a gap week
+    (which close-week Step 2a #5 signals by passing `[]`), an extended
+    close, a week whose prior Step 2a was rejected, or any note predating
+    this pipeline. Reporting only the malformed case left the artifact —
+    the weekly note — reading identically in both, which is the exact
+    failure this guard was written to end."""
+    if not entries:
+        rejects.append(RejectedRow(
+            "payload", {"history": None if absent else []},
+            ("no `history` key in the payload" if absent
+             else "`history` is empty")
+            + " — there is no prior week to compare against, so "
+            + _NO_HISTORY_CONSEQUENCE))
+        return []
     problems = []
     for index, entry in enumerate(entries):
         problem = _history_entry_problem(entry)
@@ -747,8 +910,8 @@ def _history_from_payload(entries: list, rejects: list) -> list[WeekTotals]:
             "payload",
             {"history": [_payload_row_dict(e) for e in entries]},
             "history " + "; ".join(problems)
-            + " — history suppressed (read as []); the reliability-starvation "
-              "and rising-defense-share flags did not run this week"))
+            + " — history suppressed (read as []); "
+            + _NO_HISTORY_CONSEQUENCE))
         return []
     return [_totals_from_history_entry(entry) for entry in entries]
 
@@ -778,9 +941,32 @@ def _totals_from_history_entry(entry: dict) -> WeekTotals:
         raw_mode = {}
     by_mode = {
         mode: (raw_mode.get(mode) if _finite_number(raw_mode.get(mode)) else 0.0)
-        for mode in ("offense", "defense")
+        for mode in _MODES
     }
-    return WeekTotals(by_quadrant, by_mode, 0.0, sum(by_quadrant.values()))
+    # NOT _empty_by_quadrant_mode(). A history entry that carried no
+    # by_quadrant_mode must come back with NOTHING here, not with five
+    # quadrants of 0.0/0.0 — zero mode hours reads as "0% defense last
+    # week", which is the assets-decaying flag's firing condition against any
+    # current week with defense in it. Absent has to stay absent all the way
+    # to _quadrant_defense_share(), which returns None for it and suppresses
+    # the flag. Only quadrants the entry actually named appear here.
+    by_quadrant_mode: dict[str, dict[str, float]] = {}
+    raw_quadrant_mode = entry.get("by_quadrant_mode")
+    if isinstance(raw_quadrant_mode, dict):
+        for key, modes in raw_quadrant_mode.items():
+            if not _known_quadrant(key) or not isinstance(modes, dict):
+                continue
+            if all(_finite_number(modes.get(m)) for m in _MODES):
+                by_quadrant_mode[key] = {m: float(modes[m]) for m in _MODES}
+    # A history entry carries no project_hours of its own. The mode hours it
+    # DOES carry are project hours by construction (only project rows record
+    # a mode), so this is the one project-hours figure the entry attests —
+    # and setting it keeps WeekTotals' documented relationship between
+    # by_mode and project_hours true for a history week instead of leaving a
+    # 0.0 that a future consumer would read as "no project work".
+    return WeekTotals(by_quadrant, by_mode, 0.0, sum(by_quadrant.values()),
+                      by_quadrant_mode, (),
+                      by_mode["offense"] + by_mode["defense"])
 
 
 # Keys a payload row cannot be read without. `quadrant` is required on a
@@ -837,23 +1023,33 @@ def _payload_rows(payload: dict, key: str, rejects: list) -> list:
     return []
 
 
-def _week_number(payload: dict, key: str, rejects: list) -> float:
-    """driver_hours / held_hours. A bad value reads as 0.0 AND is reported.
+def _week_number(payload: dict, key: str, rejects: list) -> float | None:
+    """driver_hours / held_hours, or None when the payload did not give one.
 
-    These feed only the held-vs-driver flag, so killing the whole week
-    summary over one of them would be disproportionate to what they do —
-    but reading 0.0 silently is worse than useless: held > driver is how
-    that flag fires, so a bad driver_hours could manufacture it. Reported
-    at 0.0, the flag can still fire wrongly, which is exactly why the
-    reason has to reach the confirm gate beside it."""
-    value = payload.get(key, 0.0)
+    ABSENT IS NOT 0.0. `payload.get(key, 0.0)` could not tell "nobody
+    measured driver hours" from "driver hours were measured and are zero",
+    and 0.0 is not a neutral value here: `held_hours > driver_hours` is how
+    the held-vs-driver flag fires, so an absent driver_hours manufactured
+    "held projects out-earned drivers (5.0h vs 0.0h)" — a decision-forcing
+    claim about the builder's own prioritisation, invented from a field
+    nobody supplied, entirely silently. That was the FOURTH appearance of
+    "unknown treated as zero" in this feature.
+
+    Both failures now read the same way and neither is fatal: absent, or
+    present-but-unreadable, comes back as None, and evaluate_flags suppresses
+    the flag and says so. A present-but-unreadable value is reported HERE as
+    well, because "the value you sent is not a number" and "the flag did not
+    run" are two different things a reader needs."""
+    if key not in payload:
+        return None
+    value = payload[key]
     if _finite_number(value):
         return float(value)
     rejects.append(RejectedRow(
         "payload", {key: _json_safe(value)},
-        f"{key} {value!r} is not a finite number — read as 0.0; any "
-        "held-vs-driver flag below is computed without it"))
-    return 0.0
+        f"{key} {value!r} is not a finite number — read as absent, never as "
+        "0.0"))
+    return None
 
 
 def summarize(payload: dict) -> dict:
@@ -925,13 +1121,25 @@ def summarize(payload: dict) -> dict:
         meeting_rows.append(MeetingRow(mr["label"], resolution, mr["hours"]))
 
     history = _history_from_payload(
-        _payload_rows(payload, "history", shape_rejects), shape_rejects)
+        _payload_rows(payload, "history", shape_rejects), shape_rejects,
+        absent="history" not in payload)
 
     current = aggregate(project_weeks, meeting_rows)
     flags = evaluate_flags(
         current, history,
         driver_hours=_week_number(payload, "driver_hours", shape_rejects),
         held_hours=_week_number(payload, "held_hours", shape_rejects),
+        # Every flag that could NOT be evaluated is reported through here,
+        # into the same `rejected` list the caller already renders.
+        rejects=shape_rejects,
+        # A payload carrying NEITHER row container did not measure a week; it
+        # is not a week that measured zero. `project_weeks: []` IS a measured
+        # empty week (a genuine holiday) and still counts — the same
+        # absent-vs-empty distinction `history` already makes. Without it, an
+        # absent project_weeks plus one valid prior week manufactured
+        # "reliability starving — 0h for 2 consecutive weeks".
+        current_measured=("project_weeks" in payload
+                          or "meeting_rows" in payload),
     )
     return _summary(current, flags, shape_rejects)
 
@@ -969,6 +1177,13 @@ def _summary(current: WeekTotals, flags: list[str],
         mode: (hours / current.project_hours if current.project_hours else 0.0)
         for mode, hours in current.by_mode.items()
     }
+    # The slice mode_percentages does NOT cover: project hours that recorded
+    # no offense/defense at all. Returned rather than left as a subtraction
+    # for the renderer to perform, because "offense 45% / defense 30%" is a
+    # pair a reader will try to reconcile to 100% and the missing 25% is the
+    # only thing that explains it. max() is float slop only.
+    unmoded_hours = max(0.0, current.project_hours
+                        - (current.by_mode["offense"] + current.by_mode["defense"]))
     quadrant_mode_percentages = {}
     for quadrant, modes in current.by_quadrant_mode.items():
         spent = modes["offense"] + modes["defense"]
@@ -989,6 +1204,12 @@ def _summary(current: WeekTotals, flags: list[str],
         "project_hours": current.project_hours,
         "percentages": percentages,
         "mode_percentages": mode_percentages,
+        # Project hours with no mode recorded, and their share of
+        # project_hours -- exactly what mode_percentages' two shares are
+        # missing when they sum to less than 100%.
+        "unmoded_hours": unmoded_hours,
+        "unmoded_pct": (unmoded_hours / current.project_hours
+                        if current.project_hours else 0.0),
         "quadrant_mode_percentages": quadrant_mode_percentages,
         "unresolved_pct": (current.unresolved_hours / total if total else 0.0),
         # Every row aggregate() refused to trust, with the reason. Empty on a
