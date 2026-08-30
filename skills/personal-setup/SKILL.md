@@ -233,19 +233,26 @@ only `Ada Lovelace` stored, a title reading `Ada / Grace Hopper` returns **Ada**
 
 Board members and anyone else whose Quick Notes must not reach a profile.
 
-**This one fails CLOSED**: while it is unset, *nobody* is `signal_eligible`, so
-Signal ingest is off rather than silently sweeping sensitive people in. Say that
-plainly, because "I left it blank" and "I turned Signal ingest off" are the same
-state and the builder should know they chose it.
+**This one fails CLOSED, and the distinction is the whole point:** an **absent**
+key means nobody is `signal_eligible` (ingest off); a **present but empty** key
+(`SIGNAL_EXCLUDE=`) is a deliberate "exclude nobody" and makes every eligible
+`@nsls.org` relationship sweepable. Never describe either as "leave it blank" —
+that phrase maps to both, and guessing wrong in the permissive direction puts
+board members into coaching profiles.
+
+Offer the three outcomes explicitly and write exactly what they pick:
 
 > "Anyone whose Quick Notes should never reach a coaching profile — board
-> members, usually? Comma-separated. Leave blank and Signal ingest stays off
-> until you set it."
+> members, usually?
+>
+> - **Give me names** → I write `SIGNAL_EXCLUDE=<names>`; ingest runs, those
+>   people excluded.
+> - **'Keep it off'** → I leave the key out entirely; Signal ingest stays off.
+> - **'Nobody'** → I write `SIGNAL_EXCLUDE=` with no value; ingest runs with
+>   **no** exclusions at all."
 
-An explicit empty value (`SIGNAL_EXCLUDE=`) is a real choice meaning "exclude
-nobody" and is honoured as configured — only an **absent** key fails closed. If
-they want that, write the key with an empty value rather than omitting it, and
-tell them which one you wrote.
+Then say back which of the three you wrote. Omitting the key and writing it
+empty look nearly identical in a diff and behave as opposites.
 
 ## Step 3: Optional Integrations — ~3 min
 
@@ -342,9 +349,10 @@ FATHOM_API_KEY=<provided or empty>
 # UNSET disables 1:1 subject inference (every title returns UNKNOWN_SUBJECT).
 OPERATING_USER_NAME=<provided>
 # Names never swept into coaching profiles (board members, etc).
-# UNSET FAILS CLOSED — nobody is signal_eligible until this key exists.
-# An explicit empty value means "exclude nobody" and IS a configuration.
-SIGNAL_EXCLUDE=<provided or empty>
+# OMIT THIS KEY ENTIRELY to keep Signal ingest off (fails closed).
+# Present-but-empty (SIGNAL_EXCLUDE=) is the OPPOSITE: ingest on, nobody
+# excluded. Write whichever the builder actually chose -- see Step 2.
+SIGNAL_EXCLUDE=<names, or omit the whole line to keep ingest off>
 
 # Airtable (optional — only needed for writing to Airtable)
 AIRTABLE_API_KEY=<provided or empty>
