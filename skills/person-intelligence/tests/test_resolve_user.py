@@ -1,7 +1,7 @@
-#!/usr/bin/env python3.12
+#!/usr/bin/env python3
 """Tests for resolve_user.py.
 
-Run: python3.12 test_resolve_user.py
+Run: python3 test_resolve_user.py
 """
 
 import json
@@ -71,14 +71,14 @@ resolve_user.ORG_CHART_PATHS = [Path({str(fixture_path)!r})]
 resolve_user.main()
 """
         result = subprocess.run(
-            ["python3.12", "-c", wrapper],
+            [sys.executable, "-c", wrapper],
             env=full_env,
             capture_output=True,
             text=True,
         )
     else:
         result = subprocess.run(
-            ["python3.12", str(RESOLVE_USER)],
+            [sys.executable, str(RESOLVE_USER)],
             env=full_env,
             capture_output=True,
             text=True,

@@ -14,7 +14,7 @@ these tests pin every path that runs inside an error handler.
 NotADirectoryError (an OSError subclass) on both macOS and Linux, with no privileges needed
 and nothing to clean up.
 
-Run: python3.12 -m pytest skills/person-intelligence/tests/test_sweep_io_resilience.py -q
+Run: python3 -m pytest skills/person-intelligence/tests/test_sweep_io_resilience.py -q
 """
 
 import subprocess

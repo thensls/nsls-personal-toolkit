@@ -15,7 +15,7 @@ has to tell apart. The FRESH/NEEDS_FINALIZE cases are here to prove the fix did
 not simply make everything DUE, which would be a different silent failure:
 sweeping every single Sunday instead of never.
 
-Run:  python3.12 -m pytest skills/person-intelligence/tests/test_sweep_due.py -q
+Run:  python3 -m pytest skills/person-intelligence/tests/test_sweep_due.py -q
 """
 
 import json

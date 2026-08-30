@@ -11,7 +11,7 @@ as 28–48 days stale, and the model then wrote its cadence commentary against t
 Nothing errored. The digest was internally consistent and confidently wrong, and the only
 reason it was caught is that a dry run happened to print both fields next to each other.
 
-Run: python3.12 -m pytest skills/person-intelligence/tests/test_pulse_synth_date.py -q
+Run: python3 -m pytest skills/person-intelligence/tests/test_pulse_synth_date.py -q
 """
 
 import sys
