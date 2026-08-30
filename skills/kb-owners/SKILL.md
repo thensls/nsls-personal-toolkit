@@ -78,7 +78,11 @@ def env_file_email(path, *keys):
     except Exception: return ''
     for key in keys:
         m = re.search(rf'^{re.escape(key)}=(.+)\$', text, re.MULTILINE)
-        if m: return m.group(1).strip()
+        # .env values are commonly quoted. A quoted email can never match an
+        # allowlist entry, which kills this fallback scope SILENTLY -- it just
+        # looks like the builder isn't on the list. load_dotenv_local.py strips
+        # them; every hand-rolled .env parser must do the same.
+        if m: return m.group(1).strip().strip(chr(34) + chr(39))
     return ''
 
 toolkit_dir = pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit'
