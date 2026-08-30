@@ -75,7 +75,7 @@ and relationship context — coaching, not the number.
 
 **Existing Obsidian profiles** (vault at `$OBSIDIAN_VAULT_PATH`):
 - `30-people/{Name}.md` (display name with spaces)
-- `10-slt/members/{slug}.md` (lowercase hyphenated, e.g., `gary-tuerack.md`)
+- `10-slt/members/{slug}.md` (lowercase hyphenated, e.g., `warren-aldrich.md`)
 - `20-projects/board-intelligence/members/{Name}.md` (display name with spaces)
 
 ### Step 3: Fetch and summarize meetings

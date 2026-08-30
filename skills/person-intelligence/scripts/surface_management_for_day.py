@@ -46,7 +46,7 @@ def log(m: str) -> None:
 def report_index() -> list[dict]:
     """Direct reports with aliases + signal slug. Resolves person-redirect stubs
     so a calendar attendee using a preferred name (Robin Alder) maps to the
-    Rippling-name slug Signal knows (jana-amsellem)."""
+    Rippling-name slug Signal knows (jana-kessler)."""
     out = subprocess.check_output(
         ["python3.12", str(SCRIPT_DIR / "fetch_signal.py"), "--list-reports"],
         text=True, stderr=subprocess.DEVNULL,
