@@ -56,12 +56,22 @@ import resolve_user  # noqa: E402
 # configured, which is a blind check, not a clean pass. Announce it loudly
 # rather than silently letting sensitive people through.
 _signal_exclude_raw = os.environ.get("SIGNAL_EXCLUDE")
-if _signal_exclude_raw is None:
+
+# Unset != "exclude nobody". Unset means the gate was never configured, and a
+# warning alone is non-blocking — the sweep would run anyway. A privacy control
+# must FAIL CLOSED: with no configuration, nobody is signal_eligible at all.
+#
+# Setting SIGNAL_EXCLUDE to an empty string IS a configuration ("exclude nobody"),
+# and is honoured as such. Only an absent variable fails closed.
+SIGNAL_EXCLUDE_CONFIGURED = _signal_exclude_raw is not None
+if not SIGNAL_EXCLUDE_CONFIGURED:
     print(
-        "WARNING: SIGNAL_EXCLUDE is unset — NO ONE is excluded from Signal ingest.\n"
-        "  Board members and other sensitive relationships will be treated as\n"
-        "  signal_eligible and their Quick Notes can reach coaching profiles.\n"
-        "  Set SIGNAL_EXCLUDE in .env (comma-separated names) to restore the gate.",
+        "WARNING: SIGNAL_EXCLUDE is unset — FAILING CLOSED.\n"
+        "  No one is signal_eligible until it is configured, so Signal ingest is\n"
+        "  effectively off rather than silently sweeping board members and other\n"
+        "  sensitive relationships into coaching profiles.\n"
+        "  Set SIGNAL_EXCLUDE in .env (comma-separated names; empty string means\n"
+        "  'exclude nobody' if that is genuinely what you want).",
         file=sys.stderr,
     )
 SIGNAL_EXCLUDE = {
@@ -173,6 +183,10 @@ def is_signal_eligible(name, email, tracking_reason):
     Signal is coaching/context only; this only decides whether to ATTEMPT a
     fetch. A no-match still degrades to empty in fetch_signal.py.
     """
+    # Fail closed: an unconfigured exclusion list means the gate cannot be
+    # trusted, so nobody is eligible. See SIGNAL_EXCLUDE_CONFIGURED above.
+    if not SIGNAL_EXCLUDE_CONFIGURED:
+        return False
     email = (email or "").strip().lower()
     if not email.endswith("@nsls.org"):
         return False

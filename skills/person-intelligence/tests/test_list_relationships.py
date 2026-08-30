@@ -316,15 +316,20 @@ def test_signal_exclude_unset_is_announced_not_silent():
     """
     lr, stderr = _load_lr(None)
     assert lr.SIGNAL_EXCLUDE == set(), "no default exclusions may be hardcoded"
+    assert lr.SIGNAL_EXCLUDE_CONFIGURED is False
     assert "SIGNAL_EXCLUDE is unset" in stderr, "an unset gate must be announced"
-    assert "NO ONE is excluded" in stderr
-    # ...and the consequence is real, which is exactly why it is announced.
-    assert lr.is_signal_eligible("Board Member", "bm@nsls.org", "key_relationship") is True
+    assert "FAILING CLOSED" in stderr
+    # A warning is non-blocking, so announcing is not enough: with no config the
+    # gate must fail CLOSED -- nobody eligible, rather than everybody.
+    assert lr.is_signal_eligible("Board Member", "bm@nsls.org", "key_relationship") is False
+    assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is False, \
+        "unconfigured must exclude everyone, not just the sensitive names"
 
 
 def test_signal_exclude_from_env_gates_the_person():
     """With the env set, the named person is excluded and nothing is warned."""
     lr, stderr = _load_lr("Board Member,Other Person")
+    assert lr.SIGNAL_EXCLUDE_CONFIGURED is True
     assert lr.is_signal_eligible("Board Member", "bm@nsls.org", "key_relationship") is False
     assert lr.is_signal_eligible("Other Person", "op@nsls.org", "peer") is False
     assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True
@@ -370,3 +375,17 @@ if __name__ == "__main__":
     test_non_employee_operating_user()
     test_no_airtable_dependency()
     print("\nAll list_relationships tests passed.")
+
+
+def test_signal_exclude_empty_string_is_a_real_configuration():
+    """SIGNAL_EXCLUDE="" means 'exclude nobody' deliberately -- not unconfigured.
+
+    Only an ABSENT variable fails closed. An explicit empty value is a choice and
+    is honoured, so an operator who genuinely wants no exclusions can say so
+    without tripping the fail-closed path.
+    """
+    lr, stderr = _load_lr("")
+    assert lr.SIGNAL_EXCLUDE_CONFIGURED is True
+    assert lr.SIGNAL_EXCLUDE == set()
+    assert "FAILING CLOSED" not in stderr
+    assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True

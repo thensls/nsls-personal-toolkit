@@ -48,7 +48,7 @@ For each person the sweep tracks, three sources fire in parallel.
   excluded) (determined by `list_relationships.py`)
 - **Shareable-tier fields only**: sentiment, wins, friction, growth, goal health. **Never** raw
   work-journal narration (`narration_raw`, `entry_text`)
-- Exclusions: `SIGNAL_EXCLUDE` has **no default** and must be set in `.env` (override if
+- Exclusions: `SIGNAL_EXCLUDE` has **no default** and must be set in `.env`. **Unset fails closed** — nobody is eligible until configured; `SIGNAL_EXCLUDE=""` is an explicit 'exclude nobody' and is honoured (override if
   needed)
 - **Provenance**: The synthesizer prepends a transparency line to `## Signal Read` of the form `*Signal source: {relation} — Quick Notes through {week}.*` (where {relation} = direct report / SLT peer / key relationship), so it's explicit whose relation/words are surfaced — important now that scope includes non-reports
 - **Never contributes to scoring.** `health_score` reads Fathom-meeting evidence
