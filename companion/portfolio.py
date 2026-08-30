@@ -344,6 +344,14 @@ class WeekTotals:
     # a clean week. Defaulted for the same reason as by_quadrant_mode: a
     # caller building a WeekTotals by hand (history entries) has no rows.
     rejected: tuple[RejectedRow, ...] = ()
+    # Hours from PROJECT rows only -- every project row whose hours were
+    # usable, including one whose offense_pct was rejected and therefore
+    # recorded no mode. This is the honest denominator for the week's
+    # offense/defense share: by_mode covers only the project rows that had a
+    # readable mode, so dividing by (offense + defense) would report a share
+    # of a smaller base than "share of the week's project hours" claims.
+    # Defaulted for the same reason as the two fields above.
+    project_hours: float = 0.0
 
 
 def _project_row_dict(pw: ProjectWeek) -> dict:
@@ -384,6 +392,16 @@ def aggregate(project_weeks: list[ProjectWeek],
       * 0 <= offense_pct <= 100
       * hours >= 0, on project rows and meeting rows alike
       * every split share >= 0
+      * the RESULT of the arithmetic stays finite too. Finite inputs are not
+        enough: 1e308 hours at 50% offense overflowed a plain
+        `hours * offense_pct` to Infinity, and a few 1e308-hour rows overflow
+        the running total the same way. Every number this module prints has
+        to survive json.dumps(allow_nan=False), so the products are ordered
+        so they cannot overflow (`hours * (pct / 100)`, a factor in [0, 1])
+        and the running total is checked BEFORE a row is added to it. Every
+        other accumulator is bounded by that total -- sum(by_quadrant) +
+        unresolved == total, and by_mode/by_quadrant_mode sum to the project
+        hours inside it -- so guarding the total guards all of them
 
     A row that fails is REPORTED, never silently corrected: its hours go to
     unresolved and the raw row comes back in WeekTotals.rejected with the
@@ -404,6 +422,7 @@ def aggregate(project_weeks: list[ProjectWeek],
     by_mode = {"offense": 0.0, "defense": 0.0}
     unresolved = 0.0
     total = 0.0
+    project_hours = 0.0
     rejected: list[RejectedRow] = []
 
     for pw in project_weeks:
@@ -424,7 +443,19 @@ def aggregate(project_weeks: list[ProjectWeek],
                 "project", _project_row_dict(pw),
                 f"hours is negative ({pw.hours}) — row excluded from the week"))
             continue
+        if not math.isfinite(total + pw.hours):
+            # Finite hours, non-finite SUM. Adding this row would make
+            # total_hours (and every percentage divided by it) Infinity,
+            # which json.dumps(allow_nan=False) cannot render at all — the
+            # whole week summary would fail to print over one row. Same
+            # treatment as unusable hours: out of the week, and reported.
+            rejected.append(RejectedRow(
+                "project", _project_row_dict(pw),
+                f"hours {pw.hours!r} overflows the week's running total "
+                "(no longer a finite number) — row excluded from the week"))
+            continue
         total += pw.hours
+        project_hours += pw.hours
         if not _finite_number(pw.offense_pct):
             rejected.append(RejectedRow(
                 "project", _project_row_dict(pw),
@@ -439,8 +470,13 @@ def aggregate(project_weeks: list[ProjectWeek],
                 "routed to unresolved, no mode recorded"))
             unresolved += pw.hours
             continue
-        offense_hours = pw.hours * pw.offense_pct / 100.0
-        defense_hours = pw.hours * (100 - pw.offense_pct) / 100.0
+        # SCALE FIRST, MULTIPLY SECOND. `pw.hours * pw.offense_pct` is
+        # evaluated before the division, so 1e308 hours at 50% overflowed to
+        # Infinity and only then got divided by 100 — Infinity again. Both
+        # factors below are in [0, 1], so the product can never exceed
+        # pw.hours, which the guard above already proved finite.
+        offense_hours = pw.hours * (pw.offense_pct / 100.0)
+        defense_hours = pw.hours * ((100 - pw.offense_pct) / 100.0)
         if _known_quadrant(pw.quadrant):
             by_quadrant[pw.quadrant] += pw.hours
             by_quadrant_mode[pw.quadrant]["offense"] += offense_hours
@@ -467,6 +503,15 @@ def aggregate(project_weeks: list[ProjectWeek],
             rejected.append(RejectedRow(
                 "meeting", _meeting_row_dict(row),
                 f"hours is negative ({row.hours}) — row excluded from the week"))
+            continue
+        if not math.isfinite(total + row.hours):
+            # Same overflow rule as the project loop above, and it fires on
+            # meeting hours too: a finite meeting row added to a finite
+            # running total can still leave the finite range.
+            rejected.append(RejectedRow(
+                "meeting", _meeting_row_dict(row),
+                f"hours {row.hours!r} overflows the week's running total "
+                "(no longer a finite number) — row excluded from the week"))
             continue
         total += row.hours
         if res.splits:
@@ -513,6 +558,18 @@ def aggregate(project_weeks: list[ProjectWeek],
             # reason string has to be true, so the invalid share's hours
             # genuinely land in unresolved.
             total_share = sum(share for _, share in res.splits)
+            if not math.isfinite(total_share):
+                # Every share is finite and non-negative and the SUM still
+                # overflowed. 1.0/inf is 0.0, which would scale every share
+                # to zero and route the row to unresolved with a "shares
+                # normalised" story that never happened — a silent
+                # correction. Say what actually failed instead.
+                rejected.append(RejectedRow(
+                    "meeting", _meeting_row_dict(row),
+                    "split shares sum to a value outside the finite range — "
+                    "whole row routed to unresolved"))
+                unresolved += row.hours
+                continue
             scale = 1.0 / total_share if total_share > 1.0 + 1e-9 else 1.0
             splits = tuple((q, s * scale) for q, s in res.splits
                            if _known_quadrant(q))
@@ -547,7 +604,7 @@ def aggregate(project_weeks: list[ProjectWeek],
             unresolved += row.hours
 
     return WeekTotals(by_quadrant, by_mode, unresolved, total,
-                      by_quadrant_mode, tuple(rejected))
+                      by_quadrant_mode, tuple(rejected), project_hours)
 
 
 RELIABILITY_ZERO_WEEKS = 2
@@ -599,22 +656,116 @@ def evaluate_flags(current: WeekTotals, history: list[WeekTotals],
     return flags
 
 
-def _totals_from_history_entry(entry: dict) -> WeekTotals:
-    """A history entry carries `by_quadrant` and, optionally, `by_mode`.
-    When `by_mode` is omitted (or empty), historical mode hours read as
-    zero here — but evaluate_flags is what actually protects against
-    that being misread as "recorded zero defense spend": it only runs the
-    rising-defense-share comparison when a prior week's by_mode hours sum
-    to something greater than zero. Absent history must never manufacture
-    a flag.
+# Everything a prior week must carry before evaluate_flags may compare
+# against it. Both top-level keys are required, `by_quadrant` must name all
+# five quadrants and `by_mode` both modes — because a MISSING number here is
+# not a week with a zero in it, it is a week nobody measured, and the two
+# trend flags both fire on zeros.
+_REQUIRED_HISTORY_KEYS = ("by_quadrant", "by_mode")
+_MODES = ("offense", "defense")
 
-    An entry that is not a dict, or whose numbers are not finite numbers,
-    reads as an EMPTY week — the same state as an omitted `by_mode`, which
-    evaluate_flags already treats as "no data" and never as "recorded
-    zero". That is the safe direction: a malformed prior week can only
-    suppress a trend flag, never manufacture one. It is not routed to
-    `rejected`, which describes THIS week's rows; the caller is told at the
-    confirm gate that history was suppressed (close-week Step 2a #5)."""
+
+def _history_entry_problem(entry) -> str | None:
+    """Why this prior week cannot be trusted, or None when it can.
+
+    THE GUARD LIVES HERE, IN THE MODULE, NOT IN THE CALLING SKILL'S PROSE.
+    "Unknown treated as zero" has now been the bug three times in this one
+    feature — in the CLI contract, in _totals_from_history_entry(), and in
+    the rekeying step close-week performs before it gets here — and a rule
+    written only in prose is a rule the fourth caller does not have. The
+    reason it keeps coming back is that zero is not a neutral value for
+    either trend flag:
+
+      * a prior week read as all-zero hours has 0h of reliability, which IS
+        the reliability-starvation flag's firing condition. An absent week
+        thereby manufactures "0h for 2 consecutive weeks";
+      * a prior week of {"offense": 10, "defense": null} has a non-zero mode
+        total and a 0% defense share, which IS the rising-defense-share
+        flag's firing condition against any current week with defense in it.
+
+    So a prior week is either complete and finite, or it is not history.
+    Nothing here is silently corrected and nothing raises: the reason comes
+    back as a string for the caller to report."""
+    if not isinstance(entry, dict):
+        return f"entry is {type(entry).__name__}, not an object"
+    missing = [k for k in _REQUIRED_HISTORY_KEYS if k not in entry]
+    if missing:
+        return ("entry is missing required key(s): "
+                + ", ".join(repr(k) for k in missing))
+
+    raw_quadrant = entry["by_quadrant"]
+    if not isinstance(raw_quadrant, dict):
+        return f"'by_quadrant' is {type(raw_quadrant).__name__}, not an object"
+    absent = [q for q in (*QUADRANTS, CROSS_CUTTING) if q not in raw_quadrant]
+    if absent:
+        return ("'by_quadrant' is missing quadrant(s): "
+                + ", ".join(repr(q) for q in absent))
+    for key, value in raw_quadrant.items():
+        if not _known_quadrant(key):
+            return f"'by_quadrant' key {_json_safe(key)!r} is not a quadrant"
+        if not _finite_number(value) or value < 0:
+            return (f"'by_quadrant[{key}]' is {_json_safe(value)!r}, not a "
+                    "non-negative finite number")
+    if not math.isfinite(sum(raw_quadrant.values())):
+        return "'by_quadrant' hours sum to a value outside the finite range"
+
+    raw_mode = entry["by_mode"]
+    if not isinstance(raw_mode, dict):
+        return f"'by_mode' is {type(raw_mode).__name__}, not an object"
+    for mode in _MODES:
+        if mode not in raw_mode:
+            return f"'by_mode' is missing {mode!r}"
+        if not _finite_number(raw_mode[mode]) or raw_mode[mode] < 0:
+            return (f"'by_mode[{mode}]' is {_json_safe(raw_mode[mode])!r}, "
+                    "not a non-negative finite number")
+    if not math.isfinite(raw_mode["offense"] + raw_mode["defense"]):
+        return "'by_mode' hours sum to a value outside the finite range"
+    return None
+
+
+def _history_from_payload(entries: list, rejects: list) -> list[WeekTotals]:
+    """Validated prior weeks — or none of them.
+
+    ONE BAD ENTRY SUPPRESSES THE WHOLE HISTORY. evaluate_flags reads this
+    list positionally: history[0] IS "last week". Dropping a malformed
+    entry 0 while keeping entry 1 promotes a two-weeks-ago week into last
+    week's slot and compares this week against it — manufacturing a trend
+    out of a different week, which is the same failure as reading an absent
+    week as zero. Suppressing everything is the only reading that cannot
+    invent a trend.
+
+    The suppression is REPORTED, as a `payload` rejection the caller already
+    has to render. Without it, "no flags fired" and "the trend flags could
+    not run" print identically, and those two mean opposite things."""
+    problems = []
+    for index, entry in enumerate(entries):
+        problem = _history_entry_problem(entry)
+        if problem:
+            problems.append(f"entry {index}: {problem}")
+    if problems:
+        rejects.append(RejectedRow(
+            "payload",
+            {"history": [_payload_row_dict(e) for e in entries]},
+            "history " + "; ".join(problems)
+            + " — history suppressed (read as []); the reliability-starvation "
+              "and rising-defense-share flags did not run this week"))
+        return []
+    return [_totals_from_history_entry(entry) for entry in entries]
+
+
+def _totals_from_history_entry(entry: dict) -> WeekTotals:
+    """Turn ONE ALREADY-VALIDATED history entry into a WeekTotals.
+
+    Call it through _history_from_payload(), never directly on raw payload
+    data: this function reads numbers, it does not judge them, and an entry
+    that reaches it unvalidated reads as zeros — which is precisely how a
+    missing prior week used to manufacture a reliability-starvation or
+    rising-defense-share flag. _history_entry_problem() is where that
+    judgment lives.
+
+    The defensive reads below stay because they are cheap and because a
+    direct caller (a test, a future entry point) is still not allowed to
+    crash the week — but they are a floor, not the guard."""
     if not isinstance(entry, dict):
         entry = {}
     by_quadrant = _empty_by_quadrant()
@@ -773,10 +924,8 @@ def summarize(payload: dict) -> dict:
         )
         meeting_rows.append(MeetingRow(mr["label"], resolution, mr["hours"]))
 
-    history = [
-        _totals_from_history_entry(entry)
-        for entry in _payload_rows(payload, "history", shape_rejects)
-    ]
+    history = _history_from_payload(
+        _payload_rows(payload, "history", shape_rejects), shape_rejects)
 
     current = aggregate(project_weeks, meeting_rows)
     flags = evaluate_flags(
@@ -806,9 +955,18 @@ def _summary(current: WeekTotals, flags: list[str],
     # recorded" from "recorded zero" by reading by_quadrant_mode's HOURS,
     # not this table (a quadrant whose hours are all meeting hours has no
     # mode at all, and must render an em dash rather than 0% / 0%).
-    mode_spent = current.by_mode["offense"] + current.by_mode["defense"]
+    # THE DENOMINATOR IS ALL PROJECT HOURS, not the project hours that
+    # happened to record a mode. `by_mode["offense"] + by_mode["defense"]`
+    # omits every project row whose offense_pct was rejected -- that row's
+    # hours are in total_hours and in project_hours, but it contributed no
+    # mode hours at all. Dividing by the mode hours made offense and defense
+    # sum to 100% of a base nobody was told had shrunk, which is the opposite
+    # of what "share of the week's project hours" says. Divided by
+    # project_hours the two shares sum to LESS than 100% exactly when some
+    # project hours have no mode recorded -- the truthful reading, and the
+    # missing slice is visible rather than absorbed.
     mode_percentages = {
-        mode: (hours / mode_spent if mode_spent else 0.0)
+        mode: (hours / current.project_hours if current.project_hours else 0.0)
         for mode, hours in current.by_mode.items()
     }
     quadrant_mode_percentages = {}
@@ -825,6 +983,10 @@ def _summary(current: WeekTotals, flags: list[str],
         "by_quadrant_mode": current.by_quadrant_mode,
         "unresolved_hours": current.unresolved_hours,
         "total_hours": current.total_hours,
+        # The denominator behind mode_percentages, returned so the renderer
+        # can say what the offense/defense shares are a share OF -- and so a
+        # pair that sums to less than 100% is explainable rather than a bug.
+        "project_hours": current.project_hours,
         "percentages": percentages,
         "mode_percentages": mode_percentages,
         "quadrant_mode_percentages": quadrant_mode_percentages,
@@ -844,10 +1006,11 @@ def _summary(current: WeekTotals, flags: list[str],
 # Run this with the COMPANION'S interpreter, never a bare `python3`: the
 # module needs >=3.10, a stock Mac's /usr/bin/python3 is 3.9, and a supported
 # Windows install has no `python3` on PATH at all (the launcher is `py`, and
-# the toolkit may be running from its own private runtime). $PY below is the
-# venv interpreter beside the binary ensure-companion.sh resolves — see
-# skills/close-week/references/portfolio-attribution.md §7 for the two lines
-# that produce it.
+# the toolkit may be running from its own private runtime). $PY below is what
+# `"$TC" python-path` printed — the companion binary naming its OWN
+# interpreter. It is not the file beside $TC: ensure-companion.sh can resolve
+# $TC from PATH, whose directory need not hold a Python at all. See
+# skills/close-week/references/portfolio-attribution.md §7.
 USAGE = (
     'usage (run with the companion interpreter, not a bare python3):\n'
     '  "$PY" -m companion.portfolio                < payload.json\n'

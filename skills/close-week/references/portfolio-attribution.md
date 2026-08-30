@@ -161,16 +161,30 @@ a project row on Windows. Resolve the interpreter the way every other skill reso
 the companion, then reuse `$PY` for both modes:
 
 ```bash
-# Resolve once, at the top of Step 2a. ensure-companion.sh prints the binary path
-# (see close-week Step 0.5 and open-day Step 8); the venv interpreter sits beside it.
+# Resolve once, at the top of Step 2a. ensure-companion.sh prints the BINARY path
+# (see close-week Step 0.5 and open-day Step 8) — and that is all it promises.
 TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
-PY="$(dirname "$TC")/python"
-[ -x "$PY" ] || PY="$(dirname "$TC")/python.exe"   # Windows venvs use Scripts/python.exe
+# Ask the binary for its own interpreter. Never derive it from `dirname "$TC"`.
+PY="$("$TC" python-path 2>/dev/null)"
+[ -n "$PY" ] && [ -x "$PY" ] || PY=""    # no interpreter → skip Step 2a (see below)
 ```
 
-If `$TC` comes back empty the companion cannot be provisioned here — say so and skip
-Step 2a rather than falling back to a bare `python3`, which on the machines that need
-this most is either 3.9 or absent.
+**Why `$TC python-path` and not `$(dirname "$TC")/python`.** `ensure-companion.sh`
+resolves the binary from three places, and only two of them are a venv: `<venv>/bin/`,
+`<venv>/Scripts/`, and — unless `NSLS_COMPANION_LOCAL_ONLY` is set — whatever
+`command -v toolkit-companion` finds on `PATH`. That third case is a supported
+fallback, and the directory it returns can be a pipx bin dir, a `~/.local/bin`, or a
+symlink farm with no interpreter in it at all; the sibling guess then produced a `$PY`
+that does not exist and **both** module runs below failed on exactly the path the
+guess was written to support. The binary is the only thing that knows its own
+interpreter, because it *is* that interpreter — `python-path` prints `sys.executable`,
+which by construction can import `companion`.
+
+If `$TC` comes back empty the companion cannot be provisioned here. If `$PY` comes back
+empty the binary resolved but would not name an interpreter (an older companion
+predating `python-path`, or a broken install). Either way: say which, and skip Step 2a
+rather than falling back to a bare `python3`, which on the machines that need this most
+is either 3.9 or absent.
 
 ```bash
 # 1. Parse ONE daily note's '## Projects Touched' section (Step 2a #1).
@@ -197,7 +211,7 @@ format — verifying that format contract in one place is why the parser exists.
 |---|---|---|
 | `project_weeks` | list of `{project, quadrant, offense_pct, hours}` | one row per project this week |
 | `meeting_rows` | list of `{label, quadrant, resolved_by, hours, splits?}` | `splits`, when present, is a list of `[quadrant, share]` pairs; `quadrant` is `null` when `resolved_by` is `"topic"` (split) or `"unresolved"`. **Shares should sum to 1.0.** Over 1.0 they are normalised (the same rule `resolve_meeting()` applies), so `unresolved_hours` can never go negative and the table can never sum past 100% — and that normalisation runs over **all** the shares, out-of-vocabulary ones included, before any are dropped, so a bad quadrant's share really does reach `unresolved_hours` instead of being absorbed by its neighbours. Under 1.0 the missing share becomes unresolved hours — deliberately, because a share that went missing is time nobody attributed, not time to be absorbed into the quadrants that survived. A **negative** share is not normalised: the whole row goes to unresolved and lands in `rejected` |
-| `history` | list of `{by_quadrant, by_mode?}` | most recent week first; **each entry carries both `by_quadrant` and `by_mode`** — `by_mode` is optional and reads as zero offense/zero defense when omitted, which `evaluate_flags` treats as "no data," never as "recorded zero". An entry of any other shape — not an object, or carrying values that are not finite numbers — reads as that same empty week, so a malformed prior week can only *suppress* a trend flag, never manufacture one |
+| `history` | list of `{by_quadrant, by_mode}` | most recent week first. **Both keys are REQUIRED, and both must be complete**: `by_quadrant` names all five quadrants, `by_mode` names both modes, every value a non-negative finite number. A prior week that is absent, not an object, missing a quadrant, or only partly readable (`{"offense": 10, "defense": null}`) is **not** history — the module suppresses the ENTIRE list, reads it as `[]`, and reports the reason as a `payload` entry in `rejected`. See "Absent history is never a zero" below for why anything softer manufactures flags |
 | `driver_hours` | number | optional, defaults to `0.0`. A value that is not a finite number reads as `0.0` **and is reported** — see the validation contract |
 | `held_hours` | number | optional, defaults to `0.0`. Same rule |
 
@@ -210,8 +224,9 @@ format — verifying that format contract in one place is why the parser exists.
 | `by_quadrant_mode` | same five quadrant keys → `{offense, defense}` hours, **project rows only**. This is what the per-quadrant Offense / Defense column renders from |
 | `unresolved_hours` | number, never negative |
 | `total_hours` | number |
+| `project_hours` | number — the hours from **project rows only**, every one whose hours were usable, including a row whose `offense_pct` was rejected and therefore recorded no mode. This is `mode_percentages`' denominator, returned so the renderer can say what those shares are a share *of* |
 | `percentages` | same five quadrant keys → share of `total_hours` |
-| `mode_percentages` | `{offense, defense}` → share of the week's *project* hours |
+| `mode_percentages` | `{offense, defense}` → share of the week's *project* hours, i.e. divided by `project_hours`. **These two need not sum to 100%**, and the gap is meaningful: it is project time whose mode nobody could read (an `offense_pct` the module rejected). Dividing instead by `offense + defense` forced them to 100% of a base that had quietly shrunk, hiding exactly that gap |
 | `quadrant_mode_percentages` | same five quadrant keys → `{offense, defense}` shares **within that quadrant's project hours** |
 | `unresolved_pct` | `unresolved_hours` as a share of `total_hours` |
 | `rejected` | list of `{kind, row, reason}` — everything the module refused to trust. `kind` is `"project"`, `"meeting"`, or `"payload"` (a week-level failure: a rows container that isn't a list, a bad `driver_hours` / `held_hours`, a payload that isn't an object); `row` is the raw input row verbatim; `reason` names the field and value that failed. **Empty on a clean week; when it is not empty the caller must render every entry** — see the validation contract below |
@@ -265,6 +280,18 @@ directly. What is checked:
 - `0 <= offense_pct <= 100`
 - `hours >= 0`, on project rows and meeting rows alike
 - every split share `>= 0`
+- **the RESULT of the arithmetic is finite too, not just the inputs.** Finite
+  numbers multiply and add their way out of the finite range: `1e308` hours at
+  `50` offense overflowed a plain `hours * offense_pct` to `Infinity`, two
+  `1e308`-hour rows overflow the running total, and two `1e308` split shares
+  overflow their sum (where `1.0/inf` is `0.0`, which would silently scale every
+  share to nothing and call it "normalised"). So the products are ordered to make
+  overflow impossible — `hours * (pct / 100)`, a factor in `[0, 1]` — and the
+  running total is checked *before* a row is added to it. A row that would push
+  the week's total out of the finite range is **left out of the week entirely and
+  reported**, exactly like unusable hours. Every other accumulator is bounded by
+  that total (`sum(by_quadrant) + unresolved == total`, and the mode hours sum to
+  the project hours inside it), so guarding the total guards all of them
 
 **A failing row is reported, never silently corrected.** Its hours go to
 `unresolved_hours` *and* the raw row comes back in `rejected` with the reason.
@@ -311,6 +338,36 @@ that means `null`.** Any *other* word in that slot is drift and comes back as a
 at 0 while the hours routed to unresolved with no signal at all — and
 `founder-transition`, a real legacy value still sitting in the vault, would have
 vanished exactly that way.
+
+**Absent history is never a zero — and the guard for that lives in the module,
+not here.** "Unknown treated as zero" has been the bug three times in this one
+feature: in the CLI contract, in `_totals_from_history_entry()`, and in the
+rekeying close-week does before the payload is built. A rule written only in
+prose is a rule the fourth caller does not have, so `summarize()` now validates
+every `history` entry itself. It keeps coming back because **zero is not a
+neutral value for either trend flag**:
+
+- a prior week read as all-zero hours has `0h` of reliability, which *is* the
+  reliability-starvation flag's firing condition — an unmeasured week thereby
+  manufactures "0h for 2 consecutive weeks";
+- a prior week of `{"offense": 10, "defense": null}` has a non-zero mode total
+  and a 0% defense share, which *is* the rising-defense-share flag's firing
+  condition against any current week with defense in it.
+
+So a prior week is either complete and finite — both keys present, all five
+quadrants named, both modes named, every value a non-negative finite number — or
+it is not history at all. **One bad entry suppresses the whole list**, not just
+itself: `evaluate_flags` reads it positionally (`history[0]` *is* last week), so
+dropping entry 0 and keeping entry 1 would promote a two-weeks-ago week into last
+week's slot and compare against the wrong week — inventing a trend rather than
+reading one. The suppression comes back as a `payload` entry in `rejected`,
+because "no flags fired" and "the trend flags could not run" print identically
+otherwise, and those two mean opposite things.
+
+This is the module-side floor. close-week Step 2a #5's own `history: []` rules —
+for skipped weeks and for an extended close — still apply on top of it: the module
+can tell that an entry is unreadable, but it cannot tell that two readable entries
+are not consecutive weeks.
 
 **Two rules for reading the mode keys, and both matter:**
 
@@ -384,6 +441,7 @@ There is no cell in it that the step divides by hand.
   },
   "unresolved_hours": 0.5,
   "total_hours": 25.0,
+  "project_hours": 21.0,
   "percentages": {
     "growth-driver": 0.556,
     "operating-efficiency": 0.184,

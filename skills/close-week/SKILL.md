@@ -88,16 +88,20 @@ Extract from each:
 - `## Carrying Over` → what slipped each day
 - `## Time Distribution` → capture counts by category
 
-**Then fetch the week's Fathom summaries — Step 2a's cascade cannot run without them.** The daily note's `## Meetings` section preserves only time, title, attendees and 1-2 takeaways; it carries no topic sections and no timestamps. Without this fetch the `topic` rung of Step 2a's cascade can never fire and every meeting falls through to project or unresolved, which is precisely the case where the role is broad (a leadership standing meeting) and the topic is the decisive signal.
+**First, check whether Fathom is even available to this builder.** Read `data_sources` from the builder profile at `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md` (the same file and the same flag `/close-day` Step 1b reads). **If the profile has `fathom: false`, make no Fathom call at all** — not `get_identity`, not `list_meetings`, not `get_meeting_summary`. Give every meeting from `## Meetings` `topic_sections: []` and go straight to Step 1b. Calling a disabled integration anyway is how a connector that is absent, unauthorised, or timing out failed the step *before* attribution ran, instead of reaching the documented empty-topics fallback that Step 2a already handles. Say it once at Step 2a's confirm gate: `Fathom disabled in the builder profile — every meeting resolves at the role or project rung, or falls to unresolved.` If no profile exists, Fathom is assumed available (the Executive preset default) — the same assumption `/close-day` makes.
+
+**Otherwise fetch the week's Fathom summaries — Step 2a's cascade cannot run without them.** The daily note's `## Meetings` section preserves only time, title, attendees and 1-2 takeaways; it carries no topic sections and no timestamps. Without this fetch the `topic` rung of Step 2a's cascade can never fire and every meeting falls through to project or unresolved, which is precisely the case where the role is broad (a leadership standing meeting) and the topic is the decisive signal.
 
 **The date window must be the user's *local* Saturday→Friday, converted to UTC** — and the fetch must be scoped to the builder's own recordings. Both rules, and the DST trap in the first, are documented at length in `skills/harvest-meeting/SKILL.md` Step 2; this is the same call with a 7-day window instead of a 1-day one. Do not re-derive either.
 
-`created_after` / `created_before` are absolute UTC instants, so hardcoding `T00:00:00Z`–`T23:59:59Z` asks for the UTC week, not the week the user means. Nobody on this team is in UTC (Pacific through Central), so that mistake drops the Friday evening meetings at one edge and pulls in the previous Friday's at the other. Compute the bounds from the local zone first:
+`created_after` / `created_before` are absolute UTC instants, so hardcoding `T00:00:00Z`–`T23:59:59Z` asks for the UTC week, not the week the user means. Nobody on this team is in UTC (Pacific through Central), so that mistake drops the Friday evening meetings at one edge and pulls in the previous Friday's at the other. Compute the bounds from the local zone first.
+
+**And they filter Fathom's `created_at`, not the meeting's own time — so FETCH WIDE, THEN FILTER.** `list_meetings` has no meeting-time parameter at all (its filters are `created_after` / `created_before` / `recorded_by` / `teams` / `cursor` / `max_pages` / `include_*` — there is nothing else to pass), and `created_at` is when the recording landed, not when the meeting happened. A Friday-evening call whose recording finishes processing after midnight is created *outside* the week and disappears; a call from two weeks ago re-uploaded on Tuesday is created *inside* it and shows up as this week's work. The fix is two steps, and the second one is not optional: query a **creation window padded by 2 days on each side**, then keep only the meetings whose own start time falls inside the true local Sat→Fri window.
 
 ```bash
 python3 - "$SAT" "$FRI" <<'PYEOF'
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 sat, fri = sys.argv[1], sys.argv[2]        # YYYY-MM-DD, the user's local calendar days
 # A naive datetime's .astimezone() attaches the machine's local offset *for that
 # datetime*, so each boundary lands on the right side of a DST change. Build EACH
@@ -109,29 +113,40 @@ sat, fri = sys.argv[1], sys.argv[2]        # YYYY-MM-DD, the user's local calend
 start_local = datetime.fromisoformat(f'{sat}T00:00:00').astimezone()
 end_local   = datetime.fromisoformat(f'{fri}T23:59:59').astimezone()
 fmt = lambda t: t.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-print(f'created_after:  {fmt(start_local)}')
-print(f'created_before: {fmt(end_local)}')
-print(f'(local {sat} → {fri} in {start_local.tzname()}/{end_local.tzname()} → the UTC window above)')
+# The TRUE window — what a meeting's own start time is tested against below.
+print(f'keep_from: {fmt(start_local)}')
+print(f'keep_to:   {fmt(end_local)}')
+# The FETCH window — creation time, padded so a late-created recording of a
+# meeting inside the week is still returned. The pad only widens what comes back;
+# the post-filter is what makes the result the week.
+PAD = timedelta(days=2)
+print(f'created_after:  {fmt(start_local - PAD)}')
+print(f'created_before: {fmt(end_local + PAD)}')
+print(f'(local {sat} → {fri} in {start_local.tzname()}/{end_local.tzname()}; fetch window padded ±2d)')
 PYEOF
 ```
 
-Then pass those two computed values, plus the recorder filter:
+Then pass the two **padded** values, plus the recorder filter:
 
 ```
 list_meetings(     ← the Fathom connector's tool; resolve the live mcp__<uuid>__ name from this session's tools
-  created_after=<computed UTC start of the local Saturday>,
-  created_before=<computed UTC end of the local Friday>,
+  created_after=<padded UTC start>,
+  created_before=<padded UTC end>,
   recorded_by=["<the builder's own email>"],
   include_summary=true,
-  max_pages=5
+  max_pages=5          ← the pad widens the window, so keep the page budget here
 )
 ```
 
+**Then post-filter the listing on meeting time, before anything else uses it.** For each returned meeting read `scheduled_start_time` — the field the toolkit's other Fathom readers already use (`skills/person-intelligence/scripts/`) — and keep the meeting only when it falls between `keep_from` and `keep_to`. Discard the rest; they are the padding doing its job, not this week's work.
+
+> **A meeting whose start time you cannot read is not silently kept or silently dropped.** If a listed meeting carries no `scheduled_start_time`, fall back to judging it by `created_at` against the *unpadded* window — the old behaviour — and report the count: `Step 1a: N meeting(s) had no meeting-time field; filtered by creation time instead.` Guessing either way, without saying so, is the silent failure this whole step exists to avoid.
+
 > ⚠️ **`recorded_by` is not optional.** Without it the call returns every recording the builder can *see*, coworkers' included — and a coworker's same-titled standing meeting then contributes the wrong attendees to Step 2a's role rung and the wrong topics to its topic rung, producing a confidently mis-filed quadrant. Get the email from the Fathom connector's `get_identity` rather than assuming it.
 >
-> **Use these parameter names exactly.** There is no `start_date`, `end_date`, or `owner_email` on this tool; passing those means the date and recorder filters are silently dropped and you get the newest page of *everything*.
+> **Use these parameter names exactly.** There is no `start_date`, `end_date`, `owner_email`, or `recording_start_time` on this tool; passing those means the date and recorder filters are silently dropped and you get the newest page of *everything*.
 
-**Heartbeat the window you actually used**, so a timezone mismatch is visible instead of looking like a quiet week: `Step 1a: Fathom window <created_after> → <created_before> (local YYYY-MM-DD → YYYY-MM-DD, <tz>)`.
+**Heartbeat both windows**, so a timezone mismatch is visible instead of looking like a quiet week and so the pad is never mistaken for the week: `Step 1a: Fathom fetch <created_after> → <created_before> (±2d pad); kept M of N by meeting time in local YYYY-MM-DD → YYYY-MM-DD, <tz>`.
 
 Always date-scope the call — an unscoped fetch paginates the whole archive. If a meeting's listed summary carries no topic sections, fetch that one with `get_meeting_summary(recording_id=<id>)`; cap those at the handful of meetings whose quadrant is actually in doubt. For each meeting returned, carry forward:
 
@@ -255,15 +270,17 @@ Carry this read into Step 3's priorities. **P002 closes when this read happens b
 
 **Step 2a — Portfolio attribution.** Runs here, before Achievements and Project Progress, because the quadrant grouping drives how both are written. The judgment calls (mode-inference verbs, meeting-topic→quadrant mapping, the confirm-gate table format) live in `skills/close-week/references/portfolio-attribution.md` — read it, don't re-derive it. The arithmetic lives in `companion/portfolio.py` and is **run, not re-derived**: this step builds a JSON payload and pipes it to the module, then renders the JSON that comes back. Never compute a quadrant total, a percentage, or a flag by hand — if the module didn't say it, it isn't in the output.
 
-0. **Resolve the interpreter — once, before either run.** The module needs Python ≥3.10, so a bare `python3` is wrong on both supported platforms that matter: a stock Mac's `/usr/bin/python3` is 3.9, and a supported Windows install has no `python3` on PATH at all (the launcher is `py`, and the toolkit may be running from the private runtime `ensure-companion.sh` provisioned). Use the companion's own venv interpreter, which sits beside the binary that helper resolves — the same helper Step 0.5 uses, re-run here because Step 0.5 is skipped on backfill runs and when `visual_mode: off`:
+0. **Resolve the interpreter — once, before either run.** The module needs Python ≥3.10, so a bare `python3` is wrong on both supported platforms that matter: a stock Mac's `/usr/bin/python3` is 3.9, and a supported Windows install has no `python3` on PATH at all (the launcher is `py`, and the toolkit may be running from the private runtime `ensure-companion.sh` provisioned). **Ask the companion binary for its own interpreter** — the same helper Step 0.5 uses, re-run here because Step 0.5 is skipped on backfill runs and when `visual_mode: off`:
 
    ```bash
    TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
-   PY="$(dirname "$TC")/python"
-   [ -x "$PY" ] || PY="$(dirname "$TC")/python.exe"   # Windows venvs use Scripts/python.exe
+   PY="$("$TC" python-path 2>/dev/null)"
+   [ -n "$PY" ] && [ -x "$PY" ] || PY=""
    ```
 
-   **If `$TC` comes back empty, skip Step 2a and say why** (the stderr line is the reason; detail in `companion/.install.log`). The weekly note then gets no `## Portfolio Allocation` section — the same outcome as a rejected confirm gate, handled per Project Progress's ungrouped fallback below. Never fall back to a bare `python3`: on the machines that need this most it is either 3.9 or absent, and the step would report "0 rows parsed" for a full week of work.
+   **Never derive `$PY` from `$(dirname "$TC")`.** `ensure-companion.sh` promises one thing on stdout: a path to a working `toolkit-companion`. Two of its three resolution cases are a venv (`<venv>/bin/`, `<venv>/Scripts/`) where a `python` does sit beside the binary — but the third is `command -v toolkit-companion` on `PATH`, a supported fallback whose directory can be a pipx bin dir or a symlink farm with no interpreter in it. The sibling guess produced a `$PY` that did not exist and **both** runs below failed, on exactly the path it was written for. `python-path` prints the interpreter's own `sys.executable`, which by construction can import `companion`.
+
+   **If `$TC` comes back empty, skip Step 2a and say why** (the stderr line is the reason; detail in `companion/.install.log`). **If `$TC` resolved but `$PY` is empty**, skip Step 2a and say *that* instead — the binary ran but would not name an interpreter (an older companion predating `python-path`, or a broken install); the fix is `ensure-companion.sh --force`. Either way the weekly note gets no `## Portfolio Allocation` section — the same outcome as a rejected confirm gate, handled per Project Progress's ungrouped fallback below. Never fall back to a bare `python3`: on the machines that need this most it is either 3.9 or absent, and the step would report "0 rows parsed" for a full week of work.
 
 1. **Project rows.** Parse the week's daily notes with the module's parse mode — one run per note that EXISTS, the note's markdown on stdin:
 
@@ -302,6 +319,8 @@ Carry this read into Step 3's priorities. **P002 closes when this read happens b
      - **Check for a gap before you use it.** Two closed weekly notes are not consecutive weeks just because they are the two most recent files in `02-weekly/`. Compare each note's covered date range against the next: if the prior note's end date is not the day before this close's start date, weeks were skipped. **Also check this close itself** — per Step 0, a run that starts from the day after an older close-week rolls a skipped interval into one extended close, and that extended range is not one week either.
      - **Whenever either gap exists, pass `"history": []`.** `evaluate_flags` treats consecutive aggregates as consecutive weeks: it reads reliability starvation as "0h for 2 weeks running" and rising defense share as "up since last week." Feeding it a 3-weeks-ago note as "last week", or comparing a 3-week extended close against a 1-week note, produces a flag that names a trend that never happened — and every flag here is written to force a decision, so an invalid one costs a real call. Say which it is at the confirm gate: "history suppressed — [N] week(s) skipped between [date] and [date]; trend flags need consecutive weeks."
      - No prior data — first week on this pipeline — is the same `"history": []`; `evaluate_flags` treats missing history as "no data," never as a manufactured zero.
+     - **Validate each entry before you add it, and pass `"history": []` if any one fails.** A prior note is only history when it carries BOTH keys, `by_quadrant` names all five quadrants, `by_mode` names both modes, and every value is a non-negative finite number. A note written before this pipeline, one whose Step 2a was rejected (Step 5 deliberately omits both keys then), or one hand-edited to `by_mode: {"offense": 10, "defense": null}` is **not** a week with zeros in it — it is a week nobody measured. Rekeyed in anyway it reads as zeros, and zero is the firing condition for both trend flags: 0h reliability *is* "reliability starving," and a 0% prior defense share *is* "defense share rose." **Say which entry failed and why, at the confirm gate**, in the same shape as the gap message above: "history suppressed — last week's note has no `portfolio_by_mode`; trend flags need complete prior-week data."
+     - `companion/portfolio.py` enforces this too, so a rekeying slip cannot quietly become a flag: `summarize()` checks every `history` entry, suppresses the **entire** list if any one is incomplete (`history[0]` *is* "last week", so keeping the survivors would silently promote a two-weeks-ago week into last week's slot), and emits the reason as a `payload` entry in `rejected` — which step 7 already requires you to print. Do not treat that as a substitute for the two checks above: the module can see that an entry is unreadable, but it cannot see that two readable entries are not consecutive weeks.
    - `driver_hours` / `held_hours`: sum this week's confirmed project hours by each project's `portfolio-role`, using the roles already read in step 3 (before the gate, so a project missing that field was surfaced there rather than dropped here). A project whose home doc is missing, or whose frontmatter has no `portfolio-role`, counts toward **neither** total. **Send real numbers or omit the keys** — anything that is not a finite number reads as `0.0` and comes back as a `payload` rejection, and `0.0` is a number that can fire or suppress the held-vs-driver flag rather than an absence of one.
 
    ```bash
@@ -312,9 +331,9 @@ Carry this read into Step 3's priorities. **P002 closes when this read happens b
 
 6. **Write back, only now.** Append any newly-resolved recurring meetings to `~/.claude/portfolio-meeting-cache.json`.
 
-7. **Render, don't recompute.** The module's stdout (`by_quadrant`, `by_mode`, `by_quadrant_mode`, `unresolved_hours`, `total_hours`, `percentages`, `mode_percentages`, `quadrant_mode_percentages`, `unresolved_pct`, `rejected`, `flags`) is the entire content of the `## Portfolio Allocation` section (Output A, template below) and the quadrant grouping used in Project Progress (both outputs). Every figure in those sections traces back to this one call — including every percentage, which is why there is nothing left for this step to divide.
+7. **Render, don't recompute.** The module's stdout (`by_quadrant`, `by_mode`, `by_quadrant_mode`, `unresolved_hours`, `total_hours`, `project_hours`, `percentages`, `mode_percentages`, `quadrant_mode_percentages`, `unresolved_pct`, `rejected`, `flags`) is the entire content of the `## Portfolio Allocation` section (Output A, template below) and the quadrant grouping used in Project Progress (both outputs). Every figure in those sections traces back to this one call — including every percentage, which is why there is nothing left for this step to divide.
 
-   **`rejected` is never empty for free — show it.** Each entry is `{kind, row, reason}` for something the module refused to trust: a quadrant outside the vocabulary, an `offense_pct` outside 0-100, negative hours, a negative split share, any numeric field that is not a real finite number (`"2"`, `null`, `NaN`, `Infinity`, `true`), a row missing a required key outright, or a malformed `splits`. `kind` is `project`, `meeting`, or `payload` — the last for a week-level failure such as a bad `driver_hours` / `held_hours` (read as `0.0`, so any held-vs-driver flag below it was computed without that number) or a rows container that wasn't a list. Their hours went to unresolved, or — for hours that were negative, non-finite, or missing — left the week's total entirely. Print one line per entry directly beneath the Flags block: `⚠️ <kind> "<name>": <reason>`. A rejected row you don't render is a number the module deliberately refused to guess at, silently corrected on its way to the page — the exact failure mode this feature exists to catch. If `rejected` is non-empty, the fix is in the source (the daily note or the confirmed table), not in the output.
+   **`rejected` is never empty for free — show it.** Each entry is `{kind, row, reason}` for something the module refused to trust: a quadrant outside the vocabulary, an `offense_pct` outside 0-100, negative hours, a negative split share, any numeric field that is not a real finite number (`"2"`, `null`, `NaN`, `Infinity`, `true`), a row missing a required key outright, a malformed `splits`, or hours that were finite but whose sum overflowed the week's running total. `kind` is `project`, `meeting`, or `payload` — the last for a week-level failure such as a bad `driver_hours` / `held_hours` (read as `0.0`, so any held-vs-driver flag below it was computed without that number), a rows container that wasn't a list, or **a suppressed `history`** (an incomplete prior week; the reliability-starvation and rising-defense-share flags did not run, which is why that line has to be printed beside an empty Flags block). Their hours went to unresolved, or — for hours that were negative, non-finite, missing, or overflowing — left the week's total entirely. Print one line per entry directly beneath the Flags block: `⚠️ <kind> "<name>": <reason>`. A rejected row you don't render is a number the module deliberately refused to guess at, silently corrected on its way to the page — the exact failure mode this feature exists to catch. If `rejected` is non-empty, the fix is in the source (the daily note or the confirmed table), not in the output.
 
 ---
 
@@ -568,7 +587,7 @@ Full format with Dataview queries for projects touched/not touched.
 | Cross-cutting | 0.0h | 0% | — | — |
 | Unresolved | 0.0h | 0% | — | — |
 
-**Week Offense / Defense: X% / Y%** (project work only — meetings carry a quadrant, not a mode)
+**Week Offense / Defense: X% / Y%** (a share of the week's project hours — meetings carry a quadrant, not a mode; if the two do not sum to 100%, add "; the remaining Z% of project hours recorded no mode")
 
 **Flags:**
 - [one line per flag from the module's `flags`, or "none this week"]
@@ -584,8 +603,8 @@ Full format with Dataview queries for projects touched/not touched.
 | Hours | `by_quadrant[q]`, and `unresolved_hours` for the last row |
 | % | `percentages[q]`, and `unresolved_pct` for the last row |
 | Offense / Defense | `quadrant_mode_percentages[q]` — **but first check `by_quadrant_mode[q]`.** If its offense and defense hours are both `0.0`, that quadrant recorded no mode: print `—`, never `0% / 0%`. This is the ONLY reason a row prints `—` |
-| Top items | the 1-2 largest confirmed project or meeting rows in that quadrant, by hours, from Step 2a's confirmed table — names only, no new numbers |
-| Week Offense / Defense | `mode_percentages` |
+| Top items | the 1-2 largest confirmed rows in that quadrant from Step 2a's confirmed table — names only, no new numbers. **Rank by the hours apportioned to THIS quadrant, not by the row's total duration.** A project row contributes all its hours to its one quadrant, so the two are the same there — but a topic-split meeting contributes `hours × its share of this quadrant`, and ranking it by full duration let a 2h meeting that put 0.2h here outrank a 1.5h project that put all 1.5h here. The column is "what filled this quadrant," so a row's claim on it is the part that landed in it |
+| Week Offense / Defense | `mode_percentages` — a share of `project_hours` (project rows only), which the module also returns. **These two need not sum to 100%.** The gap is project time whose mode the module could not read, and it is real: name it in one clause rather than rounding it away — "…; the remaining N% of project hours recorded no mode (see Rejected rows)" |
 
 A row's Hours and its Offense / Defense do not cover the same hours: Hours include that quadrant's meeting time, mode covers only its project time. Say so in one line beneath the table so nobody reads the split as a partition of the row.
 

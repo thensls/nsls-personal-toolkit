@@ -302,3 +302,31 @@ def test_read_pidfile_addr(tmp_path):
     assert _read_pidfile_addr(pf) is None
     # Missing file → None
     assert _read_pidfile_addr(tmp_path / "nope.pid") is None
+
+
+def test_python_path_prints_a_runnable_interpreter_that_can_import_companion():
+    """close-week Step 2a runs `"$PY" -m companion.portfolio`, so it needs the
+    INTERPRETER, not this console script. `$(dirname "$TC")/python` guessed it
+    from the binary's directory, which is empty of Python on ensure-companion's
+    PATH-fallback resolution -- the one case that derivation existed for. The
+    binary answering for itself cannot be wrong: it is the interpreter.
+    """
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    result = CliRunner().invoke(cli.main, ["python-path"])
+    assert result.exit_code == 0
+    printed = result.output.strip()
+    assert printed == sys.executable
+    assert os.path.exists(printed)
+
+    # And it really can run the module the skill runs -- including the
+    # >=3.10 syntax (`str | None`) that a stock Mac's /usr/bin/python3 3.9
+    # cannot even import.
+    repo_root = Path(__file__).resolve().parents[2]
+    proc = subprocess.run(
+        [printed, "-m", "companion.portfolio", "--parse-daily"],
+        input="", capture_output=True, text=True, cwd=repo_root,
+    )
+    assert proc.returncode == 0, proc.stderr

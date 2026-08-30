@@ -437,12 +437,14 @@ Use the Fathom MCP tools (no API key or Python script needed):
 
 **The date window must be the user's *local* day, converted to UTC, and the fetch must be scoped to the builder's own recordings.** Both rules are documented at length in `skills/harvest-meeting/SKILL.md` Step 2, which names close-day as the common case for the first one — reuse that pattern, don't re-derive it.
 
-`created_after` / `created_before` are absolute UTC instants, so hardcoding `T00:00:00Z`–`T23:59:59Z` asks for the UTC day, not the day the user means. Nobody on this team is in UTC (Pacific through Central), so that mistake silently drops every evening recording — a 7pm PT meeting on the 5th is `00:00Z on the 6th` — and leaks in early-morning meetings from the previous local day. **close-day runs in the evening, so this is the common case, not an edge case.** Compute the bounds from the local zone first:
+`created_after` / `created_before` are absolute UTC instants, so hardcoding `T00:00:00Z`–`T23:59:59Z` asks for the UTC day, not the day the user means. Nobody on this team is in UTC (Pacific through Central), so that mistake silently drops every evening recording — a 7pm PT meeting on the 5th is `00:00Z on the 6th` — and leaks in early-morning meetings from the previous local day. **close-day runs in the evening, so this is the common case, not an edge case.** Compute the bounds from the local zone first.
+
+**And they filter Fathom's `created_at`, not the meeting's own time — so FETCH WIDE, THEN FILTER.** `list_meetings` has no meeting-time parameter at all (its filters are `created_after` / `created_before` / `recorded_by` / `teams` / `cursor` / `max_pages` / `include_*` — there is nothing else to pass), and `created_at` is when the recording landed, not when the meeting happened. **close-day is the worst case for this**: it runs in the evening, so the last meeting of the day is often still processing, and a recording created just after local midnight is created *outside* today and vanishes from today's note — while an older call re-uploaded this afternoon shows up as today's work. Query a **creation window padded by 2 days on each side**, then keep only the meetings whose own start time falls inside the true local day.
 
 ```bash
 python3 - "$TARGET_DATE" <<'PYEOF'
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 d = sys.argv[1]                                   # YYYY-MM-DD, the user's local calendar day
 # A naive datetime's .astimezone() attaches the machine's local offset *for that datetime*,
 # so each boundary lands on the right side of a DST change. Build EACH boundary from its own
@@ -453,18 +455,25 @@ d = sys.argv[1]                                   # YYYY-MM-DD, the user's local
 start_local = datetime.fromisoformat(f'{d}T00:00:00').astimezone()
 end_local   = datetime.fromisoformat(f'{d}T23:59:59').astimezone()
 fmt = lambda t: t.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
-print(f'created_after:  {fmt(start_local)}')
-print(f'created_before: {fmt(end_local)}')
-print(f'(local day {d} in {start_local.tzname()} → the UTC window above)')
+# The TRUE day — what a meeting's own start time is tested against below.
+print(f'keep_from: {fmt(start_local)}')
+print(f'keep_to:   {fmt(end_local)}')
+# The FETCH window — creation time, padded so a still-processing evening recording
+# is still returned. The pad only widens what comes back; the post-filter is what
+# makes the result the day.
+PAD = timedelta(days=2)
+print(f'created_after:  {fmt(start_local - PAD)}')
+print(f'created_before: {fmt(end_local + PAD)}')
+print(f'(local day {d} in {start_local.tzname()}; fetch window padded ±2d)')
 PYEOF
 ```
 
-Then pass those two computed values, plus the recorder filter:
+Then pass the two **padded** values, plus the recorder filter:
 
 ```
 list_meetings(        ← the Fathom connector's tool; resolve the live mcp__<uuid>__ name from this session's tools
-  created_after=<computed UTC start of the user's local day>,
-  created_before=<computed UTC end of the user's local day>,
+  created_after=<padded UTC start>,
+  created_before=<padded UTC end>,
   recorded_by=["<the builder's own email>"],
   include_summary=true,
   include_action_items=true,
@@ -472,17 +481,21 @@ list_meetings(        ← the Fathom connector's tool; resolve the live mcp__<uu
 )
 ```
 
+**Then post-filter the listing on meeting time, before anything else uses it.** For each returned meeting read `scheduled_start_time` — the field the toolkit's other Fathom readers already use (`skills/person-intelligence/scripts/`) — and keep the meeting only when it falls between `keep_from` and `keep_to`. Discard the rest; they are the padding doing its job, not today's work.
+
+> **A meeting whose start time you cannot read is not silently kept or silently dropped.** If a listed meeting carries no `scheduled_start_time`, fall back to judging it by `created_at` against the *unpadded* window — the old behaviour — and report the count: `Step 1c: N meeting(s) had no meeting-time field; filtered by creation time instead.`
+
 > ⚠️ **`recorded_by` is not optional.** Without it the call returns every recording the builder can *see*, coworkers' included — and a coworker's same-titled meeting then lands in the daily note with the wrong attendees and the wrong takeaways. Get the email from the Fathom connector's `get_identity` rather than assuming it.
 >
-> **Use these parameter names exactly.** There is no `start_date`, `end_date`, or `owner_email` on this tool; passing those means the date and recorder filters are silently dropped and you get the newest page of *everything the user can see*.
+> **Use these parameter names exactly.** There is no `start_date`, `end_date`, `owner_email`, or `recording_start_time` on this tool; passing those means the date and recorder filters are silently dropped and you get the newest page of *everything the user can see*.
 
-**Heartbeat the window you actually used**, so a timezone mismatch is visible instead of looking like a quiet day: `Step 1c: Fathom window <created_after> → <created_before> (local day YYYY-MM-DD, <tz>)`.
+**Heartbeat both windows**, so a timezone mismatch is visible instead of looking like a quiet day and so the pad is never mistaken for the day: `Step 1c: Fathom fetch <created_after> → <created_before> (±2d pad); kept M of N by meeting time in local day YYYY-MM-DD, <tz>`.
 
-For each meeting returned, extract: title, time, attendees, summary key points, action items, and fathom URL. If `list_meetings` returns no results, skip this section.
+For each meeting **kept**, extract: title, time, attendees, summary key points, action items, and fathom URL. If nothing survives the filter, skip this section.
 
 If you need the full transcript for a specific meeting (e.g., to extract decisions or detailed context), use `get_meeting_summary(recording_id=<id>)`. Fetch at most 3 transcripts to keep the context manageable.
 
-**Always date-scope the call** — `created_after` / `created_before` fetch only the target day's meetings. That is fast (< 5 seconds) instead of paginating through all meetings since 2023.
+**Always date-scope the call** — `created_after` / `created_before` narrow it to a five-day creation window around the target day. That is fast (< 5 seconds) instead of paginating through all meetings since 2023. The ±2d pad is a fetch bound, not the day: the `scheduled_start_time` filter above is what makes the result the day.
 
 **1d. Sent Email — outbound communications**
 
