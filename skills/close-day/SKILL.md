@@ -435,21 +435,54 @@ The **"Meeting time"** line is an orthogonal metric — it cross-cuts all catego
 
 Use the Fathom MCP tools (no API key or Python script needed):
 
+**The date window must be the user's *local* day, converted to UTC, and the fetch must be scoped to the builder's own recordings.** Both rules are documented at length in `skills/harvest-meeting/SKILL.md` Step 2, which names close-day as the common case for the first one — reuse that pattern, don't re-derive it.
+
+`created_after` / `created_before` are absolute UTC instants, so hardcoding `T00:00:00Z`–`T23:59:59Z` asks for the UTC day, not the day the user means. Nobody on this team is in UTC (Pacific through Central), so that mistake silently drops every evening recording — a 7pm PT meeting on the 5th is `00:00Z on the 6th` — and leaks in early-morning meetings from the previous local day. **close-day runs in the evening, so this is the common case, not an edge case.** Compute the bounds from the local zone first:
+
+```bash
+python3 - "$TARGET_DATE" <<'PYEOF'
+import sys
+from datetime import datetime, timezone
+d = sys.argv[1]                                   # YYYY-MM-DD, the user's local calendar day
+# A naive datetime's .astimezone() attaches the machine's local offset *for that datetime*,
+# so each boundary lands on the right side of a DST change. Build EACH boundary from its own
+# naive wall-clock time. Do not derive the end by adding timedelta(days=1) to start_local: an
+# aware datetime carries a FIXED offset, so arithmetic reuses midnight's offset and the end
+# boundary gets the wrong one on DST transition days (window 1h too long on spring-forward →
+# leaks the next local day; 1h too short on fall-back → drops the last hour of recordings).
+start_local = datetime.fromisoformat(f'{d}T00:00:00').astimezone()
+end_local   = datetime.fromisoformat(f'{d}T23:59:59').astimezone()
+fmt = lambda t: t.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+print(f'created_after:  {fmt(start_local)}')
+print(f'created_before: {fmt(end_local)}')
+print(f'(local day {d} in {start_local.tzname()} → the UTC window above)')
+PYEOF
+```
+
+Then pass those two computed values, plus the recorder filter:
+
 ```
 list_meetings(        ← the Fathom connector's tool; resolve the live mcp__<uuid>__ name from this session's tools
-  created_after="YYYY-MM-DDT00:00:00Z",
-  created_before="YYYY-MM-DDT23:59:59Z",
+  created_after=<computed UTC start of the user's local day>,
+  created_before=<computed UTC end of the user's local day>,
+  recorded_by=["<the builder's own email>"],
   include_summary=true,
   include_action_items=true,
   max_pages=3
 )
 ```
 
+> ⚠️ **`recorded_by` is not optional.** Without it the call returns every recording the builder can *see*, coworkers' included — and a coworker's same-titled meeting then lands in the daily note with the wrong attendees and the wrong takeaways. Get the email from the Fathom connector's `get_identity` rather than assuming it.
+>
+> **Use these parameter names exactly.** There is no `start_date`, `end_date`, or `owner_email` on this tool; passing those means the date and recorder filters are silently dropped and you get the newest page of *everything the user can see*.
+
+**Heartbeat the window you actually used**, so a timezone mismatch is visible instead of looking like a quiet day: `Step 1c: Fathom window <created_after> → <created_before> (local day YYYY-MM-DD, <tz>)`.
+
 For each meeting returned, extract: title, time, attendees, summary key points, action items, and fathom URL. If `list_meetings` returns no results, skip this section.
 
 If you need the full transcript for a specific meeting (e.g., to extract decisions or detailed context), use `get_meeting_summary(recording_id=<id>)`. Fetch at most 3 transcripts to keep the context manageable.
 
-**Fathom API is now date-scoped** — uses `created_after` and `created_before` params to fetch only the target day's meetings. This is fast (< 5 seconds) instead of paginating through all meetings since 2023.
+**Always date-scope the call** — `created_after` / `created_before` fetch only the target day's meetings. That is fast (< 5 seconds) instead of paginating through all meetings since 2023.
 
 **1d. Sent Email — outbound communications**
 
@@ -897,6 +930,14 @@ otherwise. Offense/defense split is inferred from this note's own Work Log
 bullets using the vocabulary in
 `skills/close-week/references/portfolio-attribution.md`. A project with no
 `portfolio-category` renders `· uncategorized ·` and is **not** guessed.
+
+**The quadrant slot takes one of exactly six words** — the five vocabulary values
+(`growth-driver`, `operating-efficiency`, `hygiene`, `reliability`,
+`cross-cutting`) or the literal `uncategorized`. Anything else, including a
+project whose frontmatter still carries a legacy value like
+`founder-transition`, does not parse: close-week reports the line as skipped at
+its confirm gate rather than filing those hours anywhere. Write `uncategorized`
+and fix the project's frontmatter — never pass a legacy value straight through.
 
 ## Carrying Over
 - [Unfinished items from Claude tasks, meeting action items, or Asana overdue]

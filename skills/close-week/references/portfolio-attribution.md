@@ -152,12 +152,32 @@ project mapping — falls through to unresolved per §5.
 program close-week **runs**. It has exactly two modes, both stdin → stdout JSON,
 and close-week uses both:
 
+**Run it with the companion's own interpreter, never a bare `python3`.** The module
+needs Python ≥3.10. A stock Mac's `/usr/bin/python3` is 3.9, and a supported Windows
+install has no `python3` on PATH at all — the launcher is `py`, and the toolkit may be
+running from the private runtime `ensure-companion.sh` provisioned into
+`companion/.python-runtime/`. Documenting `python3` meant Step 2a #1 could never parse
+a project row on Windows. Resolve the interpreter the way every other skill resolves
+the companion, then reuse `$PY` for both modes:
+
+```bash
+# Resolve once, at the top of Step 2a. ensure-companion.sh prints the binary path
+# (see close-week Step 0.5 and open-day Step 8); the venv interpreter sits beside it.
+TC="$(bash "$HOME/.claude/local-plugins/nsls-personal-toolkit/companion/ensure-companion.sh")"
+PY="$(dirname "$TC")/python"
+[ -x "$PY" ] || PY="$(dirname "$TC")/python.exe"   # Windows venvs use Scripts/python.exe
+```
+
+If `$TC` comes back empty the companion cannot be provisioned here — say so and skip
+Step 2a rather than falling back to a bare `python3`, which on the machines that need
+this most is either 3.9 or absent.
+
 ```bash
 # 1. Parse ONE daily note's '## Projects Touched' section (Step 2a #1).
-python3 -m companion.portfolio --parse-daily < daily-note.md
+"$PY" -m companion.portfolio --parse-daily < daily-note.md
 
 # 2. Aggregate the confirmed week (Step 2a #4).
-python3 -m companion.portfolio < payload.json
+"$PY" -m companion.portfolio < payload.json
 ```
 
 Run mode 1 once per daily note. Never hand-roll a regex for the close-day line
@@ -168,7 +188,7 @@ format — verifying that format contract in one place is why the parser exists.
 | Key | Shape |
 |---|---|
 | `project_weeks` | list of `{project, quadrant, offense_pct, hours}` — feeds straight into mode 2's payload, after collapsing days per Step 2a #1. `quadrant` is `null` for a row rendered `· uncategorized ·` |
-| `skipped_lines` | the raw text of every bullet under the heading that did **not** match the format |
+| `skipped_lines` | the raw text of every bullet under the heading the parser would not turn into a row — it did not match the format, **or** its quadrant slot held a word that is neither one of the five nor the literal `uncategorized` (e.g. the legacy `founder-transition`), **or** its `offense_pct` was outside 0-100, **or** its hours field was too large to be a finite number |
 | `skipped_count` | how many. **Report this at the confirm gate, per day, even when it is 0.** A skipped line is a project's hours vanishing from the week with no other signal — the exact silent failure this feature exists to surface. Explanatory prose under the heading is not counted; only lines that were trying to be project rows |
 
 **Payload shape** for mode 2 (top-level keys `summarize()` reads):
@@ -176,10 +196,10 @@ format — verifying that format contract in one place is why the parser exists.
 | Key | Shape | Notes |
 |---|---|---|
 | `project_weeks` | list of `{project, quadrant, offense_pct, hours}` | one row per project this week |
-| `meeting_rows` | list of `{label, quadrant, resolved_by, hours, splits?}` | `splits`, when present, is a list of `[quadrant, share]` pairs; `quadrant` is `null` when `resolved_by` is `"topic"` (split) or `"unresolved"`. **Shares should sum to 1.0.** Over 1.0 they are normalised (the same rule `resolve_meeting()` applies), so `unresolved_hours` can never go negative and the table can never sum past 100%. Under 1.0 the missing share becomes unresolved hours — deliberately, because a share that went missing is time nobody attributed, not time to be absorbed into the quadrants that survived. A **negative** share is not normalised: the whole row goes to unresolved and lands in `rejected` |
-| `history` | list of `{by_quadrant, by_mode?}` | most recent week first; **each entry carries both `by_quadrant` and `by_mode`** — `by_mode` is optional and reads as zero offense/zero defense when omitted, which `evaluate_flags` treats as "no data," never as "recorded zero" |
-| `driver_hours` | number | optional, defaults to `0.0` |
-| `held_hours` | number | optional, defaults to `0.0` |
+| `meeting_rows` | list of `{label, quadrant, resolved_by, hours, splits?}` | `splits`, when present, is a list of `[quadrant, share]` pairs; `quadrant` is `null` when `resolved_by` is `"topic"` (split) or `"unresolved"`. **Shares should sum to 1.0.** Over 1.0 they are normalised (the same rule `resolve_meeting()` applies), so `unresolved_hours` can never go negative and the table can never sum past 100% — and that normalisation runs over **all** the shares, out-of-vocabulary ones included, before any are dropped, so a bad quadrant's share really does reach `unresolved_hours` instead of being absorbed by its neighbours. Under 1.0 the missing share becomes unresolved hours — deliberately, because a share that went missing is time nobody attributed, not time to be absorbed into the quadrants that survived. A **negative** share is not normalised: the whole row goes to unresolved and lands in `rejected` |
+| `history` | list of `{by_quadrant, by_mode?}` | most recent week first; **each entry carries both `by_quadrant` and `by_mode`** — `by_mode` is optional and reads as zero offense/zero defense when omitted, which `evaluate_flags` treats as "no data," never as "recorded zero". An entry of any other shape — not an object, or carrying values that are not finite numbers — reads as that same empty week, so a malformed prior week can only *suppress* a trend flag, never manufacture one |
+| `driver_hours` | number | optional, defaults to `0.0`. A value that is not a finite number reads as `0.0` **and is reported** — see the validation contract |
+| `held_hours` | number | optional, defaults to `0.0`. Same rule |
 
 **Result shape** (what the module prints):
 
@@ -194,18 +214,53 @@ format — verifying that format contract in one place is why the parser exists.
 | `mode_percentages` | `{offense, defense}` → share of the week's *project* hours |
 | `quadrant_mode_percentages` | same five quadrant keys → `{offense, defense}` shares **within that quadrant's project hours** |
 | `unresolved_pct` | `unresolved_hours` as a share of `total_hours` |
-| `rejected` | list of `{kind, row, reason}` — every row `aggregate()` refused to trust. `kind` is `"project"` or `"meeting"`; `row` is the raw input row verbatim; `reason` names the field and value that failed. **Empty on a clean week; when it is not empty the caller must render every entry** — see the validation contract below |
+| `rejected` | list of `{kind, row, reason}` — everything the module refused to trust. `kind` is `"project"`, `"meeting"`, or `"payload"` (a week-level failure: a rows container that isn't a list, a bad `driver_hours` / `held_hours`, a payload that isn't an object); `row` is the raw input row verbatim; `reason` names the field and value that failed. **Empty on a clean week; when it is not empty the caller must render every entry** — see the validation contract below |
 | `flags` | list of strings, one per fired flag (reliability starvation, operating-efficiency ceiling, rising defense share, held-out-earning-driver) |
 
 ### The validation contract
 
-`aggregate()` is the single validation boundary. Every caller funnels through
+**Two boundaries, one `rejected` list, and they check different things.**
+`aggregate()` owns every rule about a **value**. `summarize()` owns the one rule
+`aggregate()` structurally cannot see — the JSON payload's **shape**, because
+`aggregate()` takes dataclasses and never meets the payload's dicts. What
+`summarize()` catches, each as a `rejected` entry rather than an exception:
+
+- **a row missing a required key.** Project rows need `project`, `quadrant`,
+  `offense_pct`, `hours`; meeting rows need `label`, `resolved_by`, `hours`
+  (`quadrant` and `splits` stay optional — a split or unresolved meeting
+  legitimately carries no quadrant). `null` is a legal *value* for `quadrant`;
+  an absent *key* means nobody said. The reason names the missing key
+- **a malformed `splits`** — not a list, or an entry that isn't a
+  `[quadrant, share]` pair. `for q, s in splits` raises on both
+- **a rows container that isn't a list**, and a payload that isn't an object.
+  Reading either as empty would lose a whole week of work with no signal
+- **a `driver_hours` / `held_hours` that is not a finite number.** These two
+  feed *only* the held-vs-driver flag, so a bad one reads as `0.0` rather than
+  killing the week summary — that would be disproportionate to what they do.
+  But it is reported, because `0.0` is itself a number that can fire or suppress
+  that flag, and the reason has to sit next to the flag at the confirm gate
+
+No value check may be written in `summarize()`. A second copy of the value rules
+there is exactly how these two halves came apart once already.
+
+`aggregate()` is the single **value** boundary. Every caller funnels through
 it — direct callers, `summarize()`'s JSON payload, and the CLI — so the checks
 live there and nowhere else. Validating per entry point is what failed here
 once: an out-of-vocabulary split quadrant was guarded in `summarize()` only and
 stayed live in `aggregate()`, where it raised `KeyError` for anyone calling
 directly. What is checked:
 
+- **every numeric field is a real, finite number — checked *before* any
+  comparison or arithmetic touches it.** `hours` and `offense_pct` on project
+  rows, `hours` on meeting rows, and every split share. This is a type check, not
+  a range check, and it comes first: a JSON payload can carry `"2"`, `null`, or a
+  list where a number belongs, and `hours < 0` on any of those raises
+  `TypeError` — one malformed row used to abort the **whole week summary**, so
+  the CLI printed nothing and the confirm gate never saw the row that caused it.
+  `NaN` and `Infinity` are the mirror image: they pass `hours < 0` cleanly and
+  make `total_hours`, the quadrant totals and every percentage non-finite. A
+  Python `bool` is an `int`, so `True` is rejected too rather than counted as one
+  hour of work
 - the quadrant, and every split quadrant, is in the five-value vocabulary
 - `0 <= offense_pct <= 100`
 - `hours >= 0`, on project rows and meeting rows alike
@@ -213,14 +268,28 @@ directly. What is checked:
 
 **A failing row is reported, never silently corrected.** Its hours go to
 `unresolved_hours` *and* the raw row comes back in `rejected` with the reason.
-The one exception is negative `hours`, which cannot be routed anywhere without
-pushing `unresolved_hours` below zero: such a row is left out of `total_hours`
-entirely and reported. A negative split share sends the *whole* row to
+Nothing here raises: one malformed row costs its own row, never the week. The
+one exception is unusable `hours` — negative, or not a finite number — which
+cannot be routed anywhere without pushing `unresolved_hours` below zero or making
+the week's total meaningless: such a row is left out of `total_hours`
+entirely and reported. A non-finite or non-numeric split share is treated exactly
+like a negative one: the *whole* row goes to unresolved, because a share nobody
+can read cannot be apportioned in part. A negative split share sends the *whole* row to
 unresolved rather than part of it — a negative share keeps the reconciliation
 invariant true arithmetically while every rendered number is nonsense, which is
 worse than an honest unresolved bucket. Either way
 `sum(by_quadrant) + unresolved_hours == total_hours` still holds for any input,
 and `unresolved_hours` is never negative.
+
+**Shares are normalised *before* invalid quadrants are dropped, not after.** An
+over-1.0 split is scaled by the sum of **all** its shares, including the ones
+whose quadrant is about to be rejected; only then are those dropped, and only
+then is the leftover routed to `unresolved_hours`. Dropping first and normalising
+the survivors scales them *up* to fill the invalid share's place: on a 2h meeting
+split `[["growth-driver", 0.7], ["hygiene", 0.6], ["typo", 0.1]]`, all 2h landed
+in valid quadrants with `unresolved_hours` at `0.0` while the emitted `rejected`
+entry said that share had been "routed to unresolved". The order is what makes
+the reason string true.
 
 A `quadrant` of `null` is **not** a rejection: it is the documented
 `uncategorized` project row and the documented unresolved meeting, both of which
@@ -231,7 +300,17 @@ The parser enforces the same `offense_pct` range one step earlier. Its regex
 accepts `\d{1,3}`, so a line reading `· 150% offense` has the *shape* of a row;
 `parse_daily_note()` returns it as a **skipped line** rather than a parsed one,
 so it surfaces at the confirm gate instead of reaching `aggregate()` and
-computing negative defense hours out of a number nobody ever read.
+computing negative defense hours out of a number nobody ever read. It applies the
+finiteness rule to the value it produces, too: the regex accepts unbounded
+digits, so a 400-digit hours field `float()`s to `inf` — that line is skipped, not
+parsed.
+
+**In the parser, `uncategorized` is the only out-of-vocabulary quadrant token
+that means `null`.** Any *other* word in that slot is drift and comes back as a
+**skipped line**. Mapping every unrecognised token to `null` left `skipped_count`
+at 0 while the hours routed to unresolved with no signal at all — and
+`founder-transition`, a real legacy value still sitting in the vault, would have
+vanished exactly that way.
 
 **Two rules for reading the mode keys, and both matter:**
 

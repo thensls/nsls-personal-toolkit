@@ -1,3 +1,6 @@
+import math
+import random
+
 import pytest
 from companion.portfolio import (
     QUADRANTS, CROSS_CUTTING, RoleRule, parse_role_map,
@@ -1001,3 +1004,603 @@ def test_cli_prints_rejected_rows_as_json():
     assert len(out["rejected"]) == 1
     assert out["rejected"][0]["row"]["quadrant"] == "made-up"
     assert "made-up" in out["rejected"][0]["reason"]
+
+
+# --- F: the boundary validates TYPE and FINITENESS, not just range -------
+#
+# Before this, aggregate() compared before it checked. `pw.hours < 0` on the
+# string "2" or on None raised TypeError, so ONE malformed row from the JSON
+# payload aborted the entire week summary -- the CLI printed nothing and the
+# confirm gate never saw the row that caused it. NaN and Infinity had the
+# opposite problem: they passed `hours < 0` cleanly and poisoned total_hours,
+# every quadrant total and every percentage.
+
+
+def test_a_string_hours_field_is_rejected_not_raised():
+    """F1 (High). The JSON payload can carry "2" where a number belongs."""
+    totals = aggregate(
+        [ProjectWeek("good", "hygiene", 50, 2.0),
+         ProjectWeek("stringy", "hygiene", 50, "2")],   # must not raise
+        [],
+    )
+    assert totals.total_hours == pytest.approx(2.0)
+    assert len(totals.rejected) == 1
+    assert totals.rejected[0].row["project"] == "stringy"
+    assert "not a finite number" in totals.rejected[0].reason
+    assert _reconciles(totals)
+
+
+def test_a_null_hours_field_is_rejected_not_raised():
+    totals = aggregate([ProjectWeek("nully", "hygiene", 50, None)], [])
+    assert totals.total_hours == 0.0
+    assert len(totals.rejected) == 1
+    assert "not a finite number" in totals.rejected[0].reason
+    assert _reconciles(totals)
+
+
+def test_a_boolean_is_not_one_hour_of_work():
+    """A Python bool IS an int, so a plain isinstance check would count
+    True as 1.0h. It is malformed input and must be reported as such."""
+    totals = aggregate([ProjectWeek("boolish", "hygiene", 50, True)], [])
+    assert totals.total_hours == 0.0
+    assert totals.by_quadrant["hygiene"] == 0.0
+    assert len(totals.rejected) == 1
+    assert _reconciles(totals)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_non_finite_hours_never_reach_total_hours(bad):
+    """F2. These pass `hours < 0` cleanly and make every downstream number
+    non-finite -- total, quadrant totals, percentages."""
+    totals = aggregate(
+        [ProjectWeek("good", "hygiene", 50, 2.0),
+         ProjectWeek("wild", "growth-driver", 50, bad)],
+        [],
+    )
+    assert math.isfinite(totals.total_hours)
+    assert totals.total_hours == pytest.approx(2.0)
+    assert all(math.isfinite(v) for v in totals.by_quadrant.values())
+    assert math.isfinite(totals.unresolved_hours)
+    assert len(totals.rejected) == 1
+    assert _reconciles(totals)
+
+
+@pytest.mark.parametrize("bad", ["80", None, float("nan"), float("inf"), True])
+def test_an_offense_pct_that_is_not_a_finite_number_is_rejected(bad):
+    """The hours are still good, so they count toward the week and route to
+    unresolved -- but no mode is recorded off a value nobody can read."""
+    totals = aggregate([ProjectWeek("odd", "hygiene", bad, 4.0)], [])
+    assert totals.total_hours == pytest.approx(4.0)
+    assert totals.unresolved_hours == pytest.approx(4.0)
+    assert totals.by_mode == {"offense": 0.0, "defense": 0.0}
+    assert len(totals.rejected) == 1
+    assert "offense_pct" in totals.rejected[0].reason
+    assert _reconciles(totals)
+
+
+@pytest.mark.parametrize("bad", ["1.5", None, float("nan"), float("inf")])
+def test_meeting_hours_that_are_not_a_finite_number_are_rejected(bad):
+    totals = aggregate(
+        [], [MeetingRow("standing", Resolution("hygiene", "role"), bad)])
+    assert totals.total_hours == 0.0
+    assert math.isfinite(totals.total_hours)
+    assert len(totals.rejected) == 1
+    assert totals.rejected[0].kind == "meeting"
+    assert _reconciles(totals)
+
+
+@pytest.mark.parametrize("bad", ["0.5", None, float("nan"), float("inf"), True])
+def test_a_split_share_that_is_not_a_finite_number_costs_the_whole_row(bad):
+    """Same rule as a negative share: a share nobody can read cannot be
+    apportioned, so the row goes to unresolved intact rather than in part."""
+    row = MeetingRow("mixed", Resolution(None, "topic",
+                                         (("growth-driver", 0.5),
+                                          ("hygiene", bad))), 3.0)
+    totals = aggregate([], [row])
+    assert totals.unresolved_hours == pytest.approx(3.0)
+    assert sum(totals.by_quadrant.values()) == 0.0
+    assert all(math.isfinite(v) for v in totals.by_quadrant.values())
+    assert len(totals.rejected) == 1
+    assert "split share" in totals.rejected[0].reason
+    assert _reconciles(totals)
+
+
+def test_an_unhashable_quadrant_is_reported_rather_than_raising():
+    """A JSON payload can hand us a list where a quadrant string belongs.
+    `value in by_quadrant` raises TypeError on an unhashable key."""
+    totals = aggregate(
+        [ProjectWeek("listy", ["growth-driver"], 50, 1.0)],
+        [MeetingRow("listy", Resolution(None, "topic",
+                                        ((["hygiene"], 1.0),)), 2.0)],
+    )
+    assert totals.unresolved_hours == pytest.approx(3.0)
+    assert len(totals.rejected) == 2
+    assert _reconciles(totals)
+
+
+def test_summarize_reports_a_malformed_row_instead_of_aborting_the_week():
+    """F1 through the JSON payload -- the shape close-week actually reads.
+    One bad row must cost its own row, never the whole week summary."""
+    result = summarize({
+        "project_weeks": [
+            {"project": "good", "quadrant": "growth-driver",
+             "offense_pct": 80, "hours": 4.0},
+            {"project": "stringy", "quadrant": "hygiene",
+             "offense_pct": 50, "hours": "2"},
+            {"project": "nully", "quadrant": "hygiene",
+             "offense_pct": None, "hours": None},
+        ],
+        "meeting_rows": [
+            {"label": "nan meeting", "quadrant": "hygiene",
+             "resolved_by": "role", "hours": float("nan")},
+        ],
+        "history": [],
+    })
+    assert result["total_hours"] == pytest.approx(4.0)
+    assert result["by_quadrant"]["growth-driver"] == pytest.approx(4.0)
+    assert all(math.isfinite(v) for v in result["percentages"].values())
+    assert len(result["rejected"]) == 3
+    assert all(r["reason"] for r in result["rejected"])
+    assert (sum(result["by_quadrant"].values()) + result["unresolved_hours"]
+            == pytest.approx(result["total_hours"]))
+
+
+def test_a_rejected_row_carrying_nan_still_serialises_as_valid_json():
+    """The confirm gate prints `rejected` as JSON. json.dumps emits a bare
+    `NaN`, which is not JSON at all -- a value that cannot be rendered
+    honestly comes back as its repr instead."""
+    result = summarize({
+        "project_weeks": [{"project": "wild", "quadrant": "hygiene",
+                           "offense_pct": 50, "hours": float("inf")}],
+        "meeting_rows": [],
+    })
+    text = json.dumps(result["rejected"], allow_nan=False)   # must not raise
+    assert "inf" in text
+    assert result["rejected"][0]["row"]["hours"] == "inf"
+
+
+def test_cli_still_returns_a_week_when_one_payload_row_is_malformed():
+    """The user-visible half of F1: the CLI used to exit non-zero with a
+    TypeError traceback and print nothing at all."""
+    payload = json.dumps({
+        "project_weeks": [
+            {"project": "good", "quadrant": "hygiene",
+             "offense_pct": 0, "hours": 1.0},
+            {"project": "stringy", "quadrant": "hygiene",
+             "offense_pct": 50, "hours": "2"},
+        ],
+        "meeting_rows": [],
+    })
+    proc = _run_cli([], payload)
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+    assert out["total_hours"] == pytest.approx(1.0)
+    assert len(out["rejected"]) == 1
+    assert out["rejected"][0]["row"]["hours"] == "2"
+
+
+def test_parse_daily_note_skips_an_hours_field_that_floats_to_infinity():
+    """The value parse_daily_note() PRODUCES is guarded too: the regex
+    accepts unbounded digits, so a 400-digit hours field float()s to inf."""
+    md = ("## Projects Touched\n"
+          "- [[20-projects/lighthouse|lighthouse]] — ok · 2.5h · hygiene · 0% offense\n"
+          "- [[20-projects/huge|huge]] — drifted · " + "9" * 400
+          + "h · hygiene · 0% offense\n")
+    parsed = parse_daily_note(md)
+    assert [p.project for p in parsed.projects] == ["lighthouse"]
+    assert all(math.isfinite(p.hours) for p in parsed.projects)
+    assert parsed.skipped_count == 1
+
+
+# --- G: normalisation order, and a rejection reason that tells the truth --
+
+
+def test_an_invalid_shares_hours_reach_unresolved_instead_of_being_absorbed():
+    """G. 2h split 0.7 / 0.6 / 0.1 with the last quadrant a typo.
+
+    Dropping the typo BEFORE normalising scaled the two survivors up to
+    fill its place: all 2h landed in valid quadrants and unresolved_hours
+    stayed 0.0, while the emitted RejectedRow said that share had been
+    'routed to unresolved'. The reason string has to be true."""
+    row = MeetingRow("leadership standing", Resolution(
+        None, "topic", (("growth-driver", 0.7),
+                        ("hygiene", 0.6),
+                        ("typo", 0.1))), 2.0)
+    totals = aggregate([], [row])
+
+    # Shares sum to 1.4, so everything scales by 1/1.4 -- the typo's 0.1
+    # share keeps its own 1/14th of the meeting and that time is unresolved.
+    assert totals.by_quadrant["growth-driver"] == pytest.approx(2.0 * 0.7 / 1.4)
+    assert totals.by_quadrant["hygiene"] == pytest.approx(2.0 * 0.6 / 1.4)
+    assert totals.unresolved_hours == pytest.approx(2.0 * 0.1 / 1.4)
+    assert totals.unresolved_hours > 0.0
+    assert sum(totals.by_quadrant.values()) == pytest.approx(2.0 * 1.3 / 1.4)
+    assert _reconciles(totals)
+
+    assert len(totals.rejected) == 1
+    assert "typo" in totals.rejected[0].reason
+    assert "unresolved" in totals.rejected[0].reason
+
+
+def test_an_all_valid_over_one_split_still_normalises_to_nothing_unresolved():
+    """The other half of the same rule: when nothing is dropped, scaling
+    still absorbs the whole meeting, so unresolved stays 0.0."""
+    row = MeetingRow("standing", Resolution(
+        None, "topic", (("growth-driver", 0.7), ("hygiene", 0.6))), 2.0)
+    totals = aggregate([], [row])
+    assert totals.unresolved_hours == pytest.approx(0.0)
+    assert sum(totals.by_quadrant.values()) == pytest.approx(2.0)
+    assert _reconciles(totals)
+
+
+def test_an_under_one_split_with_an_invalid_quadrant_is_not_scaled_up():
+    """Under 1.0 is never normalised, so the invalid share AND the missing
+    share both stay unresolved."""
+    row = MeetingRow("standing", Resolution(
+        None, "topic", (("growth-driver", 0.5), ("typo", 0.25))), 4.0)
+    totals = aggregate([], [row])
+    assert totals.by_quadrant["growth-driver"] == pytest.approx(2.0)
+    assert totals.unresolved_hours == pytest.approx(2.0)
+    assert _reconciles(totals)
+
+
+# --- H: an out-of-vocabulary quadrant token is REPORTED, not nulled ------
+
+
+def test_parse_daily_note_reports_an_out_of_vocabulary_quadrant():
+    """H. Mapping ANY unrecognised token to None left skipped_count at 0
+    and routed the hours to unresolved with no signal at all.
+    'founder-transition' is a real legacy value in the vault today and
+    would have vanished exactly this way."""
+    md = ("## Projects Touched\n"
+          "- [[20-projects/lighthouse|lighthouse]] — ok · 2.5h · growth-driver · 80% offense\n"
+          "- [[20-projects/legacy|legacy]] — old value · 1.0h · founder-transition · 50% offense\n")
+    parsed = parse_daily_note(md)
+
+    assert [p.project for p in parsed.projects] == ["lighthouse"]
+    assert parsed.skipped_count == 1
+    assert "founder-transition" in parsed.skipped[0]
+
+
+def test_parse_daily_note_maps_only_the_literal_uncategorized_token_to_none():
+    """The one token that legitimately means 'no portfolio-category'."""
+    md = ("## Projects Touched\n"
+          "- [[20-projects/blank|blank]] — no category · 1.0h · uncategorized · 50% offense\n"
+          "- [[20-projects/typo|typo]] — drift · 1.0h · uncatagorized · 50% offense\n")
+    parsed = parse_daily_note(md)
+
+    assert [(p.project, p.quadrant) for p in parsed.projects] == [("blank", None)]
+    assert parsed.skipped_count == 1
+    assert "uncatagorized" in parsed.skipped[0]
+
+
+def test_cli_parse_daily_reports_an_out_of_vocabulary_quadrant_as_skipped():
+    """The path close-week runs: the count it prints at the confirm gate
+    has to include this line, or the hours vanish unannounced."""
+    md = ("## Projects Touched\n"
+          "- [[20-projects/legacy|legacy]] — old value · 1.0h · founder-transition · 50% offense\n")
+    proc = _run_cli(["--parse-daily"], md)
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+    assert out["project_weeks"] == []
+    assert out["skipped_count"] == 1
+    assert "founder-transition" in out["skipped_lines"][0]
+
+
+# --- the binding invariant, re-fuzzed over the newly-rejected shapes -----
+
+
+def test_the_invariant_survives_randomised_malformed_input():
+    """sum(by_quadrant) + unresolved_hours == total_hours for ANY input,
+    and unresolved_hours >= 0 -- now including every value the boundary
+    newly rejects. Seeded, so a failure is reproducible."""
+    from companion.portfolio import _VALID
+
+    rng = random.Random(20260829)
+    numbers = [0.0, 1.0, 2.5, -3.0, 0.25,
+               "2", "", None, True, False, [], {}, object(),
+               float("nan"), float("inf"), float("-inf")]
+    quadrants = sorted(_VALID) + [None, "founder-transition", "", 7]
+    percents = [0, 50, 100, 150, -20, "80", None, True,
+                float("nan"), float("inf")]
+
+    for _ in range(400):
+        projects = [
+            ProjectWeek(f"p{i}", rng.choice(quadrants),
+                        rng.choice(percents), rng.choice(numbers))
+            for i in range(rng.randint(0, 4))
+        ]
+        meetings = []
+        for i in range(rng.randint(0, 4)):
+            if rng.random() < 0.5:
+                splits = tuple(
+                    (rng.choice(quadrants), rng.choice(numbers))
+                    for _ in range(rng.randint(1, 3))
+                )
+                res = Resolution(None, "topic", splits)
+            else:
+                res = Resolution(rng.choice(quadrants),
+                                 rng.choice(["role", "project", "unresolved"]))
+            meetings.append(MeetingRow(f"m{i}", res, rng.choice(numbers)))
+
+        totals = aggregate(projects, meetings)          # must never raise
+
+        assert math.isfinite(totals.total_hours)
+        assert math.isfinite(totals.unresolved_hours)
+        assert all(math.isfinite(v) for v in totals.by_quadrant.values())
+        assert totals.unresolved_hours >= 0.0
+        assert (sum(totals.by_quadrant.values()) + totals.unresolved_hours
+                == pytest.approx(totals.total_hours))
+        # Every rejected row must survive the JSON round-trip the confirm
+        # gate does, and must carry a reason.
+        for r in totals.rejected:
+            assert r.reason
+            json.dumps(r.row, allow_nan=False)
+
+
+# --- F (cont.): payload SHAPE, the half aggregate() cannot see -----------
+#
+# aggregate() takes dataclasses, so a payload row missing a key outright
+# never reaches it -- summarize() raised KeyError building the dataclass, and
+# one such row aborted the whole week summary exactly like a bad value did.
+# Same class, same failure mode, so: same answer, a RejectedRow naming the
+# missing key.
+
+
+@pytest.mark.parametrize(
+    "missing", ["project", "quadrant", "offense_pct", "hours"])
+def test_a_project_row_missing_a_required_key_is_rejected_not_raised(missing):
+    row = {"project": "lighthouse", "quadrant": "hygiene",
+           "offense_pct": 50, "hours": 2.0}
+    del row[missing]
+    result = summarize({"project_weeks": [row], "meeting_rows": []})
+
+    assert result["total_hours"] == 0.0
+    assert len(result["rejected"]) == 1
+    assert result["rejected"][0]["kind"] == "project"
+    assert repr(missing) in result["rejected"][0]["reason"]
+    assert "missing required key" in result["rejected"][0]["reason"]
+
+
+@pytest.mark.parametrize("missing", ["label", "resolved_by", "hours"])
+def test_a_meeting_row_missing_a_required_key_is_rejected_not_raised(missing):
+    row = {"label": "standing", "quadrant": "hygiene",
+           "resolved_by": "role", "hours": 1.0}
+    del row[missing]
+    result = summarize({"project_weeks": [], "meeting_rows": [row]})
+
+    assert result["total_hours"] == 0.0
+    assert len(result["rejected"]) == 1
+    assert result["rejected"][0]["kind"] == "meeting"
+    assert repr(missing) in result["rejected"][0]["reason"]
+
+
+def test_a_meeting_row_may_still_omit_quadrant_and_splits():
+    """Regression guard on the required-key list: both are documented as
+    optional, and a split or unresolved meeting carries no quadrant at all.
+    Requiring them would reject rows that are perfectly well-formed."""
+    result = summarize({"meeting_rows": [
+        {"label": "adhoc", "resolved_by": "unresolved", "hours": 1.5},
+    ]})
+    assert result["rejected"] == []
+    assert result["total_hours"] == pytest.approx(1.5)
+    assert result["unresolved_hours"] == pytest.approx(1.5)
+
+
+def test_a_row_missing_a_key_costs_its_own_row_and_nothing_else():
+    """The whole point: the good rows still produce a week."""
+    result = summarize({
+        "project_weeks": [
+            {"project": "good", "quadrant": "growth-driver",
+             "offense_pct": 100, "hours": 4.0},
+            {"quadrant": "hygiene", "offense_pct": 50, "hours": 2.0},   # no project
+        ],
+        "meeting_rows": [
+            {"label": "standing", "quadrant": "hygiene",
+             "resolved_by": "role", "hours": 1.0},
+            {"label": "broken", "quadrant": "hygiene"},                 # no hours
+        ],
+    })
+    assert result["total_hours"] == pytest.approx(5.0)
+    assert result["by_quadrant"]["growth-driver"] == pytest.approx(4.0)
+    assert result["by_quadrant"]["hygiene"] == pytest.approx(1.0)
+    assert len(result["rejected"]) == 2
+    assert (sum(result["by_quadrant"].values()) + result["unresolved_hours"]
+            == pytest.approx(result["total_hours"]))
+
+
+@pytest.mark.parametrize("bad_splits", [
+    "growth-driver",                       # a string, not a list
+    {"growth-driver": 1.0},                # a dict
+    [["growth-driver"]],                   # a pair that isn't a pair
+    [["growth-driver", 0.5, "extra"]],
+    [None],
+])
+def test_a_malformed_splits_container_is_rejected_not_unpacked(bad_splits):
+    """`for q, s in splits` raises ValueError or TypeError on every one of
+    these, which aborted the week before it reached aggregate()."""
+    result = summarize({"meeting_rows": [
+        {"label": "standing", "quadrant": None, "resolved_by": "topic",
+         "hours": 2.0, "splits": bad_splits},
+    ]})
+    assert result["total_hours"] == 0.0
+    assert len(result["rejected"]) == 1
+    assert "splits" in result["rejected"][0]["reason"]
+
+
+@pytest.mark.parametrize("key", ["project_weeks", "meeting_rows", "history"])
+def test_a_non_list_rows_container_is_reported_not_read_as_empty(key):
+    """`for row in <a dict>` iterates its keys and blows up downstream; a
+    silent empty read is a whole week of work vanishing with no signal."""
+    result = summarize({key: {"oops": 1}})
+    assert result["total_hours"] == 0.0
+    assert len(result["rejected"]) == 1
+    assert result["rejected"][0]["kind"] == "payload"
+    assert key in result["rejected"][0]["reason"]
+
+
+@pytest.mark.parametrize("payload", [None, [], "week", 3])
+def test_a_payload_that_is_not_an_object_returns_an_empty_week_and_says_so(payload):
+    result = summarize(payload)
+    assert result["total_hours"] == 0.0
+    assert result["flags"] == []
+    assert len(result["rejected"]) == 1
+    assert result["rejected"][0]["kind"] == "payload"
+
+
+# --- F (cont.): driver_hours / held_hours ---------------------------------
+
+
+@pytest.mark.parametrize("key", ["driver_hours", "held_hours"])
+@pytest.mark.parametrize("bad", ["4", None, float("nan"), float("inf"), True, []])
+def test_bad_driver_or_held_hours_read_as_zero_and_are_reported(key, bad):
+    """`held_hours > driver_hours` raises TypeError on a string or None, and
+    a NaN compares false forever. These feed only the held-vs-driver flag,
+    so a bad one reads 0.0 -- but it is REPORTED, because 0.0 is itself a
+    number that can fire (or suppress) that flag."""
+    payload = {
+        "project_weeks": [{"project": "good", "quadrant": "hygiene",
+                           "offense_pct": 0, "hours": 3.0}],
+        "meeting_rows": [],
+        key: bad,
+    }
+    result = summarize(payload)                     # must not raise
+
+    assert result["total_hours"] == pytest.approx(3.0)
+    assert len(result["rejected"]) == 1
+    assert result["rejected"][0]["kind"] == "payload"
+    assert key in result["rejected"][0]["reason"]
+    assert "0.0" in result["rejected"][0]["reason"]
+    json.dumps(result["rejected"], allow_nan=False)
+
+
+def test_a_bad_driver_hours_still_lets_the_rest_of_the_week_summarize():
+    """Disproportionate is the thing to avoid: these two numbers drive one
+    flag, and losing the whole Friday over them is worse than losing it."""
+    result = summarize({
+        "project_weeks": [{"project": "good", "quadrant": "reliability",
+                           "offense_pct": 100, "hours": 6.0}],
+        "meeting_rows": [{"label": "standing", "quadrant": "hygiene",
+                          "resolved_by": "role", "hours": 2.0}],
+        "driver_hours": "lots",
+        "held_hours": None,
+    })
+    assert result["total_hours"] == pytest.approx(8.0)
+    assert result["by_quadrant"]["reliability"] == pytest.approx(6.0)
+    assert len(result["rejected"]) == 2
+    # held 0.0 > driver 0.0 is false, so no flag is manufactured either.
+    assert not any("out-earned" in f for f in result["flags"])
+
+
+def test_good_driver_and_held_hours_still_fire_the_flag():
+    result = summarize({
+        "project_weeks": [{"project": "good", "quadrant": "reliability",
+                           "offense_pct": 100, "hours": 6.0}],
+        "meeting_rows": [],
+        "driver_hours": 1.0,
+        "held_hours": 5.0,
+    })
+    assert result["rejected"] == []
+    assert any("out-earned" in f for f in result["flags"])
+
+
+@pytest.mark.parametrize("entry", [
+    None, "last week", 7, [],
+    {"by_quadrant": "hygiene"},
+    {"by_quadrant": {"hygiene": "lots"}},
+    {"by_quadrant": {"hygiene": float("nan")}},
+    {"by_mode": {"offense": "8", "defense": None}},
+    {"by_mode": "none"},
+])
+def test_a_history_entry_of_any_shape_cannot_raise_or_manufacture_a_flag(entry):
+    """A malformed prior week reads as an EMPTY week -- the same state as an
+    omitted by_mode, which evaluate_flags already treats as 'no data'. It can
+    only suppress a trend flag, never invent one."""
+    result = summarize({
+        "project_weeks": [{"project": "good", "quadrant": "growth-driver",
+                           "offense_pct": 0, "hours": 4.0}],
+        "meeting_rows": [],
+        "history": [entry],
+    })
+    assert result["total_hours"] == pytest.approx(4.0)
+    assert not any("Defense share rose" in f for f in result["flags"])
+    assert all(math.isfinite(v) for v in result["by_quadrant"].values())
+
+
+def test_cli_still_returns_a_week_when_a_payload_row_is_missing_a_key():
+    payload = json.dumps({
+        "project_weeks": [
+            {"project": "good", "quadrant": "hygiene",
+             "offense_pct": 0, "hours": 1.0},
+            {"quadrant": "hygiene", "offense_pct": 0, "hours": 9.0},
+        ],
+        "meeting_rows": [],
+        "driver_hours": "nope",
+    })
+    proc = _run_cli([], payload)
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+    assert out["total_hours"] == pytest.approx(1.0)
+    assert {r["kind"] for r in out["rejected"]} == {"project", "payload"}
+
+
+def test_the_invariant_survives_randomised_malformed_payloads():
+    """The same fuzz as above, one layer up: through summarize()'s JSON
+    payload, with rows missing keys and bad driver/held values. Nothing may
+    raise, and the reconciliation invariant must still hold."""
+    rng = random.Random(20260830)
+    values = [0.0, 1.0, 2.5, -3.0, "2", "", None, True, [], {},
+              float("nan"), float("inf"), float("-inf")]
+    quadrants = ["growth-driver", "hygiene", "cross-cutting", None,
+                 "founder-transition", "", 7]
+    splits_shapes = [
+        None, [], "growth-driver", {"hygiene": 1.0}, [["hygiene"]], [None],
+        [["growth-driver", 0.7], ["hygiene", 0.6], ["typo", 0.1]],
+        [["growth-driver", "x"]], [["hygiene", 1.0]],
+    ]
+
+    def drop_keys(row):
+        keys = list(row)
+        for key in keys:
+            if rng.random() < 0.25:
+                del row[key]
+        return row
+
+    for _ in range(400):
+        payload = {
+            "project_weeks": [
+                drop_keys({"project": f"p{i}",
+                           "quadrant": rng.choice(quadrants),
+                           "offense_pct": rng.choice(values),
+                           "hours": rng.choice(values)})
+                for i in range(rng.randint(0, 3))
+            ],
+            "meeting_rows": [
+                drop_keys({"label": f"m{i}",
+                           "quadrant": rng.choice(quadrants),
+                           "resolved_by": rng.choice(
+                               ["role", "topic", "project", "unresolved"]),
+                           "hours": rng.choice(values),
+                           "splits": rng.choice(splits_shapes)})
+                for i in range(rng.randint(0, 3))
+            ],
+            "history": rng.choice([[], [{}], [None], [{"by_mode": "x"}]]),
+            "driver_hours": rng.choice(values),
+            "held_hours": rng.choice(values),
+        }
+
+        result = summarize(payload)                 # must never raise
+
+        assert math.isfinite(result["total_hours"])
+        assert math.isfinite(result["unresolved_hours"])
+        assert all(math.isfinite(v) for v in result["by_quadrant"].values())
+        assert all(math.isfinite(v) for v in result["percentages"].values())
+        assert result["unresolved_hours"] >= 0.0
+        assert (sum(result["by_quadrant"].values()) + result["unresolved_hours"]
+                == pytest.approx(result["total_hours"]))
+        # The whole result -- rejected rows included -- must be printable as
+        # strict JSON, because the CLI prints it and the skill reads it.
+        json.dumps(result, allow_nan=False)
+        for r in result["rejected"]:
+            assert r["reason"]
+            assert r["kind"] in {"project", "meeting", "payload"}

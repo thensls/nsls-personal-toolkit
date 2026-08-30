@@ -7,6 +7,7 @@ cascade live only here. Keep both in sync — same contract as streak.py.
 """
 
 import json
+import math
 import re
 import sys
 from dataclasses import dataclass, field
@@ -19,6 +20,48 @@ QUADRANTS: tuple[str, ...] = (
 )
 CROSS_CUTTING = "cross-cutting"
 _VALID = set(QUADRANTS) | {CROSS_CUTTING}
+
+# The token close-day renders for a project whose frontmatter carries no
+# portfolio-category. It is the ONLY out-of-vocabulary quadrant word that
+# means "deliberately unbucketed"; every other one is drift.
+UNCATEGORIZED = "uncategorized"
+
+
+def _known_quadrant(value) -> bool:
+    """True only for one of the five vocabulary strings. Type-checked, not
+    just membership-checked: `value in _VALID` raises TypeError on an
+    unhashable value (a list arriving from a JSON payload), and this module
+    reports malformed input rather than raising on it."""
+    return isinstance(value, str) and value in _VALID
+
+
+def _finite_number(value) -> bool:
+    """True only for a real, finite number.
+
+    Two traps this closes, both of which reached arithmetic before:
+      * a JSON string ("2") or null passes no type check at all and blows up
+        at the first comparison, aborting the WHOLE week over one row;
+      * NaN and Infinity pass every `< 0` / range check cleanly and then
+        poison total_hours, the quadrant totals and every percentage.
+    bool is excluded on purpose — Python's bool IS an int, so `True` would
+    otherwise be accepted as one hour of work."""
+    return (isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(value))
+
+
+def _json_safe(value):
+    """A rejected row is printed as JSON at the confirm gate, so a value
+    json.dumps cannot render honestly comes back as its repr instead. NaN
+    and Infinity are not JSON (json.dumps emits bare `NaN`, which a strict
+    reader rejects) and an arbitrary object is not serialisable at all.
+    Anything JSON already represents passes through untouched, so a
+    well-formed row is echoed back exactly as it was handed in."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return repr(value)
+    if value is None or isinstance(value, (str, bool, int, float)):
+        return value
+    return repr(value)
 
 
 @dataclass(frozen=True)
@@ -164,7 +207,12 @@ def parse_daily_note(md: str) -> DayParse:
 
     A line rendered '· uncategorized ·' comes back with quadrant=None --
     losing that row silently is the failure mode this whole feature exists
-    to prevent. A line that predates this format (legacy notes with no
+    to prevent. That literal token is the ONLY out-of-vocabulary quadrant
+    that maps to None: any other word in that slot (e.g. the legacy
+    'founder-transition' still present in the vault) is reported as a
+    skipped line, because quietly turning it into None routes its hours to
+    unresolved with skipped_count reading 0 -- no signal at all.
+    A line that predates this format (legacy notes with no
     hours/quadrant/offense suffix, or any other line that doesn't match)
     is skipped, never raised on -- old daily notes must still parse. But a
     skipped line is REPORTED, not swallowed: an unparsed line is a day's
@@ -199,12 +247,33 @@ def parse_daily_note(md: str) -> DayParse:
             skipped.append(stripped)
             continue
         quadrant_raw = match.group("quadrant")
-        quadrant = quadrant_raw if quadrant_raw in _VALID else None
+        if quadrant_raw in _VALID:
+            quadrant = quadrant_raw
+        elif quadrant_raw == UNCATEGORIZED:
+            # The documented "no portfolio-category" row. quadrant=None is
+            # its real value, not a fallback.
+            quadrant = None
+        else:
+            # Any OTHER word in the quadrant slot is drift, not a deliberate
+            # blank. Mapping it to None too is how 'founder-transition' — a
+            # real legacy value still sitting in the vault — would route its
+            # hours to unresolved with skipped_count reading 0, i.e. with no
+            # signal at all. Report it so the confirm gate can show it.
+            skipped.append(stripped)
+            continue
+        hours = float(match.group("hours"))
+        if not math.isfinite(hours):
+            # The regex accepts unbounded digits, so a 400-digit hours field
+            # float()s to inf and would poison total_hours and every
+            # percentage downstream. Same treatment as an out-of-range
+            # percentage: report the line, never pass the value on.
+            skipped.append(stripped)
+            continue
         project_weeks.append(ProjectWeek(
             project=match.group("slug"),
             quadrant=quadrant,
             offense_pct=offense_pct,
-            hours=float(match.group("hours")),
+            hours=hours,
         ))
     return DayParse(project_weeks, skipped)
 
@@ -234,7 +303,7 @@ def _empty_by_quadrant_mode() -> dict[str, dict[str, float]]:
 
 @dataclass(frozen=True)
 class RejectedRow:
-    """A row aggregate() refused to trust, kept with the reason it failed.
+    """Something the module refused to trust, kept with the reason it failed.
 
     Silent correction is the exact failure this feature exists to catch, so a
     malformed row is never quietly fixed up: its hours are routed to
@@ -242,8 +311,16 @@ class RejectedRow:
     out of the week entirely) AND the raw row comes back here so the caller
     can show it. A rejected row the caller never renders is the same silent
     failure one layer up -- close-week Step 2a must print these at its
-    confirm gate."""
-    kind: str        # "project" | "meeting"
+    confirm gate.
+
+    TWO SOURCES, ONE LIST. aggregate() rejects on VALUES and is the only
+    place value rules live. summarize() rejects on the JSON payload's SHAPE
+    -- a row missing a required key, a container that isn't a list, a
+    week-level number that isn't one -- because aggregate() takes dataclasses
+    and structurally never sees the payload's dicts. That is a different
+    rule, not a second copy of the same rule: no value check may be written
+    in summarize(), which is how these two came apart once already."""
+    kind: str        # "project" | "meeting" | "payload"
     row: dict        # the raw row's values, JSON-safe, exactly as handed in
     reason: str      # one line, naming the field and the value that failed
 
@@ -270,15 +347,19 @@ class WeekTotals:
 
 
 def _project_row_dict(pw: ProjectWeek) -> dict:
-    return {"project": pw.project, "quadrant": pw.quadrant,
-            "offense_pct": pw.offense_pct, "hours": pw.hours}
+    return {"project": _json_safe(pw.project),
+            "quadrant": _json_safe(pw.quadrant),
+            "offense_pct": _json_safe(pw.offense_pct),
+            "hours": _json_safe(pw.hours)}
 
 
 def _meeting_row_dict(row: MeetingRow) -> dict:
     res = row.resolution
-    return {"label": row.label, "quadrant": res.quadrant,
-            "resolved_by": res.resolved_by, "hours": row.hours,
-            "splits": [[q, s] for q, s in res.splits]}
+    return {"label": _json_safe(row.label),
+            "quadrant": _json_safe(res.quadrant),
+            "resolved_by": _json_safe(res.resolved_by),
+            "hours": _json_safe(row.hours),
+            "splits": [[_json_safe(q), _json_safe(s)] for q, s in res.splits]}
 
 
 def aggregate(project_weeks: list[ProjectWeek],
@@ -294,6 +375,11 @@ def aggregate(project_weeks: list[ProjectWeek],
     summarize() only and stayed live in aggregate(), where it raised
     KeyError. What is checked:
 
+      * every numeric field is a real, FINITE number, checked BEFORE any
+        comparison or arithmetic touches it — hours and offense_pct on
+        project rows, hours on meeting rows, and every split share. A JSON
+        payload can hand us "2", null or a list; NaN and Infinity survive
+        every range check and then poison total_hours and every percentage
       * quadrant (and every split quadrant) is in the five-value vocabulary
       * 0 <= offense_pct <= 100
       * hours >= 0, on project rows and meeting rows alike
@@ -301,11 +387,13 @@ def aggregate(project_weeks: list[ProjectWeek],
 
     A row that fails is REPORTED, never silently corrected: its hours go to
     unresolved and the raw row comes back in WeekTotals.rejected with the
-    reason. The one exception is negative hours, which cannot be routed
-    anywhere without pushing unresolved_hours below zero — such a row is
-    left out of total_hours entirely and reported. Either way
+    reason. The one exception is unusable hours — negative, or not a finite
+    number — which cannot be routed anywhere without pushing
+    unresolved_hours below zero or making the week's total meaningless; such
+    a row is left out of total_hours entirely and reported. Either way
     sum(by_quadrant) + unresolved_hours == total_hours still holds, and
-    unresolved_hours is never negative.
+    unresolved_hours is never negative. Nothing here raises: one malformed
+    row must cost its own row, not the whole week summary.
 
     A quadrant of None is NOT a rejection: it is the documented
     'uncategorized' project row and the documented unresolved meeting, both
@@ -319,6 +407,16 @@ def aggregate(project_weeks: list[ProjectWeek],
     rejected: list[RejectedRow] = []
 
     for pw in project_weeks:
+        # TYPE BEFORE VALUE. `pw.hours < 0` on the string "2" or on None
+        # raises TypeError, and one such row from the JSON payload used to
+        # abort the entire week summary — the CLI printed nothing and the
+        # confirm gate never saw the row that caused it.
+        if not _finite_number(pw.hours):
+            rejected.append(RejectedRow(
+                "project", _project_row_dict(pw),
+                f"hours {pw.hours!r} is not a finite number — row excluded "
+                "from the week"))
+            continue
         if pw.hours < 0:
             # Not routable: adding negative hours to unresolved would render
             # a negative unresolved figure. Drop it from the week and say so.
@@ -327,6 +425,13 @@ def aggregate(project_weeks: list[ProjectWeek],
                 f"hours is negative ({pw.hours}) — row excluded from the week"))
             continue
         total += pw.hours
+        if not _finite_number(pw.offense_pct):
+            rejected.append(RejectedRow(
+                "project", _project_row_dict(pw),
+                f"offense_pct {pw.offense_pct!r} is not a finite number — "
+                "hours routed to unresolved, no mode recorded"))
+            unresolved += pw.hours
+            continue
         if not 0 <= pw.offense_pct <= 100:
             rejected.append(RejectedRow(
                 "project", _project_row_dict(pw),
@@ -336,7 +441,7 @@ def aggregate(project_weeks: list[ProjectWeek],
             continue
         offense_hours = pw.hours * pw.offense_pct / 100.0
         defense_hours = pw.hours * (100 - pw.offense_pct) / 100.0
-        if pw.quadrant in by_quadrant:
+        if _known_quadrant(pw.quadrant):
             by_quadrant[pw.quadrant] += pw.hours
             by_quadrant_mode[pw.quadrant]["offense"] += offense_hours
             by_quadrant_mode[pw.quadrant]["defense"] += defense_hours
@@ -352,6 +457,12 @@ def aggregate(project_weeks: list[ProjectWeek],
 
     for row in meeting_rows:
         res = row.resolution
+        if not _finite_number(row.hours):
+            rejected.append(RejectedRow(
+                "meeting", _meeting_row_dict(row),
+                f"hours {row.hours!r} is not a finite number — row excluded "
+                "from the week"))
+            continue
         if row.hours < 0:
             rejected.append(RejectedRow(
                 "meeting", _meeting_row_dict(row),
@@ -359,6 +470,18 @@ def aggregate(project_weeks: list[ProjectWeek],
             continue
         total += row.hours
         if res.splits:
+            # Again type before value: `s < 0` on a string or None raises,
+            # and a NaN share sails through `s < 0` to make every quadrant
+            # total NaN. Both cost the whole row, exactly like a negative
+            # share, because a share nobody can read cannot be apportioned.
+            unusable = [s for _, s in res.splits if not _finite_number(s)]
+            if unusable:
+                rejected.append(RejectedRow(
+                    "meeting", _meeting_row_dict(row),
+                    f"split share {unusable[0]!r} is not a finite number — "
+                    "whole row routed to unresolved"))
+                unresolved += row.hours
+                continue
             negative = [s for _, s in res.splits if s < 0]
             if negative:
                 # A negative share subtracts hours from a quadrant that was
@@ -371,8 +494,29 @@ def aggregate(project_weeks: list[ProjectWeek],
                     "routed to unresolved"))
                 unresolved += row.hours
                 continue
-            splits = tuple((q, s) for q, s in res.splits if q in by_quadrant)
-            dropped = [q for q, _ in res.splits if q not in by_quadrant]
+            # NORMALISE FIRST, DROP SECOND. Splits normally sum to 1.0
+            # (resolve_meeting() guarantees it, normalising anything that
+            # doesn't). A caller reaching aggregate() directly, or through
+            # summarize()'s JSON payload, can hand us splits that don't.
+            #
+            # OVER 1.0 -> normalise, exactly as resolve_meeting() does.
+            # Without this the remainder goes negative, unresolved_hours
+            # renders as "-0.6h" and the quadrant percentages sum past
+            # 100%: the invariant survives but the human reads nonsense.
+            #
+            # The scale is computed over ALL the shares, including the ones
+            # whose quadrant is about to be dropped. Filtering first and
+            # normalising the survivors scales them UP to fill the invalid
+            # share's place, so 0.7/0.6/0.1 on a 2h meeting put all 2h into
+            # valid quadrants with unresolved_hours at 0.0 — while the
+            # rejection below said those hours had gone to unresolved. The
+            # reason string has to be true, so the invalid share's hours
+            # genuinely land in unresolved.
+            total_share = sum(share for _, share in res.splits)
+            scale = 1.0 / total_share if total_share > 1.0 + 1e-9 else 1.0
+            splits = tuple((q, s * scale) for q, s in res.splits
+                           if _known_quadrant(q))
+            dropped = [q for q, _ in res.splits if not _known_quadrant(q)]
             if dropped:
                 rejected.append(RejectedRow(
                     "meeting", _meeting_row_dict(row),
@@ -380,18 +524,6 @@ def aggregate(project_weeks: list[ProjectWeek],
                     + ", ".join(repr(q) for q in dropped)
                     + " — that share routed to unresolved"))
             apportioned = sum(share for _, share in splits)
-            # Splits normally sum to 1.0 (resolve_meeting() guarantees it,
-            # normalising anything that doesn't). A caller reaching
-            # aggregate() directly, or through summarize()'s JSON payload,
-            # can hand us splits that don't.
-            #
-            # OVER 1.0 -> normalise, exactly as resolve_meeting() does.
-            # Without this the remainder goes negative, unresolved_hours
-            # renders as "-0.6h" and the quadrant percentages sum past
-            # 100%: the invariant survives but the human reads nonsense.
-            if apportioned > 1.0 + 1e-9:
-                splits = tuple((q, s / apportioned) for q, s in splits)
-                apportioned = 1.0
             for quadrant, share in splits:
                 by_quadrant[quadrant] += row.hours * share
             # UNDER 1.0 -> the missing share is unresolved, never silently
@@ -404,7 +536,7 @@ def aggregate(project_weeks: list[ProjectWeek],
             remainder = max(0.0, 1.0 - apportioned)
             if remainder:
                 unresolved += row.hours * remainder
-        elif res.quadrant in by_quadrant:
+        elif _known_quadrant(res.quadrant):
             by_quadrant[res.quadrant] += row.hours
         else:
             if res.quadrant is not None:
@@ -474,59 +606,193 @@ def _totals_from_history_entry(entry: dict) -> WeekTotals:
     that being misread as "recorded zero defense spend": it only runs the
     rising-defense-share comparison when a prior week's by_mode hours sum
     to something greater than zero. Absent history must never manufacture
-    a flag."""
+    a flag.
+
+    An entry that is not a dict, or whose numbers are not finite numbers,
+    reads as an EMPTY week — the same state as an omitted `by_mode`, which
+    evaluate_flags already treats as "no data" and never as "recorded
+    zero". That is the safe direction: a malformed prior week can only
+    suppress a trend flag, never manufacture one. It is not routed to
+    `rejected`, which describes THIS week's rows; the caller is told at the
+    confirm gate that history was suppressed (close-week Step 2a #5)."""
+    if not isinstance(entry, dict):
+        entry = {}
     by_quadrant = _empty_by_quadrant()
-    by_quadrant.update(entry.get("by_quadrant") or {})
-    raw_mode = entry.get("by_mode") or {}
+    raw_quadrant = entry.get("by_quadrant")
+    if isinstance(raw_quadrant, dict):
+        by_quadrant.update({k: v for k, v in raw_quadrant.items()
+                            if _known_quadrant(k) and _finite_number(v)})
+    raw_mode = entry.get("by_mode")
+    if not isinstance(raw_mode, dict):
+        raw_mode = {}
     by_mode = {
-        "offense": raw_mode.get("offense", 0.0),
-        "defense": raw_mode.get("defense", 0.0),
+        mode: (raw_mode.get(mode) if _finite_number(raw_mode.get(mode)) else 0.0)
+        for mode in ("offense", "defense")
     }
     return WeekTotals(by_quadrant, by_mode, 0.0, sum(by_quadrant.values()))
+
+
+# Keys a payload row cannot be read without. `quadrant` is required on a
+# project row (null is a legal VALUE for it -- the documented uncategorized
+# row -- but an absent key means nobody said) and optional on a meeting row,
+# where a split or unresolved meeting legitimately carries no quadrant at all.
+_REQUIRED_PROJECT_KEYS = ("project", "quadrant", "offense_pct", "hours")
+_REQUIRED_MEETING_KEYS = ("label", "resolved_by", "hours")
+
+
+def _payload_row_dict(row) -> dict:
+    """Echo a raw payload row back JSON-safely, for a shape rejection. The
+    row may not be a dict at all, which is itself the failure."""
+    if isinstance(row, dict):
+        return {str(k): _json_safe(v) for k, v in row.items()}
+    return {"row": _json_safe(row)}
+
+
+def _missing_keys(row, required: tuple[str, ...]) -> list[str]:
+    if not isinstance(row, dict):
+        return list(required)
+    return [key for key in required if key not in row]
+
+
+def _split_pairs(raw):
+    """Return (pairs, reason). `splits` is a list of [quadrant, share] pairs;
+    anything else is a shape failure, reported rather than unpacked. Zipping
+    a malformed entry raises ValueError, which would abort the week."""
+    if raw is None:
+        return (), None
+    if not isinstance(raw, (list, tuple)):
+        return (), f"'splits' is {type(raw).__name__}, not a list"
+    pairs = []
+    for entry in raw:
+        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+            return (), ("'splits' entry is not a [quadrant, share] pair: "
+                        f"{_json_safe(entry)!r}")
+        pairs.append((entry[0], entry[1]))
+    return tuple(pairs), None
+
+
+def _payload_rows(payload: dict, key: str, rejects: list) -> list:
+    """The rows under `key`, or none plus a reported reason. A non-list
+    container silently read as empty is a whole week of work vanishing."""
+    rows = payload.get(key)
+    if rows is None:
+        return []
+    if isinstance(rows, (list, tuple)):
+        return list(rows)
+    rejects.append(RejectedRow(
+        "payload", {key: _json_safe(rows)},
+        f"payload key {key!r} is {type(rows).__name__}, not a list — no rows "
+        "were read from it"))
+    return []
+
+
+def _week_number(payload: dict, key: str, rejects: list) -> float:
+    """driver_hours / held_hours. A bad value reads as 0.0 AND is reported.
+
+    These feed only the held-vs-driver flag, so killing the whole week
+    summary over one of them would be disproportionate to what they do —
+    but reading 0.0 silently is worse than useless: held > driver is how
+    that flag fires, so a bad driver_hours could manufacture it. Reported
+    at 0.0, the flag can still fire wrongly, which is exactly why the
+    reason has to reach the confirm gate beside it."""
+    value = payload.get(key, 0.0)
+    if _finite_number(value):
+        return float(value)
+    rejects.append(RejectedRow(
+        "payload", {key: _json_safe(value)},
+        f"{key} {value!r} is not a finite number — read as 0.0; any "
+        "held-vs-driver flag below is computed without it"))
+    return 0.0
 
 
 def summarize(payload: dict) -> dict:
     """The one entry point a caller (skill prose, CLI) should use: turn a
     JSON-shaped week description into the numbers a person reads. Everything
     upstream of this (attributing a meeting, reading frontmatter) is the
-    caller's job; this function only aggregates and flags."""
-    project_weeks = [
-        ProjectWeek(
+    caller's job; this function only aggregates and flags.
+
+    It owns exactly one rule of its own: the payload's SHAPE. A row missing
+    a required key, a `splits` that isn't a list of pairs, a container that
+    isn't a list, a week-level number that isn't one — all are reported as
+    `rejected` entries here, because aggregate() takes dataclasses and can
+    never see the payload's dicts. VALUES are still aggregate()'s alone; a
+    value check written here is how the two halves came apart once already
+    (a bad split quadrant was filtered out in this function and still raised
+    KeyError inside aggregate() for every direct caller).
+
+    Nothing raises out of this function. One malformed row costs its own
+    row; it must never cost the week summary, which is the only thing
+    standing between the builder and a silently missing Friday."""
+    shape_rejects: list[RejectedRow] = []
+
+    if not isinstance(payload, dict):
+        return _summary(aggregate([], []), [], [RejectedRow(
+            "payload", {"payload": _json_safe(payload)},
+            f"payload is {type(payload).__name__}, not an object — nothing "
+            "could be read from it")])
+
+    project_weeks = []
+    for pw in _payload_rows(payload, "project_weeks", shape_rejects):
+        missing = _missing_keys(pw, _REQUIRED_PROJECT_KEYS)
+        if missing:
+            shape_rejects.append(RejectedRow(
+                "project", _payload_row_dict(pw),
+                "payload row is missing required key(s): "
+                + ", ".join(repr(k) for k in missing)
+                + " — row excluded from the week"))
+            continue
+        project_weeks.append(ProjectWeek(
             project=pw["project"],
             quadrant=pw["quadrant"],
             offense_pct=pw["offense_pct"],
             hours=pw["hours"],
-        )
-        for pw in payload.get("project_weeks", [])
-    ]
+        ))
 
     meeting_rows = []
-    for mr in payload.get("meeting_rows", []):
-        # Rows pass through EXACTLY as given. summarize() deliberately does no
-        # validation of its own: aggregate() is the one boundary that checks
-        # quadrants, shares, hours and offense_pct. A second copy of those
-        # rules here is how the two halves came apart last time -- a bad split
-        # quadrant was filtered out in this function and still raised KeyError
-        # inside aggregate() for every direct caller. Anything malformed comes
-        # back in the result's `rejected` list with its reason.
+    for mr in _payload_rows(payload, "meeting_rows", shape_rejects):
+        missing = _missing_keys(mr, _REQUIRED_MEETING_KEYS)
+        if missing:
+            shape_rejects.append(RejectedRow(
+                "meeting", _payload_row_dict(mr),
+                "payload row is missing required key(s): "
+                + ", ".join(repr(k) for k in missing)
+                + " — row excluded from the week"))
+            continue
+        splits, bad_splits = _split_pairs(mr.get("splits"))
+        if bad_splits:
+            shape_rejects.append(RejectedRow(
+                "meeting", _payload_row_dict(mr),
+                bad_splits + " — row excluded from the week"))
+            continue
+        # Values pass through EXACTLY as given from here: aggregate() is the
+        # one boundary that checks quadrants, shares, hours and offense_pct.
         resolution = Resolution(
             quadrant=mr.get("quadrant"),
             resolved_by=mr["resolved_by"],
-            splits=tuple((q, s) for q, s in (mr.get("splits") or ())),
+            splits=splits,
         )
         meeting_rows.append(MeetingRow(mr["label"], resolution, mr["hours"]))
 
     history = [
         _totals_from_history_entry(entry)
-        for entry in payload.get("history", [])
+        for entry in _payload_rows(payload, "history", shape_rejects)
     ]
 
     current = aggregate(project_weeks, meeting_rows)
     flags = evaluate_flags(
         current, history,
-        driver_hours=payload.get("driver_hours", 0.0),
-        held_hours=payload.get("held_hours", 0.0),
+        driver_hours=_week_number(payload, "driver_hours", shape_rejects),
+        held_hours=_week_number(payload, "held_hours", shape_rejects),
     )
+    return _summary(current, flags, shape_rejects)
+
+
+def _summary(current: WeekTotals, flags: list[str],
+             shape_rejects: list[RejectedRow]) -> dict:
+    """Render one aggregated week as the JSON a person reads. Shape
+    rejections from summarize() join aggregate()'s value rejections in ONE
+    `rejected` list -- the caller has exactly one place to look, and every
+    entry means the same thing: a row the module would not guess at."""
 
     total = current.total_hours
     percentages = {
@@ -569,16 +835,23 @@ def summarize(payload: dict) -> dict:
         # feature exists to prevent.
         "rejected": [
             {"kind": r.kind, "row": r.row, "reason": r.reason}
-            for r in current.rejected
+            for r in (*shape_rejects, *current.rejected)
         ],
         "flags": flags,
     }
 
 
+# Run this with the COMPANION'S interpreter, never a bare `python3`: the
+# module needs >=3.10, a stock Mac's /usr/bin/python3 is 3.9, and a supported
+# Windows install has no `python3` on PATH at all (the launcher is `py`, and
+# the toolkit may be running from its own private runtime). $PY below is the
+# venv interpreter beside the binary ensure-companion.sh resolves — see
+# skills/close-week/references/portfolio-attribution.md §7 for the two lines
+# that produce it.
 USAGE = (
-    "usage:\n"
-    "  python3 -m companion.portfolio                < payload.json\n"
-    "  python3 -m companion.portfolio --parse-daily  < daily-note.md\n"
+    'usage (run with the companion interpreter, not a bare python3):\n'
+    '  "$PY" -m companion.portfolio                < payload.json\n'
+    '  "$PY" -m companion.portfolio --parse-daily  < daily-note.md\n'
 )
 
 
