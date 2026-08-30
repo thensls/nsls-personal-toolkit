@@ -70,7 +70,7 @@ RULES:
 
 ### Example 3: Project definition → NEW topic
 
-**Candidate:** `{"kind": "project_definition", "text": "90-day check-in program: Red owns instrumentation, Heather owns HR side, Q3 launch", ...}`
+**Candidate:** `{"kind": "project_definition", "text": "90-day check-in program: Robin owns instrumentation, Heather owns HR side, Q3 launch", ...}`
 
 No existing topic exists for "new-hire onboarding" or "90-day check-in". Closest topics: `people-hr`, `employees`. Neither is project-specific.
 

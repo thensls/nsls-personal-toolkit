@@ -317,7 +317,7 @@ the resolved target so a future silent misroute is debuggable):
     NSLS emails detected: <nsls_emails_detected>
     local KB: <kb_dir>
 
-    If you ARE on SLT and should be writing to the company KB, ping Kevin to add you to
+    If you ARE on SLT and should be writing to the company KB, ping Marcus to add you to
     skills/harvest-meeting/kb_authors.txt and tick Members.is_slt = true, then re-run.
     If you have an @nsls.org typo, fix it in the appropriate git scope or your toolkit .env.
     Otherwise this is expected — your harvest goes to your local KB.
@@ -369,11 +369,11 @@ working harvest; SLT membership only changes the destination.
 
 - [ ] **Step 5: Verify routing for an SLT identity**
 
-Run (uses Kevin's email, which is on the real allowlist):
+Run (uses Marcus's email, which is on the real allowlist):
 ```bash
 mkdir -p /tmp/harvest-test && cd /tmp/harvest-test
 export OBSIDIAN_VAULT_PATH="/tmp/harvest-test/vault"
-GIT_AUTHOR_EMAIL=kprentiss@nsls.org \
+GIT_AUTHOR_EMAIL=mvance@nsls.org \
 PYTHONPATH=/tmp/pptx_deps python3.12 - <<'PYEOF'
 # Paste-equivalent: exec the Step 0 python by extracting it is overkill for the test;
 # instead re-run the resolution with the real allowlist via the override OFF.
@@ -441,7 +441,7 @@ if [ "$KB_TARGET" = "company" ]; then
         echo "Step 1a: FATAL — company KB not cloned to $KB_DIR."
         echo "  The repo is 'nsls-knowledge' (NOT '60-nsls-knowledge' — that's just the local folder)."
         echo "  Run: git clone https://github.com/thensls/nsls-knowledge.git \"$KB_DIR\""
-        echo "  If that 404s, you need collaborator access — ask Kevin. See First-Time Setup."
+        echo "  If that 404s, you need collaborator access — ask Marcus. See First-Time Setup."
         exit 1
     fi
     git -C "$KB_DIR" pull --ff-only --quiet

@@ -16,7 +16,7 @@ direct-report profile is informed by the team member's own weekly narration — 
 friction, sentiment trajectory, and goal health — and turn that signal into manager *behavior*
 through a **Management lane** in `/open-day` and `/open-week`: celebrate, develop, remove friction.
 
-This operationalizes the company strategy Kevin stated 2026-06-01: *"close the loop and show the
+This operationalizes the company strategy Marcus stated 2026-06-01: *"close the loop and show the
 company it's worth doing Quick Notes — SLT does something with friction and manager meetings
 reference info from quick notes."*
 
@@ -34,7 +34,7 @@ direct-report scoping, open-day/week surfacing). Signal is the fourth ingest sou
 | `signal_wins(weeks)` | public + clarified wins | Celebrate queue |
 | `signal_team_summary(manager_slug, week)` | submissions, friction+streaks, wins, newly enrolled, analytics deltas | Weekly management digest |
 
-Scope enforcement: Signal already scopes managers to their reporting subtree; Kevin's exec token
+Scope enforcement: Signal already scopes managers to their reporting subtree; Marcus's exec token
 is broad, but **coaching focus is deliberately narrowed to direct reports** (`tracking_reason ==
 "direct_report"` from `org-chart.json`). Org-wide `signal_wins`/`signal_friction` may color the
 weekly digest but do not create or enrich non-report profiles.
@@ -51,7 +51,7 @@ syncs to iCloud and is the substrate for the KB harvest. Therefore:
    comp, named personnel status, HR-sensitive, health, profit, security gaps, active legal,
    vendor-confidential, board-confidential). Sensitive friction becomes a *theme*, not a quote.
 3. **Provenance.** Add `signal` to the profile `sources:` frontmatter array.
-4. **Decision locked (Kevin, 2026-06-02): distilled-in-vault.** No private `_signal/` raw mirror in
+4. **Decision locked (Marcus, 2026-06-02): distilled-in-vault.** No private `_signal/` raw mirror in
    the vault. Raw lives only in cache.
 
 ### Distillation contract (what reaches the vault)
@@ -69,7 +69,7 @@ A new compact section on each direct-report profile:
 - **Submission cadence:** [submitting weekly | gap of N wks ⚠]
 ```
 
-Plus **evidence lines appended to `## Coaching Goals`** (existing AI-proposed / Kevin-approved
+Plus **evidence lines appended to `## Coaching Goals`** (existing AI-proposed / Marcus-approved
 flow) sourced from Signal, dated, theme-level.
 
 ## Architecture
@@ -171,11 +171,11 @@ Six repeatable manager jobs, each mapped to a signal and a behavior:
 | Cadence | Fathom gap + submissions | no report > 2 wks without a real 1:1 |
 | Align | goal health | every report knows their top priority + L1/L2 ladder |
 
-Under-weighted today (from Kevin's own data): **Recognize** and **Close the loop** — cheapest,
+Under-weighted today (from Marcus's own data): **Recognize** and **Close the loop** — cheapest,
 highest-trust levers, invisible to a task list. This engine exists to make them automatic.
 
 ## Non-goals
 - Not org-wide per-person profiles (direct reports only).
 - Not raw Quick Notes in the vault.
-- Not auto-written coaching goals (stays AI-proposed / Kevin-approved).
+- Not auto-written coaching goals (stays AI-proposed / Marcus-approved).
 - Not a new health dimension — Signal is evidence feeding the existing six.

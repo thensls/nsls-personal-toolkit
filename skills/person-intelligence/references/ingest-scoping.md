@@ -44,11 +44,11 @@ For each person the sweep tracks, three sources fire in parallel.
 
 - Any tracked person who is `signal_eligible` — has an `@nsls.org` email,
   `tracking_reason` is not `key_relationship_external`, and the name is not in
-  `SIGNAL_EXCLUDE` (default `{"Cory Capoccia"}` — this is how board members are
+  `SIGNAL_EXCLUDE` (no default — set it in `.env`; this is how board members are
   excluded) (determined by `list_relationships.py`)
 - **Shareable-tier fields only**: sentiment, wins, friction, growth, goal health. **Never** raw
   work-journal narration (`narration_raw`, `entry_text`)
-- Default exclusion: `SIGNAL_EXCLUDE={"Cory Capoccia"}` (override in `.env` if
+- Exclusions: `SIGNAL_EXCLUDE` has **no default** and must be set in `.env`. **Unset fails closed** — nobody is eligible until configured; `SIGNAL_EXCLUDE=""` is an explicit 'exclude nobody' and is honoured (override if
   needed)
 - **Provenance**: The synthesizer prepends a transparency line to `## Signal Read` of the form `*Signal source: {relation} — Quick Notes through {week}.*` (where {relation} = direct report / SLT peer / key relationship), so it's explicit whose relation/words are surfaced — important now that scope includes non-reports
 - **Never contributes to scoring.** `health_score` reads Fathom-meeting evidence
@@ -61,7 +61,7 @@ These run on every Slack message and every Gmail thread, regardless of source:
 
 ### 1. Third-party name stripping
 
-If a DM thread between you and Adam mentions Cory by name, **Cory's name is
+If a DM thread between you and Adam mentions Dana by name, **Dana's name is
 replaced** with a role descriptor ("another SLT member", "a board member")
 before the content reaches the synthesizer. Adam's profile never surfaces
 named third parties from your private conversations.
@@ -150,7 +150,7 @@ system touched without re-running.
   "timestamp": "2026-05-17T07:03:12Z",
   "exit_code": 0,
   "per_person": {
-    "Adam Stone": {
+    "Adam Ferris": {
       "fathom_meetings_pulled": 2,
       "slack_dms_pulled": 14,
       "slack_dms_filtered_low_signal": 6,

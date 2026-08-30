@@ -13,7 +13,7 @@ plan_depth: deep
 
 Upgrade the `person-intelligence` skill from a manual, single-person synthesis tool into an **automated manager-coaching system** that runs biweekly across the operating user's direct reports, ingests Fathom + Slack + Gmail, surfaces cross-relational insights, and keeps the emoji health chart on cadence — all generalized so any NSLS user inheriting the personal toolkit gets the same value relative to their position in the org chart.
 
-The current skill (built 2026-03-22) was "designed for weekly automation" per the memory record but the cadence was never wired. Result: 36 of Kevin's 39 profiles are frozen at the 2026-03-22 batch — eight weeks of cadence integrity already lost. This plan closes that gap, generalizes the system, and adds a coaching frame that goes beyond relationship-health scoring to ask *"what does this person need to thrive?"*
+The current skill (built 2026-03-22) was "designed for weekly automation" per the memory record but the cadence was never wired. Result: 36 of Marcus's 39 profiles are frozen at the 2026-03-22 batch — eight weeks of cadence integrity already lost. This plan closes that gap, generalizes the system, and adds a coaching frame that goes beyond relationship-health scoring to ask *"what does this person need to thrive?"*
 
 ## Problem Frame
 
@@ -24,12 +24,12 @@ The skill today does one thing well: synthesize a single rich profile from Fatho
 3. **Single-source ingest.** Fathom transcripts only. Slack DMs and Gmail threads contain the day-to-day signal that 1:1 transcripts miss.
 4. **Per-profile, not relational.** Profiles are siloed. There's no surface that says "across your team this period, three people are drifting, one is thriving, and you're spending disproportionate time with the wrong one."
 5. **No manager coaching frame.** Health scoring tells you the state of the relationship; it doesn't tell you what to invest in for the *person* — strengths, friction, growth edges, conditions for thriving.
-6. **Hardcoded to Kevin.** The Known People Registry, exclusion lists, and meeting filters are bespoke to one user. Anyone else installing the personal toolkit gets a half-working skill.
+6. **Hardcoded to Marcus.** The Known People Registry, exclusion lists, and meeting filters are bespoke to one user. Anyone else installing the personal toolkit gets a half-working skill.
 7. **No backfill.** When automation lands, the emoji chart will have an 8-week hole from 2026-03-22 → 2026-05-17. Without backfill the cadence pattern looks broken from day one.
 
 ## Requirements Trace
 
-- **R1.** Biweekly automation runs without manual prompting, surfaces a digest for review, and writes verifiable data updates (Fathom pulls, emoji rows, profile merges) — but never writes Kevin-voice narrative without review.
+- **R1.** Biweekly automation runs without manual prompting, surfaces a digest for review, and writes verifiable data updates (Fathom pulls, emoji rows, profile merges) — but never writes Marcus-voice narrative without review.
 - **R2.** Direct reports identified via the GitHub-committed `org-chart.json` in the builder toolkit. **No Airtable API key required** for org-chart lookup. The skill verifies the file's freshness before using it.
 - **R3.** Multi-source ingest: Fathom (existing pipeline), Slack (user-authorized MCP), Gmail (user-authorized MCP). All credentials are per-user — no shared org secrets beyond what the builder toolkit already commits.
 - **R4.** Manager-coaching frame: every direct-report profile carries a "What [Name] Needs to Thrive" section with strengths, friction, growth edges, and concrete investments the manager should make.
@@ -39,11 +39,11 @@ The skill today does one thing well: synthesize a single rich profile from Fatho
 - **R8.** Manager-coaching insights surface as **actionable items in `/open-day` and `/open-week`** — not just inert profile sections. The morning routine and weekly planning pick up one or two concrete coaching moves the user should make this period (e.g., "Adam's growth-edge is product authority — ask him to lead the next SLT product review").
 - **R9.** Profile synthesis applies the **`/full-shape` dimensional discovery pattern** to each relationship rather than forcing every person into a fixed template. The synthesizer casts a wide net to find the dimensions of *this specific relationship*, then provides macro frame + micro evidence per dimension, then lets the dominant patterns emerge. Generic templates produce slop; dimensional discovery produces shape.
 - **R10.** **Three-artifact coaching design** (each artifact authored by a different party, serving a different purpose):
-  - **Direct report profile** (e.g., Kevin's profile of Adam):
+  - **Direct report profile** (e.g., Marcus's profile of Adam):
     - `## What [Name] Needs to Thrive` — manager's coaching of the report. *Private to the manager.*
     - `## How I Work with [Name]` — manager's own working-style disclosure FOR the report. *Optionally shareable.* Modeled on Lara Hogan's "how to work with me" pattern but personalized per report (different reports may need different framings of the manager's style).
-  - **Upward relationship profile** (e.g., Kevin's profile of Gary):
-    - `## My Stance: [emotion], [emotion], [emotion]` — the report's emotional frame for the relationship (the Gary "Respect, Protect, Resent" pattern is *one* example). *Private to the user.*
+  - **Upward relationship profile** (e.g., Marcus's profile of Warren):
+    - `## My Stance: [emotion], [emotion], [emotion]` — the report's emotional frame for the relationship (the Warren "Respect, Protect, Resent" pattern is *one* example). *Private to the user.*
     - `## How I Can Work More Effectively with [Name]` — the report's own coaching toward their manager. *Private to the user.* The "managing up" surface, owned by the report.
     - `## Coaching Goals` (existing pattern) — concrete behaviors the report is practicing in the relationship.
   - **Peer relationships**: lighter `## Working Pattern` only; no coaching artifacts.
@@ -74,12 +74,12 @@ The skill today does one thing well: synthesize a single rich profile from Fatho
 - `~/nsls-skills/nsls-personal-toolkit/skills/person-intelligence/scripts/fetch_fathom_1on1s.py` — already supports `--after {date}` for incremental fetch and has a 6-hour cache layer at `~/.cache/person-intelligence/.meeting-cache.json`
 - `~/nsls-skills/nsls-builder-toolkit/_shared/context/org-chart.json` — flat array of employee records, each with `manages: []` pre-computed reverse field. Given an email, O(1) direct-reports lookup. **This is the source of truth — no Airtable call needed.**
 - `~/nsls-skills/nsls-builder-toolkit/_shared/scripts/sync_org_context.py` — builder toolkit's existing org-chart sync script. The personal toolkit can shell out to its `--update-vault` mode silently before health checks, but for the new skill the read path is just `json.load(org-chart.json)`.
-- `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/30-people/Gary Tuerack.md` — the gold-standard profile shape. Has the new `## Kevin's Stance: Respect, Protect, Resent` section + coaching goal pattern added 2026-05-16.
+- `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/30-people/Warren Aldrich.md` — the gold-standard profile shape. Has the new `## Marcus's Stance: Respect, Protect, Resent` section + coaching goal pattern added 2026-05-16.
 - `~/nsls-skills/nsls-personal-toolkit/skills/person-intelligence/references/profile-template.md` — **stale** (39 lines, describes the old shape). Needs replacement to match the actual generated profiles.
 
 ### Institutional Learnings (from MEMORY.md)
 
-- **"Close-day primary trigger is manual (removed scheduled auto-run 2026-04-20)"** — Kevin previously had scheduled close-day auto-running and pulled it. Lesson: scheduled writes-without-review feel off. The biweekly run must surface a digest, not silently rewrite profiles.
+- **"Close-day primary trigger is manual (removed scheduled auto-run 2026-04-20)"** — Marcus previously had scheduled close-day auto-running and pulled it. Lesson: scheduled writes-without-review feel off. The biweekly run must surface a digest, not silently rewrite profiles.
 - **"Avoid jargon in shared materials"** — generalization means other NSLS users will read this. The skill text and digest output need plain language; no "bus factor" / "blast radius" framing.
 - **"Auto-pull on session start"** — shared repos have "Before You Start" git pull blocks. The skill should assume builder toolkit is current and just read the JSON; rely on the toolkit's auto-update.
 - **"Manager-visible only for health scores"** (from people-ops schema notes) — there's already a precedent for manager-only views. The skill leans into this: manager profiles get the coaching layer, peer/upward profiles get the relationship layer only.
@@ -87,7 +87,7 @@ The skill today does one thing well: synthesize a single rich profile from Fatho
 
 ### External References
 
-**Web research attempted, blocked on one-time CAPTCHA in Google AI Mode setup.** Once Kevin clears the CAPTCHA (Chrome window opens, solve, close — one-time), the two queries below should be re-run and findings folded into this section. For now, framing below is from training-data knowledge of canonical sources — verify before final design.
+**Web research attempted, blocked on one-time CAPTCHA in Google AI Mode setup.** Once Marcus clears the CAPTCHA (Chrome window opens, solve, close — one-time), the two queries below should be re-run and findings folded into this section. For now, framing below is from training-data knowledge of canonical sources — verify before final design.
 
 Queued queries (to re-run after CAPTCHA clear):
 - "Manager coaching best practices 2026 (what direct reports need to thrive, Gallup Q12, Self-Determination Theory, strengths-based coaching, evidence-based dimensions)..."
@@ -131,7 +131,7 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 - What does my manager *need* from me to reduce their cognitive load? (Anticipated decisions, summarized data, clear asks)
 - What's their preferred communication channel and cadence? (Slack vs email vs meeting; long-form vs bullets)
 - Where can I shape their thinking vs. where do I need to align? (Pick battles; commit to the rest)
-- What patterns trigger their protective/defensive instincts? (Surprise, public disagreement, etc. — the Gary profile names these directly)
+- What patterns trigger their protective/defensive instincts? (Surprise, public disagreement, etc. — the Warren profile names these directly)
 
 **Biweekly review rituals — emerging conventions:**
 - Lattice and 15Five both default to weekly check-ins, manager-of-managers digests biweekly
@@ -148,8 +148,8 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 ## Key Technical Decisions
 
 - **Org chart from JSON, not Airtable.** Read `~/.claude/local-plugins/nsls-builder-toolkit/_shared/context/org-chart.json`. Verify file age before use; if >7 days stale, prompt the user to update the builder toolkit (`/update` or `cd ~/nsls-skills/nsls-builder-toolkit && git pull`). Never block — fall back to "I couldn't confirm org chart freshness, proceeding with cached data" and continue.
-- **Operating user identity via env var + email match.** Add `OPERATING_USER_EMAIL` to `.env.example` (Kevin defaults to `kprentiss@nsls.org`). Look up the user in `org-chart.json` by email; read the `manages` array for direct reports. If no record found, fall back to a curated `KEY_RELATIONSHIPS` list (newline-separated names in env) so non-employees and unlisted users still get value.
-- **Scheduling via `/schedule` remote routine, not CronCreate.** CronCreate only fires while Claude is running locally; `/schedule` runs as a remote agent and survives sessions — required for "fires reliably even when I'm not in Claude". Schedule: every other Sunday 7:00 AM ET. (Kevin works weekends per his memory; Sunday morning lets the digest land before his /open-week routine.)
+- **Operating user identity via env var + email match.** Add `OPERATING_USER_EMAIL` to `.env.example` (Marcus defaults to `mvance@nsls.org`). Look up the user in `org-chart.json` by email; read the `manages` array for direct reports. If no record found, fall back to a curated `KEY_RELATIONSHIPS` list (newline-separated names in env) so non-employees and unlisted users still get value.
+- **Scheduling via `/schedule` remote routine, not CronCreate.** CronCreate only fires while Claude is running locally; `/schedule` runs as a remote agent and survives sessions — required for "fires reliably even when I'm not in Claude". Schedule: every other Sunday 7:00 AM ET. (Marcus works weekends per his memory; Sunday morning lets the digest land before his /open-week routine.)
 - **Write trust ladder (replaces the earlier binary auto/proposal claim).** Auto-write isn't a clean line — meeting summaries are LLM-generated text and score carry-forward is a narrative claim disguised as data. Use a four-rung ladder instead:
   1. **Pure data** — Fathom meeting URLs, timestamps, signal counts, last-synthesized dates → auto-write
   2. **LLM-summarized data** — per-meeting summaries, slack/gmail signal blocks → auto-write *with provenance line* ("summarized by AI on YYYY-MM-DD; verify if used to decide")
@@ -161,21 +161,21 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 - **Slack/Gmail via MCP tool calls during the digest run, not Python scripts.** The MCPs are auth-bound to the operating user's session; running them inside the orchestrating session is the cleanest path. The fetch_fathom_1on1s.py script stays as Python since Fathom uses an API key in env.
 - **Manager-coaching frame as a new top-level profile section.** Add `## What [Name] Needs to Thrive` between `## How They Manage Up / Down / Laterally` (or equivalent) and `## Personal Practices`. Four subsections: Strengths to invest in, Friction to address, Growth edges, Conditions for peak performance. Generated only for direct reports; peer/manager profiles get a lighter "## Working Pattern" instead.
 - **Backfill via dated emoji rows + a single "backfill note" journal entry per profile.** Don't fabricate per-period detailed health journals retroactively. Just write the rows (one per missed biweekly date, carried forward at the last known score) and append a journal entry: *"### 2026-05-17 — Backfill\nNo human assessment for these periods; scores carried forward from 2026-03-22 baseline."* Honest about provenance.
-- **Profile-template.md gets replaced, not edited.** The current template is from the pre-Gary-profile era and doesn't match the actual generated structure. Replace with a current snapshot that matches what `synthesize_profile.py` produces.
+- **Profile-template.md gets replaced, not edited.** The current template is from the pre-Warren-profile era and doesn't match the actual generated structure. Replace with a current snapshot that matches what `synthesize_profile.py` produces.
 - **`/full-shape` dimensional discovery is the synthesis pattern, not a fixed template.** The synthesizer is instructed to *cast a wide net* for the dimensions of *this specific relationship* — find the ones that surprise, the ones that resist easy categorization, the ones that exceed existing labels. Then provide macro frame + micro evidence per dimension. The "Thrive" subsections are *defaults*, not a straitjacket — if the data reveals a dimension that doesn't fit one of the four buckets, the synthesizer is allowed to surface it under a custom subsection. Generic templates produce slop. Dimensional discovery produces shape.
-- **Two-way coaching is built in, not bolted on.** For every direct-report profile, the synthesizer produces both a `## What [Name] Needs to Thrive` section (manager → report) AND a `## Coaching Up: What [Name] Can Ask of Me` section (report → manager — content the user can share with the report to teach managing-up skills). For the user's own manager (e.g., Kevin's Gary profile), the orientation flips: the user becomes the report, and the section becomes `## My Stance + Coaching Up` modeled on the Gary "Respect, Protect, Resent" pattern landed 2026-05-16. Peer relationships skip both.
+- **Two-way coaching is built in, not bolted on.** For every direct-report profile, the synthesizer produces both a `## What [Name] Needs to Thrive` section (manager → report) AND a `## Coaching Up: What [Name] Can Ask of Me` section (report → manager — content the user can share with the report to teach managing-up skills). For the user's own manager (e.g., Marcus's Warren profile), the orientation flips: the user becomes the report, and the section becomes `## My Stance + Coaching Up` modeled on the Warren "Respect, Protect, Resent" pattern landed 2026-05-16. Peer relationships skip both.
 - **`/open-day` and `/open-week` are the activation surface for coaching tasks.** The team-pulse digest can sit unread; the daily and weekly routines are where action happens. The biweekly sweep writes a small `coaching_actions.json` file to `~/.cache/person-intelligence/` per relationship. `/open-day` reads pending actions for today's calendar (e.g., "Adam 1:1 at 2pm — try the product-authority delegation move"). `/open-week` reads the week's calendar and pre-loads coaching actions per scheduled person.
-- **Kevin-defaults vs. user-configurable surface.** The plan contains Kevin-specific defaults (SLT membership, Gary "Respect-Protect-Resent" stance as example, Fathom exclusion lists for Kevin's calendar conventions). These must be cleanly separated from generic skill behavior. The skill ships *example content* for Kevin (in `references/examples/`) and *user-configurable knobs* for everyone else (env vars + per-user config file). SLT membership becomes opt-in via `OPERATING_USER_IS_SLT=true`. The Gary stance is presented as *one example of upward framing*, not as the template. Fathom exclusion lists move to per-user `references/meeting-exclusions.json` with sensible defaults but user override allowed.
-- **Preserve human-authored profile content during synthesis.** Profiles will grow human-curated sections over time (Kevin just added the Gary "Stance" section today). The synthesizer must detect zones authored by Kevin (heuristic: any section not in the generated-template list, or any content under a section with a `<!-- human-authored -->` marker the synthesizer can write but never overwrite) and **propose additions** rather than rewriting. Default behavior: if a profile already exists, the synthesizer reads it, identifies template-vs-human zones, and only writes proposals for template zones; human zones get a "consider updating" pointer in the digest, never a silent overwrite.
+- **Marcus-defaults vs. user-configurable surface.** The plan contains Marcus-specific defaults (SLT membership, Warren "Respect-Protect-Resent" stance as example, Fathom exclusion lists for Marcus's calendar conventions). These must be cleanly separated from generic skill behavior. The skill ships *example content* for Marcus (in `references/examples/`) and *user-configurable knobs* for everyone else (env vars + per-user config file). SLT membership becomes opt-in via `OPERATING_USER_IS_SLT=true`. The Warren stance is presented as *one example of upward framing*, not as the template. Fathom exclusion lists move to per-user `references/meeting-exclusions.json` with sensible defaults but user override allowed.
+- **Preserve human-authored profile content during synthesis.** Profiles will grow human-curated sections over time (Marcus just added the Warren "Stance" section today). The synthesizer must detect zones authored by Marcus (heuristic: any section not in the generated-template list, or any content under a section with a `<!-- human-authored -->` marker the synthesizer can write but never overwrite) and **propose additions** rather than rewriting. Default behavior: if a profile already exists, the synthesizer reads it, identifies template-vs-human zones, and only writes proposals for template zones; human zones get a "consider updating" pointer in the digest, never a silent overwrite.
 - **Observability surface.** Each sweep writes a one-line status file to `~/.cache/person-intelligence/last-sweep-status.json` with `{timestamp, exit_code, error, relationships_processed}`. `/open-day` reads this file and surfaces a brief alert if the last sweep failed or hasn't run in >18 days. Without this, scheduled failures are invisible.
 
 ## Open Questions
 
 ### Resolved During Planning
 
-- **Q: Should the scheduled run write directly or always prompt for review?** Resolved: hybrid. Data writes (emoji row carry-forward, new meeting summaries, Slack/Gmail signal counts) are deterministic and write directly. Narrative changes (new coaching goals, "Stance"-style sections, score shifts) are proposed in the digest and require user review. Rationale: Kevin removed scheduled close-day for this reason (memory: 2026-04-20).
+- **Q: Should the scheduled run write directly or always prompt for review?** Resolved: hybrid. Data writes (emoji row carry-forward, new meeting summaries, Slack/Gmail signal counts) are deterministic and write directly. Narrative changes (new coaching goals, "Stance"-style sections, score shifts) are proposed in the digest and require user review. Rationale: Marcus removed scheduled close-day for this reason (memory: 2026-04-20).
 - **Q: Where does the cross-relational digest live?** Resolved: `30-people/_pulse/YYYY-MM-DD-team-pulse.md`. Surfaced in `/open-day` and `/open-week` as a link. Out of individual profiles to avoid bloat.
-- **Q: Schedule day/time?** Resolved: Every other Sunday at 7:00 AM ET. Aligns with Kevin's `/open-week` routine and the existing biweekly cadence (Mar 22 → Apr 5 → Apr 19 → May 3 → **May 17 (next slot)**).
+- **Q: Schedule day/time?** Resolved: Every other Sunday at 7:00 AM ET. Aligns with Marcus's `/open-week` routine and the existing biweekly cadence (Mar 22 → Apr 5 → Apr 19 → May 3 → **May 17 (next slot)**).
 - **Q: Backfill scope — all 39 profiles or just managed relationships?** Resolved: Direct reports (from `org-chart.json`) + SLT members + a configurable `KEY_RELATIONSHIPS` list. The other ~30 profiles continue using manual trigger model. Rationale: data-cadence integrity matters most for relationships the user is actively managing; backfilling 30 peer/peripheral profiles is noise.
 - **Q: Where does manager-coaching frame appear in the profile?** Resolved: New `## What [Name] Needs to Thrive` section, only for direct reports. Peer/upward relationships get a lighter `## Working Pattern` section instead. Direct-report determination from `org-chart.json` at synthesis time.
 - **Q: How are Slack DMs scoped?** Resolved: Last 14 days, between the two participants only. No keyword searches. Channel mentions limited to threads where both are active participants.
@@ -211,7 +211,7 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
    │ resolve_user.py  │ │ load org-chart   │ │ list relations   │
    │ identity from    │ │ JSON, verify     │ │ = manages[] ∪    │
    │ OPERATING_USER_  │ │ freshness        │ │ KEY_RELATIONSHIPS│
-   │ EMAIL            │ │                  │ │ ∪ SLT (if Kevin) │
+   │ EMAIL            │ │                  │ │ ∪ SLT (if Marcus) │
    └──────────────────┘ └──────────────────┘ └──────┬───────────┘
                                                    │
                             for each relationship: │
@@ -253,7 +253,7 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
                                                       │
                                                       ▼
                                   surfaced in /open-day + /open-week
-                                  Kevin reviews → accept/edit/reject
+                                  Marcus reviews → accept/edit/reject
                                   → profile narrative gets written
 ```
 
@@ -291,7 +291,7 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 - `OPERATING_USER_EMAIL` not set → script exits with the `.env.example` location in the error
 
 **Verification:**
-- Running `OPERATING_USER_EMAIL=kprentiss@nsls.org python3.12 list_relationships.py` outputs Kevin's SLT + direct reports without any Airtable call. Confirm via network monitor or by setting `AIRTABLE_API_KEY=invalid` in the test env.
+- Running `OPERATING_USER_EMAIL=mvance@nsls.org python3.12 list_relationships.py` outputs Marcus's SLT + direct reports without any Airtable call. Confirm via network monitor or by setting `AIRTABLE_API_KEY=invalid` in the test env.
 
 ---
 
@@ -325,11 +325,11 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 - The skill's existing "discover available data" pattern (SKILL.md line 31) — same fail-soft approach: try each source, work with whatever's available
 
 **Test scenarios:**
-- Kevin runs biweekly sweep with Slack MCP connected → DMs from last 14 days appear in synthesis input
-- Kevin runs without Gmail MCP connected → skill skips Gmail, notes it, continues
+- Marcus runs biweekly sweep with Slack MCP connected → DMs from last 14 days appear in synthesis input
+- Marcus runs without Gmail MCP connected → skill skips Gmail, notes it, continues
 - A direct report has no Slack ID in org-chart.json → skill skips Slack for that person, continues
 - Last-14-day window contains zero DMs → synthesis input gets an empty slack_signals block, no error
-- A DM thread between Kevin and Adam mentions Cory by name → Cory's name is stripped or replaced in the signal block; doesn't surface in Adam's profile
+- A DM thread between Marcus and Adam mentions Dana by name → Dana's name is stripped or replaced in the signal block; doesn't surface in Adam's profile
 - A Gmail thread matches an `INGEST_EXCLUDE_THREADS` pattern (legal subject keyword) → entire thread is skipped, doesn't reach the synthesizer
 - A DM is "👍" or "running late" → filtered out by low-signal filter
 - `SKIP_SLACK_INGEST=1` is set → no Slack MCP calls happen, signal block is empty, synthesis still completes from Fathom + Gmail
@@ -367,7 +367,7 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 - `sync_org_context.py`'s `--update-vault` mode for "deterministic file writes from script"
 
 **Test scenarios:**
-- Kevin runs the sweep with 6 direct reports and 5 key relationships → manifest lists 11 people with their last-synthesized dates
+- Marcus runs the sweep with 6 direct reports and 5 key relationships → manifest lists 11 people with their last-synthesized dates
 - One report has no new Fathom meetings since last-synth → still appears in manifest with `new_meetings: 0` so the digest can still note "no signal change"
 - Sweep is interrupted mid-stream → re-run resumes from manifest without re-fetching completed people
 - A person in `KEY_RELATIONSHIPS` is not in the org chart → still tracked, marked `org_chart_record: null`, synthesis runs from Fathom + manual notes only
@@ -411,28 +411,28 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 
 - **What [Name] Needs to Thrive section structure (direct_report only):** four default subsections grounded in the research frame — *Strengths to invest in* (Zhuo + Gallup), *Friction to address* (BICEPS gaps), *Growth edges* (Zhuo + SDT competence), *Conditions for peak performance* (BICEPS positives + working style). Empty subsections are omitted, not placeholder-filled.
 - **How I Work with [Name] section structure (direct_report only):** the manager's working-style disclosure, **personalized per report** because different reports may benefit from different framings. Subsections: *How I communicate best*, *What helps me help you*, *What trips me up*, *How we should handle disagreement*. Drafted FOR the report — the manager could copy-paste it into a Slack DM or doc share.
-- **My Stance + How I Can Work More Effectively (manager type only):** the upward profile pattern, modeled on the Gary 2026-05-16 update. Stance names 2-4 emotions and frames the relationship; How-I-Can-Work surfaces concrete behaviors the user is practicing in the relationship.
+- **My Stance + How I Can Work More Effectively (manager type only):** the upward profile pattern, modeled on the Warren 2026-05-16 update. Stance names 2-4 emotions and frames the relationship; How-I-Can-Work surfaces concrete behaviors the user is practicing in the relationship.
 - **Preserve human-authored sections (no silent rewrites):** the synthesizer reads any existing profile, identifies sections it doesn't recognize from the template list, and treats them as human-authored. For these, it surfaces a "consider updating: section X is 60+ days old" pointer in the digest but never overwrites. Optionally, sections can be marked `<!-- human-authored -->` to make the boundary explicit.
-- **Template replacement:** New template uses Gary Tuerack's profile as the structural reference. Section ordering: Identity → Style → Mental Models → Priorities → Energizes/Concerns → Manages Up/Down/Lat → Personal Practices → Communication → Key Relationships → Quotes → Personal → [conditional coaching sections per relationship_type] → Coaching Goals → Health.
+- **Template replacement:** New template uses Warren Aldrich's profile as the structural reference. Section ordering: Identity → Style → Mental Models → Priorities → Energizes/Concerns → Manages Up/Down/Lat → Personal Practices → Communication → Key Relationships → Quotes → Personal → [conditional coaching sections per relationship_type] → Coaching Goals → Health.
 
 **Patterns to follow:**
 - The existing `synthesize_profile.py` system-prompt pattern at line 18 — keep the same voice ("direct, plain-language style. Numbers over adjectives. Short sentences.")
-- Gary Tuerack profile as the gold-standard layout for upward relationships
+- Warren Aldrich profile as the gold-standard layout for upward relationships
 - The /full-shape skill's "cast the net → macro+micro per dimension → filter → name emerges" pattern as the synthesis instruction
 
 **Test scenarios:**
-- Running synthesis on a direct report (e.g., Adam Stone) → output includes both `## What [Name] Needs to Thrive` AND `## How I Work with [Name]`, grounded in actual transcript evidence
-- Running synthesis on Gary (Kevin's manager) → output includes `## My Stance` + `## How I Can Work More Effectively with [Name]`, no `## What [Name] Needs to Thrive` section
-- Running synthesis on a peer (e.g., Cory Capoccia) → no coaching arrows; just `## Working Pattern`
+- Running synthesis on a direct report (e.g., Adam Ferris) → output includes both `## What [Name] Needs to Thrive` AND `## How I Work with [Name]`, grounded in actual transcript evidence
+- Running synthesis on Warren (Marcus's manager) → output includes `## My Stance` + `## How I Can Work More Effectively with [Name]`, no `## What [Name] Needs to Thrive` section
+- Running synthesis on a peer (e.g., Dana Ashford) → no coaching arrows; just `## Working Pattern`
 - Running synthesis on Lauren (contractor, in KEY_RELATIONSHIPS with `coaching_frame: direct_report` override) → produces the direct-report shape even though she's not in `org-chart.json`
 - Running synthesis on a person whose data surfaces a dimension passing the custom-subsection guardrail (3+ meetings, doesn't fit defaults, durable) → synthesizer adds a custom subsection
 - Running synthesis on a person with a borderline dimension (1 meeting, ephemeral) → synthesizer does NOT add a custom subsection
 - Running synthesis when `relationship_type` is missing → defaults to `peer` framing (safe default)
-- Re-running synthesis on Gary's profile (which has human-authored "Kevin's Stance: Respect, Protect, Resent" added 2026-05-16) → that section is preserved; synthesizer proposes updates in digest, doesn't overwrite
+- Re-running synthesis on Warren's profile (which has human-authored "Marcus's Stance: Respect, Protect, Resent" added 2026-05-16) → that section is preserved; synthesizer proposes updates in digest, doesn't overwrite
 
 **Verification:**
-- Regenerate Adam Stone's profile. Compare against expected output: should have both Thrive and How-I-Work-With sections, with content grounded in his actual Fathom transcripts (not generic management-101 text). The "How I Work with Adam" section should be different in framing from a hypothetical "How I Work with Ashleigh" (personalized, not boilerplate).
-- Regenerate Gary Tuerack's profile (upward case). The existing `## Kevin's Stance: Respect, Protect, Resent` section is preserved untouched; any proposed updates appear in the digest's review queue, not in the profile itself.
+- Regenerate Adam Ferris's profile. Compare against expected output: should have both Thrive and How-I-Work-With sections, with content grounded in his actual Fathom transcripts (not generic management-101 text). The "How I Work with Adam" section should be different in framing from a hypothetical "How I Work with Priya" (personalized, not boilerplate).
+- Regenerate Warren Aldrich's profile (upward case). The existing `## Marcus's Stance: Respect, Protect, Resent` section is preserved untouched; any proposed updates appear in the digest's review queue, not in the profile itself.
 
 ---
 
@@ -467,7 +467,7 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 - `synthesize_profile.py`'s JSON-on-stdin pattern for the team-pulse script
 
 **Test scenarios:**
-- Three of Kevin's 6 direct reports' scores declined → "Drift" section lists those three with one-line reasoning each
+- Three of Marcus's 6 direct reports' scores declined → "Drift" section lists those three with one-line reasoning each
 - All scores held steady at 🟢 → digest still produces a valid file; "Drift" empty, "Thrive" empty, "Cadence integrity" populated
 - A direct report has zero new Fathom meetings since last sweep → flagged in "Cadence integrity" with "no new 1:1 data — consider scheduling"
 - Manager mode review: meeting-time distribution math is calculable from Fathom meeting durations × person tagging in the cache
@@ -490,7 +490,7 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 - Modify: `~/nsls-skills/nsls-personal-toolkit/commands/update-personal-productivity.md` (mention the schedule registration as part of setup)
 
 **Approach:**
-- The skill itself documents the schedule registration command; the actual `/schedule` invocation happens in Kevin's session (and any subsequent user's setup).
+- The skill itself documents the schedule registration command; the actual `/schedule` invocation happens in Marcus's session (and any subsequent user's setup).
 - The scheduled routine fires a prompt that says: *"Run the person-intelligence biweekly sweep for {OPERATING_USER_EMAIL}. Use the `/person-intelligence` skill, biweekly sweep mode."* — the skill picks up the rest from there.
 - The schedule writes (or appends to) the team-pulse digest doc. Narrative changes stay as proposals in the digest.
 - Documentation includes how to: change the day, pause the schedule, opt out, run manually with `/person-intelligence biweekly sweep`.
@@ -532,21 +532,21 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 - Append a single journal entry at the bottom of each backfilled profile: *"### 2026-05-17 — Cadence resumption\nBackfilled rows from 2026-03-22 to 2026-05-17 use the outlined emoji set (⚪/🟩/🟨/🟧) to indicate no human assessment. The most recent row is a fresh assessment from the automated sweep."*
 - Frontmatter `last-synthesized` advances only on rows actually re-synthesized (today's row); it does NOT advance for backfilled-carryforward rows.
 - Dry-run mode (`--dry-run`) prints the diff per file without writing.
-- **Migration note for the existing health tables:** The current Gary table doesn't have a `Note` column. Migration adds it lazily — backfilled rows get `Backfilled` in a new column; existing rows above get `Assessed` filled in; older rows get blank (we don't retro-label history we didn't track).
+- **Migration note for the existing health tables:** The current Warren table doesn't have a `Note` column. Migration adds it lazily — backfilled rows get `Backfilled` in a new column; existing rows above get `Assessed` filled in; older rows get blank (we don't retro-label history we didn't track).
 
 **Patterns to follow:**
-- The existing health-table format in Gary Tuerack.md (the gold-standard profile)
+- The existing health-table format in Warren Aldrich.md (the gold-standard profile)
 - The journal entry format documented in SKILL.md line 217
 
 **Test scenarios:**
 - A profile has its last row at 2026-03-22 → backfill writes 3 carry-forward rows (Apr 5, Apr 19, May 3) with the outlined emoji set + `Backfilled` note, plus today's row (May 17) as a fresh assessment with filled emojis + `Assessed` note
-- A profile has been updated since 2026-03-22 (e.g., Jack Cohen at 2026-05-07) → backfill writes only today's assessment row (May 17), no carry-forward rows needed
+- A profile has been updated since 2026-03-22 (e.g., Jack Donnelly at 2026-05-07) → backfill writes only today's assessment row (May 17), no carry-forward rows needed
 - A profile lacks a `## Relationship Health` section entirely → script skips with a "no health table found" log entry; does not invent one
 - A profile already has a `Note` column → script appends to it; doesn't duplicate the column
 - Dry-run mode produces a complete diff without touching any file
 
 **Verification:**
-- After backfill, open Gary Tuerack.md and visually scan the health table. Backfilled rows should be obviously distinguishable from assessed rows at a glance (outlined vs filled emoji). The journal entry at the bottom explains the convention. Compare to the table rendered in Obsidian — does the visual distinction survive Obsidian's rendering?
+- After backfill, open Warren Aldrich.md and visually scan the health table. Backfilled rows should be obviously distinguishable from assessed rows at a glance (outlined vs filled emoji). The journal entry at the bottom explains the convention. Compare to the table rendered in Obsidian — does the visual distinction survive Obsidian's rendering?
 
 ---
 
@@ -583,22 +583,22 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
   - When `times_surfaced >= 3` without status change, the action auto-moves to `stale` and drops out of /open-day rotation (still visible in the profile + in a "Stale coaching backlog" section of the team-pulse digest)
   - Each surfaced action in the morning note includes a `[done | stale | snooze 1w]` inline marker the user can edit; running /open-day with that edit recorded updates the cache
 - **No silent writes.** Actions are suggestions in the routine notes; the user accepts/edits/dismisses inline.
-- **Two-way integration:** Upward-relationship actions (from the manager-type profile) surface the same way before 1:1s with the user's manager. *"📋 Gary 1:1 @ 10am — managing-up move: 'name the gotcha-moment friction from last week before three meetings pass'"*
+- **Two-way integration:** Upward-relationship actions (from the manager-type profile) surface the same way before 1:1s with the user's manager. *"📋 Warren 1:1 @ 10am — managing-up move: 'name the gotcha-moment friction from last week before three meetings pass'"*
 
 **Patterns to follow:**
 - `/open-day`'s existing pattern of reading calendar + Asana tasks + Obsidian carry-overs and pre-populating the morning check-in note
-- The "Coaching Goals → Actions checkboxes" format already established in profiles (Gary's profile has the canonical example)
+- The "Coaching Goals → Actions checkboxes" format already established in profiles (Warren's profile has the canonical example)
 - Memory: "Close-day suggestions pattern — duplicate in both End of Day and Morning Check-in, name specific people" — apply same shape here
 
 **Test scenarios:**
-- Kevin has a 2pm Adam 1:1 scheduled → /open-day morning note includes Adam's top coaching action with the dimension and evidence pointer
-- Kevin has no people-meetings on a given day → /open-day skips the coaching-actions section silently
-- Kevin has 5 people-meetings → /open-day caps at **3 total** surfaced actions, prioritized by relationship-health-low + action-freshness; doesn't flood the note
+- Marcus has a 2pm Adam 1:1 scheduled → /open-day morning note includes Adam's top coaching action with the dimension and evidence pointer
+- Marcus has no people-meetings on a given day → /open-day skips the coaching-actions section silently
+- Marcus has 5 people-meetings → /open-day caps at **3 total** surfaced actions, prioritized by relationship-health-low + action-freshness; doesn't flood the note
 - /open-week shows the manager-mode time-allocation prompt only when pulse digest flagged a meaningful skew
 - Same action surfaces 3 times without being marked done → 4th cycle, action auto-moves to `stale` and stops surfacing in /open-day; appears in pulse-digest "Stale coaching backlog" section
-- Kevin marks an action `[done]` inline in the morning note → next /open-day run reads the mark and updates the cache; action no longer surfaces
-- Kevin marks an action `[snooze 1w]` → action skips next 7 days, then resumes surfacing
-- Gary 1:1 on the calendar → /open-day surfaces *managing-up* actions toward Gary, not coaching-down actions
+- Marcus marks an action `[done]` inline in the morning note → next /open-day run reads the mark and updates the cache; action no longer surfaces
+- Marcus marks an action `[snooze 1w]` → action skips next 7 days, then resumes surfacing
+- Warren 1:1 on the calendar → /open-day surfaces *managing-up* actions toward Warren, not coaching-down actions
 - /open-day fires on a day when the last biweekly sweep failed (per `last-sweep-status.json`) → morning note surfaces a one-line alert: *"⚠️ Last person-intelligence sweep failed on YYYY-MM-DD. Run manually with `/person-intelligence biweekly sweep`."*
 
 **Verification:**
@@ -619,11 +619,11 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 - Modify: `~/nsls-skills/nsls-personal-toolkit/.env.example` (final pass for any new vars)
 - Modify: `~/nsls-skills/nsls-personal-toolkit/CLAUDE.md` (add a row in the skills table about manager-coaching mode, link to setup)
 - Modify: `~/nsls-skills/nsls-personal-toolkit/commands/update-personal-productivity.md` (add a "person-intelligence biweekly" setup step)
-- Modify: `~/nsls-skills/nsls-personal-toolkit/skills/person-intelligence/SKILL.md` (final consolidation — remove Kevin-specific Known People Registry, replace with auto-discovery from org-chart + KEY_RELATIONSHIPS)
+- Modify: `~/nsls-skills/nsls-personal-toolkit/skills/person-intelligence/SKILL.md` (final consolidation — remove Marcus-specific Known People Registry, replace with auto-discovery from org-chart + KEY_RELATIONSHIPS)
 - Create: `~/nsls-skills/nsls-personal-toolkit/updates/2026-05-XX-person-intelligence-v2.md` (release note documenting the change for forks)
 
 **Approach:**
-- Remove all Kevin-hardcoded references from the skill (the SLT names list at SKILL.md line 41 becomes `org-chart.json` driven).
+- Remove all Marcus-hardcoded references from the skill (the SLT names list at SKILL.md line 41 becomes `org-chart.json` driven).
 - The "Known People Registry" table at line 389 becomes a runtime-discovery section — explain that the skill auto-discovers people from `org-chart.json` and from cached Fathom emails, no manual table maintenance required.
 - Release note explains: what changed, what new env vars to set, how to opt into the biweekly schedule, how to opt out. Plain language, no jargon (per memory).
 - The SKILL.md's "Pipeline" section gets a new top-level subsection: *"## Mode: Single-Person Synthesis"* vs *"## Mode: Biweekly Sweep"*. The single-person mode is what exists today; the biweekly sweep is the new mode.
@@ -662,35 +662,35 @@ These translate to behaviors the skill can detect from Fathom transcripts and su
 ## Phased Delivery
 
 ### Phase 1: Foundations (Units 1–2)
-Identity resolution, org-chart-driven relationship enumeration, multi-source ingest scoping. Ship without changing any existing skill behavior so the existing manual synthesis flow keeps working. Verify by running `list_relationships.py` from CLI and inspecting the output for Kevin.
+Identity resolution, org-chart-driven relationship enumeration, multi-source ingest scoping. Ship without changing any existing skill behavior so the existing manual synthesis flow keeps working. Verify by running `list_relationships.py` from CLI and inspecting the output for Marcus.
 
 ### Phase 2: Manager Coaching Synthesizer (Unit 4 + profile-template replacement)
-Apply `/full-shape` dimensional discovery to the synthesizer. For direct reports add `## What [Name] Needs to Thrive` (manager's private coaching) + `## How I Work with [Name]` (manager self-disclosure, optionally shareable). For the user's manager add `## My Stance: [emotions]` + `## How I Can Work More Effectively with [Name]` modeled on the Gary 2026-05-16 pattern. Preserve human-authored sections during re-synthesis. Test by manually re-synthesizing one direct report (Adam Stone) and one upward relationship (Gary) and reviewing both with Kevin before any backfill or schedule.
+Apply `/full-shape` dimensional discovery to the synthesizer. For direct reports add `## What [Name] Needs to Thrive` (manager's private coaching) + `## How I Work with [Name]` (manager self-disclosure, optionally shareable). For the user's manager add `## My Stance: [emotions]` + `## How I Can Work More Effectively with [Name]` modeled on the Warren 2026-05-16 pattern. Preserve human-authored sections during re-synthesis. Test by manually re-synthesizing one direct report (Adam Ferris) and one upward relationship (Warren) and reviewing both with Marcus before any backfill or schedule.
 
 ### Phase 3: Orchestration + Digest (Units 3 + 5)
-Wire the biweekly sweep orchestrator and the team-pulse digest. Run manually on Kevin's data, review the digest, iterate on the format before scheduling.
+Wire the biweekly sweep orchestrator and the team-pulse digest. Run manually on Marcus's data, review the digest, iterate on the format before scheduling.
 
 ### Phase 4: Backfill (Unit 7)
-Run backfill in dry-run mode first; Kevin reviews the diffs; then real run. This is the most-likely-to-feel-wrong step, so iterate carefully.
+Run backfill in dry-run mode first; Marcus reviews the diffs; then real run. This is the most-likely-to-feel-wrong step, so iterate carefully.
 
 ### Phase 5: Daily/Weekly Activation (Unit 8)
 Wire `/open-day` and `/open-week` to surface coaching actions tied to scheduled people. This is where the system goes from "useful when I read profiles" to "useful in my actual day." Verify by running /open-day on a day with multiple people-meetings.
 
 ### Phase 6: Schedule + Generalization (Units 6 + 9)
-Register the schedule for Kevin; document the install flow; publish the release note. Other NSLS users opt in via `/personal-setup`.
+Register the schedule for Marcus; document the install flow; publish the release note. Other NSLS users opt in via `/personal-setup`.
 
 ## Documentation Plan
 
 - **SKILL.md** gets a new "Mode: Biweekly Sweep" section, new "Scheduling" section, new "Ingest Sources" section, and the Known People Registry section is removed (replaced by org-chart auto-discovery).
 - **CLAUDE.md (personal toolkit)** gets a one-line entry in the skills table noting the biweekly-sweep mode.
 - **References:** new `manager-coaching-frame.md` (downward — Thrive + How I Work sections), `manager-relationship-frame.md` (upward — Stance + How I Can Work More Effectively), `dimensional-discovery-frame.md` (always-on /full-shape instruction), `team-pulse-template.md`, `ingest-scoping.md`. The stale `profile-template.md` gets replaced.
-- **Examples folder:** create `references/examples/` with one anonymized example per relationship type (one direct-report profile excerpt, one manager profile excerpt, one peer profile excerpt). These serve as Kevin-specific reference content but live in `examples/` so forks know they're examples, not the template.
+- **Examples folder:** create `references/examples/` with one anonymized example per relationship type (one direct-report profile excerpt, one manager profile excerpt, one peer profile excerpt). These serve as Marcus-specific reference content but live in `examples/` so forks know they're examples, not the template.
 - **Release note** at `updates/2026-05-XX-person-intelligence-v2.md` documents the change for forks following the existing release-note pattern.
 - **Memory:** add a project memory referencing this plan and the new biweekly cadence so future sessions know to check the pulse doc.
 
 ## Operational / Rollout Notes
 
-- **Rollout for Kevin:** Phases 1–5 sequentially over the next session. Backfill is the highest-touch step — present diffs before any write.
+- **Rollout for Marcus:** Phases 1–5 sequentially over the next session. Backfill is the highest-touch step — present diffs before any write.
 - **Rollout for other NSLS users:** they opt in via `/personal-setup` after the plugin auto-updates. The release note explains the new mode and how to enable.
 - **Monitoring:** the team-pulse doc itself is the monitor. If a sweep fails, the doc surfaces it under "Errors during sweep". If a user wants more, they can grep `~/.cache/person-intelligence/` for manifests.
 - **Backout:** to disable, pause the schedule via `/schedule pause`. To fully remove, delete the schedule entry and the new scripts; the existing manual synthesis flow continues unchanged.
@@ -700,7 +700,7 @@ Register the schedule for Kevin; document the install flow; publish the release 
 - **Current skill code:** `~/nsls-skills/nsls-personal-toolkit/skills/person-intelligence/` (SKILL.md, scripts/, references/)
 - **Org chart source:** `~/nsls-skills/nsls-builder-toolkit/_shared/context/org-chart.json`
 - **Builder toolkit org sync:** `~/nsls-skills/nsls-builder-toolkit/_shared/scripts/sync_org_context.py`
-- **Gold-standard profile:** `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/30-people/Gary Tuerack.md`
+- **Gold-standard profile:** `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/30-people/Warren Aldrich.md`
 - **Memory references:** `~/.claude/projects/-Users-k/memory/person-intelligence-skill.md`, `feedback_close_day_suggestions.md`, `user_coaching_patterns.md`
 - **Schedule mechanism:** `/schedule` skill (remote routine)
 - **Existing release-note pattern:** `~/nsls-skills/nsls-personal-toolkit/updates/`

@@ -67,7 +67,7 @@ If `$OBSIDIAN_VAULT_PATH/60-nsls-knowledge/` exists, scan today's meetings and r
    ```
    📚 Knowledge Graph
 
-     You had a detailed exchange with Ashleigh about chapter health.
+     You had a detailed exchange with Priya about chapter health.
      She argued advisor turnover is the primary driver of stale chapters,
      citing UPhoenix and two other examples. This shifts the working
      model from event frequency to advisor stability.

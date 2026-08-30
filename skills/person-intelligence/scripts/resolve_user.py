@@ -17,13 +17,13 @@ Usage:
 Output (success):
     {
       "found": true,
-      "name": "Kevin Prentiss",
-      "email": "kprentiss@nsls.org",
-      "slack": "U07TS8X7T7X",
+      "name": "Marcus Vance",
+      "email": "mvance@nsls.org",
+      "slack": "U0EXAMPLE01",
       "title": "Ignite",
       "department": "Engineering",
-      "manager": "Gary Tuerack",
-      "manages": ["Brandon Evans", "..."],
+      "manager": "Warren Aldrich",
+      "manages": ["Devon Ellery", "..."],
       "org_chart_age_days": 2
     }
 

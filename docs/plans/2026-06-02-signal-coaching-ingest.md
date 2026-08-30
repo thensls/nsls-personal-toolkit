@@ -29,7 +29,7 @@ goals are built from 1:1 transcripts and Airtable goals; they're blind to what t
 week about their wins and friction. Meanwhile the company's stated strategy is to prove Quick Notes
 matter by having managers act on them. The loop is open.
 
-## Decisions locked (Kevin, 2026-06-02)
+## Decisions locked (Marcus, 2026-06-02)
 
 - **D1 — Distilled in vault.** Raw Quick Notes cache-only; only rubric-filtered distillation reaches `30-people/`.
 - **D2 — Direct reports only.** Coaching scope = `tracking_reason == "direct_report"` from `org-chart.json`.
@@ -46,7 +46,7 @@ matter by having managers act on them. The loop is open.
 - **R6.** `/open-week` surfaces a Management cadence lane off `signal_team_summary`: week pulse, 3 intentions (1 per bucket, distributed), cadence audit (N=2), coaching-goal progress, loop-closure review.
 - **R7.** Cadence flags fire at 2 weeks for both 1:1 gap and stopped-submitting. (D4)
 - **R8.** The cron biweekly sweep is Signal-aware without a human in the loop. (D3, Phase 1.5)
-- **R9.** Coaching goals stay AI-proposed / Kevin-approved; Signal only adds dated, theme-level evidence.
+- **R9.** Coaching goals stay AI-proposed / Marcus-approved; Signal only adds dated, theme-level evidence.
 - **R10.** Loop-closure: surfaced friction that was acted on prompts a "tell the person what changed" task; unclosed loops roll forward.
 
 ## Phasing & build tasks
@@ -55,8 +55,8 @@ matter by having managers act on them. The loop is open.
 - [x] Cache schema + path `~/.cache/person-intelligence/signal/<slug>.json` (cache lives under ~/.cache, outside repo+vault; write-guard refuses vault paths; 30-day TTL field).
 - [x] `fetch_signal.py` v1 — normalizer + cache writer + mechanical sensitivity pre-filter + `--list-reports` (direct-report scoping). Tested: ER/family line dropped, real wins/friction kept after lexicon precision fix.
 - [x] Extend `synthesize_profile.py` — accepts `signal`; renders the distilled (pre-screened) block; emits `## Signal Read`; coaching evidence as `<!-- DIGEST -->` (not into curated Coaching Goals); `sources += signal`.
-- [x] Gate documented (`SIGNAL_INGEST=1`, direct reports only) in SKILL.md + Ingest Sources table. Flag NOT yet enabled in `.env` (Kevin's call).
-- [x] Acceptance gate: ran on Brandon (real LLM, /tmp) → clean; then **enabled `SIGNAL_INGEST=1` and spliced `## Signal Read` into all 10 direct-report profiles. Leak scan across all 10: 0 hits.** Deterministic splice used (no paraphrase drift); LLM prose comes on the next full sweep.
+- [x] Gate documented (`SIGNAL_INGEST=1`, direct reports only) in SKILL.md + Ingest Sources table. Flag NOT yet enabled in `.env` (Marcus's call).
+- [x] Acceptance gate: ran on Devon (real LLM, /tmp) → clean; then **enabled `SIGNAL_INGEST=1` and spliced `## Signal Read` into all 10 direct-report profiles. Leak scan across all 10: 0 hits.** Deterministic splice used (no paraphrase drift); LLM prose comes on the next full sweep.
 
 ### Phase 1.5 — Headless parity (cron self-sufficiency) (D3) — DONE EARLY
 - [x] Read surface confirmed: `employee-profiles` exposes `GET /api/mcp/person/<slug>[/history|/goals]`, `/wins`, `/friction`, `/team-summary` with `Authorization: Bearer <token>` (token at `~/.config/nsls/signal-token`). No Supabase-direct needed.
@@ -78,13 +78,13 @@ matter by having managers act on them. The loop is open.
 - [x] `loop_ledger.py` — durable JSON ledger at `03-meta/loop-closure-ledger.json`. Models friction *episodes* (recurring streak ≥2, keyed by slug + started_week) through open → resolved → closed. `--update` reconciles against the team summary (opens loops on recurring friction, resolves when the streak ends, backfills just-broken streaks); `--close "<name>" --note` closes; `--for "<names>"` filters for open-day; themes sensitivity-screened.
 - [x] Roll-forward: resolved-but-unclosed loops persist in `close_the_loop` until closed; loops open ≥3 weeks → `p1_candidates`.
 - [x] open-week Step 2.5: ledger drives the "🔁 Close the loop" + "Still open / P1" sections; closing is a one-liner (`--close`). open-day Management lane: `--for` adds a "🔁 Close loop" line for today's people.
-- Tested live: opened Chris + Davo (streak 2), backfilled+resolved Trina (streak broke); idempotent; `--close` drops it from the roll-forward.
+- Tested live: opened Chris + Reuben (streak 2), backfilled+resolved Trina (streak broke); idempotent; `--close` drops it from the roll-forward.
 
 ## Decision: where loop-closure state lives
 Resolved (was an open question): a durable **JSON ledger in `03-meta/`** (not profile, not cache). Persists + iCloud-syncs, machine-readable for the scripts, themes already sensitivity-screened so it honors distilled-in-vault.
 
 ## Verification
-- **Safety gate (blocking):** on a real report with known-sensitive Quick Notes, confirm the raw stays in cache and the vault profile contains only rubric-safe distillation. Manual review by Kevin before Phase 1 ships to all reports.
+- **Safety gate (blocking):** on a real report with known-sensitive Quick Notes, confirm the raw stays in cache and the vault profile contains only rubric-safe distillation. Manual review by Marcus before Phase 1 ships to all reports.
 - **Cadence:** simulate a 2-week 1:1 gap and a stopped-submitting report; confirm both flag.
 - **Headless:** run `biweekly_sweep.py` in a stripped `env -i` shell (as the .env-loader fix is tested) and confirm Signal data still flows (Phase 1.5).
 - **No two-speed drift:** a cron-built profile and a hand-built profile for the same report carry the same `## Signal Read` freshness.

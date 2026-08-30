@@ -2,7 +2,7 @@
 
 **Branch:** `pp-visual-companion` (renamed from `pp-cowork-companion`)
 **Lands in:** PR #29 (retarget + squash so no "cowork" wording reaches the PR)
-**Decision context:** Dropping the cowork artifact entirely. The visual companion is for the CLI / Claude Code desktop / VS Code extension — the surfaces where it actually works and where Kevin is steering people. See memory: `cowork-artifact-retired`.
+**Decision context:** Dropping the cowork artifact entirely. The visual companion is for the CLI / Claude Code desktop / VS Code extension — the surfaces where it actually works and where Marcus is steering people. See memory: `cowork-artifact-retired`.
 
 ## Goals
 
@@ -23,7 +23,7 @@
 | 5 | Add-bonus-item control in Command Center | ☐ |
 | 6 | `-t` test mode (separate test vault) + `reset-day -t` | ☐ |
 | 7 | Verify locally (screenshots) | ☐ |
-| 8 | Push → PR #29 (squash to drop "cowork" wording) — **needs Davo's OK** | ☐ |
+| 8 | Push → PR #29 (squash to drop "cowork" wording) — **needs Reuben's OK** | ☐ |
 
 ---
 
@@ -125,5 +125,5 @@ font: "Lexend Deca", system-ui fallback
 ## Task 7 — Verify
 Run companion locally, screenshot day + coach + results, compare to the artifact, iterate.
 
-## Task 8 — Push (needs Davo's explicit OK)
-Squash so commit messages carry no "cowork" wording. Retarget PR #29 to `pp-visual-companion` (or open fresh). Nothing pushed until Davo says so.
+## Task 8 — Push (needs Reuben's explicit OK)
+Squash so commit messages carry no "cowork" wording. Retarget PR #29 to `pp-visual-companion` (or open fresh). Nothing pushed until Reuben says so.

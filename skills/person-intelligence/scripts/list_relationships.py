@@ -20,11 +20,11 @@ Usage:
 
 Output:
     {
-      "operating_user": {"name": "Kevin Prentiss", "email": "...", ...},
+      "operating_user": {"name": "Marcus Vance", "email": "...", ...},
       "relationships": [
         {
-          "name": "Adam Stone",
-          "email": "astone@nsls.org",
+          "name": "Adam Ferris",
+          "email": "aferris@nsls.org",
           "slack": "U...",
           "tracking_reason": "direct_report"
         },
@@ -45,8 +45,37 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import load_dotenv_local  # noqa: E402,F401  — load .env into os.environ for cron/non-interactive runs
 import resolve_user  # noqa: E402
 
+# Signal-ingest exclusions (board members, and anyone whose Quick Notes must not
+# reach a coaching profile).
+#
+# The default is EMPTY ON PURPOSE: this repository is PUBLIC, and a real name
+# hardcoded here publishes who is excluded and why. The list is configuration,
+# so it lives in the private .env as SIGNAL_EXCLUDE (comma-separated names).
+#
+# An unset value is NOT "exclude nobody" — it means the control was never
+# configured, which is a blind check, not a clean pass. Announce it loudly
+# rather than silently letting sensitive people through.
+_signal_exclude_raw = os.environ.get("SIGNAL_EXCLUDE")
+
+# Unset != "exclude nobody". Unset means the gate was never configured, and a
+# warning alone is non-blocking — the sweep would run anyway. A privacy control
+# must FAIL CLOSED: with no configuration, nobody is signal_eligible at all.
+#
+# Setting SIGNAL_EXCLUDE to an empty string IS a configuration ("exclude nobody"),
+# and is honoured as such. Only an absent variable fails closed.
+SIGNAL_EXCLUDE_CONFIGURED = _signal_exclude_raw is not None
+if not SIGNAL_EXCLUDE_CONFIGURED:
+    print(
+        "WARNING: SIGNAL_EXCLUDE is unset — FAILING CLOSED.\n"
+        "  No one is signal_eligible until it is configured, so Signal ingest is\n"
+        "  effectively off rather than silently sweeping board members and other\n"
+        "  sensitive relationships into coaching profiles.\n"
+        "  Set SIGNAL_EXCLUDE in .env (comma-separated names; empty string means\n"
+        "  'exclude nobody' if that is genuinely what you want).",
+        file=sys.stderr,
+    )
 SIGNAL_EXCLUDE = {
-    n.strip() for n in os.environ.get("SIGNAL_EXCLUDE", "Cory Capoccia").split(",") if n.strip()
+    n.strip() for n in (_signal_exclude_raw or "").split(",") if n.strip()
 }
 
 
@@ -154,6 +183,10 @@ def is_signal_eligible(name, email, tracking_reason):
     Signal is coaching/context only; this only decides whether to ATTEMPT a
     fetch. A no-match still degrades to empty in fetch_signal.py.
     """
+    # Fail closed: an unconfigured exclusion list means the gate cannot be
+    # trusted, so nobody is eligible. See SIGNAL_EXCLUDE_CONFIGURED above.
+    if not SIGNAL_EXCLUDE_CONFIGURED:
+        return False
     email = (email or "").strip().lower()
     if not email.endswith("@nsls.org"):
         return False
@@ -238,7 +271,7 @@ def main():
     seen_names = set()
 
     # Preferred-name map, built from the vault's `type: person-redirect` stubs.
-    # Rippling stores formal names ("Jana Amsellem", "Jordyn Tannenbaum") for people who go
+    # Rippling stores formal names ("Jana Kessler", "Jordyn Sutter") for people who go
     # by something else. Without this, the org-chart name and the preferred name are added as
     # TWO relationships — dedup is by email, and the key-relationship entry usually has no
     # email to match on — which double-lists the person and leaves a phantom "never

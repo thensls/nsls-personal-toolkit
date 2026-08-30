@@ -147,8 +147,8 @@ def splice(text: str, section: str) -> str:
 def resolve_redirect(profile_path: pathlib.Path) -> pathlib.Path:
     """If the target is a `type: person-redirect` stub, follow `canonical_profile`
     to the real profile. Coaching content must never land on a redirect stub —
-    the org chart yields the Rippling name (e.g. Jana Amsellem) but the canonical
-    profile lives under the preferred name (Red Akasha)."""
+    the org chart yields the Rippling name (e.g. Jana Kessler) but the canonical
+    profile lives under the preferred name (Robin Alder)."""
     if not profile_path.exists():
         return profile_path
     head = profile_path.read_text(encoding="utf-8")[:600]

@@ -52,7 +52,7 @@ repo**. Commit *authorship* still attributes to the individual member.
 6. **Hard cut** — replace Step 8 with the gateway call; no permanent dual-path. Sequenced so the
    gateway is deployed and dry-run-validated *before* the skill is switched, so the harvest is
    never broken mid-flight.
-7. **Dedicated GitHub App** for the gateway (the existing rippling-sync write path runs as Kevin's
+7. **Dedicated GitHub App** for the gateway (the existing rippling-sync write path runs as Marcus's
    personal gmail identity — not reusable). App scoped to `nsls-knowledge` only, contents R/W.
 
 ## Architecture
@@ -146,7 +146,7 @@ Per-commit **audit row** (member email, topics, commit_sha, ts, dry_run) to a lo
   `is_slt` implied by registry membership. Rotation = update Doppler + the member's `.env`.
 - **Per-member token** in each toolkit `.env`: `KB_GATEWAY_URL`, `KB_GATEWAY_TOKEN`.
 - **`/kb-setup`** (extend `/connect` or `/personal-setup`): prompt for URL + token, validate via
-  `GET /kb/whoami`, write to `.env`. Tokens minted by Kevin (admin) and shared via 1Password.
+  `GET /kb/whoami`, write to `.env`. Tokens minted by Marcus (admin) and shared via 1Password.
 
 ## Error handling
 
@@ -182,7 +182,7 @@ shell/`re.sub` backreference injection (use literal blob writes, not regex repla
 2. Validate against the live repo in `dry_run` (no writes) until the diffs match expectations.
 3. Switch the skill's Step 1 + Step 8 to the gateway in one change; remove local-git from the
    harvest path. Issue tokens to all 7 SLT; run `/kb-setup` each.
-4. Smoke test: Kevin runs a real one-candidate harvest through the gateway, verify the commit
+4. Smoke test: Marcus runs a real one-candidate harvest through the gateway, verify the commit
    (author attribution, content) on GitHub.
 
 ## Open questions / follow-ups

@@ -13,7 +13,7 @@ Pulls decisions, project definitions, and state changes from recorded meetings, 
 > The `60-` prefix is only the *local Obsidian vault folder name* this skill clones into.
 > Cloning `60-nsls-knowledge` fails with "Repository not found" — and on a private repo,
 > "not found" also means *you don't have access yet*. If the clone command below 404s,
-> ping Kevin to be added as a collaborator on `thensls/nsls-knowledge`.
+> ping Marcus to be added as a collaborator on `thensls/nsls-knowledge`.
 
 > **This setup applies only to SLT members writing to the company KB.** Non-SLT users need
 > no setup — the local KB is scaffolded automatically on first run.
@@ -38,8 +38,8 @@ git -C "$OBSIDIAN_VAULT_PATH/60-nsls-knowledge" config user.email <you>@nsls.org
 ```
 </details>
 
-Prerequisites (both are quick adds — ask Kevin):
-- Your `@nsls.org` email is in `_data/kb_authors.txt` **in the KB repo** (`thensls/nsls-knowledge`). Kevin adds it with one commit there; you pick it up automatically on your next harvest — no toolkit update needed.
+Prerequisites (both are quick adds — ask Marcus):
+- Your `@nsls.org` email is in `_data/kb_authors.txt` **in the KB repo** (`thensls/nsls-knowledge`). Marcus adds it with one commit there; you pick it up automatically on your next harvest — no toolkit update needed.
 - Your GitHub account is a collaborator on `thensls/nsls-knowledge`.
 
 ## Verify your setup (no harvest)
@@ -323,7 +323,7 @@ the resolved target so a future silent misroute is debuggable):
     NSLS emails detected: <nsls_emails_detected>
     local KB: <kb_dir>
 
-    If you ARE on SLT and should be writing to the company KB, ping Kevin to add you to
+    If you ARE on SLT and should be writing to the company KB, ping Marcus to add you to
     _data/kb_authors.txt in the KB repo (thensls/nsls-knowledge) — one commit, no re-install;
     just re-run your next harvest.
     If you have an @nsls.org typo, fix it in the appropriate git scope or your toolkit .env.
@@ -368,7 +368,7 @@ if [ "$KB_TARGET" = "company" ]; then
         echo "Step 1a: FATAL — company KB not cloned to $KB_DIR."
         echo "  The repo is 'nsls-knowledge' (NOT '60-nsls-knowledge' — that's just the local folder)."
         echo "  Run: git clone https://github.com/thensls/nsls-knowledge.git \"$KB_DIR\""
-        echo "  If that 404s, you need collaborator access — ask Kevin. See First-Time Setup."
+        echo "  If that 404s, you need collaborator access — ask Marcus. See First-Time Setup."
         exit 1
     fi
     git -C "$KB_DIR" pull --ff-only --quiet

@@ -91,7 +91,7 @@ def extract_human_authored_sections(existing_profile):
     """Parse `## ...` sections from existing_profile, return those whose heading
     is NOT in STANDARD_SECTION_HEADINGS.
 
-    Returns list of dicts: [{"heading": "## Kevin's Stance: ...", "content": "..."}, ...]
+    Returns list of dicts: [{"heading": "## Marcus's Stance: ...", "content": "..."}, ...]
     Content includes the heading line and everything until the next `## ` heading
     or end of document.
     """
@@ -635,7 +635,7 @@ def remove_overlapping_llm_sections(profile, human_sections):
     """For each preserved section whose heading hits a known coaching artifact,
     remove any LLM-generated section whose heading hits the same keyword.
 
-    Example: preserved "## Kevin's Stance: ..." → drop LLM's "## My Stance: ...".
+    Example: preserved "## Marcus's Stance: ..." → drop LLM's "## My Stance: ...".
     """
     # Build set of overlap keywords claimed by preserved sections.
     preserved_keywords = set()
@@ -689,7 +689,7 @@ def postprocess(raw_profile, data):
     human_sections = extract_human_authored_sections(data.get("existing_profile", ""))
     if human_sections:
         # Step 1: remove any LLM-generated section that semantically overlaps
-        # with a preserved one (e.g., LLM's "## My Stance" when "## Kevin's Stance"
+        # with a preserved one (e.g., LLM's "## My Stance" when "## Marcus's Stance"
         # is preserved).
         profile = remove_overlapping_llm_sections(profile, human_sections)
 

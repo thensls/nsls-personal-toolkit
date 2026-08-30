@@ -284,19 +284,68 @@ def test_no_airtable_dependency():
         fixture.unlink()
 
 
+def _load_lr(signal_exclude):
+    """Import list_relationships with SIGNAL_EXCLUDE set (or explicitly unset).
+
+    The module reads the env at import time, so each case needs a fresh load.
+    Returns (module, stderr_text) so callers can assert on the warning too.
+    """
+    import importlib.util, io, contextlib
+    prior = os.environ.pop("SIGNAL_EXCLUDE", None)
+    try:
+        if signal_exclude is not None:
+            os.environ["SIGNAL_EXCLUDE"] = signal_exclude
+        spec = importlib.util.spec_from_file_location("list_relationships", LIST_RELATIONSHIPS)
+        lr = importlib.util.module_from_spec(spec)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            spec.loader.exec_module(lr)
+        return lr, err.getvalue()
+    finally:
+        os.environ.pop("SIGNAL_EXCLUDE", None)
+        if prior is not None:
+            os.environ["SIGNAL_EXCLUDE"] = prior
+
+
+def test_signal_exclude_unset_is_announced_not_silent():
+    """An unset SIGNAL_EXCLUDE excludes nobody -- and must say so, loudly.
+
+    There is no hardcoded default: this repo is public and a real name here
+    would publish who is excluded. The cost of that is a control that can be
+    silently off, so the module warns on stderr instead.
+    """
+    lr, stderr = _load_lr(None)
+    assert lr.SIGNAL_EXCLUDE == set(), "no default exclusions may be hardcoded"
+    assert lr.SIGNAL_EXCLUDE_CONFIGURED is False
+    assert "SIGNAL_EXCLUDE is unset" in stderr, "an unset gate must be announced"
+    assert "FAILING CLOSED" in stderr
+    # A warning is non-blocking, so announcing is not enough: with no config the
+    # gate must fail CLOSED -- nobody eligible, rather than everybody.
+    assert lr.is_signal_eligible("Board Member", "bm@nsls.org", "key_relationship") is False
+    assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is False, \
+        "unconfigured must exclude everyone, not just the sensitive names"
+
+
+def test_signal_exclude_from_env_gates_the_person():
+    """With the env set, the named person is excluded and nothing is warned."""
+    lr, stderr = _load_lr("Board Member,Other Person")
+    assert lr.SIGNAL_EXCLUDE_CONFIGURED is True
+    assert lr.is_signal_eligible("Board Member", "bm@nsls.org", "key_relationship") is False
+    assert lr.is_signal_eligible("Other Person", "op@nsls.org", "peer") is False
+    assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True
+    assert "SIGNAL_EXCLUDE is unset" not in stderr
+
+
 def test_signal_eligible_rule():
     """Test is_signal_eligible function with various inputs."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("list_relationships", LIST_RELATIONSHIPS)
-    lr = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(lr)
+    lr, _ = _load_lr("Dana Ashford")
 
     # direct report with nsls email -> eligible
     assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True
     # SLT peer with nsls email -> eligible
-    assert lr.is_signal_eligible("Adam Stone", "astone@nsls.org", "peer") is True
+    assert lr.is_signal_eligible("Adam Ferris", "aferris@nsls.org", "peer") is True
     # board member on the exclude list -> not eligible
-    assert lr.is_signal_eligible("Cory Capoccia", "ccapoccia@nsls.org", "key_relationship") is False
+    assert lr.is_signal_eligible("Dana Ashford", "dashford@nsls.org", "key_relationship") is False
     # external (no nsls email) -> not eligible
     assert lr.is_signal_eligible("Red External", "", "key_relationship_external") is False
     # non-nsls email -> not eligible
@@ -326,3 +375,17 @@ if __name__ == "__main__":
     test_non_employee_operating_user()
     test_no_airtable_dependency()
     print("\nAll list_relationships tests passed.")
+
+
+def test_signal_exclude_empty_string_is_a_real_configuration():
+    """SIGNAL_EXCLUDE="" means 'exclude nobody' deliberately -- not unconfigured.
+
+    Only an ABSENT variable fails closed. An explicit empty value is a choice and
+    is honoured, so an operator who genuinely wants no exclusions can say so
+    without tripping the fail-closed path.
+    """
+    lr, stderr = _load_lr("")
+    assert lr.SIGNAL_EXCLUDE_CONFIGURED is True
+    assert lr.SIGNAL_EXCLUDE == set()
+    assert "FAILING CLOSED" not in stderr
+    assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True

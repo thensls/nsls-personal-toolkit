@@ -5,7 +5,7 @@ in sync with the builder toolkit's org-chart.json.
 Reads `org-chart.json`. For each employee, finds the matching `30-people/*.md`
 file in the Obsidian vault. Updates only an allowlist of frontmatter fields.
 **Never touches the body** of any file, and never touches frontmatter fields
-outside the allowlist (so Kevin's curated tags, health scores, role descriptions,
+outside the allowlist (so Marcus's curated tags, health scores, role descriptions,
 and human-authored sections all stay put).
 
 Usage:
@@ -118,8 +118,8 @@ def canonical_from_redirect(text):
 def build_redirect_map(people_dir):
     """Map every redirect's own name -> the canonical (preferred) name.
 
-    Rippling stores formal names ("Jordyn Tannenbaum", "Jana Amsellem") for people who
-    go by a preferred name ("Jordan Tannenbaum", "Red Akasha"). Without this map the sync
+    Rippling stores formal names ("Jordyn Sutter", "Jana Kessler") for people who
+    go by a preferred name ("Jamie Sutter", "Robin Alder"). Without this map the sync
     writes the Rippling spelling into every report's `manager:` field, silently reverting
     the preferred name across the vault.
     """
@@ -292,7 +292,7 @@ def build_email_index(people_dir):
             continue
         # Redirect stubs carry the canonical person's email on purpose. Indexing them
         # lets filename sort order decide which file wins — that is how "Jordyn
-        # Tannenbaum.md" beat "Jordan Tannenbaum.md". Never index a redirect.
+        # Sutter.md" beat "Jamie Sutter.md". Never index a redirect.
         if is_redirect(text):
             continue
         fm_lines, _ = parse_frontmatter(text)

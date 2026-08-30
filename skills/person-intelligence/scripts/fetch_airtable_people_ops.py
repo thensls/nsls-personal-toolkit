@@ -3,7 +3,7 @@
 fetch_airtable_people_ops.py -- pull employee + LOP goal data from People Ops Airtable.
 
 Usage:
-  python3.12 fetch_airtable_people_ops.py "Adam Stone"
+  python3.12 fetch_airtable_people_ops.py "Adam Ferris"
 
 Output: JSON to stdout with employee record and LOP goals.
 Status messages go to stderr.

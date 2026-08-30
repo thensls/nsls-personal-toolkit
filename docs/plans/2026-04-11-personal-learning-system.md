@@ -4,7 +4,7 @@
 
 **Goal:** Build a `/learn` skill backed by an Obsidian knowledge graph that integrates into the open/close planning rhythm for intentional, scaffolded learning.
 
-**Architecture:** New `/learn` skill (SKILL.md) in both `~/.claude/skills/` (Kevin-local) and `~/nsls-skills/nsls-personal-toolkit/skills/` (toolkit). Obsidian template files in `40-learning/`. Modifications to open-week, open-day, and toolkit CLAUDE.md. Phase 1 only — close-day/close-week/obsidian-setup changes are Phase 2.
+**Architecture:** New `/learn` skill (SKILL.md) in both `~/.claude/skills/` (Marcus-local) and `~/nsls-skills/nsls-personal-toolkit/skills/` (toolkit). Obsidian template files in `40-learning/`. Modifications to open-week, open-day, and toolkit CLAUDE.md. Phase 1 only — close-day/close-week/obsidian-setup changes are Phase 2.
 
 **Tech Stack:** Claude Code skills (SKILL.md files), Obsidian markdown, Slack MCP for link scraping, WebSearch/WebFetch for research.
 
@@ -16,7 +16,7 @@
 
 | Action | File | Purpose |
 |--------|------|---------|
-| Create | `~/.claude/skills/learn/SKILL.md` | Kevin-local learn skill |
+| Create | `~/.claude/skills/learn/SKILL.md` | Marcus-local learn skill |
 | Create | `~/nsls-skills/nsls-personal-toolkit/skills/learn/SKILL.md` | Toolkit learn skill (generic) |
 | Create | `[vault]/40-learning/_inbox.md` | Raw link capture template |
 | Create | `[vault]/40-learning/_learning-goals.md` | Priority-ranked learning goals |
@@ -31,7 +31,7 @@
 
 ---
 
-### Task 1: Create the `/learn` Skill (Kevin-local)
+### Task 1: Create the `/learn` Skill (Marcus-local)
 
 **Files:**
 - Create: `~/.claude/skills/learn/SKILL.md`
@@ -248,9 +248,9 @@ Present:
 
 ## Link Ingestion (runs during /open-day)
 
-When called from `/open-day`, scrape Kevin's Slack self-DMs for new links:
+When called from `/open-day`, scrape Marcus's Slack self-DMs for new links:
 
-1. Use `mcp__plugin_slack_slack__slack_read_channel` to read Kevin's self-DM channel for messages from the last 24 hours
+1. Use `mcp__plugin_slack_slack__slack_read_channel` to read Marcus's self-DM channel for messages from the last 24 hours
 2. Extract any URLs from those messages
 3. For each URL:
    - Fetch the page title and first paragraph via WebFetch
@@ -400,7 +400,7 @@ Expected: `_inbox.md`, `_learning-goals.md`, `_weekly-plan.md`
 
 ---
 
-### Task 3: Add Learning Section to `/open-week` (Kevin-local)
+### Task 3: Add Learning Section to `/open-week` (Marcus-local)
 
 **Files:**
 - Modify: `~/.claude/skills/open-week/SKILL.md`
@@ -452,7 +452,7 @@ Find the week plan template output section (after the Recommended Top 3 and rati
 - **Deep dive:** [topic] — [learning path item], ~1.5h. Suggested: [day based on calendar gaps].
 - **Daily micro-learning:** 15 min/day from [topic] learning path or inbox links.
 
-**Ask Kevin:** "What do you want to learn more about this week? Confirm the above, add a new topic (I'll run `/learn`), or skip learning this week."
+**Ask Marcus:** "What do you want to learn more about this week? Confirm the above, add a new topic (I'll run `/learn`), or skip learning this week."
 
 **Stale goals:** [any goals with no progress in 3+ weeks — suggest park or schedule]
 
@@ -485,18 +485,18 @@ Local skill, no git commit needed.
 **Files:**
 - Modify: `~/nsls-skills/nsls-personal-toolkit/skills/open-week/SKILL.md`
 
-Apply the same changes as Task 3, but using generic language ("the builder" not "Kevin") and `$OBSIDIAN_VAULT_PATH` instead of the hardcoded vault path.
+Apply the same changes as Task 3, but using generic language ("the builder" not "Marcus") and `$OBSIDIAN_VAULT_PATH` instead of the hardcoded vault path.
 
 - [ ] **Step 1: Read the toolkit version**
 
-Read `~/nsls-skills/nsls-personal-toolkit/skills/open-week/SKILL.md` around the same sections as Task 3 to find the corresponding insertion points. The line numbers may differ from the Kevin-local version.
+Read `~/nsls-skills/nsls-personal-toolkit/skills/open-week/SKILL.md` around the same sections as Task 3 to find the corresponding insertion points. The line numbers may differ from the Marcus-local version.
 
 - [ ] **Step 2: Apply the same 4 insertions as Task 3**
 
 Use the same content blocks from Task 3, Steps 2-5, with these substitutions:
-- Replace `Kevin` → `the builder`
+- Replace `Marcus` → `the builder`
 - Replace the hardcoded vault path → `$OBSIDIAN_VAULT_PATH/40-learning/`
-- Replace `"Ask Kevin:"` → `"Ask the builder:"`
+- Replace `"Ask Marcus:"` → `"Ask the builder:"`
 
 - [ ] **Step 3: Verify the edit**
 
@@ -510,7 +510,7 @@ cd ~/nsls-skills/nsls-personal-toolkit && git add skills/open-week/SKILL.md
 
 ---
 
-### Task 5: Add Micro-Learning + Link Ingestion to `/open-day` (Kevin-local)
+### Task 5: Add Micro-Learning + Link Ingestion to `/open-day` (Marcus-local)
 
 **Files:**
 - Modify: `~/.claude/skills/open-day/SKILL.md`
@@ -532,9 +532,9 @@ Find the data collection steps (Step 1 or Step 2). Add a new sub-step after the 
 ```markdown
 **[N]. Learning inbox ingestion**
 
-Scrape Kevin's Slack self-DMs for URLs sent since the last scrape:
+Scrape Marcus's Slack self-DMs for URLs sent since the last scrape:
 
-1. Use `mcp__plugin_slack_slack__slack_read_channel` to read Kevin's self-DM channel. Look for messages from the last 24 hours containing URLs.
+1. Use `mcp__plugin_slack_slack__slack_read_channel` to read Marcus's self-DM channel. Look for messages from the last 24 hours containing URLs.
 2. For each URL found:
    - Fetch the page title via WebFetch (just the title and first paragraph, not the full page)
    - Generate a 1-2 sentence summary
@@ -601,9 +601,9 @@ Read the toolkit open-day SKILL.md to find the corresponding insertion points.
 - [ ] **Step 2: Apply the same insertions as Task 5**
 
 Same content blocks with these substitutions:
-- Replace Kevin-specific Slack scraping with: "If `learning_capture_method` in builder profile is set to `slack`, scrape the builder's Slack self-DMs using their `$SLACK_USER_ID`. For other capture methods, skip automatic ingestion — the builder adds links to `_inbox.md` manually or via `/learn inbox`."
+- Replace Marcus-specific Slack scraping with: "If `learning_capture_method` in builder profile is set to `slack`, scrape the builder's Slack self-DMs using their `$SLACK_USER_ID`. For other capture methods, skip automatic ingestion — the builder adds links to `_inbox.md` manually or via `/learn inbox`."
 - Replace hardcoded vault path → `$OBSIDIAN_VAULT_PATH/40-learning/`
-- Replace `Kevin` → `the builder`
+- Replace `Marcus` → `the builder`
 
 - [ ] **Step 3: Verify and stage**
 
@@ -629,9 +629,9 @@ mkdir -p ~/nsls-skills/nsls-personal-toolkit/skills/learn
 - [ ] **Step 2: Write the SKILL.md**
 
 Copy the content from Task 1's SKILL.md with these substitutions throughout:
-- Replace `Kevin` → `the builder`
+- Replace `Marcus` → `the builder`
 - Replace the hardcoded vault path `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/KP/40-learning/` → `$OBSIDIAN_VAULT_PATH/40-learning/`
-- Replace the Kevin-specific Slack scraping section with:
+- Replace the Marcus-specific Slack scraping section with:
 
 ```markdown
 ## Link Ingestion (runs during /open-day)

@@ -10,15 +10,15 @@ def _load():
 def test_list_signal_slugs_filters_eligible(monkeypatch):
     fs = _load()
     fake = {"relationships": [
-        {"name": "Adam Stone", "signal_eligible": True},
-        {"name": "Cory Capoccia", "signal_eligible": False},
+        {"name": "Adam Ferris", "signal_eligible": True},
+        {"name": "Dana Ashford", "signal_eligible": False},
         {"name": "Report A", "signal_eligible": True},
     ]}
     monkeypatch.setattr(fs, "_relationships_json", lambda: fake)
     slugs = fs.list_signal_slugs()
     names = {s["name"] for s in slugs}
-    assert names == {"Adam Stone", "Report A"}
-    assert {"name": "Adam Stone", "slug": "adam-stone"} in slugs
+    assert names == {"Adam Ferris", "Report A"}
+    assert {"name": "Adam Ferris", "slug": "adam-ferris"} in slugs
 
 
 def test_list_signal_slugs_collision_still_lists_both_and_warns(monkeypatch, capsys):

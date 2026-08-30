@@ -27,7 +27,7 @@
 
 **Interfaces:**
 - Produces: `is_signal_eligible(name: str, email: str, tracking_reason: str) -> bool` and a `"signal_eligible": bool` key on every relationship dict emitted by `list_relationships.py`.
-- Rule: `True` iff `email` ends with `@nsls.org` AND `tracking_reason != "key_relationship_external"` AND `name not in SIGNAL_EXCLUDE`. `SIGNAL_EXCLUDE` defaults to `{"Cory Capoccia"}`, overridable via env `SIGNAL_EXCLUDE` (comma-separated).
+- Rule: `True` iff `email` ends with `@nsls.org` AND `tracking_reason != "key_relationship_external"` AND `name not in SIGNAL_EXCLUDE`. `SIGNAL_EXCLUDE` defaults to `{"Dana Ashford"}`, overridable via env `SIGNAL_EXCLUDE` (comma-separated).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -43,9 +43,9 @@ def test_signal_eligible_rule():
     # direct report with nsls email -> eligible
     assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True
     # SLT peer with nsls email -> eligible
-    assert lr.is_signal_eligible("Adam Stone", "astone@nsls.org", "peer") is True
+    assert lr.is_signal_eligible("Adam Ferris", "aferris@nsls.org", "peer") is True
     # board member on the exclude list -> not eligible
-    assert lr.is_signal_eligible("Cory Capoccia", "ccapoccia@nsls.org", "key_relationship") is False
+    assert lr.is_signal_eligible("Dana Ashford", "dashford@nsls.org", "key_relationship") is False
     # external (no nsls email) -> not eligible
     assert lr.is_signal_eligible("Red External", "", "key_relationship_external") is False
     # non-nsls email -> not eligible
@@ -63,7 +63,7 @@ Expected: FAIL — `module 'list_relationships' has no attribute 'is_signal_elig
 import os
 
 SIGNAL_EXCLUDE = {
-    n.strip() for n in os.environ.get("SIGNAL_EXCLUDE", "Cory Capoccia").split(",") if n.strip()
+    n.strip() for n in os.environ.get("SIGNAL_EXCLUDE", "Dana Ashford").split(",") if n.strip()
 }
 
 
@@ -152,13 +152,13 @@ def _load(name):
 def test_gate_uses_eligibility_not_direct_report_only():
     bws = _load("biweekly_sweep")
     # a peer that is signal_eligible should be planned when signal is available
-    rel = {"name": "Adam Stone", "email": "astone@nsls.org",
+    rel = {"name": "Adam Ferris", "email": "aferris@nsls.org",
            "tracking_reason": "peer", "signal_eligible": True}
     planned = bws.plan_signal(rel, signal_available=True)
     assert planned["signal_ingest_planned"] is True
     assert planned["signal_slug"] == "adam-stone"
     # ineligible person never planned
-    rel2 = {"name": "Cory Capoccia", "email": "ccapoccia@nsls.org",
+    rel2 = {"name": "Dana Ashford", "email": "dashford@nsls.org",
             "tracking_reason": "key_relationship", "signal_eligible": False}
     assert bws.plan_signal(rel2, signal_available=True)["signal_ingest_planned"] is False
 ```
@@ -231,15 +231,15 @@ def _load():
 def test_list_signal_slugs_filters_eligible(monkeypatch):
     fs = _load()
     fake = {"relationships": [
-        {"name": "Adam Stone", "signal_eligible": True},
-        {"name": "Cory Capoccia", "signal_eligible": False},
+        {"name": "Adam Ferris", "signal_eligible": True},
+        {"name": "Dana Ashford", "signal_eligible": False},
         {"name": "Report A", "signal_eligible": True},
     ]}
     monkeypatch.setattr(fs, "_relationships_json", lambda: fake)
     slugs = fs.list_signal_slugs()
     names = {s["name"] for s in slugs}
-    assert names == {"Adam Stone", "Report A"}
-    assert {"name": "Adam Stone", "slug": "adam-stone"} in slugs
+    assert names == {"Adam Ferris", "Report A"}
+    assert {"name": "Adam Ferris", "slug": "adam-stone"} in slugs
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -429,25 +429,25 @@ def _load():
 
 def test_how_to_support_instruction_present_with_signal():
     sp = _load()
-    data = {"person_name": "Red Akasha", "relationship_type": "direct_report",
+    data = {"person_name": "Robin Alder", "relationship_type": "direct_report",
             "meeting_summaries": [{"date": "2026-07-01", "title": "1:1", "summary": "x"}],
             "signal": {"wins": [{"week": "2026-06-29", "text": "shipped auth gate"}],
                        "friction": [{"week": "2026-06-29", "text": "excluded from architecture", "category": "process"}],
                        "growth": [{"week": "2026-06-29", "text": "learning graph DBs"}],
                        "sentiment": {}, "goals": [], "submitted_weeks": ["2026-06-29"]}}
     prompt = sp.build_user_prompt(data)
-    assert "## How to Support Red Akasha" in prompt
+    assert "## How to Support Robin Alder" in prompt
     assert "Remove friction" in prompt and "Celebrate wins" in prompt and "Support growth" in prompt
     assert "Signal source:" in prompt  # provenance-line instruction
     assert "learning graph DBs" in prompt  # growth signal rendered into the prompt
 
 def test_how_to_support_present_from_meetings_without_signal():
     sp = _load()
-    data = {"person_name": "Juan Maggi", "relationship_type": "direct_report",
+    data = {"person_name": "Juan Salinas", "relationship_type": "direct_report",
             "meeting_summaries": [{"date": "2026-07-01", "title": "1:1", "summary": "x"}],
             "signal": None}
     prompt = sp.build_user_prompt(data)
-    assert "## How to Support Juan Maggi" in prompt
+    assert "## How to Support Juan Salinas" in prompt
 
 def test_no_support_section_without_any_evidence():
     sp = _load()
@@ -679,4 +679,4 @@ git commit -m "docs(person-intelligence): broadened Signal scope + score-free as
 
 **Type consistency:** `signal_eligible` (bool key) produced in Task 1, consumed in Tasks 2 & 3. `is_signal_eligible(name, email, tracking_reason)` signature consistent. `list_signal_slugs()` / `_relationships_json()` names consistent across Task 3. `extract_support_section(profile_text)` consistent in Task 5. `plan_signal(rel, signal_available)` consistent in Task 2. `build_user_prompt(data)` matches the existing signature in `synthesize_profile.py`.
 
-**Risk note for implementer:** the LLM-output tests (does the model actually emit a good `## How to Support`?) are NOT unit-testable — the unit tests assert the *prompt* contains the instructions. Validate model output once manually via an end-to-end run on one direct report (e.g. Red Akasha) after Task 4, and confirm the health score is identical whether `signal` is present or `None` in the payload (proves R4).
+**Risk note for implementer:** the LLM-output tests (does the model actually emit a good `## How to Support`?) are NOT unit-testable — the unit tests assert the *prompt* contains the instructions. Validate model output once manually via an end-to-end run on one direct report (e.g. Robin Alder) after Task 4, and confirm the health score is identical whether `signal` is present or `None` in the payload (proves R4).

@@ -5,7 +5,7 @@
 #   1. Clone thensls/nsls-knowledge into your vault (if missing), else freshen it.
 #   2. Set the KB clone's commit identity to your @nsls.org email (so Step 0's kb-repo
 #      scope matches the SLT allowlist and your commits are attributed to you).
-# Then it tells you the two things only Kevin can do (allowlist add + GitHub collaborator)
+# Then it tells you the two things only Marcus can do (allowlist add + GitHub collaborator)
 # and runs verify-setup.sh for the final verdict.
 #
 # Usage:  bash references/setup.sh [you@nsls.org]
@@ -70,7 +70,7 @@ else
     bad "clone FAILED:"
     sed 's/^/      /' /tmp/kbclone.err
     info "A 'Repository not found' / 403 means you're not a collaborator yet."
-    info "Ask Kevin to add your GitHub account to thensls/nsls-knowledge, then re-run this."
+    info "Ask Marcus to add your GitHub account to thensls/nsls-knowledge, then re-run this."
     exit 1
   fi
 fi
@@ -86,14 +86,14 @@ else
   info "or re-run: bash references/setup.sh you@nsls.org"
 fi
 
-# --- 3. Allowlist membership (the part only Kevin can grant) ---
+# --- 3. Allowlist membership (the part only Marcus can grant) ---
 if [ -n "$EMAIL" ]; then
   if git -C "$KBDIR" fetch -q origin main 2>/dev/null \
      && git -C "$KBDIR" show origin/main:_data/kb_authors.txt 2>/dev/null | grep -qxF "$EMAIL"; then
     ok "on the SLT allowlist ($EMAIL)"
   else
     bad "$EMAIL is NOT on the SLT allowlist yet."
-    info "Ask Kevin to add it to _data/kb_authors.txt in thensls/nsls-knowledge (one commit)."
+    info "Ask Marcus to add it to _data/kb_authors.txt in thensls/nsls-knowledge (one commit)."
     info "Until then your harvests route to your private LOCAL KB."
   fi
 fi

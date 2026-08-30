@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-29
 **Status:** Approved, ready for implementation plan
-**Author:** Kevin Prentiss (brainstormed with Claude)
+**Author:** Marcus Vance (brainstormed with Claude)
 **Target repos:**
 - `~/nsls-skills/nsls-personal-toolkit` (new `harvest-meeting` skill, modified `close-week` skill)
 - `~/.claude/skills/close-day/SKILL.md` (local fork — add Step 4c, port from plugin)
@@ -14,7 +14,7 @@
 
 The NSLS Knowledge Base (`thensls/nsls-knowledge`) was seeded on 2026-05-19 with 60+ topic files derived from 7,800+ SLT meeting topic mentions. Since seed: **zero content commits**. Every recent commit is an hourly `rippling-sync` org-chart refresh.
 
-Consequence: meeting decisions and project definitions from the last 10 days (including a 2026-05-26 SLT meeting Kevin described as "especially useful") sit only in Fathom transcripts and the SLT Meeting Intelligence Airtable. The employee-facing KB is a frozen snapshot, not a living map.
+Consequence: meeting decisions and project definitions from the last 10 days (including a 2026-05-26 SLT meeting Marcus described as "especially useful") sit only in Fathom transcripts and the SLT Meeting Intelligence Airtable. The employee-facing KB is a frozen snapshot, not a living map.
 
 ## Prior Work (discovered 2026-05-29 mid-implementation)
 
@@ -27,7 +27,7 @@ The prior Step 4c is preserved at `docs/specs/2026-05-29-prior-step-4c-from-9c8d
 3. Apply the sensitive-content rubric as a HARD STOP
 4. Surface up to 3 candidates as prose proposals
 5. Append approved candidates to Key Decisions / Current State
-6. Heartbeat unconditionally (per Kevin's heartbeat memory)
+6. Heartbeat unconditionally (per Marcus's heartbeat memory)
 
 Why this spec is still the right direction (v2, not redundant): the prior Step 4c had no `project_definition` / `state_change` kinds, no topic-mapping for NEW topics, no dedup against existing entries, no SLT allowlist for the other 6 SLT members, no auto-commit/push, no week-audit pipeline, and used a one-at-a-time prose UX rather than a numbered bulk-approve list. The new design carries the prior's rubric work forward and adds the missing dimensions.
 
@@ -38,7 +38,7 @@ Implications for implementation:
 
 ### What was lost
 
-The `Task 1` subagent (now reverted) reported overwriting pre-existing uncommitted local content in `skills/harvest-meeting/`. That content was never tracked in git and is irrecoverable from the repo. It may exist in Time Machine; pursuit deferred to Kevin's discretion. If recovered later and found to materially differ from this spec, treat it as a design input and revise.
+The `Task 1` subagent (now reverted) reported overwriting pre-existing uncommitted local content in `skills/harvest-meeting/`. That content was never tracked in git and is irrecoverable from the repo. It may exist in Time Machine; pursuit deferred to Marcus's discretion. If recovered later and found to materially differ from this spec, treat it as a design input and revise.
 
 ## Goal
 
@@ -46,7 +46,7 @@ Build the missing harvest pipeline so that:
 - Decisions, project definitions, and state changes from SLT members' meetings flow into the KB topic files daily.
 - A weekly audit catches what daily harvest missed and reconciles resolved Open Questions into Key Decisions.
 - The employee-facing rubric (no profit numbers, no named personnel decisions, no individual comp, etc.) is non-negotiably enforced before any KB commit.
-- All 7 SLT members are KB writers from day-1, not just Kevin.
+- All 7 SLT members are KB writers from day-1, not just Marcus.
 
 ## Non-goals (explicit)
 
@@ -62,7 +62,7 @@ Build the missing harvest pipeline so that:
 | # | Decision | Locked in |
 |---|---|---|
 | D1 | Daily writes (Step 4c) + weekly audit (Step 2b). Step 2b promotes resolved Open Questions to Key Decisions and flags stale topics. | Section 2 |
-| D2 | Source = ALL Kevin's (and any SLT member's) Fathom-recorded meetings, not just Tuesday SLT meetings. | Section 2 |
+| D2 | Source = ALL Marcus's (and any SLT member's) Fathom-recorded meetings, not just Tuesday SLT meetings. | Section 2 |
 | D3 | Filter = candidates must be **Decisions**, **Project definitions**, or **State changes**. Excludes context, status updates, opinions, plans-in-discussion. | Section 2 |
 | D4 | Routing = pass rubric → propose KB edit; fail rubric → drop (no separate destination). Personal reflection is a different pipeline. | Section 2 |
 | D5 | Approval UX = numbered list of candidates, user replies `all` / `drop N,M` / `edit N: <text>` / `cancel`. | Section 2 |
@@ -74,13 +74,13 @@ Build the missing harvest pipeline so that:
 ### KB_AUTHORS (v1, hardcoded)
 
 ```
-kprentiss@nsls.org    (Kevin Prentiss)
-mobrien@nsls.org      (Michael O'Brien)
-gtuerack@nsls.org     (Gary Tuerack)
-astone@nsls.org       (Adam Stone)
-hdarnell@nsls.org     (Heather Darnell)   # email needs adding to Airtable Members
-asmith@nsls.org       (Ashleigh Smith)
-cbyers@nsls.org       (Chelsea Byers)
+mvance@nsls.org    (Marcus Vance)
+mosei@nsls.org      (Michael Osei)
+waldrich@nsls.org     (Warren Aldrich)
+aferris@nsls.org       (Adam Ferris)
+hvoss@nsls.org     (Heather Voss)   # email needs adding to Airtable Members
+pnakamura@nsls.org       (Priya Nakamura)
+cward@nsls.org       (Chelsea Ward)
 ```
 
 ---
@@ -230,7 +230,7 @@ For modes `--date` and `--fathom-url`. Steps 1, 6, 7 are deterministic (Python +
         - 12 SLT-recorded meetings; 11 harvested (1 unharvested — see below)
       
       Unharvested meetings:
-        - 2026-05-28 "Gary 1:1": no harvest commits reference this meeting
+        - 2026-05-28 "Warren 1:1": no harvest commits reference this meeting
       
       Stale topics (last-updated > 60 days):
         - employers.md (last touched 2026-03-15)
@@ -351,9 +351,9 @@ Always runs:
 
 2. **Local-fork port** to `~/.claude/skills/close-day/SKILL.md`: copy Step 4c verbatim from plugin. Add memory entry recording the port date so future drift-reconciliation knows it's in sync.
 
-3. **Soft launch — Kevin solo for 3–5 days**: `kb_authors.txt` ships with all 7 SLT from v1 (per D8), but only Kevin is notified the pipeline exists. Kevin runs close-day with harvest on his own meetings to validate approval UX, extraction quality, and rubric behavior. The other 6 SLT could in principle trigger harvest in this window, but won't — they don't know to run it.
+3. **Soft launch — Marcus solo for 3–5 days**: `kb_authors.txt` ships with all 7 SLT from v1 (per D8), but only Marcus is notified the pipeline exists. Marcus runs close-day with harvest on his own meetings to validate approval UX, extraction quality, and rubric behavior. The other 6 SLT could in principle trigger harvest in this window, but won't — they don't know to run it.
 
-4. **Backfill 2026-05-19 → 2026-05-29 gap**: Kevin runs `/harvest-meeting --fathom-url <url>` on the high-signal meetings from this stretch (including the 2026-05-26 SLT meeting). KB feels alive on day-1 of broader rollout.
+4. **Backfill 2026-05-19 → 2026-05-29 gap**: Marcus runs `/harvest-meeting --fathom-url <url>` on the high-signal meetings from this stretch (including the 2026-05-26 SLT meeting). KB feels alive on day-1 of broader rollout.
 
 5. **Announce to other 6 SLT** via the plugin's auto-update path + a direct message describing the new flow. They run close-day → Step 4c discovers them in `kb_authors.txt` → harvest activates for them with no further config.
 
@@ -362,9 +362,9 @@ Always runs:
 ## Follow-ups (post-v1, tracked but not in scope)
 
 - Add `is_slt` checkbox field to SLT MI Airtable `Members` table (`tbl9GMiujOzOD7xXn`); populate for the 7. Migrate `kb_authors.txt` to read live from Airtable.
-- Add Heather Darnell's email to her Members record (currently missing).
-- Fix the schema doc's stale "SLT Members (for Friday Script)" section at `~/nsls-skills/slt-ops/slt-meeting-agenda/references/airtable-schema.md` — currently lists Anish (not on SLT) and is missing Heather + Chelsea.
-- Update Kevin's MEMORY.md NSLS KB section to reflect "v1 built YYYY-MM-DD" instead of "wiring is planned."
+- Add Heather Voss's email to her Members record (currently missing).
+- Fix the schema doc's stale "SLT Members (for Friday Script)" section at `~/nsls-skills/slt-ops/slt-meeting-agenda/references/airtable-schema.md` — currently lists Devan (not on SLT) and is missing Heather + Chelsea.
+- Update Marcus's MEMORY.md NSLS KB section to reflect "v1 built YYYY-MM-DD" instead of "wiring is planned."
 - Add a "current SLT roster" memory entry (the 7 names) to avoid future guessing.
 
 ---
