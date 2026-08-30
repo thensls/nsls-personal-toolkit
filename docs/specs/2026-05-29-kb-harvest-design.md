@@ -75,12 +75,12 @@ Build the missing harvest pipeline so that:
 
 ```
 mvance@nsls.org    (Marcus Vance)
-mosei@nsls.org      (Michael Osei)
+eosei@nsls.org      (Elias Osei)
 waldrich@nsls.org     (Warren Aldrich)
 aferris@nsls.org       (Adam Ferris)
 hvoss@nsls.org     (Heather Voss)   # email needs adding to Airtable Members
 pnakamura@nsls.org       (Priya Nakamura)
-cward@nsls.org       (Chelsea Ward)
+rward@nsls.org       (Rhea Ward)
 ```
 
 ---
@@ -363,7 +363,7 @@ Always runs:
 
 - Add `is_slt` checkbox field to SLT MI Airtable `Members` table (`tbl9GMiujOzOD7xXn`); populate for the 7. Migrate `kb_authors.txt` to read live from Airtable.
 - Add Heather Voss's email to her Members record (currently missing).
-- Fix the schema doc's stale "SLT Members (for Friday Script)" section at `~/nsls-skills/slt-ops/slt-meeting-agenda/references/airtable-schema.md` — currently lists Devan (not on SLT) and is missing Heather + Chelsea.
+- Fix the schema doc's stale "SLT Members (for Friday Script)" section at `~/nsls-skills/slt-ops/slt-meeting-agenda/references/airtable-schema.md` — currently lists Devan (not on SLT) and is missing two members.
 - Update Marcus's MEMORY.md NSLS KB section to reflect "v1 built YYYY-MM-DD" instead of "wiring is planned."
 - Add a "current SLT roster" memory entry (the 7 names) to avoid future guessing.
 

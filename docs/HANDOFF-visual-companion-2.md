@@ -2,11 +2,11 @@
 
 **Branch:** `pp-visual-companion` (worktree at `/Users/claw/dev/nsls-personal-toolkit-cowork`), pushed to `origin/pp-visual-companion` @ `bb60435`. Installed copy at `~/.claude/local-plugins/nsls-personal-toolkit/` is fast-forwarded to the same commit (so `open day` / `close day` in any session use this code). **212 tests pass.**
 
-**Lands in:** PR #29 (`pp-cli-visual` → `main`, open). Our branch fully contains `pp-cli-visual` (it's an ancestor). Do NOT push to `main`/`pp-cli-visual`, force-push, or open/modify the PR without Davo's explicit OK each time. Branch pushes to `origin/pp-visual-companion` are fine and expected — do them proactively after each change.
+**Lands in:** PR #29 (`pp-cli-visual` → `main`, open). Our branch fully contains `pp-cli-visual` (it's an ancestor). Do NOT push to `main`/`pp-cli-visual`, force-push, or open/modify the PR without the repo owner's explicit OK each time. Branch pushes to `origin/pp-visual-companion` are fine and expected — do them proactively after each change.
 
 ---
 
-## HOW DAVO WANTS YOU TO WORK (read first — these are hard-won)
+## HOW THE REPO OWNER WANTS YOU TO WORK (read first — these are hard-won)
 
 - **Be concise.** Lead with the answer/result + his next action. No process narration. He gets genuinely annoyed by long status dumps.
 - **NEVER open `.html`/source files for him.** Editing a template pops a "Launch preview panel" showing raw Jinja (`{% %}` — "code with percentages"); it's useless to him and irritating. **Verify ONLY with headless-Chrome screenshots of the running companion, and actually Read the screenshot yourself before claiming it looks right.** He has caught "looks fine" claims that were wrong on his screen. Take the screenshot every time; show him the file path.
@@ -18,11 +18,11 @@
 ## IMMEDIATE WORK (in order)
 
 ### 1. BUG — progress click collapses the table formatting
-**Symptom (Davo, screenshot):** on a fresh page load the one-table Command Center looks perfect, but **after clicking a progress button** the layout collapses — no gap between the hours and progress columns, a divider line reappears between Top 3 and Bonus, and the Bonus rows' hours/progress no longer align with Top 3's. Looks like "two tables again."
+**Symptom (reported with a screenshot):** on a fresh page load the one-table Command Center looks perfect, but **after clicking a progress button** the layout collapses — no gap between the hours and progress columns, a divider line reappears between Top 3 and Bonus, and the Bonus rows' hours/progress no longer align with Top 3's. Looks like "two tables again."
 
 **Root cause:** `/set-progress`, `/set-estimate`, `/delete-task`, `/add-bonus` all return `_render_task_list()` → `_components/task_rows.html`, which is a **bare `<tbody>`**, and the controls swap it with `hx-target="#tasklist-<section>" hx-swap="outerHTML"`. HTMX parsing a bare `<tbody>` fragment outside a `<table>` context hits the classic browser table-fragment pitfall — `<tbody>/<tr>/<td>` get stripped/mangled, so the swapped-in rows lose their cell structure and the table's column widths recompute wrong. That's the collapse.
 
-**Fix (make it robust — Davo called the per-tbody approach brittle, and he's right):** swap the **whole table**, not a tbody.
+**Fix (make it robust — the per-tbody approach was called brittle, and that's right):** swap the **whole table**, not a tbody.
 - Give the `<table>` a single id, e.g. `id="task-table"`.
 - Make a `_components/task_table.html` partial that renders the FULL table: `<thead>` (once) + the Top 3 `<tbody>` + the Bonus `<tbody>` (reuse `task_rows.html` for each `<tbody>`).
 - Point every control (`/set-progress`, `/set-estimate`, `/delete-task` in `task_rows.html`, and the add-bonus input in `bonus_add.html`) at `hx-target="#task-table" hx-swap="outerHTML"`.
@@ -31,10 +31,10 @@
 - Add/adjust a test asserting a progress/estimate POST returns the full `<table ... id="task-table">` (not a bare tbody).
 
 ### 2. Relabel the estimate column → "Estimated remaining time", stacked vertically
-Davo: people may read "Estimated time" as time *spent*. Make it clearly **time remaining to completion**. Column header text = **"Estimated remaining time"**, **stacked on 3 lines** (Estimated / remaining / time) — he thinks vertical stacking looks best there. It's the `<th class="tt-est">` in the table header (currently in `day.html`, will move into `task_table.html`). Keep the ⓘ timeboxing tooltip. Screenshot to confirm the stacked header aligns over the hours column.
+Feedback: people may read "Estimated time" as time *spent*. Make it clearly **time remaining to completion**. Column header text = **"Estimated remaining time"**, **stacked on 3 lines** (Estimated / remaining / time) — he thinks vertical stacking looks best there. It's the `<th class="tt-est">` in the table header (currently in `day.html`, will move into `task_table.html`). Keep the ⓘ timeboxing tooltip. Screenshot to confirm the stacked header aligns over the hours column.
 
 ### 3. Get a Codex review of this work
-Davo explicitly asked (he finds the layout brittle). The **`/codex-review`** skill exists (`skills/codex-review/SKILL.md`) — run it on the est-hours + one-table + close-day changes (e.g. review the diff `main..pp-visual-companion` for the companion/templates + server.py routes) and relay findings. He's open to setting up whatever's needed to let you review your own work regularly.
+Explicitly asked for (the layout is felt to be brittle). The **`/codex-review`** skill exists (`skills/codex-review/SKILL.md`) — run it on the est-hours + one-table + close-day changes (e.g. review the diff `main..pp-visual-companion` for the companion/templates + server.py routes) and relay findings. He's open to setting up whatever's needed to let you review your own work regularly.
 
 ## WHAT'S ALREADY DONE (this branch)
 - **Visual restyle** of the whole companion (navy shell w/ rounded frame, brand tokens, Week "coming soon" popover, state-aware open-day banner top+bottom, restyled coach-morning/coach-evening/results/energy).
@@ -45,10 +45,10 @@ Davo explicitly asked (he finds the layout brittle). The **`/codex-review`** ski
 - **open-day suggestions** — prefer curated AI set over raw carry-overs (kills reworded dupes), normalize-dedupe, never resurface deleted/done items.
 - **Permissions** — branch pushes auto-allowed; PRs/force/main gated. Global `~/.claude/CLAUDE.md` updated with the "push branches freely, PRs need OK" split.
 
-## OPEN DECISIONS (need Davo)
+## OPEN DECISIONS (need the repo owner)
 - **`CLOSE_DAY_FIX.md`** (repo root) — a stray spec another session left, accidentally committed via `git add -A`; its fix is implemented. Keep / move to `docs/` / remove?
-- **Windows test** — Davo will run it (fresh install: `install.ps1` + Git Bash `install.sh`; then `open day -t` resolves the `.exe`, serves, a close→results round-trips). Cross-platform invariants: utf-8 + `newline=""` on all writes; `bin/` vs `Scripts\*.exe` (see `docs/windows-setup.md`, commit `79025fe`).
-- **Merge `main`** before PR (we're ~73 commits behind; 3 conflicts: `CLAUDE.md`, `open-day`, `close-day` — `main` added an Apple-Health / personal-goals / `/role-coach` line AND renamed "user"→"Kevin"). **Naming decision needed:** keep `main`'s "Kevin" or our generic "builder"?
+- **Windows test** — the repo owner will run it (fresh install: `install.ps1` + Git Bash `install.sh`; then `open day -t` resolves the `.exe`, serves, a close→results round-trips). Cross-platform invariants: utf-8 + `newline=""` on all writes; `bin/` vs `Scripts\*.exe` (see `docs/windows-setup.md`, commit `79025fe`).
+- **Merge `main`** before PR (we're ~73 commits behind; 3 conflicts: `CLAUDE.md`, `open-day`, `close-day` — `main` added an Apple-Health / personal-goals / `/role-coach` line AND renamed "user"→the owner's own first name). **Naming decision needed:** keep `main`'s personal-name style or our generic "builder"?
 - **PR #29:** update it in place by fast-forwarding `origin/pp-cli-visual` to our branch (keeps its review history — `pp-cli-visual` is our ancestor), OR close it + open fresh from `pp-visual-companion`. Either way = his explicit OK to push.
 
 ## RUN / VERIFY

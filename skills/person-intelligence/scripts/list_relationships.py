@@ -271,7 +271,7 @@ def main():
     seen_names = set()
 
     # Preferred-name map, built from the vault's `type: person-redirect` stubs.
-    # Rippling stores formal names ("Jana Kessler", "Jordyn Sutter") for people who go
+    # Rippling stores formal names ("Jana Kessler", "Jamison Sutter") for people who go
     # by something else. Without this, the org-chart name and the preferred name are added as
     # TWO relationships — dedup is by email, and the key-relationship entry usually has no
     # email to match on — which double-lists the person and leaves a phantom "never

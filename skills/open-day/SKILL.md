@@ -484,7 +484,7 @@ restorative_pct = round((sleep_deep_hrs + sleep_rem_hrs) / sleep_total_hrs * 100
 
 Restorative % (deep + REM as share of total sleep) is the closest proxy to "sleep quality score" derivable from Apple Health stage data. Typical healthy range: 25-50%.
 
-**⚠️ `hrv_ms` you read in the morning is PROVISIONAL — never make a training call on it.** Apple samples HRV opportunistically (irregular background spot checks plus every Breathe session and ECG), so the daily aggregate is an average of whatever samples have landed *so far*. Early in the day only a few overnight samples exist, and overnight samples run high — so the morning value is systematically optimistic and drifts down as daytime samples accumulate. Measured on Kevin's vault: 2026-07-29 read **66** in the morning and settled at **44**; 7/20 read 106 and settled at 63; 7/24 read 70 and settled at 49. Every divergence ran high.
+**⚠️ `hrv_ms` you read in the morning is PROVISIONAL — never make a training call on it.** Apple samples HRV opportunistically (irregular background spot checks plus every Breathe session and ECG), so the daily aggregate is an average of whatever samples have landed *so far*. Early in the day only a few overnight samples exist, and overnight samples run high — so the morning value is systematically optimistic and drifts down as daytime samples accumulate. Measured on a real vault: a morning reading of **66** settled at **44**; another read 106 and settled at 63; a third read 70 and settled at 49. Every divergence ran high.
 
 So: write the morning value to frontmatter (it's the best available), but treat it as provisional. `/close-day` overwrites it with the settled aggregate the next day (its Step 5a owns that backfill).
 
@@ -611,7 +611,7 @@ The script returns JSON with `surfaced_actions` (people-coaching actions), `role
 - Hard cap: 3 across today — `🎯` actions + the `🪑` role cue combined (the script enforces this: when `role_cue` is non-null, `surfaced_actions` holds at most 2)
 - The `🪑` line is seat-coaching (from /role-coach's ledger), not person-coaching — render it last, omit when `role_cue` is null
 - Distribute across people first (one per scheduled person before stacking)
-- Two-way coaching: if your manager is in today's calendar (e.g., Gary 1:1),
+- Two-way coaching: if your manager is in today's calendar (e.g., a manager 1:1),
   their managing-up actions surface here too
 - If `sweep_status.exit_code != 0` or last sweep was >18 days ago, show a
   one-line alert: `⚠️ Last person-intelligence sweep failed/stale — run
@@ -656,7 +656,7 @@ Notes never touch the vault — both return only distilled, sensitivity-screened
 
 **Rules:**
 - One line per bucket; drop any bucket that's null for that person.
-- **🌱 Develop — deliver it with GAIN (Jack Cohen's feedback framework).** Frame toward the gain,
+- **🌱 Develop — deliver it with GAIN (Jack Donnelly's feedback framework).** Frame toward the gain,
   not the pain. Walk the four steps in order:
   - **G — Goal:** name what you *both* gain from the change ("I want us to ship faster"). Same-team signal, not a complaint.
   - **A — Actions:** observable behavior, no judgment ("the last handoff skipped the customer research").
@@ -734,7 +734,7 @@ If NO AI suggestions were seeded, skip the "Last Night's AI Suggestions" section
 - If the project is in this week's Top 5 stack rank, show the rank (`*(week rank: 3)*`).
 - If the project exists but isn't in this week's Top 5, show `*(not in week's Top 5)*` — this is an explicit signal the builder is spending a Top 3 slot on something not ranked for the week (sometimes right, sometimes a drift to flag).
 - If no project home exists (pure people work, goals, one-off tasks), omit the link and rank annotation.
-- Example: `"Get Chelsea comp package settled — [[product-team-recruiting]] *(week rank: 5)*"`
+- Example: `"Get the open ops-lead offer settled — [[product-team-recruiting]] *(week rank: 5)*"`
 
 Ask the builder to confirm the project mapping if ambiguous rather than guessing silently.
 
@@ -761,14 +761,14 @@ After the builder confirms their Top 3 and before scheduling, check whether any 
 
 Top 3 matches detected:
   [1] "Retreat logistics lockdown" → matches 4 SLT actions:
-      - rec123 "Order Thu lunch via Katie's sheet"
+      - rec123 "Order Thu lunch via the ops sheet"
       - rec456 "Bring wired setup for offsite tech"
-      - rec789 "Schedule buddy check-ins w/ Chelsea"
+      - rec789 "Schedule buddy check-ins w/ Rhea"
       - recABC "Research non-Bluetooth speaker-attributed recorder"
 
 Other SLT items ripe for promotion:
-  - recDEF "Follow up with Matt MacInnis at Rippling" (overdue 5+ weeks)
-  - recGHI "Email Anish & Heather re: Red's comp"
+  - recDEF "Follow up with our HRIS vendor rep" (overdue 5+ weeks)
+  - recGHI "Reply to the open HR question from Monday"
 
 Which should I shadow to Asana? (comma list of rec IDs, "all", or "none")
 ```

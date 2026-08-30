@@ -18,8 +18,8 @@ Scope: today's direct-report attendees only. The full-team friction scan is
 open-week's job (signal_team_summary), not a daily 10-call sweep.
 
 Usage:
-    echo "Chelsea Ward\\nTrina Boyd" | surface_management_for_day.py --people-stdin
-    surface_management_for_day.py --people "Chelsea Ward,Trina Boyd"
+    echo "Rhea Ward\\nVera Boyd" | surface_management_for_day.py --people-stdin
+    surface_management_for_day.py --people "Rhea Ward,Vera Boyd"
 
 Reads SIGNAL via fetch_signal.py --fetch (token-direct). Honors SIGNAL_INGEST.
 Output: JSON. Status → stderr.

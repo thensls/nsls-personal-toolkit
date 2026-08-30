@@ -51,7 +51,7 @@ no escalation changes, no memo. If today's evidence sharpened the queued cue, up
 2. Heartbeat what was found:
    - `Step 0: seat = <seat name> (tier <T1-T4>), horizon = <target role> (gate: <current milestone>)` or
    - `Step 0: seat = <seat>, no trajectory file — mastery mode (no horizon coaching, no prompt to create one)`
-3. **Missing role-profile.md** → run the first-run interview (see `references/coaching-pattern.md` §Interview). Phase 1 note: Kevin's files are hand-seeded; the interview is the fallback, not the norm.
+3. **Missing role-profile.md** → run the first-run interview (see `references/coaching-pattern.md` §Interview). Phase 1 note: the first builder's files are hand-seeded; the interview is the fallback, not the norm.
 4. If frontmatter `tier:` differs from the last run recorded in coaching-log.md frontmatter → archive `coaching-log.md` to `memos/archive/coaching-log-<old-seat>-<date>.md`, start a fresh ledger, and purge `~/.cache/role-coach/` entirely. Heartbeat it.
 5. Read `10-strategy/operating-memo.md` and `personal-profile.md` if present (the *person* — written only by /self-insight; this skill never edits them). Read `coaching-log.md` and note `runs:` count.
 

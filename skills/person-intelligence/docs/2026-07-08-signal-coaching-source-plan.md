@@ -28,6 +28,7 @@
 **Interfaces:**
 - Produces: `is_signal_eligible(name: str, email: str, tracking_reason: str) -> bool` and a `"signal_eligible": bool` key on every relationship dict emitted by `list_relationships.py`.
 - Rule: `True` iff `email` ends with `@nsls.org` AND `tracking_reason != "key_relationship_external"` AND `name not in SIGNAL_EXCLUDE`. `SIGNAL_EXCLUDE` defaults to `{"Dana Ashford"}`, overridable via env `SIGNAL_EXCLUDE` (comma-separated).
+  > **SUPERSEDED (2026-08-30).** This repository is public, so no name is hardcoded any more. `SIGNAL_EXCLUDE` has **no default** and must be set in `.env`; **unset fails closed** (nobody is eligible, and the script says so on stderr). The code blocks below are the original plan, kept for history — do not copy the hardcoded default back in. See `scripts/list_relationships.py` and `tests/test_list_relationships.py`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -156,7 +157,7 @@ def test_gate_uses_eligibility_not_direct_report_only():
            "tracking_reason": "peer", "signal_eligible": True}
     planned = bws.plan_signal(rel, signal_available=True)
     assert planned["signal_ingest_planned"] is True
-    assert planned["signal_slug"] == "adam-stone"
+    assert planned["signal_slug"] == "adam-ferris"
     # ineligible person never planned
     rel2 = {"name": "Dana Ashford", "email": "dashford@nsls.org",
             "tracking_reason": "key_relationship", "signal_eligible": False}
@@ -239,7 +240,7 @@ def test_list_signal_slugs_filters_eligible(monkeypatch):
     slugs = fs.list_signal_slugs()
     names = {s["name"] for s in slugs}
     assert names == {"Adam Ferris", "Report A"}
-    assert {"name": "Adam Ferris", "slug": "adam-stone"} in slugs
+    assert {"name": "Adam Ferris", "slug": "adam-ferris"} in slugs
 ```
 
 - [ ] **Step 2: Run test to verify it fails**

@@ -72,7 +72,7 @@ Description carries the Slack permalink + first-asked date.
 
 ## Limits
 
-- Cap at **10** entries; beyond that, a "and N more" line — let Kevin triage.
+- Cap at **10** entries; beyond that, a "and N more" line — let the builder triage.
 - One `to:` search + ≤40 thread reads. Weekly cadence keeps cost bounded.
 
 ## Open questions

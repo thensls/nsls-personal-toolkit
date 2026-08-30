@@ -38,7 +38,7 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
   --email {email} --list
 ```
 
-**Airtable SLT** (if SLT member -- Warren, Adam, Priya, Michael, Devan, Marcus):
+**Airtable SLT** (if SLT member -- Warren, Adam, Priya, Elias, Devan, Marcus):
 ```bash
 python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intelligence/scripts/fetch_airtable_slt.py "{name}" > /tmp/person-intel-slt.json
 ```
@@ -90,7 +90,7 @@ python3.12 ~/.claude/local-plugins/nsls-personal-toolkit/skills/person-intellige
 # Summarize each meeting (one Claude API call per meeting).
 # NOTE: fetch_fathom_1on1s.py does NOT emit person_name — you must inject it.
 # The name goes through the ENVIRONMENT, never interpolated into the -c source:
-# an apostrophe (Michael Osei) would otherwise break both the shell quoting
+# an apostrophe (e.g. Riley O'Donnell) would otherwise break both the shell quoting
 # and the Python string.
 export PI_PERSON_NAME='{Name}'
 while IFS= read -r line; do
@@ -101,7 +101,7 @@ done < /tmp/person-intel-meetings.jsonl > /tmp/person-intel-summaries.jsonl
 ```
 
 If the name itself contains an apostrophe, set it with a here-doc or `read -r`
-rather than single quotes — `export PI_PERSON_NAME="Michael Osei"`.
+rather than single quotes — `export PI_PERSON_NAME="Riley O'Donnell"`.
 
 🛑 **`person_name` is effectively required — always inject it.** `fetch_fathom_1on1s.py`
 matches on `calendar_invitees`, so the results include **group meetings** (SLT Standing,
@@ -110,8 +110,8 @@ Sprint Retro, Society Sprint Start, Manager Preview Meeting), not just 1:1s. If
 which on a group title profiles whoever dominated the conversation and writes their traits
 into this person's profile.
 
-*This happened on 2026-07-27: Taylor Reece's and Julia Renner's material landed in Lauren
-Vance's profile, and Kimberly Ortiz's in Nadia Whitfield's. Both profiles had to
+*This happened on 2026-07-27: Taylor Reece's and Camille Renner's material landed in Lauren
+Vance's profile, and Rosalind Ortiz's in Nadia Whitfield's. Both profiles had to
 be restored from backup and re-synthesized.* The script now refuses to guess when the title
 yields no name, and warns when it does infer — but the caller injecting `person_name`
 explicitly is the actual fix.
@@ -641,9 +641,9 @@ If no coaching goal exists for this person, skip the 🎯 section and focus on p
 | Dana Ashford | dashford@nsls.org, dana.ashford@gmail.com, dana@ashfordoffice.com | Fathom, Board KB |
 | Adam Ferris | (check Airtable) | SLT Airtable, People Ops |
 | Priya Nakamura | (check Airtable) | SLT Airtable, People Ops |
-| Michael Osei | (check Airtable) | SLT Airtable, People Ops |
+| Elias Osei | (check Airtable) | SLT Airtable, People Ops |
 | Devan Kapoor | (check Airtable) | SLT Airtable, People Ops, Board KB |
-| Lauren Vance | evance@nsls.org | Obsidian daily/weekly notes, cross-profile refs (contractor — not in People Ops) |
+| Lauren Vance | lvance@nsls.org | Obsidian daily/weekly notes, cross-profile refs (contractor — not in People Ops) |
 
 Update this table as you profile new people.
 

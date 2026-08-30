@@ -106,7 +106,7 @@ list_events(      ← the Google Calendar connector's tool; resolve the live mcp
 )
 ```
 
-Group events by time-of-day window + day-of-week. Identify recurring slots (same DOW + ±30min time-of-day, occurring ≥3 of past 4 weeks). Examples: "Tue 9am SLT meeting (4/4 weeks)", "Mon/Wed/Fri 7:30am walk Red (10/12 days)".
+Group events by time-of-day window + day-of-week. Identify recurring slots (same DOW + ±30min time-of-day, occurring ≥3 of past 4 weeks). Examples: "Tue 9am SLT meeting (4/4 weeks)", "Mon/Wed/Fri 7:30am dog walk (10/12 days)".
 
 **5b. Familiar routine scan:**
 
@@ -140,7 +140,7 @@ Top anchor candidates for [goal title]:
    Fit: high — exercise habits benefit from morning anchors; you already
    have a calm, predictable 30-min window here.
 
-2. **After walking Red, Mon/Wed/Fri 7:45am** (consistency: 10/12 weekdays)
+2. **After walking the dog, Mon/Wed/Fri 7:45am** (consistency: 10/12 weekdays)
    Fit: high — already physically warmed up; immediate transition.
 
 3. **End of SLT meeting, Tue 10am** (consistency: 4/4 Tuesdays)
@@ -192,7 +192,7 @@ First action this week: [specific day + time]
 Example (VO2 max):
 ```
 Weekly action: 2x zone-2 sessions (45min each) + 1x interval session (4x4, 20min)
-Anchor: After walking Red, Mon/Wed/Fri 7:45am
+Anchor: After walking the dog, Mon/Wed/Fri 7:45am
 First action this week: Wed 2026-05-27, 7:45am — zone 2 walk, 45min
 ```
 
@@ -220,7 +220,7 @@ metric_source: apple_health.vo2_max
 start: 2026-05-25
 end: 2026-06-30
 weekly_action: "2x zone-2 (45min) + 1x intervals (20min)"
-anchor: "After walking Red, Mon/Wed/Fri 7:45am"
+anchor: "After walking the dog, Mon/Wed/Fri 7:45am"
 status: active
 created: 2026-05-25
 ---

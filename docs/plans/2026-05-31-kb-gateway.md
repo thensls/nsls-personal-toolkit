@@ -478,8 +478,8 @@ import auth
 
 def test_member_for_token_hashes_and_matches():
     tok = "secret-token-123"
-    registry = {hashlib.sha256(tok.encode()).hexdigest(): {"email": "k@nsls.org", "name": "Marcus"}}
-    assert auth.member_for_token(registry, tok) == {"email": "k@nsls.org", "name": "Marcus"}
+    registry = {hashlib.sha256(tok.encode()).hexdigest(): {"email": "mvance@nsls.org", "name": "Marcus"}}
+    assert auth.member_for_token(registry, tok) == {"email": "mvance@nsls.org", "name": "Marcus"}
 
 def test_member_for_token_unknown_returns_none():
     assert auth.member_for_token({}, "nope") is None
@@ -743,7 +743,7 @@ async def test_commit_changes_happy_path():
     s = FakeSession(q)
     sha = await github_repo.commit_changes(s, "tok", "o/r", "main",
                                            {"a.md": "hello"}, "msg",
-                                           {"name": "Marcus", "email": "k@nsls.org"})
+                                           {"name": "Marcus", "email": "mvance@nsls.org"})
     assert sha == "NEWCOMMIT"
     assert s.patched[0]["sha"] == "NEWCOMMIT" and s.patched[0]["force"] is False
 
@@ -992,7 +992,7 @@ import github_repo
 def client_setup(monkeypatch):
     tok = "tok-kevin"
     monkeypatch.setattr(config, "TOKEN_REGISTRY",
-                        {hashlib.sha256(tok.encode()).hexdigest(): {"email": "k@nsls.org", "name": "Marcus"}})
+                        {hashlib.sha256(tok.encode()).hexdigest(): {"email": "mvance@nsls.org", "name": "Marcus"}})
 
     async def fake_gh_token(request): return "ghtok"
     monkeypatch.setattr(handlers, "_gh_token", fake_gh_token)
@@ -1028,7 +1028,7 @@ async def test_whoami_ok(aiohttp_client, client_setup):
     tok, _ = client_setup
     client = await aiohttp_client(handlers_app())
     r = await client.get("/kb/whoami", headers={"Authorization": f"Bearer {tok}"})
-    assert r.status == 200 and (await r.json())["email"] == "k@nsls.org"
+    assert r.status == 200 and (await r.json())["email"] == "mvance@nsls.org"
 
 
 async def test_commit_dry_run_does_not_commit(aiohttp_client, client_setup):
@@ -1052,7 +1052,7 @@ async def test_commit_real_attributes_to_member(aiohttp_client, client_setup):
     r = await client.post("/kb/commit", headers={"Authorization": f"Bearer {tok}"}, json=body)
     data = await r.json()
     assert data["commit_sha"] == "NEWSHA"
-    assert captured["author"] == {"name": "Marcus", "email": "k@nsls.org"}
+    assert captured["author"] == {"name": "Marcus", "email": "mvance@nsls.org"}
     assert "- 2026-05-26: New one ([▶](https://f/x?timestamp=5))" in captured["changed"]["b2c.md"]
 
 
@@ -1325,10 +1325,10 @@ Expected: your `{email, name, is_slt:true}`. If 401, the token is wrong — ask 
 ```bash
 PYTHONPATH=/tmp/pptx_deps python3.12 - <<'PY'
 import secrets, hashlib, json
-slt = {"mvance@nsls.org":"Marcus Vance","mosei@nsls.org":"Michael Osei",
+slt = {"mvance@nsls.org":"Marcus Vance","eosei@nsls.org":"Elias Osei",
        "waldrich@nsls.org":"Warren Aldrich","aferris@nsls.org":"Adam Ferris",
        "hvoss@nsls.org":"Heather Voss","pnakamura@nsls.org":"Priya Nakamura",
-       "cward@nsls.org":"Chelsea Ward"}
+       "rward@nsls.org":"Rhea Ward"}
 registry, plain = {}, {}
 for email, name in slt.items():
     t = secrets.token_urlsafe(32)

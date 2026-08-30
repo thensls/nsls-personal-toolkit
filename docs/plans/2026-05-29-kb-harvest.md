@@ -99,12 +99,12 @@ Path: `~/nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt
 # v1 hardcode — eventually replaced by Airtable `is_slt` field lookup.
 # One email per line, # comments, blank lines ignored.
 mvance@nsls.org
-mosei@nsls.org
+eosei@nsls.org
 waldrich@nsls.org
 aferris@nsls.org
 hvoss@nsls.org
 pnakamura@nsls.org
-cward@nsls.org
+rward@nsls.org
 ```
 
 - [ ] **Step 3: Write skeleton SKILL.md with frontmatter and mode dispatch stub**
@@ -509,12 +509,12 @@ Transcript: <full transcript>
 ### Example 2: A project definition
 
 **Transcript excerpt:**
-> Heather (15:22): "I want to formalize the new-hire 90-day check-in program. Red will own the data instrumentation; I'll own the HR side. We're scoping for a Q3 launch."
+> Heather (15:22): "I want to formalize the new-hire 90-day check-in program. Robin will own the data instrumentation; I'll own the HR side. We're scoping for a Q3 launch."
 
 **Expected output:**
 ```json
 [{"kind": "project_definition",
-  "text": "90-day check-in program: Red owns instrumentation, Heather owns HR side, Q3 2026 launch target",
+  "text": "90-day check-in program: Robin owns instrumentation, Heather owns HR side, Q3 2026 launch target",
   "fathom_timestamp_sec": 922,
   "speaker": "Heather Voss",
   "confidence": 0.9}]
@@ -706,7 +706,7 @@ RULES:
 
 ### Example 3: Project definition → NEW topic
 
-**Candidate:** `{"kind": "project_definition", "text": "90-day check-in program: Red owns instrumentation, Heather owns HR side, Q3 launch", ...}`
+**Candidate:** `{"kind": "project_definition", "text": "90-day check-in program: Robin owns instrumentation, Heather owns HR side, Q3 launch", ...}`
 
 No existing topic exists for "new-hire onboarding" or "90-day check-in". Closest topics: `people-hr`, `employees`. Neither is project-specific.
 
@@ -1117,7 +1117,7 @@ Meeting metadata (mimics Fathom output shape):
 [22:05] Heather (joined late): "Also wanted to flag — Q1 net margin was 14.2%, up from 11.8% in Q4. Strongest in two years."
 [22:30] Marcus: "Great. Let's hold that detail for the board, not the company-wide update."
 
-[30:00] Adam: "One more — let's start a 90-day check-in program. Red owns instrumentation. Heather owns the HR side. Q3 launch."
+[30:00] Adam: "One more — let's start a 90-day check-in program. Robin owns instrumentation. Heather owns the HR side. Q3 launch."
 [30:45] Marcus: "Yes. Good. Make it real."
 
 ## Expected harvest output (for verification)
@@ -1128,7 +1128,7 @@ Should produce 4 candidates, 3 KB-eligible, 1 rubric-dropped:
 |---|---|---|---|---|
 | 1 | Pausing B2B campaign through July | b2b-conversion | key_decisions | PASS |
 | 2 | Chapter health 3→4 tiers (added orange) | chapter-health | current_state | PASS |
-| 3 | 90-day check-in program: Red+Heather, Q3 launch | NEW: ninety-day-check-in-program | key_decisions | PASS |
+| 3 | 90-day check-in program: Robin+Heather, Q3 launch | NEW: ninety-day-check-in-program | key_decisions | PASS |
 | 4 | Q1 net margin 14.2% (up from 11.8%) | finance-operations | — | DROP_UNSAFE (profit) |
 ```
 
@@ -1215,7 +1215,7 @@ The skill should:
     - 3 tiers (green/yellow/red)
     + 4 tiers (green/yellow/orange/red)
 [3] 🆕 NEW: ninety-day-check-in-program.md (parent: people-hr)
-    + Key Decision: 2026-05-26: 90-day check-in program — Red owns instrumentation, Heather owns HR, Q3 launch
+    + Key Decision: 2026-05-26: 90-day check-in program — Robin owns instrumentation, Heather owns HR, Q3 launch
 ⚠ 1 candidate dropped: "Q1 net margin 14.2%" (profit number)
 ```
 
@@ -1702,9 +1702,9 @@ Local fork is not under git management. Memory edit is a separate concern from p
 >    "Ai Builder Governance"; acronyms (AI, B2B, B2C, SNT, FOL) mistitle. Fixed the one live file by
 >    hand. **Follow-up:** add an acronym-aware title map to Step 8's scaffold, or prompt for the H1.
 >
-> Meetings NOT harvested (excluded as low-KB-signal / mostly never-write): CEO-transition 1:1s (Adam,
-> Dana), coaching/relationship 1:1s (Red ×3, Jack), Warren/Marcus board-budget (financial-figure heavy).
-> One harvested meeting (WGU/Priya impromptu) yielded 0 candidates — pure exploratory swirl.
+> Meetings NOT harvested (excluded as low-KB-signal / mostly never-write): several leadership and
+> coaching 1:1s, and one finance-heavy review. One harvested impromptu meeting yielded 0 candidates —
+> pure exploratory swirl.
 >
 > Original step-by-step (kept for reference):
 
@@ -1760,7 +1760,7 @@ git commit -m "docs(plans): mark KB harvest plan completed; backfill applied" &&
 
 - [ ] **Step 5: Announce to the other 6 SLT**
 
-(Out of code scope; Marcus sends a Slack DM or 1:1 mention to Michael, Warren, Adam, Heather, Priya, Chelsea explaining the new flow.)
+(Out of code scope; Marcus sends a Slack DM or 1:1 mention to the other six members explaining the new flow.)
 
 ---
 
@@ -1781,39 +1781,40 @@ Create: `/Users/k/.claude/projects/-Users-k/memory/project_slt_roster.md`
 ```markdown
 ---
 name: project-slt-roster
-description: NSLS SLT (Senior Leadership Team) roster as of 2026-05-29 — 7 members
+description: Leadership-team roster — one entry per member (illustrative shape)
 metadata:
   type: project
 ---
 
-NSLS SLT, as of 2026-05-29, has 7 members:
+The leadership-team roster. Fill in the real names, roles and as-of date from the
+live source; the entries below are a placeholder shape only.
 
-1. Marcus Vance (mvance@nsls.org) — Head of Product & Technology
-2. Michael Osei (mosei@nsls.org) — Strategic Advisory
-3. Warren Aldrich (waldrich@nsls.org) — Founder & Interim CEO
-4. Adam Ferris (aferris@nsls.org) — Head of Marketing
-5. Heather Voss (hvoss@nsls.org — needs adding to Airtable Members record) — Director, Human Resources
-6. Priya Nakamura (pnakamura@nsls.org) — VP of Client Services
-7. Chelsea Ward (cward@nsls.org) — Fractional VP of Operations (FTE go/no-go 2026-06-27)
+1. Marcus Vance (mvance@nsls.org) — <role>
+2. Elias Osei (eosei@nsls.org) — <role>
+3. Warren Aldrich (waldrich@nsls.org) — <role>
+4. Adam Ferris (aferris@nsls.org) — <role>
+5. Heather Voss (hvoss@nsls.org — needs adding to Airtable Members record) — <role>
+6. Priya Nakamura (pnakamura@nsls.org) — <role>
+7. Rhea Ward (rward@nsls.org) — <role>
 
-**Note:** Devan Kapoor is NOT on SLT (memory previously had this wrong). He's the CFO and attends some meetings.
+**Note:** Devan Kapoor is NOT on the leadership team (memory previously had this wrong) but attends some meetings.
 
 This roster is the hardcoded source for `kb_authors.txt` in [[nsls-builder-toolkit]] until `is_slt` field lands on the SLT MI Airtable Members table.
 ```
 
 Add a pointer to MEMORY.md:
 ```
-- [Canonical SLT roster (7 members, 2026-05-29)](project_slt_roster.md) — Marcus, Michael, Warren, Adam, Heather, Priya, Chelsea; NOT Devan
+- [Canonical SLT roster](project_slt_roster.md) — the current members; NOT Devan
 ```
 
 - [ ] **Step 3: Fix the stale SLT roster in slt-ops schema doc**
 
-Edit `~/nsls-skills/slt-ops/slt-meeting-agenda/references/airtable-schema.md` — the "SLT Members (for Friday Script)" table. Remove Devan, add Heather and Chelsea, match the canonical 7.
+Edit `~/nsls-skills/slt-ops/slt-meeting-agenda/references/airtable-schema.md` — the "SLT Members (for Friday Script)" table. Remove Devan, add the two missing members, match the canonical 7.
 
 ```bash
 cd ~/nsls-skills/slt-ops
 git add slt-meeting-agenda/references/airtable-schema.md
-git commit -m "fix(schema): update SLT roster to canonical 7 (no Devan; +Heather, +Chelsea)"
+git commit -m "fix(schema): update SLT roster to canonical 7 (no Devan; +2 members)"
 git push origin main
 ```
 

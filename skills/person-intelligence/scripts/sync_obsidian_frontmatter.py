@@ -118,7 +118,7 @@ def canonical_from_redirect(text):
 def build_redirect_map(people_dir):
     """Map every redirect's own name -> the canonical (preferred) name.
 
-    Rippling stores formal names ("Jordyn Sutter", "Jana Kessler") for people who
+    Rippling stores formal names ("Jamison Sutter", "Jana Kessler") for people who
     go by a preferred name ("Jamie Sutter", "Robin Alder"). Without this map the sync
     writes the Rippling spelling into every report's `manager:` field, silently reverting
     the preferred name across the vault.
@@ -291,7 +291,7 @@ def build_email_index(people_dir):
         except (UnicodeDecodeError, OSError):
             continue
         # Redirect stubs carry the canonical person's email on purpose. Indexing them
-        # lets filename sort order decide which file wins — that is how "Jordyn
+        # lets filename sort order decide which file wins — that is how "Jamison
         # Sutter.md" beat "Jamie Sutter.md". Never index a redirect.
         if is_redirect(text):
             continue
