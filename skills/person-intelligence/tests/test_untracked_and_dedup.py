@@ -8,7 +8,7 @@ the roster silently contains the wrong people and reports success either way.
 filesystem-only). The dedup rules are exercised end-to-end through the script,
 because they live inside `main()`'s closure.
 
-Run: python3.12 -m pytest skills/person-intelligence/tests/test_untracked_and_dedup.py -q
+Run: python3 -m pytest skills/person-intelligence/tests/test_untracked_and_dedup.py -q
 """
 
 import json

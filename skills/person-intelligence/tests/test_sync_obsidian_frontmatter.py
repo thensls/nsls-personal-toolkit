@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.12
+#!/usr/bin/env python3
 """Tests for sync_obsidian_frontmatter.py.
 
 The contract under test is the **non-destructive** property: the sync may only
@@ -6,7 +6,7 @@ change frontmatter fields in its allowlist. Everything else — body content,
 non-allowlisted frontmatter, comment lines, blank lines — must survive byte-
 identically.
 
-Run: python3.12 test_sync_obsidian_frontmatter.py
+Run: python3 test_sync_obsidian_frontmatter.py
 """
 
 import json
@@ -96,11 +96,11 @@ resolve_user.ORG_CHART_PATHS = [Path({str(chart_path)!r})]
 import sync_obsidian_frontmatter
 sync_obsidian_frontmatter.main()
 """
-    cmd = ["python3.12", "-c", wrapper]
+    cmd = [sys.executable, "-c", wrapper]
     if dry_run:
-        cmd = ["python3.12", "-c", wrapper.replace("sync_obsidian_frontmatter.main()", "import sys; sys.argv = ['sync_obsidian_frontmatter.py', '--dry-run']; sync_obsidian_frontmatter.main()")]
+        cmd = [sys.executable, "-c", wrapper.replace("sync_obsidian_frontmatter.main()", "import sys; sys.argv = ['sync_obsidian_frontmatter.py', '--dry-run']; sync_obsidian_frontmatter.main()")]
     else:
-        cmd = ["python3.12", "-c", wrapper.replace("sync_obsidian_frontmatter.main()", "import sys; sys.argv = ['sync_obsidian_frontmatter.py']; sync_obsidian_frontmatter.main()")]
+        cmd = [sys.executable, "-c", wrapper.replace("sync_obsidian_frontmatter.main()", "import sys; sys.argv = ['sync_obsidian_frontmatter.py']; sync_obsidian_frontmatter.main()")]
     return subprocess.run(cmd, env=env, capture_output=True, text=True)
 
 
