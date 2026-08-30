@@ -42,7 +42,15 @@ This mirrors `harvest-meeting`'s Step 0 identity resolution — same allowlist f
 PYTHONPATH=/tmp/pptx_deps python3.12 -c "
 import os, subprocess, sys, pathlib, re, json
 
+vault = pathlib.Path(os.environ.get('OBSIDIAN_VAULT_PATH', ''))
+kb_dir = vault / '60-nsls-knowledge'
+
+# Allowlist resolution: the LIVE list in the KB repo is the source of truth. The
+# copy shipped in this toolkit is deliberately EMPTY because this repo is PUBLIC
+# and a populated copy is an SLT roster. /kb-owners always has the KB clone (it
+# reads the KB), so it can and must prefer the live file.
 candidates_paths = [
+    kb_dir / '_data/kb_authors.txt',
     pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
     pathlib.Path.home() / '.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
 ]
@@ -51,6 +59,15 @@ authors_file = pathlib.Path(override) if override and pathlib.Path(override).exi
 if not authors_file:
     print('FATAL: kb_authors.txt not found (shared with harvest-meeting)'); sys.exit(2)
 authors = {l.strip() for l in authors_file.read_text().splitlines() if l.strip() and not l.startswith('#')}
+allowlist_empty = not authors
+print('allowlist_source: ' + str(authors_file))
+print('allowlist_entries: ' + str(len(authors)))
+if allowlist_empty:
+    # An empty allowlist makes every writer look non-SLT. That is a BLIND check,
+    # not a clean negative, and it must never be reported as one.
+    print('ALLOWLIST EMPTY — this check is blind, not negative.')
+    print('  The live list is _data/kb_authors.txt in thensls/nsls-knowledge.')
+    print('  Clone/pull the KB repo into $OBSIDIAN_VAULT_PATH/60-nsls-knowledge and re-run.')
 
 def git_email(*scope):
     try: return subprocess.check_output(['git', *scope, 'config', 'user.email'], text=True, stderr=subprocess.DEVNULL).strip()
@@ -64,8 +81,6 @@ def env_file_email(path, *keys):
         if m: return m.group(1).strip()
     return ''
 
-vault = pathlib.Path(os.environ.get('OBSIDIAN_VAULT_PATH', ''))
-kb_dir = vault / '60-nsls-knowledge'
 toolkit_dir = pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit'
 env_candidates = [
     pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/.env',
@@ -89,7 +104,7 @@ print(f'slt_writer: {is_slt}')
 if is_slt: print(f'matched_via: {matched[0][0]} ({matched[0][1]})')
 
 nsls_emails = sorted({e for _, e in scopes if e and e.endswith('@nsls.org')})
-looks_misconfigured = (not is_slt) and bool(nsls_emails)
+looks_misconfigured = allowlist_empty or ((not is_slt) and bool(nsls_emails))
 print(f'looks_misconfigured: {looks_misconfigured}')
 if nsls_emails: print('nsls_emails_detected: ' + ', '.join(nsls_emails))
 

@@ -355,6 +355,23 @@ if authors_path is None:
 
 authors = {line.strip() for line in authors_path.read_text(encoding='utf-8-sig').splitlines()
            if line.strip() and not line.startswith('#')}
+
+if not authors:
+    # The shipped allowlist is deliberately EMPTY (this repo is PUBLIC; a
+    # populated copy is an SLT roster). /personal-setup runs BEFORE the KB repo
+    # is cloned, so unlike /kb-owners it has no live list to fall back to.
+    #
+    # Reporting `is_slt: False` here would be the exact failure the comment
+    # above describes -- everyone silently non-SLT -- so report UNKNOWN instead.
+    # Blind is not the same as negative.
+    print('is_slt: unknown')
+    print(f'builder_email: {builder_email}')
+    print(f'authors_known: 0 (from {authors_path} -- intentionally empty)')
+    print('reason: the shipped allowlist carries no entries by design; the live')
+    print('  list is _data/kb_authors.txt in thensls/nsls-knowledge (private).')
+    print('  ASK the builder whether they are on SLT rather than assuming not.')
+    sys.exit(0)
+
 is_slt = builder_email in authors
 print(f'is_slt: {is_slt}')
 print(f'builder_email: {builder_email}')
@@ -363,6 +380,13 @@ PYEOF
 ```
 
 > **Verify the check actually ran (Windows).** A bare `python3` on stock Windows 11 is the Microsoft-Store stub that prints *"Python was not found…"* and **exits 0** — so an empty result (no `is_slt:` line) means the check **did not run**, not that the builder is non-SLT. If you don't see an `is_slt:`/`FATAL:` line, re-run with the full interpreter path (`"%LOCALAPPDATA%\Programs\Python\Python312\python.exe"`) before trusting the outcome — never conclude "not SLT" from silence.
+
+**Three outcomes, not two.** `is_slt: unknown` means the check ran and could not
+decide -- the shipped allowlist is intentionally empty and no live list is
+reachable before the KB clone exists. Do **not** treat it as `False`: ask the
+builder directly ("Are you on the SLT? I can't tell from here"), and configure the
+KB pipeline if they say yes. Silently skipping KB setup for a real SLT member is
+the failure this whole block exists to prevent.
 
 If `is_slt: True`, the builder is on SLT and needs the KB harvest pipeline configured so `/close-day` Step 4c and `/harvest-meeting` don't silently no-op for them:
 

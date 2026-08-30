@@ -24,4 +24,16 @@
 #
 # The file must continue to EXIST: Step 0 exits 2 if it is missing entirely.
 #
+# THREE SKILLS READ THIS FILE, not one. The reasoning above covers Step 0 of
+# /harvest-meeting only; a Macroscope review on PR #61 caught the other two:
+#   - /harvest-meeting  reads the LIVE list from the KB clone. Empty here = safe.
+#   - /kb-owners        now prefers $OBSIDIAN_VAULT_PATH/60-nsls-knowledge/
+#                       _data/kb_authors.txt (it always has the clone) and
+#                       reports an empty allowlist as BLIND, not as "not SLT".
+#   - /personal-setup   runs BEFORE the clone exists, so it has no live list at
+#                       all. It now reports `is_slt: unknown` and asks, rather
+#                       than reporting False for everyone.
+# Before adding a fourth reader: an empty allowlist must never be reportable as
+# a clean negative. Blind is not the same as negative.
+#
 # Format, if it were ever used: one email per line, # comments, blanks ignored.
