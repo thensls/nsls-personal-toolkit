@@ -206,6 +206,54 @@ as?" — and validate before writing, never store an unverified guess:
 Skippable if they don't use GitHub yet — leave it empty and note they can
 re-run `/personal-setup` (or the org `/setup`) after their first PR.
 
+### Display Name and Privacy Gates
+
+Two `person-intelligence` keys. Both fail **safe but quiet** when unset, which
+is exactly why they must be asked for rather than skipped — a builder who never
+sets them gets a subsystem that silently does nothing and looks fine.
+
+**`OPERATING_USER_NAME` — your name as it appears in calendar titles.**
+
+`summarize_meeting.py` splits a title like `Ada Lovelace / Grace Hopper 1:1`
+into "them" and "me". Without knowing which half is you, the first name-shaped
+half wins — wrong half the time — so an unset value **disables title inference
+entirely** and every meeting returns `UNKNOWN_SUBJECT`.
+
+Propose variants from the name on the signed-in account and ask them to correct
+it: full name, first name, and initials, comma-separated.
+
+> "Your calendar titles — do they say **Ada Lovelace**, **Ada**, or **AL**?
+> List every form you actually see; I'll store all of them."
+
+Write every variant they name. A missing variant is the sharp edge here: with
+only `Ada Lovelace` stored, a title reading `Ada / Grace Hopper` returns **Ada**
+— the builder's own short name — as the meeting subject.
+
+**`SIGNAL_EXCLUDE` — people never swept into coaching profiles.**
+
+Board members and anyone else whose Quick Notes must not reach a profile.
+
+**This one fails CLOSED, and the distinction is the whole point:** an **absent**
+key means nobody is `signal_eligible` (ingest off); a **present but empty** key
+(`SIGNAL_EXCLUDE=`) is a deliberate "exclude nobody" and makes every eligible
+`@nsls.org` relationship sweepable. Never describe either as "leave it blank" —
+that phrase maps to both, and guessing wrong in the permissive direction puts
+board members into coaching profiles.
+
+Offer the three outcomes explicitly and write exactly what they pick:
+
+> "Anyone whose Quick Notes should never reach a coaching profile — board
+> members, usually?
+>
+> - **Give me names** → I write `SIGNAL_EXCLUDE=<names>`; ingest runs, those
+>   people excluded.
+> - **'Keep it off'** → I leave the key out entirely; Signal ingest stays off.
+> - **'Nobody'** → I write `SIGNAL_EXCLUDE=` with no value; ingest runs with
+>   **no** exclusions at all."
+
+Then say back which of the three you wrote. Omitting the key and writing it
+empty look nearly identical in a diff and behave as opposites.
+
 ## Step 3: Optional Integrations — ~3 min
 
 ### Fathom (meetings)
@@ -296,6 +344,16 @@ GITHUB_USERNAME=<provided or empty>
 # Fathom (needed for /close-day meeting summaries, /person-intelligence 1:1 transcripts)
 FATHOM_API_KEY=<provided or empty>
 
+# Person Intelligence — identity + privacy gates
+# Your name as it appears in calendar titles, comma-separated variants.
+# UNSET disables 1:1 subject inference (every title returns UNKNOWN_SUBJECT).
+OPERATING_USER_NAME=<provided>
+# Names never swept into coaching profiles (board members, etc).
+# OMIT THIS KEY ENTIRELY to keep Signal ingest off (fails closed).
+# Present-but-empty (SIGNAL_EXCLUDE=) is the OPPOSITE: ingest on, nobody
+# excluded. Write whichever the builder actually chose -- see Step 2.
+SIGNAL_EXCLUDE=<names, or omit the whole line to keep ingest off>
+
 # Airtable (optional — only needed for writing to Airtable)
 AIRTABLE_API_KEY=<provided or empty>
 PEOPLE_OPS_BASE_ID=appnXPTu01esWWbrK
@@ -343,7 +401,10 @@ env_path = pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/.e
 # is harmless on BOM-less files — read everything user-written this way.
 env = env_path.read_text(encoding='utf-8-sig') if env_path.exists() else ''
 m = re.search(r'^BUILDER_EMAIL=(.+)$', env, re.MULTILINE)
-builder_email = m.group(1).strip() if m else ''
+# Strip surrounding quotes: .env values are commonly written BUILDER_EMAIL="a@b".
+# A quoted address matches no allowlist entry, so is_slt would read False for a
+# genuine SLT member -- the same silent-negative this block exists to prevent.
+builder_email = m.group(1).strip().strip('"').strip("'") if m else ''
 
 if authors_path is None:
     # Fail LOUDLY — never silently treat everyone as non-SLT (the exact failure

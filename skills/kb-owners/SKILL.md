@@ -77,8 +77,17 @@ def env_file_email(path, *keys):
     try: text = pathlib.Path(path).read_text()
     except Exception: return ''
     for key in keys:
-        m = re.search(rf'^{re.escape(key)}=(.+)\$', text, re.MULTILINE)
-        if m: return m.group(1).strip()
+        # No end anchor on purpose. This block runs via python3.12 -c \"...\",
+        # so a '$' here is shell-escaping-sensitive: '\$' reaches Python as a
+        # LITERAL dollar sign and matches nothing. [^\n]+ is greedy to the end
+        # of the line and behaves identically whether this code is run through
+        # the shell or copy-pasted straight into Python.
+        m = re.search(rf'^{re.escape(key)}=([^\n]+)', text, re.MULTILINE)
+        # .env values are commonly quoted. A quoted email can never match an
+        # allowlist entry, which kills this fallback scope SILENTLY -- it just
+        # looks like the builder isn't on the list. load_dotenv_local.py strips
+        # them; every hand-rolled .env parser must do the same.
+        if m: return m.group(1).strip().strip(chr(34) + chr(39))
     return ''
 
 toolkit_dir = pathlib.Path.home() / 'nsls-skills/nsls-personal-toolkit'
