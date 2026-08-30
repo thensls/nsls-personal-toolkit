@@ -189,12 +189,21 @@ def parse_daily_note(md: str) -> DayParse:
             if stripped.startswith("-") or "20-projects/" in stripped:
                 skipped.append(stripped)
             continue
+        offense_pct = int(match.group("offense"))
+        if not 0 <= offense_pct <= 100:
+            # The regex accepts \d{1,3}, so '150% offense' has the SHAPE of a
+            # row but cannot be a percentage. Report it as a skipped line so
+            # it surfaces at the confirm gate, rather than parsing
+            # "successfully" and reaching aggregate(), where it would compute
+            # negative defense hours out of a number nobody ever read.
+            skipped.append(stripped)
+            continue
         quadrant_raw = match.group("quadrant")
         quadrant = quadrant_raw if quadrant_raw in _VALID else None
         project_weeks.append(ProjectWeek(
             project=match.group("slug"),
             quadrant=quadrant,
-            offense_pct=int(match.group("offense")),
+            offense_pct=offense_pct,
             hours=float(match.group("hours")),
         ))
     return DayParse(project_weeks, skipped)
@@ -224,6 +233,22 @@ def _empty_by_quadrant_mode() -> dict[str, dict[str, float]]:
 
 
 @dataclass(frozen=True)
+class RejectedRow:
+    """A row aggregate() refused to trust, kept with the reason it failed.
+
+    Silent correction is the exact failure this feature exists to catch, so a
+    malformed row is never quietly fixed up: its hours are routed to
+    unresolved (or, when the hours themselves are the malformed part, left
+    out of the week entirely) AND the raw row comes back here so the caller
+    can show it. A rejected row the caller never renders is the same silent
+    failure one layer up -- close-week Step 2a must print these at its
+    confirm gate."""
+    kind: str        # "project" | "meeting"
+    row: dict        # the raw row's values, JSON-safe, exactly as handed in
+    reason: str      # one line, naming the field and the value that failed
+
+
+@dataclass(frozen=True)
 class WeekTotals:
     by_quadrant: dict[str, float]
     by_mode: dict[str, float]
@@ -238,21 +263,77 @@ class WeekTotals:
     # (history entries) does not have to supply it.
     by_quadrant_mode: dict[str, dict[str, float]] = field(
         default_factory=_empty_by_quadrant_mode)
+    # Rows aggregate() would not trust, with the reason each failed. Empty on
+    # a clean week. Defaulted for the same reason as by_quadrant_mode: a
+    # caller building a WeekTotals by hand (history entries) has no rows.
+    rejected: tuple[RejectedRow, ...] = ()
+
+
+def _project_row_dict(pw: ProjectWeek) -> dict:
+    return {"project": pw.project, "quadrant": pw.quadrant,
+            "offense_pct": pw.offense_pct, "hours": pw.hours}
+
+
+def _meeting_row_dict(row: MeetingRow) -> dict:
+    res = row.resolution
+    return {"label": row.label, "quadrant": res.quadrant,
+            "resolved_by": res.resolved_by, "hours": row.hours,
+            "splits": [[q, s] for q, s in res.splits]}
 
 
 def aggregate(project_weeks: list[ProjectWeek],
               meeting_rows: list[MeetingRow]) -> WeekTotals:
     """Mode comes only from project work. A meeting has a quadrant but no
     offense/defense reading — inferring one from a transcript would be a
-    judgment this module deliberately does not make."""
+    judgment this module deliberately does not make.
+
+    THIS FUNCTION IS THE VALIDATION BOUNDARY. Every caller funnels through
+    it — direct callers, summarize()'s JSON payload, and the CLI — so the
+    checks live here and nowhere else. Validating per entry point is what
+    already failed once: an out-of-vocabulary split quadrant was guarded in
+    summarize() only and stayed live in aggregate(), where it raised
+    KeyError. What is checked:
+
+      * quadrant (and every split quadrant) is in the five-value vocabulary
+      * 0 <= offense_pct <= 100
+      * hours >= 0, on project rows and meeting rows alike
+      * every split share >= 0
+
+    A row that fails is REPORTED, never silently corrected: its hours go to
+    unresolved and the raw row comes back in WeekTotals.rejected with the
+    reason. The one exception is negative hours, which cannot be routed
+    anywhere without pushing unresolved_hours below zero — such a row is
+    left out of total_hours entirely and reported. Either way
+    sum(by_quadrant) + unresolved_hours == total_hours still holds, and
+    unresolved_hours is never negative.
+
+    A quadrant of None is NOT a rejection: it is the documented
+    'uncategorized' project row and the documented unresolved meeting, both
+    of which route to unresolved by design.
+    """
     by_quadrant = _empty_by_quadrant()
     by_quadrant_mode = _empty_by_quadrant_mode()
     by_mode = {"offense": 0.0, "defense": 0.0}
     unresolved = 0.0
     total = 0.0
+    rejected: list[RejectedRow] = []
 
     for pw in project_weeks:
+        if pw.hours < 0:
+            # Not routable: adding negative hours to unresolved would render
+            # a negative unresolved figure. Drop it from the week and say so.
+            rejected.append(RejectedRow(
+                "project", _project_row_dict(pw),
+                f"hours is negative ({pw.hours}) — row excluded from the week"))
+            continue
         total += pw.hours
+        if not 0 <= pw.offense_pct <= 100:
+            rejected.append(RejectedRow(
+                "project", _project_row_dict(pw),
+                f"offense_pct {pw.offense_pct} is outside 0-100 — hours "
+                "routed to unresolved, no mode recorded"))
+            unresolved += pw.hours
+            continue
         offense_hours = pw.hours * pw.offense_pct / 100.0
         defense_hours = pw.hours * (100 - pw.offense_pct) / 100.0
         if pw.quadrant in by_quadrant:
@@ -260,15 +341,44 @@ def aggregate(project_weeks: list[ProjectWeek],
             by_quadrant_mode[pw.quadrant]["offense"] += offense_hours
             by_quadrant_mode[pw.quadrant]["defense"] += defense_hours
         else:
+            if pw.quadrant is not None:
+                rejected.append(RejectedRow(
+                    "project", _project_row_dict(pw),
+                    f"quadrant {pw.quadrant!r} is outside the vocabulary — "
+                    "hours routed to unresolved"))
             unresolved += pw.hours
         by_mode["offense"] += offense_hours
         by_mode["defense"] += defense_hours
 
     for row in meeting_rows:
-        total += row.hours
         res = row.resolution
+        if row.hours < 0:
+            rejected.append(RejectedRow(
+                "meeting", _meeting_row_dict(row),
+                f"hours is negative ({row.hours}) — row excluded from the week"))
+            continue
+        total += row.hours
         if res.splits:
-            splits = res.splits
+            negative = [s for _, s in res.splits if s < 0]
+            if negative:
+                # A negative share subtracts hours from a quadrant that was
+                # never worked. The reconciliation invariant would still hold
+                # arithmetically while every rendered number was nonsense, so
+                # the whole row goes to unresolved rather than part of it.
+                rejected.append(RejectedRow(
+                    "meeting", _meeting_row_dict(row),
+                    f"split share is negative ({negative[0]}) — whole row "
+                    "routed to unresolved"))
+                unresolved += row.hours
+                continue
+            splits = tuple((q, s) for q, s in res.splits if q in by_quadrant)
+            dropped = [q for q, _ in res.splits if q not in by_quadrant]
+            if dropped:
+                rejected.append(RejectedRow(
+                    "meeting", _meeting_row_dict(row),
+                    "split quadrant(s) outside the vocabulary: "
+                    + ", ".join(repr(q) for q in dropped)
+                    + " — that share routed to unresolved"))
             apportioned = sum(share for _, share in splits)
             # Splits normally sum to 1.0 (resolve_meeting() guarantees it,
             # normalising anything that doesn't). A caller reaching
@@ -285,10 +395,10 @@ def aggregate(project_weeks: list[ProjectWeek],
             for quadrant, share in splits:
                 by_quadrant[quadrant] += row.hours * share
             # UNDER 1.0 -> the missing share is unresolved, never silently
-            # dropped. This is the deliberate path for a caller that
-            # dropped an out-of-vocabulary quadrant from an otherwise-valid
-            # split (see summarize()). max() is belt-and-braces: after
-            # normalisation the remainder cannot be negative, so
+            # dropped. This is the deliberate path for a split that named an
+            # out-of-vocabulary quadrant (dropped just above) and for one a
+            # caller simply under-apportioned. max() is belt-and-braces:
+            # after normalisation the remainder cannot be negative, so
             # unresolved_hours never is either, and the invariant
             # sum(by_quadrant) + unresolved == total always holds.
             remainder = max(0.0, 1.0 - apportioned)
@@ -297,10 +407,15 @@ def aggregate(project_weeks: list[ProjectWeek],
         elif res.quadrant in by_quadrant:
             by_quadrant[res.quadrant] += row.hours
         else:
+            if res.quadrant is not None:
+                rejected.append(RejectedRow(
+                    "meeting", _meeting_row_dict(row),
+                    f"quadrant {res.quadrant!r} is outside the vocabulary — "
+                    "hours routed to unresolved"))
             unresolved += row.hours
 
     return WeekTotals(by_quadrant, by_mode, unresolved, total,
-                      by_quadrant_mode)
+                      by_quadrant_mode, tuple(rejected))
 
 
 RELIABILITY_ZERO_WEEKS = 2
@@ -387,23 +502,17 @@ def summarize(payload: dict) -> dict:
 
     meeting_rows = []
     for mr in payload.get("meeting_rows", []):
-        raw_splits = mr.get("splits") or ()
-        splits = tuple((q, s) for q, s in raw_splits if q in _VALID)
-        quadrant = mr.get("quadrant")
-        resolved_by = mr["resolved_by"]
-        if raw_splits and not splits:
-            # Every split quadrant was outside the vocabulary (a typo or a
-            # stale value from JSON input) -- degrade to unresolved the same
-            # way aggregate() already degrades a bad single quadrant, rather
-            # than handing aggregate() a split it cannot look up and
-            # crashing. Hours still count toward the total via
-            # unresolved_hours; they are never silently dropped.
-            quadrant = None
-            resolved_by = "unresolved"
+        # Rows pass through EXACTLY as given. summarize() deliberately does no
+        # validation of its own: aggregate() is the one boundary that checks
+        # quadrants, shares, hours and offense_pct. A second copy of those
+        # rules here is how the two halves came apart last time -- a bad split
+        # quadrant was filtered out in this function and still raised KeyError
+        # inside aggregate() for every direct caller. Anything malformed comes
+        # back in the result's `rejected` list with its reason.
         resolution = Resolution(
-            quadrant=quadrant,
-            resolved_by=resolved_by,
-            splits=splits,
+            quadrant=mr.get("quadrant"),
+            resolved_by=mr["resolved_by"],
+            splits=tuple((q, s) for q, s in (mr.get("splits") or ())),
         )
         meeting_rows.append(MeetingRow(mr["label"], resolution, mr["hours"]))
 
@@ -454,6 +563,14 @@ def summarize(payload: dict) -> dict:
         "mode_percentages": mode_percentages,
         "quadrant_mode_percentages": quadrant_mode_percentages,
         "unresolved_pct": (current.unresolved_hours / total if total else 0.0),
+        # Every row aggregate() refused to trust, with the reason. Empty on a
+        # clean week. The caller must SHOW these -- a rejected row that never
+        # reaches the confirm gate is the silent correction this whole
+        # feature exists to prevent.
+        "rejected": [
+            {"kind": r.kind, "row": r.row, "reason": r.reason}
+            for r in current.rejected
+        ],
         "flags": flags,
     }
 

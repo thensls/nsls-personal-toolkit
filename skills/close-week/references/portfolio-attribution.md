@@ -53,6 +53,13 @@ is mechanical and lives in the module. Rule 2 is the judgment call this file own
 quadrant using the same five-value vocabulary as everywhere else. A meeting that
 genuinely spans two quadrants **splits** rather than forcing a single answer.
 
+The topic sections and their timestamps do **not** come from the daily note — its
+`## Meetings` section preserves only time, title, attendees and 1-2 takeaways.
+close-week Step 1a fetches them from Fathom for the whole week and carries them as
+`meeting_topics`; without that fetch this rung can never fire and every meeting falls
+through to project or unresolved. That matters most where the role rung is too broad
+to be decisive (a leadership standing meeting) and the topic is the whole signal.
+
 **The split rule.** Apportion hours by the elapsed span between consecutive topic
 timestamps in the summary (Fathom stamps each section), with the final section
 running to the recording end. When timestamps are missing, split evenly across the
@@ -68,6 +75,14 @@ spec), where summaries are forbidden and only transcripts count as evidence.
 One table per close. Roughly ten project rows, plus meetings collapsed into recurring
 buckets. Recurring answers cache to `~/.claude/portfolio-meeting-cache.json`, so after
 the first week most meeting rows arrive pre-filled.
+
+**Collapse on `(name, quadrant)`, never on name alone** — project rows on
+`(project, quadrant)`, meeting rows on `(meeting name, quadrant)`. Quadrant is a
+property of the activity, not of the project or the calendar invite: a project whose
+week spanned two quadrants is two rows, and two occurrences of one standing meeting
+that resolved differently stay two rows. Collapsing by name alone merges hours
+confirmed in different quadrants into a single average and destroys the one dimension
+this whole table exists to record.
 
 ```
 PROPOSED — adjust any cell, then confirm
@@ -161,7 +176,7 @@ format — verifying that format contract in one place is why the parser exists.
 | Key | Shape | Notes |
 |---|---|---|
 | `project_weeks` | list of `{project, quadrant, offense_pct, hours}` | one row per project this week |
-| `meeting_rows` | list of `{label, quadrant, resolved_by, hours, splits?}` | `splits`, when present, is a list of `[quadrant, share]` pairs; `quadrant` is `null` when `resolved_by` is `"topic"` (split) or `"unresolved"`. **Shares should sum to 1.0.** Over 1.0 they are normalised (the same rule `resolve_meeting()` applies), so `unresolved_hours` can never go negative and the table can never sum past 100%. Under 1.0 the missing share becomes unresolved hours — deliberately, because a share that went missing is time nobody attributed, not time to be absorbed into the quadrants that survived |
+| `meeting_rows` | list of `{label, quadrant, resolved_by, hours, splits?}` | `splits`, when present, is a list of `[quadrant, share]` pairs; `quadrant` is `null` when `resolved_by` is `"topic"` (split) or `"unresolved"`. **Shares should sum to 1.0.** Over 1.0 they are normalised (the same rule `resolve_meeting()` applies), so `unresolved_hours` can never go negative and the table can never sum past 100%. Under 1.0 the missing share becomes unresolved hours — deliberately, because a share that went missing is time nobody attributed, not time to be absorbed into the quadrants that survived. A **negative** share is not normalised: the whole row goes to unresolved and lands in `rejected` |
 | `history` | list of `{by_quadrant, by_mode?}` | most recent week first; **each entry carries both `by_quadrant` and `by_mode`** — `by_mode` is optional and reads as zero offense/zero defense when omitted, which `evaluate_flags` treats as "no data," never as "recorded zero" |
 | `driver_hours` | number | optional, defaults to `0.0` |
 | `held_hours` | number | optional, defaults to `0.0` |
@@ -179,7 +194,44 @@ format — verifying that format contract in one place is why the parser exists.
 | `mode_percentages` | `{offense, defense}` → share of the week's *project* hours |
 | `quadrant_mode_percentages` | same five quadrant keys → `{offense, defense}` shares **within that quadrant's project hours** |
 | `unresolved_pct` | `unresolved_hours` as a share of `total_hours` |
+| `rejected` | list of `{kind, row, reason}` — every row `aggregate()` refused to trust. `kind` is `"project"` or `"meeting"`; `row` is the raw input row verbatim; `reason` names the field and value that failed. **Empty on a clean week; when it is not empty the caller must render every entry** — see the validation contract below |
 | `flags` | list of strings, one per fired flag (reliability starvation, operating-efficiency ceiling, rising defense share, held-out-earning-driver) |
+
+### The validation contract
+
+`aggregate()` is the single validation boundary. Every caller funnels through
+it — direct callers, `summarize()`'s JSON payload, and the CLI — so the checks
+live there and nowhere else. Validating per entry point is what failed here
+once: an out-of-vocabulary split quadrant was guarded in `summarize()` only and
+stayed live in `aggregate()`, where it raised `KeyError` for anyone calling
+directly. What is checked:
+
+- the quadrant, and every split quadrant, is in the five-value vocabulary
+- `0 <= offense_pct <= 100`
+- `hours >= 0`, on project rows and meeting rows alike
+- every split share `>= 0`
+
+**A failing row is reported, never silently corrected.** Its hours go to
+`unresolved_hours` *and* the raw row comes back in `rejected` with the reason.
+The one exception is negative `hours`, which cannot be routed anywhere without
+pushing `unresolved_hours` below zero: such a row is left out of `total_hours`
+entirely and reported. A negative split share sends the *whole* row to
+unresolved rather than part of it — a negative share keeps the reconciliation
+invariant true arithmetically while every rendered number is nonsense, which is
+worse than an honest unresolved bucket. Either way
+`sum(by_quadrant) + unresolved_hours == total_hours` still holds for any input,
+and `unresolved_hours` is never negative.
+
+A `quadrant` of `null` is **not** a rejection: it is the documented
+`uncategorized` project row and the documented unresolved meeting, both of which
+route to unresolved by design. Reporting those would cry wolf until nobody reads
+the list.
+
+The parser enforces the same `offense_pct` range one step earlier. Its regex
+accepts `\d{1,3}`, so a line reading `· 150% offense` has the *shape* of a row;
+`parse_daily_note()` returns it as a **skipped line** rather than a parsed one,
+so it surfaces at the confirm gate instead of reaching `aggregate()` and
+computing negative defense hours out of a number nobody ever read.
 
 **Two rules for reading the mode keys, and both matter:**
 
@@ -192,7 +244,12 @@ format — verifying that format contract in one place is why the parser exists.
    quadrant has a mode at all.** When a quadrant's offense and defense hours are
    both `0.0`, no mode was recorded — print `—`, never `0% / 0%`. A quadrant
    whose hours are entirely meeting hours lands here, and rendering it as zero
-   offense is exactly the silent-empty this feature exists to prevent.
+   offense is exactly the silent-empty this feature exists to prevent. This
+   hours test is the **only** reason a row prints `—`. `cross-cutting` is a
+   quadrant like any other and carries project rows with real offense/defense
+   splits; forcing its mode to `—` renders a 100%-defense cross-cutting week as
+   no data at all. Only `Unresolved` has no mode by construction — it is not a
+   quadrant and no mode hours are recorded against it.
 
 Every percentage the `## Portfolio Allocation` table needs is in this result.
 There is no cell in it that the step divides by hand.
@@ -264,6 +321,7 @@ There is no cell in it that the step divides by hand.
     "cross-cutting": {"offense": 0.0, "defense": 0.0}
   },
   "unresolved_pct": 0.02,
+  "rejected": [],
   "flags": []
 }
 ```

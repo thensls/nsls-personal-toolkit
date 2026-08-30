@@ -730,3 +730,274 @@ def test_cli_rejects_an_unknown_flag_loudly():
     proc = _run_cli(["--nonsense"], "")
     assert proc.returncode == 2
     assert "usage" in proc.stderr.lower()
+
+
+# --- the aggregate() validation boundary ---------------------------------
+#
+# Every caller funnels through aggregate(), so these run against aggregate()
+# directly wherever a direct caller is the exposure, and through summarize()
+# wherever the JSON payload is. A malformed row must be REPORTED (routed to
+# unresolved AND named in `rejected`), never silently corrected, and the
+# reconciliation invariant must survive every one of them.
+
+
+def _reconciles(totals):
+    return (sum(totals.by_quadrant.values()) + totals.unresolved_hours
+            == pytest.approx(totals.total_hours)
+            and totals.unresolved_hours >= 0.0)
+
+
+def test_a_split_quadrant_outside_the_vocabulary_does_not_raise_in_aggregate():
+    """A1. This used to be a KeyError at `by_quadrant[quadrant] +=` for any
+    caller that reached aggregate() without going through summarize()."""
+    row = MeetingRow("standing", Resolution(None, "topic",
+                                            (("bogus-quadrant", 1.0),)), 2.0)
+    totals = aggregate([], [row])       # must not raise
+
+    assert totals.unresolved_hours == pytest.approx(2.0)
+    assert sum(totals.by_quadrant.values()) == 0.0
+    assert _reconciles(totals)
+    assert len(totals.rejected) == 1
+    assert totals.rejected[0].kind == "meeting"
+    assert "bogus-quadrant" in totals.rejected[0].reason
+    assert totals.rejected[0].row["label"] == "standing"
+
+
+def test_a_partly_invalid_split_reports_the_bad_quadrant_and_keeps_the_good_share():
+    row = MeetingRow("mixed", Resolution(None, "topic",
+                                         (("growth-driver", 0.6),
+                                          ("stale-quadrant", 0.4))), 2.0)
+    totals = aggregate([], [row])
+
+    assert totals.by_quadrant["growth-driver"] == pytest.approx(1.2)
+    assert totals.unresolved_hours == pytest.approx(0.8)
+    assert _reconciles(totals)
+    assert len(totals.rejected) == 1
+    assert "stale-quadrant" in totals.rejected[0].reason
+
+
+def test_a_negative_split_share_routes_the_whole_row_to_unresolved_and_reports_it():
+    """A2. The reconciliation invariant held arithmetically before this fix
+    while growth-driver rendered as negative hours -- nonsense that still
+    read as a number. The whole row goes to unresolved instead, and is
+    named."""
+    row = MeetingRow("bad split", Resolution(None, "topic",
+                                             (("growth-driver", -0.5),
+                                              ("hygiene", 1.5))), 4.0)
+    totals = aggregate([], [row])
+
+    assert totals.by_quadrant["growth-driver"] == 0.0
+    assert totals.by_quadrant["hygiene"] == 0.0
+    assert totals.unresolved_hours == pytest.approx(4.0)
+    assert totals.total_hours == pytest.approx(4.0)
+    assert _reconciles(totals)
+    assert len(totals.rejected) == 1
+    assert "negative" in totals.rejected[0].reason
+
+
+def test_parse_daily_note_skips_an_out_of_range_offense_percentage():
+    r"""A3. The regex accepts \d{1,3}, so '150% offense' parsed
+    'successfully' and aggregate() then computed negative defense hours.
+    It is a skipped line now, so it shows at the confirm gate instead."""
+    md = """## Projects Touched
+- [[20-projects/lighthouse|lighthouse]] — shipped · 2.0h · growth-driver · 150% offense
+- [[20-projects/backstage|backstage]] — fixed · 1.0h · reliability · 0% offense
+"""
+    parsed = parse_daily_note(md)
+
+    assert [pw.project for pw in parsed.projects] == ["backstage"]
+    assert parsed.skipped_count == 1
+    assert "150%" in parsed.skipped[0]
+
+
+def test_parse_daily_note_still_accepts_the_endpoints_zero_and_one_hundred():
+    md = """## Projects Touched
+- [[20-projects/alpha|alpha]] — all defense · 1.0h · reliability · 0% offense
+- [[20-projects/beta|beta]] — all offense · 1.0h · growth-driver · 100% offense
+"""
+    parsed = parse_daily_note(md)
+    assert [pw.offense_pct for pw in parsed.projects] == [0, 100]
+    assert parsed.skipped_count == 0
+
+
+def test_an_out_of_range_offense_pct_reaching_aggregate_is_rejected_not_computed():
+    """A5. The parser is not the only way in -- the JSON payload hands
+    offense_pct straight to summarize(). Defense hours must never go
+    negative; the hours go to unresolved and the row is named."""
+    totals = aggregate([ProjectWeek("lighthouse", "growth-driver", 150, 4.0)], [])
+
+    assert totals.by_mode == {"offense": 0.0, "defense": 0.0}
+    assert totals.by_quadrant["growth-driver"] == 0.0
+    assert totals.unresolved_hours == pytest.approx(4.0)
+    assert _reconciles(totals)
+    assert "offense_pct 150" in totals.rejected[0].reason
+
+
+def test_a_negative_offense_pct_is_rejected_too():
+    totals = aggregate([ProjectWeek("lighthouse", "hygiene", -20, 2.0)], [])
+    assert totals.unresolved_hours == pytest.approx(2.0)
+    assert totals.by_mode == {"offense": 0.0, "defense": 0.0}
+    assert _reconciles(totals)
+
+
+def test_negative_project_hours_are_excluded_from_the_week_and_reported():
+    """A4. Routing negative hours to unresolved would render a negative
+    unresolved figure, so the row leaves the week entirely -- but loudly."""
+    totals = aggregate([
+        ProjectWeek("good", "hygiene", 50, 2.0),
+        ProjectWeek("bad", "hygiene", 50, -3.0),
+    ], [])
+
+    assert totals.total_hours == pytest.approx(2.0)
+    assert totals.by_quadrant["hygiene"] == pytest.approx(2.0)
+    assert totals.unresolved_hours == 0.0
+    assert _reconciles(totals)
+    assert [r.row["project"] for r in totals.rejected] == ["bad"]
+    assert "negative" in totals.rejected[0].reason
+
+
+def test_negative_meeting_hours_are_excluded_from_the_week_and_reported():
+    """A4, the meeting half -- there was no guard anywhere for either."""
+    totals = aggregate([], [
+        MeetingRow("real", Resolution("hygiene", "role"), 1.0),
+        MeetingRow("bad", Resolution("hygiene", "role"), -1.0),
+    ])
+
+    assert totals.total_hours == pytest.approx(1.0)
+    assert totals.by_quadrant["hygiene"] == pytest.approx(1.0)
+    assert _reconciles(totals)
+    assert [r.row["label"] for r in totals.rejected] == ["bad"]
+
+
+def test_a_project_quadrant_outside_the_vocabulary_is_rejected_not_bucketed():
+    totals = aggregate([ProjectWeek("lighthouse", "founder-transition", 50, 4.0)], [])
+
+    assert totals.unresolved_hours == pytest.approx(4.0)
+    assert sum(totals.by_quadrant.values()) == 0.0
+    assert _reconciles(totals)
+    assert "founder-transition" in totals.rejected[0].reason
+
+
+def test_a_meeting_quadrant_outside_the_vocabulary_is_rejected_not_bucketed():
+    totals = aggregate([], [
+        MeetingRow("sync", Resolution("nonsense", "project"), 1.5)])
+
+    assert totals.unresolved_hours == pytest.approx(1.5)
+    assert _reconciles(totals)
+    assert "nonsense" in totals.rejected[0].reason
+
+
+def test_a_null_quadrant_is_not_a_rejection_it_is_the_documented_state():
+    """`uncategorized` project rows and unresolved meetings both carry
+    quadrant None by design. Reporting them as malformed would cry wolf
+    until nobody reads the rejected list."""
+    totals = aggregate(
+        [ProjectWeek("lighthouse", None, 50, 2.0)],
+        [MeetingRow("adhoc", Resolution(None, "unresolved"), 1.0)],
+    )
+
+    assert totals.rejected == ()
+    assert totals.unresolved_hours == pytest.approx(3.0)
+    assert _reconciles(totals)
+
+
+def test_a_clean_week_rejects_nothing():
+    totals = aggregate(
+        [ProjectWeek("lighthouse", "growth-driver", 80, 5.0)],
+        [MeetingRow("sync", Resolution("hygiene", "role"), 1.0)],
+    )
+    assert totals.rejected == ()
+    assert _reconciles(totals)
+
+
+def test_the_invariant_survives_a_week_of_every_malformed_shape_at_once():
+    """The binding constraint: sum(by_quadrant) + unresolved == total, and
+    unresolved is never negative, for ANY input -- including one carrying
+    every rejection class simultaneously."""
+    totals = aggregate(
+        [
+            ProjectWeek("ok-project", "growth-driver", 80, 5.0),
+            ProjectWeek("neg-hours-project", "hygiene", 50, -2.0),
+            ProjectWeek("bad-pct", "hygiene", 150, 3.0),
+            ProjectWeek("bad-project-quadrant", "made-up", 50, 1.0),
+            ProjectWeek("uncategorized", None, 50, 0.5),
+        ],
+        [
+            MeetingRow("ok-meeting", Resolution("reliability", "role"), 1.0),
+            MeetingRow("neg-hours-meeting", Resolution("hygiene", "role"), -4.0),
+            MeetingRow("bad-meeting-quadrant", Resolution("typo", "project"), 2.0),
+            MeetingRow("neg-share", Resolution(None, "topic",
+                                               (("hygiene", -1.0),
+                                                ("growth-driver", 2.0))), 1.5),
+            MeetingRow("part-bad", Resolution(None, "topic",
+                                              (("hygiene", 0.5),
+                                               ("gone", 0.5))), 2.0),
+            MeetingRow("adhoc", Resolution(None, "unresolved"), 0.5),
+        ],
+    )
+
+    # Both negative-hours rows are out of the week; everything else counts.
+    assert totals.total_hours == pytest.approx(
+        5.0 + 3.0 + 1.0 + 0.5 + 1.0 + 2.0 + 1.5 + 2.0 + 0.5)
+    assert _reconciles(totals)
+    assert totals.unresolved_hours > 0.0
+    assert sum(totals.by_quadrant.values()) > 0.0
+    # Every malformed row is reported -- and the two legitimate None
+    # quadrants are not among them.
+    reported = {r.row.get("project", r.row.get("label")) for r in totals.rejected}
+    assert reported == {"neg-hours-project", "bad-pct", "bad-project-quadrant",
+                        "neg-hours-meeting", "bad-meeting-quadrant",
+                        "neg-share", "part-bad"}
+
+
+def test_summarize_exposes_rejected_rows_so_the_confirm_gate_can_show_them():
+    """A5 through the JSON payload -- the shape close-week actually reads."""
+    payload = {
+        "project_weeks": [
+            {"project": "lighthouse", "quadrant": "growth-driver",
+             "offense_pct": 150, "hours": 4.0},
+        ],
+        "meeting_rows": [
+            {"label": "standing", "quadrant": None, "resolved_by": "topic",
+             "splits": [["growth-driver", -0.5], ["hygiene", 1.5]],
+             "hours": 2.0},
+        ],
+        "history": [],
+        "driver_hours": 0.0,
+        "held_hours": 0.0,
+    }
+    result = summarize(payload)
+
+    assert len(result["rejected"]) == 2
+    assert {r["kind"] for r in result["rejected"]} == {"project", "meeting"}
+    assert all(r["reason"] for r in result["rejected"])
+    assert result["rejected"][0]["row"]["offense_pct"] == 150
+    assert result["by_mode"]["defense"] >= 0.0
+    assert result["unresolved_hours"] == pytest.approx(6.0)
+    assert (sum(result["by_quadrant"].values()) + result["unresolved_hours"]
+            == pytest.approx(result["total_hours"]))
+
+
+def test_summarize_on_a_clean_payload_returns_an_empty_rejected_list():
+    result = summarize({
+        "project_weeks": [{"project": "lighthouse", "quadrant": "hygiene",
+                           "offense_pct": 0, "hours": 1.0}],
+        "meeting_rows": [],
+    })
+    assert result["rejected"] == []
+
+
+def test_cli_prints_rejected_rows_as_json():
+    """The CLI is the path the skill prose runs, so `rejected` has to
+    survive json.dumps -- a dataclass left in there would crash the step."""
+    payload = json.dumps({
+        "project_weeks": [{"project": "lighthouse", "quadrant": "made-up",
+                           "offense_pct": 50, "hours": 2.0}],
+        "meeting_rows": [],
+    })
+    proc = _run_cli([], payload)
+    assert proc.returncode == 0, proc.stderr
+    out = json.loads(proc.stdout)
+    assert len(out["rejected"]) == 1
+    assert out["rejected"][0]["row"]["quadrant"] == "made-up"
+    assert "made-up" in out["rejected"][0]["reason"]
