@@ -44,11 +44,11 @@ For each person the sweep tracks, three sources fire in parallel.
 
 - Any tracked person who is `signal_eligible` — has an `@nsls.org` email,
   `tracking_reason` is not `key_relationship_external`, and the name is not in
-  `SIGNAL_EXCLUDE` (default `{"Dana Ashford"}` — this is how board members are
+  `SIGNAL_EXCLUDE` (no default — set it in `.env`; this is how board members are
   excluded) (determined by `list_relationships.py`)
 - **Shareable-tier fields only**: sentiment, wins, friction, growth, goal health. **Never** raw
   work-journal narration (`narration_raw`, `entry_text`)
-- Default exclusion: `SIGNAL_EXCLUDE={"Dana Ashford"}` (override in `.env` if
+- Exclusions: `SIGNAL_EXCLUDE` has **no default** and must be set in `.env` (override if
   needed)
 - **Provenance**: The synthesizer prepends a transparency line to `## Signal Read` of the form `*Signal source: {relation} — Quick Notes through {week}.*` (where {relation} = direct report / SLT peer / key relationship), so it's explicit whose relation/words are surfaced — important now that scope includes non-reports
 - **Never contributes to scoring.** `health_score` reads Fathom-meeting evidence

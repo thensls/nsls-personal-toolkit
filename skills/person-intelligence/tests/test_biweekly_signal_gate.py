@@ -14,7 +14,7 @@ def test_gate_uses_eligibility_not_direct_report_only():
            "tracking_reason": "peer", "signal_eligible": True}
     planned = bws.plan_signal(rel, signal_available=True)
     assert planned["signal_ingest_planned"] is True
-    assert planned["signal_slug"] == "adam-stone"
+    assert planned["signal_slug"] == "adam-ferris"
     # ineligible person never planned
     rel2 = {"name": "Dana Ashford", "email": "dashford@nsls.org",
             "tracking_reason": "key_relationship", "signal_eligible": False}
@@ -27,7 +27,7 @@ def test_plan_signal_computes_eligibility_when_untagged():
     rel = {"name": "Adam Ferris", "email": "aferris@nsls.org", "tracking_reason": "peer"}
     out = bws.plan_signal(rel, signal_available=True)
     assert out["signal_ingest_planned"] is True
-    assert out["signal_slug"] == "adam-stone"
+    assert out["signal_slug"] == "adam-ferris"
     assert out["signal_eligible"] is True
     # ineligible external, untagged
     rel2 = {"name": "Ext", "email": "", "tracking_reason": "key_relationship_external"}

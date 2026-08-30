@@ -18,7 +18,7 @@ def test_list_signal_slugs_filters_eligible(monkeypatch):
     slugs = fs.list_signal_slugs()
     names = {s["name"] for s in slugs}
     assert names == {"Adam Ferris", "Report A"}
-    assert {"name": "Adam Ferris", "slug": "adam-stone"} in slugs
+    assert {"name": "Adam Ferris", "slug": "adam-ferris"} in slugs
 
 
 def test_list_signal_slugs_collision_still_lists_both_and_warns(monkeypatch, capsys):

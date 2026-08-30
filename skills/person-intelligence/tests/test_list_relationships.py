@@ -284,12 +284,56 @@ def test_no_airtable_dependency():
         fixture.unlink()
 
 
+def _load_lr(signal_exclude):
+    """Import list_relationships with SIGNAL_EXCLUDE set (or explicitly unset).
+
+    The module reads the env at import time, so each case needs a fresh load.
+    Returns (module, stderr_text) so callers can assert on the warning too.
+    """
+    import importlib.util, io, contextlib
+    prior = os.environ.pop("SIGNAL_EXCLUDE", None)
+    try:
+        if signal_exclude is not None:
+            os.environ["SIGNAL_EXCLUDE"] = signal_exclude
+        spec = importlib.util.spec_from_file_location("list_relationships", LIST_RELATIONSHIPS)
+        lr = importlib.util.module_from_spec(spec)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            spec.loader.exec_module(lr)
+        return lr, err.getvalue()
+    finally:
+        os.environ.pop("SIGNAL_EXCLUDE", None)
+        if prior is not None:
+            os.environ["SIGNAL_EXCLUDE"] = prior
+
+
+def test_signal_exclude_unset_is_announced_not_silent():
+    """An unset SIGNAL_EXCLUDE excludes nobody -- and must say so, loudly.
+
+    There is no hardcoded default: this repo is public and a real name here
+    would publish who is excluded. The cost of that is a control that can be
+    silently off, so the module warns on stderr instead.
+    """
+    lr, stderr = _load_lr(None)
+    assert lr.SIGNAL_EXCLUDE == set(), "no default exclusions may be hardcoded"
+    assert "SIGNAL_EXCLUDE is unset" in stderr, "an unset gate must be announced"
+    assert "NO ONE is excluded" in stderr
+    # ...and the consequence is real, which is exactly why it is announced.
+    assert lr.is_signal_eligible("Board Member", "bm@nsls.org", "key_relationship") is True
+
+
+def test_signal_exclude_from_env_gates_the_person():
+    """With the env set, the named person is excluded and nothing is warned."""
+    lr, stderr = _load_lr("Board Member,Other Person")
+    assert lr.is_signal_eligible("Board Member", "bm@nsls.org", "key_relationship") is False
+    assert lr.is_signal_eligible("Other Person", "op@nsls.org", "peer") is False
+    assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True
+    assert "SIGNAL_EXCLUDE is unset" not in stderr
+
+
 def test_signal_eligible_rule():
     """Test is_signal_eligible function with various inputs."""
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("list_relationships", LIST_RELATIONSHIPS)
-    lr = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(lr)
+    lr, _ = _load_lr("Dana Ashford")
 
     # direct report with nsls email -> eligible
     assert lr.is_signal_eligible("Report A", "a@nsls.org", "direct_report") is True

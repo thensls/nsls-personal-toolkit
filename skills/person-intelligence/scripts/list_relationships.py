@@ -45,8 +45,27 @@ sys.path.insert(0, str(SCRIPT_DIR))
 import load_dotenv_local  # noqa: E402,F401  — load .env into os.environ for cron/non-interactive runs
 import resolve_user  # noqa: E402
 
+# Signal-ingest exclusions (board members, and anyone whose Quick Notes must not
+# reach a coaching profile).
+#
+# The default is EMPTY ON PURPOSE: this repository is PUBLIC, and a real name
+# hardcoded here publishes who is excluded and why. The list is configuration,
+# so it lives in the private .env as SIGNAL_EXCLUDE (comma-separated names).
+#
+# An unset value is NOT "exclude nobody" — it means the control was never
+# configured, which is a blind check, not a clean pass. Announce it loudly
+# rather than silently letting sensitive people through.
+_signal_exclude_raw = os.environ.get("SIGNAL_EXCLUDE")
+if _signal_exclude_raw is None:
+    print(
+        "WARNING: SIGNAL_EXCLUDE is unset — NO ONE is excluded from Signal ingest.\n"
+        "  Board members and other sensitive relationships will be treated as\n"
+        "  signal_eligible and their Quick Notes can reach coaching profiles.\n"
+        "  Set SIGNAL_EXCLUDE in .env (comma-separated names) to restore the gate.",
+        file=sys.stderr,
+    )
 SIGNAL_EXCLUDE = {
-    n.strip() for n in os.environ.get("SIGNAL_EXCLUDE", "Dana Ashford").split(",") if n.strip()
+    n.strip() for n in (_signal_exclude_raw or "").split(",") if n.strip()
 }
 
 
