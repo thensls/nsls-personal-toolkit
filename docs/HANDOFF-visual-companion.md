@@ -54,5 +54,5 @@ To see a mode, seed `01-daily/<today>.md` with `status: active` (Command Center)
 
 ## Rules
 - Run the test suite after every change; keep it green.
-- Don't push, don't open/modify PRs, don't share anything externally without Davo's explicit OK each time (see his global CLAUDE.md).
+- Don't push, don't open/modify PRs, don't share anything externally without the reviewer's explicit OK each time (see his global CLAUDE.md).
 - Keep "cowork" out of commit messages and anything PR-bound.
