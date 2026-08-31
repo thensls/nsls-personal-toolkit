@@ -254,12 +254,23 @@ def resolve_meeting(
                           "resolution declined")
         else:
             note = ""
-            if abs(total - 1.0) > 1e-6:
+            # NORMALISE DOWN ONLY, matching aggregate(). Scaling an UNDER-1.0
+            # total up to 1.0 invents attribution: a meeting whose topics
+            # covered 0.6 of it is 60% about those quadrants, and the missing
+            # 0.4 is hours nobody assigned — it belongs in unresolved, not
+            # handed to whichever quadrant happened to be named. The two sites
+            # normalising in opposite directions is what let this through.
+            if total > 1.0 + 1e-6:
                 # total >= every share (all are positive), so s / total is in
                 # (0, 1] and cannot overflow.
                 valid_topics = [(q, s / total) for q, s in valid_topics]
                 note = "shares normalised"
-            if len(valid_topics) == 1:
+                total = 1.0
+            # The single-topic shortcut returns a quadrant-only Resolution, and
+            # aggregate() books the WHOLE meeting to that quadrant — correct
+            # only when the topic actually accounted for all of it. Below 1.0,
+            # keep the share as a split so the remainder reaches unresolved.
+            if len(valid_topics) == 1 and total >= 1.0 - 1e-6:
                 return Resolution(valid_topics[0][0], "topic", note=note)
             return Resolution(None, "topic", tuple(valid_topics), note)
 

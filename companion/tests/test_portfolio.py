@@ -2707,9 +2707,42 @@ def test_a_non_finite_or_unreadable_topic_share_never_reaches_the_total():
          (["cross-cutting"], 1.0), ("hygiene", None),
          ("reliability", 0.25)],
         None, [])
-    # Only the one readable topic survives, and it resolves cleanly.
+    # Only the one readable topic survives -- and it accounted for 0.25 of the
+    # meeting, so it does NOT get the whole thing. Four of five topics were
+    # unreadable here: booking 100% of the hours to the one share we could read
+    # would be inventing attribution out of garbage input. The 0.75 remainder
+    # is hours nobody assigned, and it belongs in unresolved.
     assert res.resolved_by == "topic"
-    assert res.quadrant == "reliability"
+    assert res.quadrant is None
+    assert res.splits == (("reliability", 0.25),)
+
+
+def test_a_single_topic_under_one_leaves_its_remainder_unresolved():
+    """resolve_meeting() must normalise DOWN only, exactly like aggregate().
+    A single topic covering 0.6 of a meeting used to come back as a
+    quadrant-only Resolution, and aggregate() books a quadrant-only row's
+    WHOLE hours to that quadrant -- so 100% of the meeting landed on a topic
+    that accounted for 60% of it. The two sites normalised in opposite
+    directions, which is what let it through."""
+    res = resolve_meeting([], [("growth-driver", 0.6)], None, [])
+    assert res.resolved_by == "topic"
+    assert res.quadrant is None, "0.6 must not claim the whole meeting"
+    assert res.splits == (("growth-driver", 0.6),)
+    assert res.note == "", "nothing was normalised, so say nothing"
+
+    # And the remainder genuinely reaches unresolved once aggregated.
+    totals = aggregate([], [MeetingRow("m", res, 2.0)])
+    assert totals.by_quadrant["growth-driver"] == pytest.approx(1.2)
+    assert totals.unresolved_hours == pytest.approx(0.8)
+    assert totals.total_hours == pytest.approx(2.0)
+
+
+def test_a_single_topic_at_one_still_takes_the_whole_meeting():
+    """The shortcut is still correct when the topic accounted for all of it."""
+    res = resolve_meeting([], [("growth-driver", 1.0)], None, [])
+    assert res.resolved_by == "topic"
+    assert res.quadrant == "growth-driver"
+    assert res.splits == ()
 
 
 def test_normal_topic_shares_still_normalise_exactly_as_before():
