@@ -142,7 +142,7 @@ Dated pointers a promotion/transition case could cite. Pointers, never quotes.
 
 **Write-ownership contract (architecture review):** role-profile.md = *the seat you have*; role-trajectory.md = *the seat you want*; `operating-memo.md` + `personal-profile.md` = *the person*, written **only** by `/self-insight`. Role-coach reads all four and writes only `role-coaching/`. Within the trajectory file, milestones and the Why are the user's to write; role-coach *proposes* check-offs and readiness-evidence lines through the same approval flow as memos (trust ladder — never a silent edit to someone's ambitions). The crowding-out step *diffs observed behavior against the memo's existing "My Traps"* rather than re-deriving them; newly discovered person-level traps route to "run /self-insight," never to a memo edit.
 
-**Cross-skill dedup:** before proposing a person-routed move ("delegate X to Chelsea"), check person-intelligence's `coaching_actions.json` — if a matching coaching goal exists, cite it ("already tracked as a Chelsea goal") instead of duplicating. Ownership rule: subject-of-change owns the artifact (self-directed pattern → coaching-log; person-directed goal → person-intelligence profile).
+**Cross-skill dedup:** before proposing a person-routed move ("delegate X to a report"), check person-intelligence's `coaching_actions.json` — if a matching coaching goal exists, cite it ("already tracked as a goal for that person") instead of duplicating. Ownership rule: subject-of-change owns the artifact (self-directed pattern → coaching-log; person-directed goal → person-intelligence profile).
 
 ### Cadence integration — thin callers, one enforceable budget
 

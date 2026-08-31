@@ -45,7 +45,7 @@ def test_how_to_support_survives_many_large_meetings():
     big_summary = "word " * 3000  # ~15k chars each
     meetings = [{"date": f"2026-06-{d:02d}", "title": f"SLT Huddle {d}", "summary": big_summary}
                 for d in range(1, 16)]  # 15 meetings, ~225k chars unbounded
-    data = {"person_name": "Chelsea Ward", "relationship_type": "direct_report",
+    data = {"person_name": "Rhea Ward", "relationship_type": "direct_report",
             "meeting_summaries": meetings,
             "existing_profile": "## Marcus's Private Note\n\n" + ("keep " * 8000),
             "signal": {"wins": [{"week": "2026-06-29", "text": "shipped"}],
@@ -53,7 +53,7 @@ def test_how_to_support_survives_many_large_meetings():
                        "sentiment": {}, "goals": [], "submitted_weeks": ["2026-06-29"]}}
     prompt = sp.build_user_prompt(data)
     assert len(prompt) <= sp.MAX_PROMPT_CHARS, f"prompt {len(prompt)} exceeds cap"
-    assert "## How to Support Chelsea Ward" in prompt
+    assert "## How to Support Rhea Ward" in prompt
     # older meetings trimmed, most-recent kept
     assert "of 15 meetings" in prompt
 

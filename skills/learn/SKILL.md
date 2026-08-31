@@ -261,7 +261,7 @@ onboarding, dev-tooling…) so search still finds it.
 ## Mode: Search OSS Catalog (`/learn oss [query]`)
 
 Searches `40-learning/oss-catalog.md` — the catalog of open-source building blocks for Society /
-Ignite Next and other NSLS products. Used directly by Kevin, and called by `/interrogate` during
+Ignite Next and other NSLS products. Used directly by the builder, and called by `/interrogate` during
 new-product planning to surface relevant building blocks.
 
 1. Read `$OBSIDIAN_VAULT_PATH/40-learning/oss-catalog.md`. If it doesn't exist, say so and
@@ -294,7 +294,7 @@ When called from `/open-day`, ingest new links based on the builder's configured
 
 ### Resolving shortlinks (`share.google`, etc.)
 
-Kevin's self-DM links are almost all `https://share.google/XXXX` redirect shortlinks. **Resolve
+Self-DM links are almost all `https://share.google/XXXX` redirect shortlinks. **Resolve
 every shortlink to its real destination with `curl` first** — it's fast and reliable:
 
 ```bash

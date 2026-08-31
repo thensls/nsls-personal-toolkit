@@ -234,7 +234,7 @@ goals_for_reflection = [{
     "title": "Hold and improve VO2 max",
     "baseline": 36.2, "target": 37.0, "current": 36.4, "unit": "ml/(kg·min)",
     "weekly_action": "2x zone-2 + 1x intervals",
-    "anchor": "After walking Red, Mon/Wed/Fri 7:45am",
+    "anchor": "After walking the dog, Mon/Wed/Fri 7:45am",
     "hit_rate": "2/3",  # days with goal_<slug>_moved: true / days with key set
     "weeks_remaining": 4,
     "trend": "stable",  # up | down | stable | no data
@@ -257,7 +257,7 @@ Report the current value, the direction since last week, and — for each — **
 |---|---|---|
 | 1 | Revenue vs. plan | NetSuite / finance review |
 | 2 | Enrollment pace vs. the fall curve | HubSpot / Hex (Summit RSVP P&L app) |
-| 3 | Response rate (the 0→2→5→7 ladder) | Gary push dashboard |
+| 3 | Response rate (the 0→2→5→7 ladder) | Response-rate push dashboard |
 | 4 | Society engagement — signups, track completion, **returning visits / coach use** | Society Pulse, PostHog |
 | 5 | Cash position + runway | Finance |
 

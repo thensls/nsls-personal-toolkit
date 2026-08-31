@@ -167,13 +167,13 @@ def main():
         #
         # A day counts as below only at z <= -1.0, not merely a hair under
         # band_low. Without the margin this fires on rounding: 2026-07-28 read
-        # 49 against a band_low of 49.4 and would have told Kevin to skip the
+        # 49 against a band_low of 49.4 and would have told the builder to skip the
         # Wednesday 4x4 that produced his best VO2 gain of the quarter.
         # Walk actual CALENDAR days backwards and stop at the first day with no
         # reading. `history` has already dropped gaps, so iterating it would weld
         # non-adjacent low days together: one low day, a missed note, another low
         # day reads as "2 consecutive" and fires back_off on a two-day streak that
-        # never happened. Kevin misses notes when travelling, so this is routine,
+        # never happened. Builders miss notes when travelling, so this is routine,
         # not hypothetical.
         run = 0
         if sd > 0:

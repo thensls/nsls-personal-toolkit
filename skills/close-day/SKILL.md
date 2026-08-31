@@ -203,8 +203,8 @@ Extract: meeting title, start/end time, attendees (if `condenseEventDetails=fals
 
 | Classification | Detection rules | Examples |
 |---|---|---|
-| **Real meeting** | Has attendees other than the builder (`attendees` array with 2+ entries, or 1 entry that isn't the builder) AND has a conferenceUrl or Zoom/Meet link | NSLS Coach Feedback Discussion, Gary / Kevin — FOL, All Staff Meeting |
-| **Solo block** | No attendees (the builder is sole organizer, no `attendees` array), OR description contains "from /open-day", "Priority #N from /open-day", "Vitality block", "Growth block" | Focus: William reply, Prep: Gary FOL, Walk, Learn: Agentic harnesses |
+| **Real meeting** | Has attendees other than the builder (`attendees` array with 2+ entries, or 1 entry that isn't the builder) AND has a conferenceUrl or Zoom/Meet link | NSLS Coach Feedback Discussion, Warren / Marcus — FOL, All Staff Meeting |
+| **Solo block** | No attendees (the builder is sole organizer, no `attendees` array), OR description contains "from /open-day", "Priority #N from /open-day", "Vitality block", "Growth block" | Focus: William reply, Prep: Warren FOL, Walk, Learn: Agentic harnesses |
 
 Solo blocks created by `/open-day` are work time, not meetings. They typically appear as gray or colored blocks on the calendar with titles starting with "Focus:", "Prep:", "Walk", "Learn:", or "Review:".
 
@@ -227,7 +227,7 @@ This step produces three outputs: (1) app/tool time distribution, (2) total acti
 - `time_tracking_mode` — what summary line to produce (doing-vs-orchestrating, deep-vs-meetings, etc.)
 - `data_sources` — which integrations are available (familiar, fathom, slack, etc.)
 
-If no builder profile exists, fall back to the **Executive / SLT preset** categories (Coding/Building, Management/People, Product Management, Marketing/Sales, Admin/Ops, Learning/Research) — this is the default for backwards compatibility with Kevin's setup.
+If no builder profile exists, fall back to the **Executive / SLT preset** categories (Coding/Building, Management/People, Product Management, Marketing/Sales, Admin/Ops, Learning/Research) — this is the default for backwards compatibility with the original builder's setup.
 
 **IMPORTANT — Fathom dependency:** Step 1c (Fathom) must complete before the work categorization in this step, because Fathom meeting summaries are used to categorize Zoom/Meet time into the correct work category. Run the data collection (bash commands below) in parallel with Fathom, but defer the categorization logic until Fathom results are available. If the builder profile has `fathom: false`, skip the Fathom dependency and categorize meetings by window title only.
 
@@ -526,7 +526,7 @@ Your Slack user ID is in `${SLACK_USER_ID}` from `.env`. Extract: who he message
 
 **1e-pre. Slack follow-up scan (today only)**
 
-> Ported from `nsls-personal-toolkit` PR #12 (Chelsea, "Add Slack follow-up scan to /open-day and /close-day") on 2026-05-27. Catches commitments the builder made and incoming asks left pending — so they roll into Carrying Over instead of evaporating overnight. The plain Sent-Slack scan in 1e only sees outbound messages; this step adds the inbound side.
+> Ported from `nsls-personal-toolkit` PR #12 ("Add Slack follow-up scan to /open-day and /close-day") on 2026-05-27. Catches commitments the builder made and incoming asks left pending — so they roll into Carrying Over instead of evaporating overnight. The plain Sent-Slack scan in 1e only sees outbound messages; this step adds the inbound side.
 
 **Two parallel queries scoped to today (`on:YYYY-MM-DD`):**
 
@@ -714,7 +714,7 @@ while True:
     offset = data.get('offset')
     if not offset: break
 
-# Filter to the builder's actions by first name (see builder-profile.md), e.g. 'Kevin':
+# Filter to the builder's actions by first name (see builder-profile.md), e.g. 'Alex':
 mine = [r for r in all_records if BUILDER_FIRST_NAME in (r.get('fields', {}).get('fldmpu3lN0lrgrdSa') or '')]
 # Classify by due_date: overdue / due today / upcoming / no date
 # Emit record ID alongside each for Step 7d matching.
@@ -790,7 +790,7 @@ done
 ## Task Evidence Check
 
 ✅ Likely completed (not yet checked off):
-- "All Staff deck" — Familiar: 74 caps on "All Staff Meeting - April 2026 - Google Slides"; Slack: messaged Danielle about it
+- "All Staff deck" — Familiar: 74 caps on "All Staff Meeting - April 2026 - Google Slides"; Slack: messaged a teammate about it
 - "LOP Q2 Reset" — Familiar: 58 caps on "L2 Goal Modifications - Google Docs"; Obsidian session log confirms
 
 🔶 Significant progress (not finished):
@@ -900,8 +900,8 @@ Doing vs. Orchestrating: [X%] hands-on building, [X%] managing/meeting, [X%] adm
 - [Concrete accomplishment — what was built/decided/shipped]
 - [Concrete accomplishment]
 - [Non-Claude work detected from Familiar — e.g., "Reviewed board deck in Google Slides (~20min)"]
-- [Decisions/approvals from sent email — e.g., "Approved Fathom/Zoom fix (Jim Corriveau)"]
-- [Coordination from Slack — e.g., "Sent Red's contractor info to Heather for onboarding"]
+- [Decisions/approvals from sent email — e.g., "Approved the Fathom/Zoom fix with vendor support"]
+- [Coordination from Slack — e.g., "Sent the onboarding paperwork to HR"]
 
 ## Asana
 **Overdue:**
@@ -1136,7 +1136,7 @@ Write these keys from the **target-date** Apple Health pulled in Step 1f-bis (`a
 
 **Do NOT write or overwrite `sleep_*` here** — sleep is keyed to wake-up date and is owned by the morning write (per the Sleep semantics in 1f-bis). Preserve whatever is already there.
 
-**DO overwrite `hrv_ms` for the target date with the settled aggregate.** This is close-day's job precisely because close-day runs after the day is over. Apple samples HRV opportunistically, so the daily value is an average of whatever has landed so far: overnight samples run high, daytime samples pull it down, and the number drifts downward through the day. The morning value `/open-day` wrote is therefore systematically optimistic — on Kevin's vault 2026-07-29 read **66** in the morning and settled at **44** (also 7/20: 106 → 63; 7/24: 70 → 49; every divergence ran high).
+**DO overwrite `hrv_ms` for the target date with the settled aggregate.** This is close-day's job precisely because close-day runs after the day is over. Apple samples HRV opportunistically, so the daily value is an average of whatever has landed so far: overnight samples run high, daytime samples pull it down, and the number drifts downward through the day. The morning value `/open-day` wrote is therefore systematically optimistic — on one real vault a morning reading of **66** settled at **44**, and two others read 106 → 63 and 70 → 49; every divergence ran high.
 
 Write `hrv_ms` from the target-date `apple_health_daily(target).heart.hrv_ms`. If close-day runs the same evening the value is better but not fully settled; when it runs the next day (the common catch-up case) it is final. Leave `null` if Apple returned nothing.
 
@@ -1246,7 +1246,7 @@ Then confirm with `create_task_confirm` using workspace `${ASANA_WORKSPACE_GID}`
 - If a carry-over item was also carry-over from a previous day → bump priority up one level
 
 **Rules for Asana write-back:**
-- **Only create tasks for actionable items the builder owns.** Skip items that are someone else's action (e.g., "Davo sends proposal").
+- **Only create tasks for actionable items the builder owns.** Skip items that are someone else's action (e.g., "an external collaborator sends the proposal").
 - **Don't duplicate.** Before creating, search Asana for similar task names. If a match exists, skip (or comment on it instead).
 - **Include source context** in the description so the builder knows where the task came from.
 - **Present the full Asana sync plan to the builder** before executing. Show three columns:
@@ -1260,9 +1260,9 @@ Then confirm with `create_task_confirm` using workspace `${ASANA_WORKSPACE_GID}`
   - "Automation tracker skill" (GID: 789) — "Built registration form, still need builder import"
 
 ➕ Create new (3):
-  - "Draft Davo Wood contract w/ IP carve-outs" — P1, due 3/27
+  - "Draft the partner agreement redlines" — P1, due 3/27
   - "Package Obsidian template for Joe" — P2, due 3/28
-  - "Create GitHub repo for Red's feedback bot" — P3, due 3/31
+  - "Create GitHub repo for the feedback bot" — P3, due 3/31
 ```
 
 The builder approves, modifies, or skips before any Asana writes happen.
@@ -1335,7 +1335,7 @@ If a completed Asana task's description contains `Source: SLT Meeting` or an exp
 ```
 🧠 SLT Airtable sync plan:
 ✅ Complete (2):
-  - rec123... "Order Thu lunch via Katie's sheet" — Slack: builder confirmed in Huddle thread
+  - rec123... "Order Thu lunch via the ops sheet" — Slack: builder confirmed in Huddle thread
   - recABC... "Bring wired setup for offsite tech" — Familiar: 30+ caps on SLT prep doc
 
 🔄 Advance to In Progress (1):
@@ -1368,7 +1368,7 @@ For each item, classify and propose a route:
 
 | # | Item | Classification | Proposed action |
 |---|---|---|---|
-| 1 | "gary's enrollment funnel → SLT EA Bot?" | Decision | Add to tomorrow's Top 3: "Decide: Gary funnel routing" |
+| 1 | "enrollment funnel → SLT EA Bot?" | Decision | Add to tomorrow's Top 3: "Decide: enrollment funnel routing" |
 | 2 | "LOP dashboard split" | Task | Create Asana P2: "Split LOP dashboard from SLT base" — already a carry-over, confirm close? |
 | 3 | "NCO quality update" | Task | Create Asana P2: "NCO quality update — who owns this?" |
 

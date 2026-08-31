@@ -188,17 +188,51 @@ import os, subprocess, sys, pathlib, re
 kb_dir = pathlib.Path(os.environ.get('OBSIDIAN_VAULT_PATH', '')) / '60-nsls-knowledge'
 
 def live_allowlist(kb_dir):
+    """(text, source) on success · None = no clone · False = clone, but unreadable.
+
+    THREE OUTCOMES, NOT TWO. The old version returned None both when the KB had
+    never been cloned and when a fetch FAILED, which are not the same thing:
+
+      - no clone      -> a first run. The shipped fallback is the right answer.
+      - fetch failed  -> a network blip, an expired credential, a timeout. The
+                         writer may well be ON the allowlist. Falling back to a
+                         shipped copy (now deliberately empty) routed them to
+                         their LOCAL KB and told them to ask to be added, while
+                         they believed the harvest reached the shared KB. Silent,
+                         and it loses their work.
+
+    A clone that cannot be refreshed still holds the last allowlist it pulled.
+    Stale is not blind: use it and say it is stale. Only when even that is
+    unreadable is the answer genuinely unknown — and unknown is reported, never
+    resolved into a clean "not SLT".
+    """
     if not (kb_dir / '.git').exists():
         return None
+
+    def read(ref):
+        try:
+            return subprocess.check_output(
+                ['git', '-C', str(kb_dir), 'show', ref + ':_data/kb_authors.txt'],
+                text=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            return None
+
     try:
         subprocess.run(['git', '-C', str(kb_dir), 'fetch', '-q', 'origin', 'main'],
                        check=True, stderr=subprocess.DEVNULL, timeout=30)
-        text = subprocess.check_output(
-            ['git', '-C', str(kb_dir), 'show', 'origin/main:_data/kb_authors.txt'],
-            text=True, stderr=subprocess.DEVNULL)
-        return text, str(kb_dir) + '/_data/kb_authors.txt @origin/main'
+        text = read('origin/main')
+        if text is not None:
+            return text, str(kb_dir) + '/_data/kb_authors.txt @origin/main'
     except Exception:
-        return None
+        pass  # fall through to the stale-but-real copy below
+
+    for ref in ('origin/main', 'HEAD'):
+        text = read(ref)
+        if text is not None:
+            return text, (str(kb_dir) + '/_data/kb_authors.txt @' + ref +
+                          ' (STALE — could not reach the KB repo)')
+
+    return False
 
 shipped_paths = [
     pathlib.Path.home() / '.claude/local-plugins/nsls-personal-toolkit/skills/harvest-meeting/kb_authors.txt',
@@ -211,6 +245,18 @@ if override and pathlib.Path(override).exists():
     authors_text, authors_src = pathlib.Path(override).read_text(), override
 else:
     live = live_allowlist(kb_dir)
+    if live is False:
+        # The clone is here but its allowlist cannot be read at any ref. We do
+        # not know whether this writer is on it, and guessing "no" would route
+        # a company-KB harvest into a private local one without saying so.
+        # Stop and say we are blind — an unknown answer is never a clean one.
+        print('FATAL: the KB clone at ' + str(kb_dir) + ' exists, but its')
+        print('  _data/kb_authors.txt could not be read at origin/main or HEAD.')
+        print('  Routing is therefore UNKNOWN, and an unknown allowlist must not')
+        print('  be resolved into "not SLT" — that would silently send a company')
+        print('  harvest to your local KB. Fix the clone (git -C "' + str(kb_dir) + '" fetch origin main)')
+        print('  and re-run, or set HARVEST_AUTHORS_FILE to an explicit list.')
+        sys.exit(2)
     if live:
         authors_text, authors_src = live
     else:

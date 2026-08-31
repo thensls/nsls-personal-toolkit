@@ -64,21 +64,21 @@ matter by having managers act on them. The loop is open.
 - [x] `biweekly_sweep.py` — `ingest_sources_available.signal` + per-direct-report `signal_ingest_planned` + `signal_slug` in the manifest; SKILL.md documents the orchestrator running `fetch_signal --fetch` for those rels (cron-ready, no MCP).
 
 ### Phase 2 — `/open-day` Management surfacer (R5) — DONE
-- [x] `surface_management_for_day.py` (new) — celebrate (Signal win) / develop (coaching goal) / unblock (Signal friction) for today's direct-report attendees; resolves person-redirect aliases (Red↔Jana); self-gates on `SIGNAL_INGEST`.
+- [x] `surface_management_for_day.py` (new) — celebrate (Signal win) / develop (coaching goal) / unblock (Signal friction) for today's direct-report attendees; resolves person-redirect aliases (Robin↔Jana); self-gates on `SIGNAL_INGEST`.
 - [x] Live per-report fetch via `fetch_signal --fetch --weeks 4` (per-attendee, not an org-wide daily sweep — the full-team scan is Phase 3's job).
 - [x] Streak-≥3 / novel-low → `top3_candidates` fed to the Morning Top 3; cadence flag at N=2 wks.
-- [x] open-day SKILL.md: "Management — today's people" section + format + Top-3 feed rules. Tested on today's calendar (Chelsea + Trina surfaced; non-reports excluded).
+- [x] open-day SKILL.md: "Management — today's people" section + format + Top-3 feed rules. Tested on a live calendar (two direct reports surfaced; non-reports excluded).
 
 ### Phase 3 — `/open-week` Management cadence lane (R6) — DONE
 - [x] `fetch_signal.py --team-summary` (token-direct) + `surface_management_for_week.py`: celebrate/develop/unblock candidates, cadence alerts (chronic vs lapsed), and loop-closure (just-broken streaks → "tell them"; novel-lows/just-started → emerging). Friction quotes sensitivity-screened.
-- [x] open-week SKILL.md Step 2.5 + Week Plan "Management Cadence" block: three-intentions prompt (1 celebrate / 1 develop / 1 unblock on three *different* reports), loop-closure, cadence rules. Tested live: 8/10 submitted, Trina loop-closure flagged, Chelsea health line dropped.
+- [x] open-week SKILL.md Step 2.5 + Week Plan "Management Cadence" block: three-intentions prompt (1 celebrate / 1 develop / 1 unblock on three *different* reports), loop-closure, cadence rules. Tested live: 8/10 submitted, one loop-closure flagged, one health line dropped.
 - [~] Coaching-goal progress review folded into develop_candidates (full per-goal evidence diff stays in the biweekly sweep). Phase 4 (cross-week loop-closure ledger) still open.
 
 ### Phase 4 — Loop-closure tracking (R10) — DONE
 - [x] `loop_ledger.py` — durable JSON ledger at `03-meta/loop-closure-ledger.json`. Models friction *episodes* (recurring streak ≥2, keyed by slug + started_week) through open → resolved → closed. `--update` reconciles against the team summary (opens loops on recurring friction, resolves when the streak ends, backfills just-broken streaks); `--close "<name>" --note` closes; `--for "<names>"` filters for open-day; themes sensitivity-screened.
 - [x] Roll-forward: resolved-but-unclosed loops persist in `close_the_loop` until closed; loops open ≥3 weeks → `p1_candidates`.
 - [x] open-week Step 2.5: ledger drives the "🔁 Close the loop" + "Still open / P1" sections; closing is a one-liner (`--close`). open-day Management lane: `--for` adds a "🔁 Close loop" line for today's people.
-- Tested live: opened Chris + Reuben (streak 2), backfilled+resolved Trina (streak broke); idempotent; `--close` drops it from the roll-forward.
+- Tested live: opened two reports (streak 2), backfilled+resolved a third (streak broke); idempotent; `--close` drops it from the roll-forward.
 
 ## Decision: where loop-closure state lives
 Resolved (was an open question): a durable **JSON ledger in `03-meta/`** (not profile, not cache). Persists + iCloud-syncs, machine-readable for the scripts, themes already sensitivity-screened so it honors distilled-in-vault.

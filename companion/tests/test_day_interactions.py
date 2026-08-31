@@ -253,7 +253,7 @@ def test_ai_suggestions_surface_in_plan_your_day(client_with_today):
         "## Morning Check-in\n"
         "### AI Suggested: Top 3 (from yesterday's close)\n"
         "1. **Reply to Joe on PR #142** — Blocks his merge.\n"
-        "2. **Q3 LOP draft to Kevin** — Deadline Thursday.\n"
+        "2. **Q3 LOP draft to Marcus** — Deadline Thursday.\n"
         "\n"
         "### AI Suggested: Delegate These\n"
         "1. **Schedule offsite** → Katie — Operational.\n"
@@ -266,7 +266,7 @@ def test_ai_suggestions_surface_in_plan_your_day(client_with_today):
     body = resp.data
     # Cleaned titles
     assert b"Reply to Joe on PR #142" in body
-    assert b"Q3 LOP draft to Kevin" in body
+    assert b"Q3 LOP draft to Marcus" in body
     assert b"Schedule offsite" in body
     # Source labels visible — both Top 3 and Delegate variants
     assert b"AI: Top 3" in body

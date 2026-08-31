@@ -112,7 +112,7 @@ const TOOLS = [
     name: 'signal_person_goals',
     description:
       'L2/L3 goal updates for one person over the last N weeks, grouped per goal. Each goal returns goal_name, level (L2/L3), latest_health (GREEN/YELLOW/RED), latest_update_at, latest_update_body, update_count. ' +
-      'Use for OKR/goal questions: "how is Trina trending on her Q2 OKR?", "any of my reports off track?", "which goals haven\'t been updated in 2 weeks?". ' +
+      'Use for OKR/goal questions: "how is Vera trending on her Q2 OKR?", "any of my reports off track?", "which goals haven\'t been updated in 2 weeks?". ' +
       'Manager scope: 403 unless the slug is your direct report or yourself. Window: 1-52 weeks, default 12.',
     inputSchema: {
       type: 'object',

@@ -1,7 +1,7 @@
 # Handoff — Visual Companion restyle (continue in Claude Code desktop)
 
 **Branch:** `pp-visual-companion` (worktree at `/Users/claw/dev/nsls-personal-toolkit-cowork`)
-**Lands in:** PR #29 (https://github.com/thensls/nsls-personal-toolkit/pull/29). Do NOT push or update the PR without Davo's explicit OK. Keep the word "cowork" out of anything that reaches the PR (commit messages, PR text) — squash at push time if needed.
+**Lands in:** PR #29 (https://github.com/thensls/nsls-personal-toolkit/pull/29). Do NOT push or update the PR without the repo owner's explicit OK. Keep the word "cowork" out of anything that reaches the PR (commit messages, PR text) — squash at push time if needed.
 **Full plan:** `docs/plans/2026-06-28-visual-companion-restyle.md` — read it first.
 
 ## The decision (context)
@@ -19,7 +19,7 @@ navy `#18315A` · bluegray `#33475B` · darkblue `#425B76` · teal `#0091AE` (th
 
 ## What's LEFT (in priority order)
 
-### A. Test mode (`-t`) — DO THIS FIRST (Davo's priority)
+### A. Test mode (`-t`) — DO THIS FIRST (the owner's priority)
 Goal: `open day -t` / `close day -t` run against a **separate test vault** so trying the companion never touches real daily notes. `reset-day -t` wipes test data only.
 
 Research already done (see the plan doc, Task 6): the whole system keys off ONE variable, `$OBSIDIAN_VAULT_PATH`. `cli.py serve` reads `--vault` or that env var → `create_app(vault_path)` → everything uses `app.config["VAULT_PATH"]`. Skills write to `$OBSIDIAN_VAULT_PATH/01-daily/...`. So `-t` = point that variable at a test vault.

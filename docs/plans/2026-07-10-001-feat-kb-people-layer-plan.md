@@ -198,7 +198,7 @@ Two pilot findings sharpen the need. First, day-one Q&A routing showed the answe
 - **KTD2 — Revert is one new kb-gateway op; everything else reuses existing ops.** `kb_edits.apply_edit` already carries SHA-guarded `arbitrary` (section) and `frontmatter` ops — membership approvals and contributor writes ride `frontmatter` as-is. Revert needs whole-file semantics: add a `file` candidate op (replace full body, guarded by `file_base_sha256`, one RefMoved retry) so the site can restore a node to its pre-commit content as a new attributed commit. No git-revert plumbing; restore-to-known-content is honest and simple.
 - **KTD3 — `links` frontmatter is a list of `"Title | https://url"` strings.** kb-gateway's naive parser handles scalar lists (not dict lists); the site's gray-matter parses either. One flat format keeps both parsers truthful. Rendering splits on the first `|`.
 - **KTD4 — Site→Signal events go through a new bearer-gated HTTP surface on the bot.** The bot already runs an aiohttp server (health check). Expose it on a Railway domain with `BOT_EVENTS_TOKEN`; the site posts events (`thank`, `membership_request`) and the bot delivers DMs and runs approval flows. Slack stays on Socket Mode; this is inbound-events only.
-- **KTD5 — Owner approval replaces Marcus approval, with a pilot FYI flag.** `kb_capture` approval cards route to the node owner's DM (resolved owner → Employees table → Slack ID; ownerless → Marcus). `KB_CAPTURE_FYI_KEVIN=true` (pilot default) sends Marcus a non-actionable FYI copy; clearing it ends the copies. Rubric gate is unchanged and still fail-closed.
+- **KTD5 — Owner approval replaces Marcus approval, with a pilot FYI flag.** `kb_capture` approval cards route to the node owner's DM (resolved owner → Employees table → Slack ID; ownerless → Marcus). `KB_CAPTURE_FYI_OWNER=true` (pilot default) sends Marcus a non-actionable FYI copy; clearing it ends the copies. Rubric gate is unchanged and still fail-closed.
 - **KTD6 — Answer-marking is quick-reply buttons on the bot's relay.** In a routed question thread, each owner reply gets two buttons on the bot's confirmation: "Send as answer" and "Just clarifying — relay it". Clarifying replies relay to the asker and keep the thread open; "Send as answer" delivers, flips the row, and starts capture. Replaces the current first-reply-is-the-answer behavior.
 - **KTD7 — Identity anchors on email everywhere.** Site session (SSO email) → people directory → person; frontmatter person wikilinks resolve name → directory entry; git commit author email → directory. Owner-gating (revert, thank, approvals) compares emails, never display names. A rename changes only the directory row.
 - **KTD8 — Avatars are Slack profile photos synced daily.** rippling-sync resolves each person's `slack_user_id` → `users.info` → `profile.image_192` and writes `avatar_url` into `_data/employees.json`. No site-side Slack calls; behind SSO the CDN URLs are acceptable.
@@ -248,7 +248,7 @@ sequenceDiagram
   C->>B: reply in solicited/routed thread
   B->>B: rubric gate (fail closed)
   B->>O: approval card (Approve / Hold)
-  B-->>K: FYI copy (while KB_CAPTURE_FYI_KEVIN)
+  B-->>K: FYI copy (while KB_CAPTURE_FYI_OWNER)
   O->>B: Approve
   B->>B: commit via kb-gateway (row's Proposed Block)
   B->>C: "your contribution is live" + credit as contributor
@@ -358,7 +358,7 @@ Phased delivery. Phase A unblocks everything; B (site) and C (bot) can proceed i
 - **Approach:** Static-generated from the people directory ∩ people referenced in frontmatter; sections: accountable-for (kind-split), works on / expert in, avatar + role/department from directory. Unknown person slug → 404.
 - **Patterns to follow:** `app/kpi/[slug]/page.tsx` generateStaticParams pattern.
 - **Test scenarios:** person with mixed roles renders both sections; person in directory but with no KB roles → page renders with an empty-state; unknown slug → notFound.
-- **Verification:** /people/ashleigh-smith renders her Response Rate accountability against real content.
+- **Verification:** /people/priya-nakamura renders her Response Rate accountability against real content.
 
 ### U9. Edit history on node pages
 
@@ -404,7 +404,7 @@ Phased delivery. Phase A unblocks everything; B (site) and C (bot) can proceed i
 - **Requirements:** R22, AE2 (unchanged rubric), Key Decision "owner is the approval authority".
 - **Repo:** `nsls-coach`
 - **Dependencies:** none (modifies shipped capture flow).
-- **Files:** `handlers/kb_capture.py`, `config.py` (`KB_CAPTURE_FYI_KEVIN`), `tests/test_kb_capture.py`, `CLAUDE.md`.
+- **Files:** `handlers/kb_capture.py`, `config.py` (`KB_CAPTURE_FYI_OWNER`), `tests/test_kb_capture.py`, `CLAUDE.md`.
 - **Approach:** `_propose_capture` resolves the approver: node owner (frontmatter → Employees → Slack ID) else Marcus. Approve/Hold clicker check becomes approver-or-Marcus (Marcus retains override). FYI flag sends Marcus a compact non-actionable copy while true. Self-approval allowed when contributor == owner (per plan decision; Outstanding Question on KPI second-eyes resolved: allowed in v1, revisit with usage).
 - **Patterns to follow:** existing card build/claim/idempotency machinery — this is a routing change, not a rebuild.
 - **Test scenarios:** Covers AE2 (held content still never reaches a card). Owned node → card to owner, not Marcus; FYI on → Marcus gets copy without buttons; FYI off → no copy; ownerless → Marcus card as today; owner approves → commit (existing paths); Marcus can still approve/hold an owner's card (override); non-owner non-Marcus clicker rejected.

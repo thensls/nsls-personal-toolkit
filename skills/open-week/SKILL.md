@@ -259,7 +259,7 @@ goals = [{
     "current": 36.2, "baseline": 36.2, "target": 37.0, "unit": "ml/(kg·min)",
     "progress_pct": 0,  # baseline = current → no gain yet
     "weekly_action": "2x zone-2 + 1x intervals",
-    "anchor": "After walking Red, Mon/Wed/Fri 7:45am",
+    "anchor": "After walking the dog, Mon/Wed/Fri 7:45am",
     "hit_rate_7d": "2/3",  # or "no data yet"
     "hit_rate_28d": "8/12",
     "end": "2026-06-30",
@@ -566,7 +566,7 @@ This drives a **Management Cadence** block in the Week Plan (Step 3) and the
 **Rules:**
 - The three intentions are the point — exactly one per bucket, each on a *different* report
   (recognition + development + unblocking spread across the team, never stacked on one person).
-- **🌱 Develop — plan it with GAIN (Jack Cohen's feedback framework).** When you set the develop
+- **🌱 Develop — plan it with GAIN (Jack Donnelly's feedback framework).** When you set the develop
   intention, frame the conversation toward the gain, not the pain, in four steps:
   - **G — Goal:** what you *both* gain from the change (same-team signal, not a complaint).
   - **A — Actions:** observable behavior, no judgment.
@@ -726,7 +726,7 @@ If **14 or more days** have passed since the last assessment:
 Then execute the full Relationship Health Check flow from the person-intelligence skill:
 1. Present health dashboard with current scores
 2. AI proposes updated scores based on recent data
-3. Kevin confirms or adjusts
+3. The builder confirms or adjusts
 4. Coaching goal review — new evidence, goal updates, new proposals
 5. Personal details prompt for profiles with gaps
 6. Growth reflection (Jack's 5 questions)
@@ -765,7 +765,7 @@ is present. Render it with the `🪑` glyph after the `🎯` actions; omit the l
 is null.
 
 **Also check the most recent team-pulse digest** at `$OBSIDIAN_VAULT_PATH/30-people/_pulse/YYYY-MM-DD-team-pulse.md`:
-- If a "Manager Mode Review" prompt exists, surface it under the week plan as a question for Kevin to consider
+- If a "Manager Mode Review" prompt exists, surface it under the week plan as a question for the builder to consider
 - If "Proposed Coaching Updates" exist, surface them for review
 
 **Rules:**
@@ -774,7 +774,7 @@ is null.
 - If `sweep_status.exit_code != 0` or last sweep was >18 days ago, alert
 - If no actions surface AND no role cue AND no sweep error, skip this section
 
-This gives Kevin a birds-eye view of which relationship moves to make this week, prioritized by who's actually on the calendar and what the data says is most important.
+This gives the builder a birds-eye view of which relationship moves to make this week, prioritized by who's actually on the calendar and what the data says is most important.
 
 ### Step 5: Write week plan
 
