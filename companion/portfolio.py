@@ -895,11 +895,21 @@ def evaluate_flags(current: WeekTotals, history: list[WeekTotals],
     # which is exactly the caller a prose-only rule would not reach.
     reliability = [w.by_quadrant.get("reliability") for w in recent]
     if not current_measured:
+        # Say WHICH of the two ways it was unmeasured. The reason a person
+        # reads has to match what actually happened: this fired for a week
+        # where meeting_rows read fine and only project_weeks was broken, and
+        # a blanket "neither was readable" would have been simply false. A
+        # reason that misdescribes its own cause is the same defect as a
+        # silent one, one step later.
         suppress({"project_weeks": None, "meeting_rows": None},
-                 "this week carried no READABLE `project_weeks` and no "
-                 "readable `meeting_rows` container (absent, or present and "
-                 "not a list) — an unmeasured week, not a week with 0h in it, "
-                 "so the reliability-starvation flag did not run this week")
+                 "this week's hours could not be trusted as measured — either "
+                 "no row container was readable at all, or one was supplied "
+                 "and broken while the other read fine. Both `project_weeks` "
+                 "and `meeting_rows` feed reliability hours, so a 0h total is "
+                 "only believable when neither was unreadable. An unmeasured "
+                 "week is not a week with 0h in it, so the "
+                 "reliability-starvation flag did not run this week — see the "
+                 "per-key rejections above for which container failed")
     elif any(not _finite_number(h) for h in reliability):
         suppress({"by_quadrant": "reliability"},
                  "a week in the comparison recorded no reliability hours at "
@@ -1457,8 +1467,19 @@ def _summarize(payload: dict) -> dict:
         # fired "reliability starving — 0h for 2 consecutive weeks" out of a
         # payload from which not one row was ever read. Key presence is not
         # evidence of measurement.
-        current_measured=(project_state == _ROWS_READ
-                          or meeting_state == _ROWS_READ),
+        # AND "at least one container was read" was still too weak. With
+        # `project_weeks: "bad"` beside `meeting_rows: []`, one container read
+        # fine (there were genuinely no meetings) so the week counted as
+        # measured — and a 0h reliability total got trusted even though the
+        # project rows, which also contribute reliability hours, were supplied
+        # and broken. A zero is only trustworthy when nothing that feeds it was
+        # unreadable, so a container that was PRESENT AND INVALID poisons the
+        # measurement even when its sibling is fine. Absent is different: the
+        # caller supplied what it had.
+        current_measured=(
+            _ROWS_INVALID not in (project_state, meeting_state)
+            and _ROWS_READ in (project_state, meeting_state)
+        ),
     )
     return _summary(current, flags, shape_rejects)
 

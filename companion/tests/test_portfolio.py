@@ -2594,15 +2594,38 @@ def test_an_explicit_empty_container_is_still_a_measured_zero():
     assert any("Reliability starving" in f for f in result["flags"])
 
 
-def test_one_readable_container_is_enough_to_call_the_week_measured():
-    """`meeting_rows: []` alone is a measured week even when project_weeks
-    is unreadable -- the builder measured something."""
+def test_a_broken_container_poisons_the_week_even_if_its_sibling_read_fine():
+    """One readable container is NOT enough. `meeting_rows: []` reads fine and
+    says there were no meetings -- but `project_weeks: "bad"` means project
+    rows were supplied and are broken, and BOTH feed reliability hours. So a
+    0h reliability total is not believable, and the flag must not fire.
+
+    An earlier pass asserted the opposite here, on the reasoning that "the
+    builder measured something". They measured MEETINGS. Reliability comes
+    from both, so measuring one of two inputs cannot license a zero."""
     history = [{"by_quadrant": {"growth-driver": 5.0,
                                 "operating-efficiency": 0.0, "hygiene": 0.0,
                                 "reliability": 0.0, "cross-cutting": 0.0},
                 "by_mode": {"offense": 5.0, "defense": 0.0}}]
     result = summarize({"project_weeks": "bad", "meeting_rows": [],
                         "history": history,
+                        "driver_hours": 0.0, "held_hours": 0.0})
+    assert not any("Reliability starving" in f for f in result["flags"]), \
+        "a broken project container must not license a 0h reliability claim"
+    # And the suppression is reported, naming the untrustworthy total.
+    assert any("could not be trusted as measured" in r["reason"]
+               for r in result["rejected"])
+
+
+def test_an_absent_sibling_still_leaves_the_week_measured():
+    """ABSENT is not INVALID. A caller that supplies only `meeting_rows` gave
+    us everything it had, and an empty read there is a real measured zero --
+    otherwise no flag could ever fire for a week with no project rows."""
+    history = [{"by_quadrant": {"growth-driver": 5.0,
+                                "operating-efficiency": 0.0, "hygiene": 0.0,
+                                "reliability": 0.0, "cross-cutting": 0.0},
+                "by_mode": {"offense": 5.0, "defense": 0.0}}]
+    result = summarize({"meeting_rows": [], "history": history,
                         "driver_hours": 0.0, "held_hours": 0.0})
     assert any("Reliability starving" in f for f in result["flags"])
 
