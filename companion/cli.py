@@ -165,6 +165,31 @@ def serve(vault, port, no_open):
             pass
 
 
+@main.command("python-path")
+def python_path():
+    """Print the Python interpreter that runs this companion.
+
+    Some skills need to run a MODULE rather than a command --
+    `"$PY" -m companion.portfolio` in close-week Step 2a -- and for that they
+    need the interpreter, not this console script.
+
+    Deriving it as `$(dirname "$TC")/python` is wrong, and wrong in exactly
+    the case it was written for. ensure-companion.sh promises one thing on
+    stdout: a path to a WORKING toolkit-companion binary. Two of its three
+    resolution cases are `<venv>/bin/` and `<venv>/Scripts/`, where a python
+    does sit beside the binary -- but the third is `command -v
+    toolkit-companion`, a binary found on PATH, whose directory can be a
+    pipx bin dir, a ~/.local/bin, or a symlink farm holding no interpreter at
+    all. On that supported fallback the derivation produced a $PY that does
+    not exist and BOTH module runs failed.
+
+    Asking the binary is the only derivation that is true in all three cases,
+    because the answer is not inferred: this process IS that interpreter, and
+    it is by construction one that can import `companion`.
+    """
+    click.echo(sys.executable)
+
+
 @main.command("test-vault")
 @click.option("--no-seed", is_flag=True, help="Create the vault structure but don't seed a sample day.")
 def test_vault(no_seed):

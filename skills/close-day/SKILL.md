@@ -435,21 +435,70 @@ The **"Meeting time"** line is an orthogonal metric — it cross-cuts all catego
 
 Use the Fathom MCP tools (no API key or Python script needed):
 
+**The date window must be the user's *local* day, converted to UTC, and the fetch must be scoped to the builder's own recordings.** Both rules are documented at length in `skills/harvest-meeting/SKILL.md` Step 2, which names close-day as the common case for the first one — reuse that pattern, don't re-derive it.
+
+`created_after` / `created_before` are absolute UTC instants, so hardcoding `T00:00:00Z`–`T23:59:59Z` asks for the UTC day, not the day the user means. Nobody on this team is in UTC (Pacific through Central), so that mistake silently drops every evening recording — a 7pm PT meeting on the 5th is `00:00Z on the 6th` — and leaks in early-morning meetings from the previous local day. **close-day runs in the evening, so this is the common case, not an edge case.** Compute the bounds from the local zone first.
+
+**And they filter Fathom's `created_at`, not the meeting's own time — so FETCH WIDE, THEN FILTER.** `list_meetings` has no meeting-time parameter at all (its filters are `created_after` / `created_before` / `recorded_by` / `teams` / `cursor` / `max_pages` / `include_*` — there is nothing else to pass), and `created_at` is when the recording landed, not when the meeting happened. **close-day is the worst case for this**: it runs in the evening, so the last meeting of the day is often still processing, and a recording created just after local midnight is created *outside* today and vanishes from today's note — while an older call re-uploaded this afternoon shows up as today's work. Query a **creation window padded by 2 days on each side**, then keep only the meetings whose own **meeting date** is the target day.
+
+> **Filter on the meeting date, because that is the only meeting-time field this tool returns.** `list_meetings` answers with a rendered listing, one line per recording — `- <title> | YYYY-MM-DD | id: <recording_id> | url: <url> | recorded by <name> | <invitees>` — and that bare `YYYY-MM-DD` is its *only* temporal field. There is **no `scheduled_start_time` and no `created_at` on this surface**: `scheduled_start_time` is real but belongs to the Fathom **REST** API (`api.fathom.ai/external/v1`) that `skills/person-intelligence/scripts/` call with an API key, a different surface entirely. Post-filtering on a field the response does not carry does nothing at all, and the ±2d pad then goes unopposed — a **5-day** window rendered as today. Date-only filtering cannot separate a meeting an hour either side of local midnight; that residual is hours wide, against the four days the unfiltered pad costs.
+
+```bash
+python3 - "$TARGET_DATE" <<'PYEOF'
+import sys
+from datetime import datetime, timedelta, timezone
+d = sys.argv[1]                                   # YYYY-MM-DD, the user's local calendar day
+# A naive datetime's .astimezone() attaches the machine's local offset *for that datetime*,
+# so each boundary lands on the right side of a DST change. Build EACH boundary from its own
+# naive wall-clock time. Do not derive the end by adding timedelta(days=1) to start_local: an
+# aware datetime carries a FIXED offset, so arithmetic reuses midnight's offset and the end
+# boundary gets the wrong one on DST transition days (window 1h too long on spring-forward →
+# leaks the next local day; 1h too short on fall-back → drops the last hour of recordings).
+start_local = datetime.fromisoformat(f'{d}T00:00:00').astimezone()
+end_local   = datetime.fromisoformat(f'{d}T23:59:59').astimezone()
+fmt = lambda t: t.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+# The TRUE day — the meeting DATE each listed meeting is tested against below.
+# A date, not an instant: the bare YYYY-MM-DD in the listing is the only
+# meeting-time field list_meetings returns.
+print(f'keep_date: {d}')
+# The FETCH window — creation time, padded so a still-processing evening recording
+# is still returned. The pad only widens what comes back; the post-filter is what
+# makes the result the day.
+PAD = timedelta(days=2)
+print(f'created_after:  {fmt(start_local - PAD)}')
+print(f'created_before: {fmt(end_local + PAD)}')
+print(f'(local day {d} in {start_local.tzname()}; fetch window padded ±2d)')
+PYEOF
+```
+
+Then pass the two **padded** values, plus the recorder filter:
+
 ```
 list_meetings(        ← the Fathom connector's tool; resolve the live mcp__<uuid>__ name from this session's tools
-  created_after="YYYY-MM-DDT00:00:00Z",
-  created_before="YYYY-MM-DDT23:59:59Z",
+  created_after=<padded UTC start>,
+  created_before=<padded UTC end>,
+  recorded_by=["<the builder's own email>"],
   include_summary=true,
   include_action_items=true,
   max_pages=3
 )
 ```
 
-For each meeting returned, extract: title, time, attendees, summary key points, action items, and fathom URL. If `list_meetings` returns no results, skip this section.
+**Then post-filter the listing on the meeting date, before anything else uses it.** Read the `YYYY-MM-DD` on each listing line and keep the meeting only when it equals `keep_date`. Discard the rest; they are the padding doing its job, not today's work.
+
+> **A listing line whose date you cannot read is not silently kept or silently dropped.** This surface has no second temporal field to fall back on, so **keep it** — dropping a real meeting is the worse error — and say so: `Step 1c: N meeting(s) had no readable date; kept unfiltered, check them.` Name their titles so the unfiltered ones are visible rather than assumed.
+
+> ⚠️ **`recorded_by` is not optional.** Without it the call returns every recording the builder can *see*, coworkers' included — and a coworker's same-titled meeting then lands in the daily note with the wrong attendees and the wrong takeaways. Get the email from the Fathom connector's `get_identity` rather than assuming it.
+>
+> **Use these parameter names exactly.** There is no `start_date`, `end_date`, `owner_email`, or `recording_start_time` on this tool; passing those means the date and recorder filters are silently dropped and you get the newest page of *everything the user can see*.
+
+**Heartbeat both windows**, so a timezone mismatch is visible instead of looking like a quiet day and so the pad is never mistaken for the day: `Step 1c: Fathom fetch <created_after> → <created_before> (±2d pad); kept M of N by meeting date == YYYY-MM-DD, <tz>`. **M must be smaller than N on most days** — a ±2d pad that returns nothing to discard usually means the filter did not run.
+
+For each meeting **kept**, extract: title, time, attendees, summary key points, action items, and fathom URL. If nothing survives the filter, skip this section.
 
 If you need the full transcript for a specific meeting (e.g., to extract decisions or detailed context), use `get_meeting_summary(recording_id=<id>)`. Fetch at most 3 transcripts to keep the context manageable.
 
-**Fathom API is now date-scoped** — uses `created_after` and `created_before` params to fetch only the target day's meetings. This is fast (< 5 seconds) instead of paginating through all meetings since 2023.
+**Always date-scope the call** — `created_after` / `created_before` narrow it to a five-day creation window around the target day. That is fast (< 5 seconds) instead of paginating through all meetings since 2023. The ±2d pad is a fetch bound, not the day: the meeting-date filter above is what makes the result the day.
 
 **1d. Sent Email — outbound communications**
 
@@ -771,6 +820,9 @@ Match activity to projects using these signals (in priority order):
 
 Use the project mappings from `~/.claude/skills/log/SKILL.md` as the source of truth.
 
+Read `skills/close-week/references/portfolio-attribution.md` for the quadrant
+vocabulary and the mode-inference verbs. Do not invent quadrant values.
+
 ### Step 3: Draft the daily note
 
 Generate in this format (matching the builder's existing `01-daily/` structure):
@@ -875,8 +927,33 @@ Source: `${SLT_BASE_ID}/tblasgjUjadHCqzrg` — pulled fresh this evening.
 [Single paragraph listing action names separated by • for scanability. Only bullet individually if ≤5 items.]
 
 ## Projects Touched
-- [[20-projects/[slug]|[slug]]] — [1-line summary of what happened]
-- [[20-projects/[slug]|[slug]]] — [1-line summary]
+- [[20-projects/[slug]|[slug]]] — [1-line summary of what happened] · 2.5h · growth-driver · 80% offense
+- [[20-projects/[slug]|[slug]]] — [1-line summary] · 0.5h · uncategorized · 0% offense
+
+**The tail is machine-read; emit real values, never the placeholder brackets.**
+`companion/portfolio.py` parses `· <X.X>h · <quadrant> · <NN>% offense` exactly
+as written, so a line still carrying `[X.X]h` or `[quadrant]` does not parse and
+that project's hours drop out of the weekly roll-up. (Close-week reports skipped
+lines at its confirm gate, so this surfaces — but a week later, and only if
+someone reads it.) The separators are a middle dot `·` and an em dash `—`; a
+hyphen or an en dash in their place does not parse either. Only the summary text
+and the slug are freeform.
+
+Hours come from the same Familiar attribution that produced Time Allocation.
+Quadrant is the project's `portfolio-category` frontmatter — **provisional**,
+because close-week's confirm gate may override it when the week's activity says
+otherwise. Offense/defense split is inferred from this note's own Work Log
+bullets using the vocabulary in
+`skills/close-week/references/portfolio-attribution.md`. A project with no
+`portfolio-category` renders `· uncategorized ·` and is **not** guessed.
+
+**The quadrant slot takes one of exactly six words** — the five vocabulary values
+(`growth-driver`, `operating-efficiency`, `hygiene`, `reliability`,
+`cross-cutting`) or the literal `uncategorized`. Anything else, including a
+project whose frontmatter still carries a legacy value like
+`founder-transition`, does not parse: close-week reports the line as skipped at
+its confirm gate rather than filing those hours anywhere. Write `uncategorized`
+and fix the project's frontmatter — never pass a legacy value straight through.
 
 ## Carrying Over
 - [Unfinished items from Claude tasks, meeting action items, or Asana overdue]
