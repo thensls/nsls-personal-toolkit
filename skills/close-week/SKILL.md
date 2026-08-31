@@ -3,9 +3,11 @@ name: close-week
 description: >-
   Friday weekly roll-up — synthesizes the full week (Sat-Fri) of daily notes into
   achievements, learnings, project progress, time allocation, and
-  priorities-vs-reality. Formatted for quick notes copy-paste. Trigger phrases:
-  close week, weekly review, week summary, week roll up, friday summary, weekly
-  wrap, end of week
+  priorities-vs-reality, plus an external work summary compiled from Gmail, Slack,
+  Jira, and GitHub (shareable report + weekly reflection files). Formatted for
+  quick notes copy-paste. Trigger phrases: close week, weekly review, week
+  summary, week roll up, friday summary, weekly wrap, end of week, weekly work
+  summary
 ---
 
 # Close Week
@@ -245,6 +247,26 @@ This feeds Step 2 (synthesis) and Step 3 (weekly goal reflection writeback).
 
 Skip if no goals are active.
 
+**1f. External work summary (Gmail, Slack, Jira, GitHub)**
+
+Ported from the Cowork scheduled task `weekly-work-summary` (`~/Claude/Scheduled/weekly-work-summary/SKILL.md`) so the weekly close captures work as it appears in external systems, not just daily notes.
+
+Invoke the installed skill `anthropic-skills:weekly-work-summary` and follow it exactly. Key run details (each run starts fresh with no memory):
+
+- **Scope:** the current work week, Monday through today (Friday). If any weekday was a US federal holiday or the user was on PTO, note it and don't invent activity for those days.
+- **Gmail** — search for Gemini and Fathom meeting notes this week (`from:gemini-notes@google.com OR subject:Fathom OR subject:Notes`, dated this week). Read them and extract only Ev's own action items. Also scan the week's inbox for anything materially relevant beyond meeting notes (ignore newsletters and routine Jira notifications).
+- **Slack** — search `from:me after:[day before Monday]`, paginate through ALL pages (can be 5–8), read thread context, capture only what Ev personally said/decided/found. Slack's `after:` is exclusive — use the day before Monday.
+- **Jira** — Cloud ID `c1abc5a2-c018-4d99-b9e5-962d547ad838`, Ev's account ID `5f4d6796d3796e00469cc1c0`. Run two JQL queries over projects HELP, QT, EE, CLD, NIA, FEAT: (a) `status changed BY currentUser() AFTER "[Monday]" BEFORE "[Saturday]"`; (b) `comment ~ currentUser() AND updated` in that window. These results are large — save to disk and parse with a subagent/jq; extract ticket key, summary, current status for transitions, and Ev's own comment text for comments.
+- **GitHub** — no MCP connector exists; use Claude in Chrome. Navigate to github.com PR search `is:pr reviewed-by:@me updated:[Monday]..[Friday] sort:updated-desc`, plus `involves:@me` and `author:@me`. Use read_page (not get_page_text — the list is client-rendered). Distinguish reviewed/approved/merged vs authored vs comment-only.
+
+**Output** — write two files to `/Users/epokrovskiy/codebase/documents/productivity/`:
+- `slack-report-[MMDD]-[MMDD].md` — detailed bullet report, Slack-formatted (*bold* headers), grouped by project/topic, COMPACT style (short 1–2 sentence bullets, merge chatty context). Sections as applicable: Meetings, one per major project/thread, GitHub, Jira — transitions, Jira — comments.
+- `weekly-reflection-[MMDD]-[MMDD].md` — first-person conversational prose, four paragraphs: (1) What did I work on this week? (2) What moved forward / wins? (3) What was a grind or time suck? (4) What clicked, or what tool/skill would've helped go faster?
+
+Scope everything to Ev's OWN actions only — not what others did. Keep the reflection candid and natural, like talking to a teammate at a Friday check-in. Leave any personal/venting DM content out of the professional report. Present both files to the user (`mcp__cowork__present_files` when running in Cowork; SendUserFile otherwise).
+
+Carry the findings forward: they feed Step 2's Achievements (merged PRs, Jira transitions, decisions made in Slack) and Learnings (meeting themes, grind items from the reflection), and the weekly note links both files.
+
 ### Step 2: Synthesize
 
 **🔢 Business numbers — read these FIRST, before writing anything else in this step.**
@@ -341,7 +363,7 @@ Carry this read into Step 3's priorities. **P002 closes when this read happens b
 
 ---
 
-**Achievements:** Scan all Work Log bullets across the week. Pick the 5-8 most impactful — things that shipped, decisions that moved the needle, external commitments met. Prefer concrete outcomes with numbers over activity descriptions.
+**Achievements:** Scan all Work Log bullets across the week, plus the 1f external work summary (merged/reviewed PRs, Jira transitions, decisions made in Slack, meeting action items). Pick the 5-8 most impactful — things that shipped, decisions that moved the needle, external commitments met. Prefer concrete outcomes with numbers over activity descriptions.
 
 **Learnings:** Look for:
 - Patterns across meetings (Fathom themes)
@@ -349,6 +371,7 @@ Carry this read into Step 3's priorities. **P002 closes when this read happens b
 - Insights from conversations (Slack, email)
 - Process improvements discovered
 - "I wish I had..." moments from carry-overs that piled up
+- Grind / time-suck items and "what would've helped" notes from the 1f weekly reflection
 
 **Project Progress:** For each project that appeared in any daily note's `## Projects Touched`, summarize the week's movement. Status = on-track (touched 2+ days or key milestone hit), needs-attention (touched but blocked), stalled (not touched despite being active).
 
@@ -575,7 +598,7 @@ The skill will:
 
 Write to: `$OBSIDIAN_VAULT_PATH/02-weekly/YYYY-[W]WW.md`
 
-Full format with Dataview queries for projects touched/not touched.
+Full format with Dataview queries for projects touched/not touched. Include a `## Work Summary` section linking the two 1f files (`slack-report-…` and `weekly-reflection-…` in `/Users/epokrovskiy/codebase/documents/productivity/`) with a 2-3 bullet digest of each; omit the section if 1f was skipped.
 
 **Include `## Portfolio Allocation` whenever Step 2a's confirm gate was confirmed**, immediately after the Business Numbers table and before Achievements (Step 2a runs there for exactly this reason). If the builder rejected the whole table at the confirm gate, or Step 2a was skipped because the companion interpreter could not be resolved, this section is omitted entirely from the weekly note — per Step 2a #4, no confirmed table means no section, never a guessed one (and Project Progress goes ungrouped, per its fallback). When it is included, populate it from Step 2a's module output — every cell is a value the module returned, never a hand computation:
 
@@ -778,6 +801,8 @@ Use the same Asana write-back pattern as `/close-day` — present plan, user app
 
 - **Missing daily notes:** Some days may not have `/close-day` run (especially weekends). Use whatever exists — even partial daily notes have Morning Check-in priorities. Weekend notes may not exist at all; pull Familiar data directly for those days.
 - **No Familiar data for a day:** Skip that day in time allocation, note the gap.
+- **1f connectors unavailable:** If Gmail/Slack/Jira aren't connected (or `anthropic-skills:weekly-work-summary` isn't installed), skip Step 1f with a one-line note and run the roll-up from daily notes as before. If only GitHub is unreachable (Chrome not connected), run 1f without the GitHub section and note the gap in the report.
+- **1f already ran today:** The Cowork scheduled task fires Fridays at 5pm and writes the same two files. If `slack-report-[MMDD]-[MMDD].md` for this week already exists in `documents/productivity/`, reuse it instead of regathering — just read it into Step 2 and link it from the weekly note.
 - **Short week (holiday, PTO):** Adjust date range. Still generate — even a 3-day week deserves a roll-up.
 - **Weekend work:** If the user works weekends, always check for Saturday and Sunday daily notes and Familiar data. Weekend hours count toward weekly totals and time allocation.
 - **User ran /close-week already this week:** Check if `02-weekly/YYYY-[W]WW.md` exists. If so, ask if they want to regenerate or append.
