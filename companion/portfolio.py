@@ -79,9 +79,43 @@ def _json_safe(value):
     well-formed row is echoed back exactly as it was handed in."""
     if isinstance(value, float) and not math.isfinite(value):
         return repr(value)
-    if value is None or isinstance(value, (str, bool, int, float)):
+    if isinstance(value, int) and not isinstance(value, bool):
+        # An int too large to render is not JSON either: json.dumps converts
+        # via int->str and hits the same cap _show() describes below. Hand
+        # back the description instead of a number no reader could use.
+        return value if _renderable_int(value) else _show(value)
+    if value is None or isinstance(value, (str, bool, float)):
         return value
-    return repr(value)
+    return _show(value)
+
+
+# Python caps int -> str conversion as a DoS guard (sys.set_int_max_str_digits,
+# 4300 by default), so repr() of a big enough int RAISES ValueError. That bit
+# the REJECTION MACHINERY: aggregate() correctly spotted hours=10**5000 as
+# non-finite, then died formatting the reason that says so — and one absurd row
+# discarded the whole week instead of being rejected on its own.
+_MAX_REPR_DIGITS = 4300
+_MAX_REPR_BITS = int(_MAX_REPR_DIGITS / math.log10(2))
+
+
+def _renderable_int(value: int) -> bool:
+    """bit_length() is cheap and never converts to a string, so this asks the
+    question without tripping over the thing it is asking about."""
+    return value.bit_length() <= _MAX_REPR_BITS
+
+
+def _show(value) -> str:
+    """The one safe way to put an untrusted value into a reason a person
+    reads. Every reason string goes through this rather than !r, so no single
+    site can be the one that forgot."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        if not _renderable_int(value):
+            digits = int(value.bit_length() * math.log10(2)) + 1
+            return f"<int of about {digits} digits, too large to print>"
+    try:
+        return repr(value)
+    except Exception as exc:                      # noqa: BLE001 — last resort
+        return f"<unprintable {type(value).__name__}: {type(exc).__name__}>"
 
 
 @dataclass(frozen=True)
@@ -205,12 +239,12 @@ class Resolution:
         # resolved_by (a list from a JSON payload) is refused, not raised on.
         if self.resolved_by not in RESOLVED_BY:
             raise ValueError(
-                f"resolved_by {self.resolved_by!r} is not one of "
+                f"resolved_by {_show(self.resolved_by)} is not one of "
                 + ", ".join(repr(v) for v in RESOLVED_BY))
         normalised = _normalised_splits(self.splits)
         if normalised is None:
             raise ValueError(
-                f"splits {self.splits!r} is not a sequence of "
+                f"splits {_show(self.splits)} is not a sequence of "
                 "[quadrant, share] pairs")
         # frozen=True blocks plain assignment; this is the documented way to
         # finish initialising a frozen dataclass.
@@ -537,7 +571,7 @@ class WeekTotals:
         for quadrant, modes in self.by_quadrant_mode.items():
             if not isinstance(modes, dict):
                 raise TypeError(
-                    f"by_quadrant_mode[{quadrant!r}] must be a dict, not "
+                    f"by_quadrant_mode[{_show(quadrant)}] must be a dict, not "
                     f"{type(modes).__name__}")
 
 
@@ -624,7 +658,7 @@ def aggregate(project_weeks: list[ProjectWeek],
         if not _finite_number(pw.hours):
             rejected.append(RejectedRow(
                 "project", _project_row_dict(pw),
-                f"hours {pw.hours!r} is not a finite number — row excluded "
+                f"hours {_show(pw.hours)} is not a finite number — row excluded "
                 "from the week"))
             continue
         if pw.hours < 0:
@@ -642,7 +676,7 @@ def aggregate(project_weeks: list[ProjectWeek],
             # treatment as unusable hours: out of the week, and reported.
             rejected.append(RejectedRow(
                 "project", _project_row_dict(pw),
-                f"hours {pw.hours!r} overflows the week's running total "
+                f"hours {_show(pw.hours)} overflows the week's running total "
                 "(no longer a finite number) — row excluded from the week"))
             continue
         total += pw.hours
@@ -650,7 +684,7 @@ def aggregate(project_weeks: list[ProjectWeek],
         if not _finite_number(pw.offense_pct):
             rejected.append(RejectedRow(
                 "project", _project_row_dict(pw),
-                f"offense_pct {pw.offense_pct!r} is not a finite number — "
+                f"offense_pct {_show(pw.offense_pct)} is not a finite number — "
                 "hours routed to unresolved, no mode recorded"))
             unresolved += pw.hours
             continue
@@ -676,7 +710,7 @@ def aggregate(project_weeks: list[ProjectWeek],
             if pw.quadrant is not None:
                 rejected.append(RejectedRow(
                     "project", _project_row_dict(pw),
-                    f"quadrant {pw.quadrant!r} is outside the vocabulary — "
+                    f"quadrant {_show(pw.quadrant)} is outside the vocabulary — "
                     "hours routed to unresolved"))
             unresolved += pw.hours
         by_mode["offense"] += offense_hours
@@ -687,7 +721,7 @@ def aggregate(project_weeks: list[ProjectWeek],
         if not _finite_number(row.hours):
             rejected.append(RejectedRow(
                 "meeting", _meeting_row_dict(row),
-                f"hours {row.hours!r} is not a finite number — row excluded "
+                f"hours {_show(row.hours)} is not a finite number — row excluded "
                 "from the week"))
             continue
         if row.hours < 0:
@@ -701,7 +735,7 @@ def aggregate(project_weeks: list[ProjectWeek],
             # running total can still leave the finite range.
             rejected.append(RejectedRow(
                 "meeting", _meeting_row_dict(row),
-                f"hours {row.hours!r} overflows the week's running total "
+                f"hours {_show(row.hours)} overflows the week's running total "
                 "(no longer a finite number) — row excluded from the week"))
             continue
         total += row.hours
@@ -714,7 +748,7 @@ def aggregate(project_weeks: list[ProjectWeek],
             if unusable:
                 rejected.append(RejectedRow(
                     "meeting", _meeting_row_dict(row),
-                    f"split share {unusable[0]!r} is not a finite number — "
+                    f"split share {_show(unusable[0])} is not a finite number — "
                     "whole row routed to unresolved"))
                 unresolved += row.hours
                 continue
@@ -822,7 +856,7 @@ def aggregate(project_weeks: list[ProjectWeek],
             if res.quadrant is not None:
                 rejected.append(RejectedRow(
                     "meeting", _meeting_row_dict(row),
-                    f"quadrant {res.quadrant!r} is outside the vocabulary — "
+                    f"quadrant {_show(res.quadrant)} is outside the vocabulary — "
                     "hours routed to unresolved"))
             unresolved += row.hours
 
