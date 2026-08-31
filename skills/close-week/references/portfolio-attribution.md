@@ -46,6 +46,23 @@ rule produced it (`resolved_by`):
    `portfolio-category`.
 4. **Unresolved** — none of the above resolves it (see §5).
 
+`resolved_by` is a **closed four-value vocabulary** — `role`, `topic`, `project`,
+`unresolved` — and nothing else. It names *which rung fired*, so a fifth value is not
+a new kind of resolution, it is a caller inventing one. The module enforces this where
+a `Resolution` is constructed (a malformed one cannot be built at all) and reports a
+payload carrying a drifted value as a `rejected` row costing that row only.
+
+**A rung that cannot be read declines and falls through; it never resolves on
+zeros.** If the accepted topic shares sum to a value outside the finite range (two
+`1e308` shares do it), rule 2 declines rather than dividing every share by infinity —
+which would turn every share into `0.0` while the meeting stayed marked
+topic-resolved, so aggregation assigned none of its hours to any quadrant and sent
+them all silently to unresolved under a "shares normalised" story that never
+happened. The cascade continues to rule 3 and then rule 4, and the resolution carries
+a note saying which rung declined and why. Same for a share or a quadrant that cannot
+be read at all: it is dropped from the topic list before any arithmetic, so an
+unreadable value costs its own topic rather than aborting the cascade.
+
 Rules 1, 3, and 4's bookkeeping — matching, lookup, apportioning hours into totals —
 is mechanical and lives in the module. Rule 2 is the judgment call this file owns:
 
@@ -204,16 +221,17 @@ format — verifying that format contract in one place is why the parser exists.
 | `project_weeks` | list of `{project, quadrant, offense_pct, hours}` — feeds straight into mode 2's payload, after collapsing days per Step 2a #1. `quadrant` is `null` for a row rendered `· uncategorized ·` |
 | `skipped_lines` | the raw text of every bullet under the heading the parser would not turn into a row — it did not match the format, **or** its quadrant slot held a word that is neither one of the five nor the literal `uncategorized` (e.g. the legacy `founder-transition`), **or** its `offense_pct` was outside 0-100, **or** its hours field was too large to be a finite number |
 | `skipped_count` | how many. **Report this at the confirm gate, per day, even when it is 0.** A skipped line is a project's hours vanishing from the week with no other signal — the exact silent failure this feature exists to surface. Explanatory prose under the heading is not counted; only lines that were trying to be project rows |
+| `error` | present **only** when this mode's own last-resort floor fired: an unanticipated exception, as `{exception, message}`. The failure is also routed into `skipped_lines` (prefixed `INTERNAL:`) with `skipped_count` at 1, because that count is what the gate is already required to report — a new key nobody was told to read would be a silent failure wearing a report's clothes |
 
 **Payload shape** for mode 2 (top-level keys `summarize()` reads):
 
 | Key | Shape | Notes |
 |---|---|---|
-| `project_weeks` | list of `{project, quadrant, offense_pct, hours}` | one row per project this week |
-| `meeting_rows` | list of `{label, quadrant, resolved_by, hours, splits?}` | `splits`, when present, is a list of `[quadrant, share]` pairs; `quadrant` is `null` when `resolved_by` is `"topic"` (split) or `"unresolved"`. **Shares should sum to 1.0.** Over 1.0 they are normalised (the same rule `resolve_meeting()` applies), so `unresolved_hours` can never go negative and the table can never sum past 100% — and that normalisation runs over **all** the shares, out-of-vocabulary ones included, before any are dropped, so a bad quadrant's share really does reach `unresolved_hours` instead of being absorbed by its neighbours. Under 1.0 the missing share becomes unresolved hours — deliberately, because a share that went missing is time nobody attributed, not time to be absorbed into the quadrants that survived. A **negative** share is not normalised: the whole row goes to unresolved and lands in `rejected` |
+| `project_weeks` | list of `{project, quadrant, offense_pct, hours}` | one row per project this week. **A container that is not a list — including `null` — is reported and reads as NO ROWS AND NO MEASUREMENT**, not as an empty week; see "An unreadable container is not a measured zero" below |
+| `meeting_rows` | list of `{label, quadrant, resolved_by, hours, splits?}` | `resolved_by` must be one of `role` / `topic` / `project` / `unresolved`; anything else is a `rejected` row. `splits`, when present, is a list of `[quadrant, share]` pairs — an entry with any number of slots other than two is a `rejected` row, never unpacked. `quadrant` is `null` when `resolved_by` is `"topic"` (split) or `"unresolved"`. **Shares should sum to 1.0.** Over 1.0 they are normalised (the same rule `resolve_meeting()` applies), so `unresolved_hours` can never go negative and the table can never sum past 100% — and that normalisation runs over **all** the shares, out-of-vocabulary ones included, before any are dropped, so a bad quadrant's share really does reach `unresolved_hours` instead of being absorbed by its neighbours. Normalisation fires at **any** total above `1.0`, with no tolerance (see "No tolerance on the normalisation threshold" below). Under 1.0 the missing share becomes unresolved hours — deliberately, because a share that went missing is time nobody attributed, not time to be absorbed into the quadrants that survived. A **negative** share is not normalised: the whole row goes to unresolved and lands in `rejected`. Same container rule as `project_weeks` |
 | `history` | list of `{by_quadrant, by_mode, by_quadrant_mode?}` | most recent week first. **`by_quadrant` and `by_mode` are REQUIRED, and both must be complete**: `by_quadrant` names all five quadrants, `by_mode` names both modes, every value a non-negative finite number. A prior week that is absent, not an object, missing a quadrant, or only partly readable (`{"offense": 10, "defense": null}`) is **not** history — the module suppresses the ENTIRE list, reads it as `[]`, and reports the reason as a `payload` entry in `rejected`. **`by_quadrant_mode` is optional** (a note written before it was persisted has none) and costs only the assets-decaying flag when absent — that flag is scoped to ① and needs ①'s own mode split; present, it must be well formed or the entry fails like any other. An absent or empty `history` is ALSO reported, for the same reason a malformed one is. See "Absent history is never a zero" below |
-| `driver_hours` | number | optional — but **omitting it does not mean `0.0`**, it means absent, and the held-vs-driver flag is then suppressed and the suppression reported. A value that is not a finite number reads as absent too, and is reported twice: once as an unreadable value, once as the flag it suppressed. Send `0.0` only when you counted and the answer was zero |
-| `held_hours` | number | optional. Same rule |
+| `driver_hours` | number ≥ 0 | optional — but **omitting it does not mean `0.0`**, it means absent, and the held-vs-driver flag is then suppressed and the suppression reported. A value that is not a **non-negative** finite number reads as absent too, and is reported twice: once as an unreadable value, once as the flag it suppressed. **Negative is unreadable, not small**: hours worked cannot be negative, and `driver_hours: -1` beside `held_hours: 0` satisfies `held > driver` and printed "held projects out-earned drivers (0.0h vs -1.0h)" — a decision-forcing claim about the builder's own prioritisation, computed from a number that could not be hours. Send `0.0` only when you counted and the answer was zero; a genuine measured `0.0` still fires the flag |
+| `held_hours` | number ≥ 0 | optional. Same rule |
 
 **Result shape** (what the module prints):
 
@@ -231,10 +249,56 @@ format — verifying that format contract in one place is why the parser exists.
 | `unmoded_hours` | project hours that recorded no mode at all — `project_hours` minus (`by_mode.offense` + `by_mode.defense`). Exactly the slice `mode_percentages`' two shares are missing when they do not reach 100% |
 | `unmoded_pct` | `unmoded_hours` as a share of `project_hours`. Returned so the renderer never has to subtract two percentages by hand to explain the gap |
 | `unresolved_pct` | `unresolved_hours` as a share of `total_hours` |
-| `rejected` | list of `{kind, row, reason}` — everything the module refused to trust, **plus every flag it could not evaluate**. `kind` is `"project"`, `"meeting"`, or `"payload"` (a week-level failure: a rows container that isn't a list, an unreadable `driver_hours` / `held_hours`, a payload that isn't an object) — and a `payload` entry whose reason ends `did not run this week` is a **flag suppression**, not a malformed row: an absent or empty `history`, a prior week with no growth-driver mode hours, an absent `driver_hours` / `held_hours`, or a payload carrying neither row container at all (an unmeasured week, which is not a week that measured 0h). Those fire on ordinary weeks, not just broken ones, and they are what stops an empty Flags block from reading as "nothing fired". `row` is the raw input row verbatim; `reason` names the field and value that failed. **Empty only when every row was trusted AND every flag could run; when it is not empty the caller must render every entry** — see the validation contract below |
+| `rejected` | list of `{kind, row, reason}` — everything the module refused to trust, **plus every flag it could not evaluate**. `kind` is `"project"`, `"meeting"`, or `"payload"` (a week-level failure: a rows container that isn't a list, an unreadable `driver_hours` / `held_hours`, a payload that isn't an object) — and a `payload` entry whose reason ends `did not run this week` is a **flag suppression**, not a malformed row: an absent or empty `history`, a prior week with no growth-driver mode hours, an absent `driver_hours` / `held_hours`, or a payload carrying neither row container at all (an unmeasured week, which is not a week that measured 0h). Those fire on ordinary weeks, not just broken ones, and they are what stops an empty Flags block from reading as "nothing fired". `row` is the raw input row verbatim; `reason` names the field and value that failed. A reason beginning **`INTERNAL:`** is the last-resort floor firing — an exception the module did not anticipate, named in full, with `row` carrying `{exception, message}`. It means **no rows were read at all**, so every number beside it is zero because nothing was aggregated, not because nothing was worked. **A caller that sees one must not render the allocation table**: omit the section, quote the reason verbatim, and go ungrouped — a zero table is indistinguishable from a quiet week. Exit code 0 and parseable JSON are not evidence that the numbers are real. **Empty only when every row was trusted AND every flag could run; when it is not empty the caller must render every entry** — see the validation contract below |
 | `flags` | list of strings, one per fired flag (reliability starvation, operating-efficiency ceiling, assets decaying on ①, held-out-earning-driver) |
 
 ### The validation contract
+
+**Nothing raises out of `summarize()`, for any input whatsoever — and that is a
+FLOOR, not a claim assembled out of per-field guards.** Three review rounds each
+found a different escape from the same class: a 1-tuple in `splits` (`ValueError`), a
+huge JSON integer (`OverflowError`), a string where a number belonged (`TypeError`).
+Each one exited the CLI with status 1 and an **empty stdout**, so the caller saw
+nothing at all — no numbers, no rejection, no reason — on the one day of the week this
+module exists to serve, and an empty stdout is indistinguishable from a week with no
+work in it.
+
+So `summarize()` and `main()` both wrap their top level: **any** otherwise-unhandled
+exception becomes a valid JSON result carrying a `payload` rejection whose reason
+begins `INTERNAL:` and names the exception type and message. Never a traceback, never
+an empty stdout, never a non-zero exit for a data problem. The one non-zero exit left
+is a **usage** error (unknown argv), which is a caller bug rather than a data problem
+and deliberately produces no JSON at all.
+
+The floor is **belt-and-braces in addition to** the specific validation below, never a
+replacement for it, and it must not swallow bugs: the specific guards are what produce
+a precise, per-row reason a builder can act on, and the floor only stops the absence of
+one from costing the whole week. Its rejection is deliberately loud, because a floor
+that emitted a clean empty week would be worse than the crash it replaced. Two rules
+follow from that: a caller must render an `INTERNAL:` entry as a bug report, not as a
+light week; and the fuzz corpora assert that **no** iteration reaches the floor, so a
+new escape shows up as a missing specific guard instead of passing silently.
+
+**A malformed `Resolution` cannot be constructed.** `splits` is validated where a
+`Resolution` is *built*, in `__post_init__`, not where it is consumed — so no present
+or future consumer has to defend against one. `Resolution(None, "topic", ("bad",))`
+used to be accepted here and raise `ValueError` three frames away, at `aggregate()`'s
+`for q, s in splits`, killing the whole week summary; the same class then reappeared as
+a non-sequence entry and as a non-list container. A guard at the point of use closes
+one shape, and the next shape walks straight past it.
+
+An invalid `splits` **rejects the object** (raises) rather than coercing to an empty
+`splits`. Coercion was the alternative and it loses on the module's own rule: a
+constructor has no `rejects` list to report through, so coercing would silently reroute
+a caller's split meeting, and silent correction is the exact failure this feature exists
+to catch. Nor does raising cost a week, because **no data can reach it** — the payload
+gate reports a malformed `splits` (and a drifted `resolved_by`) as a `rejected` row
+*before* any `Resolution` is built. What is left is an in-process programming error,
+where loud and immediate is correct, and even that cannot surface as a traceback because
+of the floor above. Both halves read the shape through one predicate, so the reporting
+half and the enforcing half cannot drift apart. After construction, `splits` is
+normalised to a tuple of two-element tuples, so `for q, s in splits` is guaranteed to
+work everywhere.
 
 **Two boundaries, one `rejected` list, and they check different things.**
 `aggregate()` owns every rule about a **value**. `summarize()` owns the one rule
@@ -249,6 +313,10 @@ format — verifying that format contract in one place is why the parser exists.
   an absent *key* means nobody said. The reason names the missing key
 - **a malformed `splits`** — not a list, or an entry that isn't a
   `[quadrant, share]` pair. `for q, s in splits` raises on both
+- **a `resolved_by` outside the four-value vocabulary** (`role`, `topic`,
+  `project`, `unresolved`). It names which cascade rung fired, and nothing
+  enforced it before: an invented value flowed into `Resolution` and was echoed
+  back out to a human in a rejection row
 - **a rows container that isn't a list**, and a payload that isn't an object.
   Reading either as empty would lose a whole week of work with no signal
 - **a `driver_hours` / `held_hours` that is absent, or not a finite number.**
@@ -313,6 +381,40 @@ invariant true arithmetically while every rendered number is nonsense, which is
 worse than an honest unresolved bucket. Either way
 `sum(by_quadrant) + unresolved_hours == total_hours` still holds for any input,
 and `unresolved_hours` is never negative.
+
+**No tolerance on the normalisation threshold, and the apportioned result is checked
+too.** Shares are normalised whenever they sum to **more than `1.0`**, full stop. The
+threshold used to carry a tolerance (`> 1.0 + 1e-9`) to skip a pointless rescale, so a
+`total_share` of `1.0000000005` was judged close enough to `1.0` and passed through
+unscaled — and `hours × share` with `hours` at `sys.float_info.max` then stored
+`Infinity` in `by_quadrant`. That broke the finite-output invariant which had survived
+40,000 hostile fuzz iterations; the corpus had `1e308` (which has headroom) but never
+`float_info.max` paired with a share a hair over `1.0`. A tolerance that saves a
+division is not worth a hole in the invariant.
+
+Removing the tolerance closes that case; the general one needs the same
+result-checking rule the running total already follows, because normalisation is float
+division and `s × (1.0 / total_share)` can still land a few ulps above `1.0`, where
+float-max hours have no headroom for even one ulp. So the per-quadrant contributions
+are computed into a scratch dict and **committed only if every resulting bucket is
+still finite**; otherwise the whole row goes to `unresolved_hours` and is reported,
+exactly like a share nobody can read. This is what keeps "every value finite" a
+property of the **output** rather than an inference from the input.
+
+**An unreadable container is not a measured zero.** Whether the current week was
+*measured* is derived from whether a row container was **valid and readable**, never
+from whether its key exists. `summarize()` used to read key presence while the row
+reader next door *rejected* an invalid container — so `project_weeks: "bad"` or
+`project_weeks: null` counted as a measured zero-hour week and, beside one prior
+zero-reliability week, fired the two-week reliability-starvation flag out of a payload
+from which not one row was ever read. Key presence is not evidence of measurement; a
+readable container is. There are **three** states, not two — absent, present-but-
+unreadable, and read — and neither of the first two is a measurement, while an
+explicit `[]` **is** a genuine measured zero and still counts (a real holiday week
+beside a starved prior week is exactly what that flag is for). One readable container
+is enough to call the week measured. `history` gets the same three-way treatment, with
+a different truthful sentence for each: saying "no `history` key in the payload" about
+a key that *was* there is an untrue reason, and a reader acts on the reason.
 
 **Shares are normalised *before* invalid quadrants are dropped, not after.** An
 over-1.0 split is scaled by the sum of **all** its shares, including the ones

@@ -354,7 +354,7 @@ Carry this read into Step 3's priorities. **P002 closes when this read happens b
 
 **Whether this section is grouped by quadrant depends on Step 2a, and both paths are valid:**
 
-- **Step 2a confirmed** → group by portfolio quadrant, using the confirmed quadrant (not the raw frontmatter default) — see the Output A and Output B templates below for the exact grouped shape. **Never omit an empty quadrant**; print it with "0h, nothing moved" instead. That rule applies to this grouped case only.
+- **Step 2a confirmed** → group by portfolio quadrant, using the confirmed quadrant (not the raw frontmatter default) — see the Output A and Output B templates below for the exact grouped shape. **Never omit a quadrant with no project movement**; print its heading with the quadrant's confirmed hours (`by_quadrant[q]`) and "nothing moved" where the project lines would be — and `0h` **only** when those confirmed hours really are `0.0`, because a quadrant can hold confirmed *meeting* hours with no project rows under it. That rule applies to this grouped case only.
 - **Step 2a rejected, or skipped because the companion could not be resolved** → there are no confirmed quadrants, so write Project Progress as a **single ungrouped list**, one line per project, same statuses, no quadrant headings and no empty-quadrant rows. Mandating the grouping here would be unsatisfiable on a path Step 2a explicitly calls valid, and the way out of an unsatisfiable instruction is always a guessed quadrant — the exact thing rejecting the table refused. Add one line at the top of the section saying why: "Not grouped by quadrant — the Step 2a attribution was not confirmed this week." The weekly note also gets no `## Portfolio Allocation` section, per Step 2a.
 
 **Time Allocation:** Aggregate Familiar data across all 5 (or 7) days using the same work categories and time calculation algorithm from `/close-day`:
@@ -600,6 +600,8 @@ Full format with Dataview queries for projects touched/not touched.
 - [one line per entry in the module's `rejected` — `⚠️ <kind> "<name>": <reason>` — omit this whole block only when `rejected` is empty]
 ```
 
+**If any `rejected` reason begins `INTERNAL:`, do not render this table at all.** That entry is the module's last-resort floor: it means an unanticipated exception stopped the aggregation and **no rows were read**, so every figure it returned is zero because nothing was counted, not because nothing was worked. A zero Portfolio Allocation table is indistinguishable from a genuinely quiet week, which is the silent failure this whole feature exists to prevent. Instead omit the section (the same outcome as a rejected confirm gate), tell the builder the aggregation failed, quote the `INTERNAL:` reason verbatim, and write Project Progress ungrouped per its fallback. The exit code will be 0 and the JSON will parse — neither is evidence that the numbers are real.
+
 **Filling the columns.** Every one comes from the module's stdout, and none of them is a division this step performs:
 
 | Column | Source |
@@ -668,7 +670,16 @@ Insight of the Week:
 [One sentence — the sharpest non-obvious thing the week's data revealed. Specific, declarative, anchored.]
 ```
 
-When a quadrant has no project movement, print the quadrant heading with `- 0h, nothing moved` rather than omitting it. This includes Cross-cutting and Unresolved — Unresolved dropping out of the copy-paste journal is the same silent-failure the flags exist to catch. An omitted quadrant (or an omitted Unresolved line) is how reliability disappears. Quadrant hours and grouping come from Step 2a's confirmed output, not a fresh guess at synthesis time.
+When a quadrant has no project movement, still print its heading rather than omitting it — with **the quadrant's confirmed Step 2a hours** and `nothing moved` where the project lines would be:
+
+```
+(4) Reliability - 1.5h
+  nothing moved
+```
+
+**Print `- 0h, nothing moved` only when the quadrant's confirmed hours really are `0.0`.** The hours come from the module's `by_quadrant[q]` (and `unresolved_hours` for the Unresolved line); "nothing moved" describes the *project rows*, and the hours figure describes the *quadrant*, which are two different facts. A quadrant can carry confirmed **meeting** hours with no project rows at all — the ordinary case for ③ Hygiene, whose 1:1s land there — and hard-coding `0h` in that line discards the quadrant's whole allocation and contradicts the `## Portfolio Allocation` table sitting a few lines above it in the same note. Two numbers for the same quadrant in one note, one of them invented, is worse than either alone.
+
+This includes Cross-cutting and Unresolved — Unresolved dropping out of the copy-paste journal is the same silent-failure the flags exist to catch. An omitted quadrant (or an omitted Unresolved line) is how reliability disappears. Quadrant hours and grouping come from Step 2a's confirmed output, not a fresh guess at synthesis time.
 
 **Output B.5: Per-goal weekly reflection** (interactive — appended to each goal file's Weekly Log)
 

@@ -127,12 +127,94 @@ def is_driver(frontmatter: dict[str, str]) -> bool:
     return (frontmatter.get("portfolio-role") or "").strip().lower() == "driver"
 
 
+# The only four values `resolved_by` may hold. It names WHICH rule in the
+# cascade fired; a fifth value is not a new kind of resolution, it is a caller
+# inventing one — and the field is echoed into `rejected` rows that a human
+# reads, so an invented value has to be refused, not passed along.
+RESOLVED_BY: tuple[str, ...] = ("role", "topic", "project", "unresolved")
+
+
+def _is_pair(entry) -> bool:
+    """One `splits` entry has exactly two slots.
+
+    THE SHAPE RULE LIVES HERE AND NOWHERE ELSE. `for q, s in splits` raises
+    ValueError on a 1-tuple and TypeError on a non-sequence, and both used to
+    abort the whole week from inside aggregate(). Two places need this
+    judgment — the payload gate, which reports the bad entry, and the
+    Resolution constructor, which refuses to build the object — and letting
+    each carry its own reading of "is a pair" is how two halves of one rule
+    come apart."""
+    return isinstance(entry, (list, tuple)) and len(entry) == 2
+
+
+def _normalised_splits(raw):
+    """`raw` as a tuple of exactly-two-element tuples, or None when it is not
+    a sequence of pairs at all.
+
+    SHAPE ONLY. The quadrant strings and the share numbers are VALUES, and
+    every value rule in this module lives in aggregate() — see its docstring.
+    This function decides one thing: whether `for q, s in splits` can run."""
+    if not isinstance(raw, (list, tuple)):
+        return None
+    pairs = []
+    for entry in raw:
+        if not _is_pair(entry):
+            return None
+        pairs.append((entry[0], entry[1]))
+    return tuple(pairs)
+
+
 @dataclass(frozen=True)
 class Resolution:
+    """A meeting's attribution — VALIDATED WHERE IT IS CONSTRUCTED.
+
+    A malformed Resolution is impossible to create, so no present or future
+    consumer has to defend against one. That is deliberately structural
+    rather than a guard at the point of use: `Resolution(None, "topic",
+    ("bad",))` was accepted here and raised ValueError three frames away, at
+    aggregate()'s `for q, s in splits`, killing the whole week summary. Three
+    review rounds have each found a NEW shape of the same class (a 1-tuple, a
+    non-sequence entry, a non-list container), which is the signature of a
+    per-shape guard: the fix belongs at the boundary where the object comes
+    into existence, not at each of the places that later reads it.
+
+    WHY IT RAISES RATHER THAN COERCING. Coercion was the alternative — drop a
+    malformed `splits` and let the row fall through as unresolved. It is
+    rejected because a constructor has no channel to report through: there is
+    no `rejects` list here, so coercion would silently reroute a caller's
+    split meeting, and silent correction is the exact failure this whole
+    feature exists to catch. Nor does raising cost the week, because no DATA
+    can reach it: summarize()'s `_split_pairs()` gate reports a malformed
+    payload `splits` as a `rejected` row BEFORE any Resolution is built, and
+    the same is true of `resolved_by`. What is left is an in-process
+    programming error, where loud and immediate is the right answer — and
+    even that cannot reach a user as a traceback, because summarize() and
+    main() both floor every unhandled exception into a JSON `payload`
+    rejection.
+
+    `splits` is normalised to a tuple of 2-tuples, so after construction
+    `for q, s in splits` is guaranteed to work for every consumer.
+    """
     quadrant: str | None
     resolved_by: str                                   # role|topic|project|unresolved
     splits: tuple[tuple[str, float], ...] = ()
     note: str = ""
+
+    def __post_init__(self) -> None:
+        # `not in` on a tuple compares with ==, never hashes, so an unhashable
+        # resolved_by (a list from a JSON payload) is refused, not raised on.
+        if self.resolved_by not in RESOLVED_BY:
+            raise ValueError(
+                f"resolved_by {self.resolved_by!r} is not one of "
+                + ", ".join(repr(v) for v in RESOLVED_BY))
+        normalised = _normalised_splits(self.splits)
+        if normalised is None:
+            raise ValueError(
+                f"splits {self.splits!r} is not a sequence of "
+                "[quadrant, share] pairs")
+        # frozen=True blocks plain assignment; this is the documented way to
+        # finish initialising a frozen dataclass.
+        object.__setattr__(self, "splits", normalised)
 
 
 def resolve_meeting(
@@ -149,21 +231,42 @@ def resolve_meeting(
             if rule.match in needle or rule.match in local:
                 return Resolution(rule.quadrant, "role")
 
-    valid_topics = [(q, s) for q, s in topics if q in _VALID and s > 0]
+    # TYPE BEFORE VALUE here too: `q in _VALID` raises TypeError on an
+    # unhashable quadrant and `s > 0` raises on a string or None, so a topic
+    # list assembled upstream from Fathom data could abort the cascade before
+    # it ever reached the boundary that reports such things.
+    valid_topics = [(q, s) for q, s in topics
+                    if _known_quadrant(q) and _finite_number(s) and s > 0]
+    topic_note = ""
     if valid_topics:
         total = sum(s for _, s in valid_topics)
-        note = ""
-        if abs(total - 1.0) > 1e-6:
-            valid_topics = [(q, s / total) for q, s in valid_topics]
-            note = "shares normalised"
-        if len(valid_topics) == 1:
-            return Resolution(valid_topics[0][0], "topic", note=note)
-        return Resolution(None, "topic", tuple(valid_topics), note)
+        if not _finite_number(total):
+            # Every accepted share is finite and the SUM is not — two 1e308
+            # shares do it. Dividing by inf turns EVERY share into 0.0 while
+            # the meeting stays marked topic-resolved, so aggregate() assigns
+            # none of its hours to any quadrant and silently routes the whole
+            # meeting to unresolved under a "shares normalised" story that
+            # never happened. Refuse to resolve by topic instead and fall
+            # through to the rest of the cascade (project, then unresolved),
+            # carrying a note that says which rule declined and why.
+            valid_topics = []
+            topic_note = ("topic shares sum outside the finite range — topic "
+                          "resolution declined")
+        else:
+            note = ""
+            if abs(total - 1.0) > 1e-6:
+                # total >= every share (all are positive), so s / total is in
+                # (0, 1] and cannot overflow.
+                valid_topics = [(q, s / total) for q, s in valid_topics]
+                note = "shares normalised"
+            if len(valid_topics) == 1:
+                return Resolution(valid_topics[0][0], "topic", note=note)
+            return Resolution(None, "topic", tuple(valid_topics), note)
 
-    if project_quadrant in _VALID:
-        return Resolution(project_quadrant, "project")
+    if _known_quadrant(project_quadrant):
+        return Resolution(project_quadrant, "project", note=topic_note)
 
-    return Resolution(None, "unresolved")
+    return Resolution(None, "unresolved", note=topic_note)
 
 
 @dataclass(frozen=True)
@@ -307,9 +410,25 @@ def parse_projects_touched(md: str) -> list[ProjectWeek]:
 
 @dataclass(frozen=True)
 class MeetingRow:
+    """One meeting's hours and its attribution.
+
+    `resolution` is CHECKED AT CONSTRUCTION, for the same reason
+    Resolution's `splits` is: aggregate() reads `row.resolution.splits` and
+    `.quadrant` unconditionally, so a row built with `None` (or a dict from a
+    caller who thought this took raw payload) raised AttributeError three
+    frames away and cost the whole week. `hours` is deliberately NOT checked
+    here — it is a VALUE, and every value rule in this module lives in
+    aggregate() so that direct callers and the payload path cannot diverge.
+    """
     label: str
     resolution: Resolution
     hours: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.resolution, Resolution):
+            raise TypeError(
+                "resolution must be a Resolution, not "
+                f"{type(self.resolution).__name__}")
 
 
 def _empty_by_quadrant() -> dict[str, float]:
@@ -372,6 +491,43 @@ class WeekTotals:
     # of a smaller base than "share of the week's project hours" claims.
     # Defaulted for the same reason as the two fields above.
     project_hours: float = 0.0
+
+    def __post_init__(self) -> None:
+        """The three mapping fields must BE mappings, checked here.
+
+        Every consumer reads them unconditionally — `evaluate_flags` calls
+        `w.by_quadrant.get(...)`, `_summary` calls `.items()` on all three —
+        so a hand-built WeekTotals carrying a string raised AttributeError
+        deep inside a flag rather than at the point of the mistake. Direct
+        callers DO build these by hand (history entries, tests), which is
+        exactly the caller a prose-only rule never reaches.
+
+        `by_mode` must name both modes, because modes are exactly
+        offense/defense and `_summary` indexes both directly.
+
+        `by_quadrant_mode`'s inner dicts are checked for dict-ness and NOT for
+        completeness, deliberately: `{"growth-driver": {"offense": 5.0}}` is a
+        half-measured quadrant, which this module supports and reports as
+        UNMEASURED rather than treating as zero defense. Refusing to build it
+        would turn a case the design handles into a crash.
+
+        These are SHAPES, not values. The numbers inside are still
+        aggregate()'s and _history_entry_problem()'s business.
+        """
+        for name in ("by_quadrant", "by_mode", "by_quadrant_mode"):
+            value = getattr(self, name)
+            if not isinstance(value, dict):
+                raise TypeError(
+                    f"{name} must be a dict, not {type(value).__name__}")
+        missing = [mode for mode in _MODES if mode not in self.by_mode]
+        if missing:
+            raise ValueError(
+                "by_mode is missing " + ", ".join(repr(m) for m in missing))
+        for quadrant, modes in self.by_quadrant_mode.items():
+            if not isinstance(modes, dict):
+                raise TypeError(
+                    f"by_quadrant_mode[{quadrant!r}] must be a dict, not "
+                    f"{type(modes).__name__}")
 
 
 def _project_row_dict(pw: ProjectWeek) -> dict:
@@ -594,7 +750,17 @@ def aggregate(project_weeks: list[ProjectWeek],
                     "whole row routed to unresolved"))
                 unresolved += row.hours
                 continue
-            scale = 1.0 / total_share if total_share > 1.0 + 1e-9 else 1.0
+            # NO TOLERANCE ON THE NORMALISATION THRESHOLD. This read
+            # `> 1.0 + 1e-9`, so a total_share of 1.0000000005 was judged
+            # "close enough to 1.0" and passed through unscaled — and
+            # `row.hours * share` with row.hours at sys.float_info.max then
+            # stored Infinity in by_quadrant, breaking the finite-output
+            # invariant that 40,000 hostile fuzz iterations had survived
+            # (the corpus never combined float-max hours with a share a hair
+            # over 1.0). A tolerance that exists to avoid a pointless rescale
+            # is not worth a hole in the invariant: normalise whenever the
+            # shares sum to more than 1.0, full stop.
+            scale = 1.0 / total_share if total_share > 1.0 else 1.0
             splits = tuple((q, s * scale) for q, s in res.splits
                            if _known_quadrant(q))
             dropped = [q for q, _ in res.splits if not _known_quadrant(q)]
@@ -605,8 +771,30 @@ def aggregate(project_weeks: list[ProjectWeek],
                     + ", ".join(repr(q) for q in dropped)
                     + " — that share routed to unresolved"))
             apportioned = sum(share for _, share in splits)
+            # RESULT-CHECKED, NOT JUST INPUT-CHECKED — the same rule the
+            # running total already follows. Removing the tolerance above
+            # closes the specific case, but normalisation is float division:
+            # s * (1.0 / total_share) can still land a few ulps above 1.0,
+            # and float-max hours has no headroom for even one ulp. So the
+            # contributions are computed into a scratch dict and committed
+            # only if every resulting bucket is still finite; otherwise the
+            # whole row goes to unresolved and says so, exactly like a share
+            # nobody can read. This is what keeps `every value finite` a
+            # property of the OUTPUT rather than an inference from the input.
+            contributions: dict[str, float] = {}
             for quadrant, share in splits:
-                by_quadrant[quadrant] += row.hours * share
+                contributions[quadrant] = (contributions.get(quadrant, 0.0)
+                                           + row.hours * share)
+            if not all(_finite_number(by_quadrant[q] + c)
+                       for q, c in contributions.items()):
+                rejected.append(RejectedRow(
+                    "meeting", _meeting_row_dict(row),
+                    "split shares apportion these hours outside the finite "
+                    "range — whole row routed to unresolved"))
+                unresolved += row.hours
+                continue
+            for quadrant, contribution in contributions.items():
+                by_quadrant[quadrant] += contribution
             # UNDER 1.0 -> the missing share is unresolved, never silently
             # dropped. This is the deliberate path for a split that named an
             # out-of-vocabulary quadrant (dropped just above) and for one a
@@ -697,9 +885,10 @@ def evaluate_flags(current: WeekTotals, history: list[WeekTotals],
     reliability = [w.by_quadrant.get("reliability") for w in recent]
     if not current_measured:
         suppress({"project_weeks": None, "meeting_rows": None},
-                 "this week carried no `project_weeks` and no `meeting_rows` "
-                 "key — an unmeasured week, not a week with 0h in it, so the "
-                 "reliability-starvation flag did not run this week")
+                 "this week carried no READABLE `project_weeks` and no "
+                 "readable `meeting_rows` container (absent, or present and "
+                 "not a list) — an unmeasured week, not a week with 0h in it, "
+                 "so the reliability-starvation flag did not run this week")
     elif any(not _finite_number(h) for h in reliability):
         suppress({"by_quadrant": "reliability"},
                  "a week in the comparison recorded no reliability hours at "
@@ -765,6 +954,21 @@ def evaluate_flags(current: WeekTotals, history: list[WeekTotals],
         )
 
     return flags
+
+
+# The three states a payload row container can be in, and they are THREE, not
+# two. "Absent" and "invalid" both yield no rows, and NEITHER of them means
+# the builder measured a week. Collapsing them into "the key was there" is
+# what made `project_weeks: "bad"` and `project_weeks: null` read as MEASURED
+# zero-hour weeks, which fired the two-week reliability-starvation flag off a
+# payload from which no row was ever read. Key presence is not evidence of
+# measurement; a readable container is. Defined up here because
+# _history_from_payload() takes one as a default argument, and a default is
+# evaluated at definition time.
+_ROWS_ABSENT = "absent"      # the key was not in the payload at all
+_ROWS_INVALID = "invalid"    # the key was there and was not a list of rows
+_ROWS_READ = "read"          # a real list — possibly an empty one, which is a
+                             # genuine measured zero and must still count
 
 
 # Everything a prior week must carry before evaluate_flags may compare
@@ -871,7 +1075,7 @@ _NO_HISTORY_CONSEQUENCE = (
 
 
 def _history_from_payload(entries: list, rejects: list,
-                          absent: bool = False) -> list[WeekTotals]:
+                          state: str = _ROWS_READ) -> list[WeekTotals]:
     """Validated prior weeks — or none of them.
 
     ONE BAD ENTRY SUPPRESSES THE WHOLE HISTORY. evaluate_flags reads this
@@ -893,11 +1097,16 @@ def _history_from_payload(entries: list, rejects: list,
     the weekly note — reading identically in both, which is the exact
     failure this guard was written to end."""
     if not entries:
+        # Three states, three truthful sentences. `history: "bad"` is neither
+        # absent nor empty, and saying "no `history` key in the payload" about
+        # a key that WAS there is the kind of untrue reason a reader acts on.
+        what = {
+            _ROWS_ABSENT: ("no `history` key in the payload", None),
+            _ROWS_INVALID: ("`history` was not a list of prior weeks", "invalid"),
+        }.get(state, ("`history` is empty", []))
         rejects.append(RejectedRow(
-            "payload", {"history": None if absent else []},
-            ("no `history` key in the payload" if absent
-             else "`history` is empty")
-            + " — there is no prior week to compare against, so "
+            "payload", {"history": what[1]},
+            what[0] + " — there is no prior week to compare against, so "
             + _NO_HISTORY_CONSEQUENCE))
         return []
     problems = []
@@ -993,34 +1202,46 @@ def _missing_keys(row, required: tuple[str, ...]) -> list[str]:
 
 def _split_pairs(raw):
     """Return (pairs, reason). `splits` is a list of [quadrant, share] pairs;
-    anything else is a shape failure, reported rather than unpacked. Zipping
-    a malformed entry raises ValueError, which would abort the week."""
+    anything else is a shape failure, REPORTED rather than unpacked, because
+    `for q, s in splits` raises on it.
+
+    This is the payload-side half of the shape rule and it exists to produce a
+    precise reason naming the offending entry. The enforcing half is
+    Resolution.__post_init__, which refuses to build the object at all. Both
+    read the shape through _is_pair() so the two cannot drift apart — the
+    failure mode this module has already suffered twice."""
     if raw is None:
         return (), None
     if not isinstance(raw, (list, tuple)):
         return (), f"'splits' is {type(raw).__name__}, not a list"
     pairs = []
     for entry in raw:
-        if not isinstance(entry, (list, tuple)) or len(entry) != 2:
+        if not _is_pair(entry):
             return (), ("'splits' entry is not a [quadrant, share] pair: "
                         f"{_json_safe(entry)!r}")
         pairs.append((entry[0], entry[1]))
     return tuple(pairs), None
 
 
-def _payload_rows(payload: dict, key: str, rejects: list) -> list:
-    """The rows under `key`, or none plus a reported reason. A non-list
-    container silently read as empty is a whole week of work vanishing."""
-    rows = payload.get(key)
-    if rows is None:
-        return []
+def _payload_rows(payload: dict, key: str,
+                  rejects: list) -> tuple[list, str]:
+    """(rows, state) — the rows under `key`, plus which of the three states
+    above the container was in.
+
+    A non-list container silently read as empty is a whole week of work
+    vanishing, so an invalid one is REPORTED. It is also reported as
+    unreadable to the caller through `state`, because a container nobody
+    could read did not measure anything: see _ROWS_INVALID above."""
+    if key not in payload:
+        return [], _ROWS_ABSENT
+    rows = payload[key]
     if isinstance(rows, (list, tuple)):
-        return list(rows)
+        return list(rows), _ROWS_READ
     rejects.append(RejectedRow(
         "payload", {key: _json_safe(rows)},
         f"payload key {key!r} is {type(rows).__name__}, not a list — no rows "
         "were read from it"))
-    return []
+    return [], _ROWS_INVALID
 
 
 def _week_number(payload: dict, key: str, rejects: list) -> float | None:
@@ -1039,17 +1260,47 @@ def _week_number(payload: dict, key: str, rejects: list) -> float | None:
     present-but-unreadable, comes back as None, and evaluate_flags suppresses
     the flag and says so. A present-but-unreadable value is reported HERE as
     well, because "the value you sent is not a number" and "the flag did not
-    run" are two different things a reader needs."""
+    run" are two different things a reader needs.
+
+    NEGATIVE IS UNREADABLE, NOT SMALL. Hours worked cannot be negative, and
+    accepting one did not merely pass a bad number through — it INVERTED the
+    flag's meaning. `driver_hours: -1` beside `held_hours: 0` satisfies
+    `held > driver` and printed "held projects out-earned drivers (0.0h vs
+    -1.0h)": a decision-forcing claim about the builder's own prioritisation,
+    fired by arithmetic on a number that could not be hours, with the
+    malformed input never reported at all. Same rule as every other hours
+    field in this module (project rows, meeting rows): non-negative or
+    unusable."""
     if key not in payload:
         return None
     value = payload[key]
-    if _finite_number(value):
+    if _finite_number(value) and value >= 0:
         return float(value)
     rejects.append(RejectedRow(
         "payload", {key: _json_safe(value)},
-        f"{key} {value!r} is not a finite number — read as absent, never as "
-        "0.0"))
+        f"{key} {value!r} is not a non-negative finite number — read as "
+        "absent, never as 0.0"))
     return None
+
+
+def _crash_rejection(exc: BaseException) -> RejectedRow:
+    """The last-resort rejection: an exception nobody anticipated, rendered as
+    a `payload` row a human can read and a machine can parse.
+
+    LOUD AND SPECIFIC, NEVER SWALLOWED. It names the exception type and
+    message, and it is prefixed INTERNAL so it cannot be mistaken for a data
+    problem the builder caused — a floor that quietly emitted an empty week
+    would be worse than the crash it replaced, because an empty week looks
+    exactly like a light week."""
+    return RejectedRow(
+        "payload",
+        {"exception": type(exc).__name__, "message": _json_safe(str(exc))},
+        f"INTERNAL: unhandled {type(exc).__name__}: {exc} — the week summary "
+        "could not be computed from this input and NO rows were read from it. "
+        "Every number in this result is zero because nothing was aggregated, "
+        "not because nothing was worked. Either the input is not the shape "
+        "this module documents, or this is a bug in companion/portfolio.py; "
+        "report it with the input that produced it.")
 
 
 def summarize(payload: dict) -> dict:
@@ -1058,18 +1309,51 @@ def summarize(payload: dict) -> dict:
     upstream of this (attributing a meeting, reading frontmatter) is the
     caller's job; this function only aggregates and flags.
 
-    It owns exactly one rule of its own: the payload's SHAPE. A row missing
-    a required key, a `splits` that isn't a list of pairs, a container that
-    isn't a list, a week-level number that isn't one — all are reported as
-    `rejected` entries here, because aggregate() takes dataclasses and can
-    never see the payload's dicts. VALUES are still aggregate()'s alone; a
-    value check written here is how the two halves came apart once already
-    (a bad split quadrant was filtered out in this function and still raised
-    KeyError inside aggregate() for every direct caller).
+    NOTHING RAISES OUT OF HERE, FOR ANY INPUT WHATSOEVER — and that is now a
+    FLOOR, not a claim assembled out of per-field guards. Three review rounds
+    each found a different escape from the same class: a 1-tuple in `splits`
+    (ValueError), a huge JSON integer (OverflowError), a string where a number
+    belonged (TypeError). Each one exited the CLI with status 1 and an EMPTY
+    stdout, so the caller saw nothing at all — no numbers, no rejection, no
+    reason, on the one day of the week this module exists to serve. The
+    specific guards below all stay; this wrapper is what makes the guarantee
+    hold for the shape nobody has thought of yet, by turning any unhandled
+    exception into a valid JSON result carrying a `payload` rejection that
+    names it.
 
-    Nothing raises out of this function. One malformed row costs its own
-    row; it must never cost the week summary, which is the only thing
-    standing between the builder and a silently missing Friday."""
+    Belt-and-braces means BOTH, in this order: the specific validation is
+    what produces a precise, per-row reason a builder can act on, and the
+    floor is what stops the absence of one from costing the whole week. A
+    rejection from the floor is deliberately loud (see _crash_rejection) so
+    it can never read as a clean week."""
+    try:
+        return _summarize(payload)
+    except Exception as exc:                     # noqa: BLE001 — the floor
+        # The fallback path touches NO payload data: aggregate([], []) over two
+        # empty lists and _summary() over its all-zero result are pure
+        # arithmetic on dicts this module built itself, with no division by a
+        # zero denominator (every share is guarded by `if total else 0.0`).
+        # That is why it is safe to call unguarded here — there is no input
+        # left for it to trip over.
+        return _summary(aggregate([], []), [], [_crash_rejection(exc)])
+
+
+def _summarize(payload: dict) -> dict:
+    """summarize()'s body, with the specific validation. Call summarize().
+
+    It owns exactly one rule of its own: the payload's SHAPE. A row missing
+    a required key, a `splits` that isn't a list of pairs, a `resolved_by`
+    outside the four-value vocabulary, a container that isn't a list, a
+    week-level number that isn't one — all are reported as `rejected` entries
+    here, because aggregate() takes dataclasses and can never see the
+    payload's dicts. VALUES are still aggregate()'s alone; a value check
+    written here is how the two halves came apart once already (a bad split
+    quadrant was filtered out in this function and still raised KeyError
+    inside aggregate() for every direct caller).
+
+    One malformed row costs its own row; it must never cost the week summary,
+    which is the only thing standing between the builder and a silently
+    missing Friday."""
     shape_rejects: list[RejectedRow] = []
 
     if not isinstance(payload, dict):
@@ -1078,8 +1362,13 @@ def summarize(payload: dict) -> dict:
             f"payload is {type(payload).__name__}, not an object — nothing "
             "could be read from it")])
 
+    project_rows, project_state = _payload_rows(
+        payload, "project_weeks", shape_rejects)
+    meeting_payload_rows, meeting_state = _payload_rows(
+        payload, "meeting_rows", shape_rejects)
+
     project_weeks = []
-    for pw in _payload_rows(payload, "project_weeks", shape_rejects):
+    for pw in project_rows:
         missing = _missing_keys(pw, _REQUIRED_PROJECT_KEYS)
         if missing:
             shape_rejects.append(RejectedRow(
@@ -1096,7 +1385,7 @@ def summarize(payload: dict) -> dict:
         ))
 
     meeting_rows = []
-    for mr in _payload_rows(payload, "meeting_rows", shape_rejects):
+    for mr in meeting_payload_rows:
         missing = _missing_keys(mr, _REQUIRED_MEETING_KEYS)
         if missing:
             shape_rejects.append(RejectedRow(
@@ -1111,6 +1400,18 @@ def summarize(payload: dict) -> dict:
                 "meeting", _payload_row_dict(mr),
                 bad_splits + " — row excluded from the week"))
             continue
+        # `resolved_by` names which cascade rule fired, and it is a CLOSED
+        # four-value vocabulary. Reported here, at the payload boundary, for
+        # the same reason `splits` is: Resolution refuses to be built with an
+        # invented one, so without this gate a drifted value would reach the
+        # floor and cost the whole week instead of its own row.
+        if mr["resolved_by"] not in RESOLVED_BY:
+            shape_rejects.append(RejectedRow(
+                "meeting", _payload_row_dict(mr),
+                f"resolved_by {mr['resolved_by']!r} is not one of "
+                + ", ".join(repr(v) for v in RESOLVED_BY)
+                + " — row excluded from the week"))
+            continue
         # Values pass through EXACTLY as given from here: aggregate() is the
         # one boundary that checks quadrants, shares, hours and offense_pct.
         resolution = Resolution(
@@ -1120,9 +1421,9 @@ def summarize(payload: dict) -> dict:
         )
         meeting_rows.append(MeetingRow(mr["label"], resolution, mr["hours"]))
 
-    history = _history_from_payload(
-        _payload_rows(payload, "history", shape_rejects), shape_rejects,
-        absent="history" not in payload)
+    history_rows, history_state = _payload_rows(
+        payload, "history", shape_rejects)
+    history = _history_from_payload(history_rows, shape_rejects, history_state)
 
     current = aggregate(project_weeks, meeting_rows)
     flags = evaluate_flags(
@@ -1132,14 +1433,21 @@ def summarize(payload: dict) -> dict:
         # Every flag that could NOT be evaluated is reported through here,
         # into the same `rejected` list the caller already renders.
         rejects=shape_rejects,
-        # A payload carrying NEITHER row container did not measure a week; it
-        # is not a week that measured zero. `project_weeks: []` IS a measured
-        # empty week (a genuine holiday) and still counts — the same
-        # absent-vs-empty distinction `history` already makes. Without it, an
-        # absent project_weeks plus one valid prior week manufactured
-        # "reliability starving — 0h for 2 consecutive weeks".
-        current_measured=("project_weeks" in payload
-                          or "meeting_rows" in payload),
+        # MEASURED MEANS A CONTAINER WAS READ, NOT THAT A KEY WAS THERE.
+        # A payload carrying NEITHER readable row container did not measure a
+        # week; it is not a week that measured zero. `project_weeks: []` IS a
+        # measured empty week (a genuine holiday) and still counts — the same
+        # absent-vs-empty distinction `history` already makes.
+        #
+        # This read `"project_weeks" in payload`, i.e. key presence, while
+        # _payload_rows() next door REJECTED an invalid container — so
+        # `project_weeks: "bad"` or `project_weeks: null` counted as a
+        # measured zero-hour week and, beside one prior zero-reliability week,
+        # fired "reliability starving — 0h for 2 consecutive weeks" out of a
+        # payload from which not one row was ever read. Key presence is not
+        # evidence of measurement.
+        current_measured=(project_state == _ROWS_READ
+                          or meeting_state == _ROWS_READ),
     )
     return _summary(current, flags, shape_rejects)
 
@@ -1184,12 +1492,25 @@ def _summary(current: WeekTotals, flags: list[str],
     # only thing that explains it. max() is float slop only.
     unmoded_hours = max(0.0, current.project_hours
                         - (current.by_mode["offense"] + current.by_mode["defense"]))
+    # READ THE MODES THE SAME WAY _quadrant_defense_share() DOES. This
+    # indexed modes["offense"] / ["defense"] directly while its sibling reader
+    # two hundred lines up guarded both with .get() and a finiteness check --
+    # so a half-written by_quadrant_mode ({"growth-driver": {"offense": 5.0}}),
+    # a shape the module deliberately SUPPORTS as "half measured", was
+    # unmeasured over there and a KeyError over here. Two readings of one
+    # field is how the halves of this module have come apart before; an
+    # unreadable half reads as no mode at all, which the renderer already
+    # prints as an em dash.
     quadrant_mode_percentages = {}
     for quadrant, modes in current.by_quadrant_mode.items():
-        spent = modes["offense"] + modes["defense"]
+        hours_by_mode = {
+            mode: (modes.get(mode) if _finite_number(modes.get(mode)) else 0.0)
+            for mode in _MODES
+        }
+        spent = hours_by_mode["offense"] + hours_by_mode["defense"]
         quadrant_mode_percentages[quadrant] = {
             mode: (hours / spent if spent else 0.0)
-            for mode, hours in modes.items()
+            for mode, hours in hours_by_mode.items()
         }
 
     return {
@@ -1239,6 +1560,19 @@ USAGE = (
 )
 
 
+def _parse_daily_result(md: str) -> dict:
+    parsed = parse_daily_note(md)
+    return {
+        "project_weeks": [
+            {"project": pw.project, "quadrant": pw.quadrant,
+             "offense_pct": pw.offense_pct, "hours": pw.hours}
+            for pw in parsed.projects
+        ],
+        "skipped_lines": parsed.skipped,
+        "skipped_count": parsed.skipped_count,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     """Two modes, both stdin -> stdout JSON.
 
@@ -1249,25 +1583,45 @@ def main(argv: list[str] | None = None) -> int:
     mode exists so close-week never hand-rolls a regex for the close-day
     format contract, and so a drifted line is reported at the confirm gate
     rather than quietly shrinking the week's hours.
-    """
+
+    NEVER A TRACEBACK, NEVER AN EMPTY STDOUT, NEVER A NON-ZERO EXIT FOR A
+    DATA PROBLEM. summarize() has its own floor, but main() adds work
+    OUTSIDE it that could still fail the same way — `json.load(sys.stdin)`
+    on malformed JSON, `sys.stdin.read()` on undecodable bytes, json.dumps
+    on the result — and every one of those used to exit 1 with nothing on
+    stdout, which the caller cannot tell from a week with no work in it. So
+    both modes are floored here too, and both print parseable JSON carrying
+    a rejection that names the exception.
+
+    The ONE non-zero exit that remains is a usage error (unknown argv),
+    which is a caller bug, not a data problem, and produces no JSON at all
+    by design."""
     args = list(sys.argv[1:] if argv is None else argv)
     if args == ["--parse-daily"]:
-        parsed = parse_daily_note(sys.stdin.read())
-        print(json.dumps({
-            "project_weeks": [
-                {"project": pw.project, "quadrant": pw.quadrant,
-                 "offense_pct": pw.offense_pct, "hours": pw.hours}
-                for pw in parsed.projects
-            ],
-            "skipped_lines": parsed.skipped,
-            "skipped_count": parsed.skipped_count,
-        }, indent=2))
+        try:
+            result = _parse_daily_result(sys.stdin.read())
+        except Exception as exc:                 # noqa: BLE001 — the floor
+            rejection = _crash_rejection(exc)
+            # This mode's result shape has no `rejected` list, so the failure
+            # is routed into `skipped_lines` / `skipped_count` — which the
+            # skill is ALREADY required to report at its confirm gate, per
+            # day, even when the count is 0. A new key nobody was told to read
+            # would be a silent failure wearing a report's clothes. `error`
+            # carries the machine-readable form beside it.
+            result = {"project_weeks": [], "skipped_lines": [rejection.reason],
+                      "skipped_count": 1, "error": rejection.row}
+        print(json.dumps(result, indent=2))
         return 0
     if args:
         sys.stderr.write(USAGE)
         return 2
-    payload = json.load(sys.stdin)
-    print(json.dumps(summarize(payload), indent=2))
+    try:
+        result = summarize(json.load(sys.stdin))
+        rendered = json.dumps(result, indent=2)
+    except Exception as exc:                     # noqa: BLE001 — the floor
+        rendered = json.dumps(
+            _summary(aggregate([], []), [], [_crash_rejection(exc)]), indent=2)
+    print(rendered)
     return 0
 
 
