@@ -108,7 +108,13 @@ fi
 
 # --- Verdict ---
 echo "─────────────────────────────"
-AL_ENTRIES="$(grep -cvE '^\s*(#|$)' "$AL" 2>/dev/null || echo 0)"
+# Count with `| wc -l`, NOT `grep -c ... || echo 0`. grep -c prints 0 AND exits
+# 1 when nothing matches, so the `||` fired on exactly the case this guard
+# exists for and appended a SECOND zero: AL_ENTRIES became "0\n0", the -eq test
+# failed as a non-integer, and an empty allowlist fell through to "LOCAL KB" —
+# the false negative the blind-check was written to prevent. Never infer a
+# count from grep's exit status.
+AL_ENTRIES="$(grep -vE '^\s*(#|$)' "$AL" 2>/dev/null | wc -l | tr -d ' ')"
 if [ -n "$MATCH" ]; then
   printf '  ROUTE: \033[32mCOMPANY KB ✓\033[0m  — harvest will commit + push to thensls/nsls-knowledge\n'
   [ -n "$AL_STALE" ] && info "note: matched against a STALE allowlist — refresh the clone to be certain"
