@@ -29,7 +29,7 @@ These come from spec §6. Tasks 1–6 can proceed without them; Task 7 cannot.
 
 - [ ] **P1. Categorize the five active projects lacking a category.** Assistant proposes a `portfolio-category` and `portfolio-role` for each; the builder confirms or corrects. The projects are named only in the builder's own vault, never in this repo — this repo is public and real internal project names do not appear in it.
 - [ ] **P2. Re-scope the open Asana task** that proposes promoting reliability items into tracked project files so quadrant ④ stops reading zero. Under quadrant × mode it models the wrong thing. The builder decides: re-scope, or close as superseded. (The task is identified in the builder's own tracker; its id is not recorded here.)
-- [ ] **P3. Seed `~/.claude/portfolio-role-map.txt`.** Assistant drafts from the org chart; Kevin corrects. Only roles narrow enough to be decisive. Broad roles are deliberately omitted so the topic rule fires.
+- [ ] **P3. Seed `~/.claude/portfolio-role-map.txt`.** Assistant drafts from the org chart; the builder corrects. Only roles narrow enough to be decisive. Broad roles are deliberately omitted so the topic rule fires.
 
 ---
 
