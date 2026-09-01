@@ -14,7 +14,7 @@ silent — the wrong answer looked exactly like the right one.
    resolving to the same profile each wrote `email` in turn. It oscillated between the two
    addresses forever — a diff that is never clean.
 
-Run: python3.12 -m pytest skills/person-intelligence/tests/test_inference_and_collisions.py -q
+Run: python3 -m pytest skills/person-intelligence/tests/test_inference_and_collisions.py -q
 """
 
 import json

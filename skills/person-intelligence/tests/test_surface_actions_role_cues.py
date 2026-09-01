@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.12
+#!/usr/bin/env python3
 """Tests for the role-coach cue pool in surface_actions_for_day.py.
 
 The arbiter contract (role-coach plan, Phase 2):
@@ -10,7 +10,7 @@ The arbiter contract (role-coach plan, Phase 2):
   - Expired cues never surface
   - A role cue surfaces even when coaching_actions.json doesn't exist
 
-Run: python3.12 -m pytest test_surface_actions_role_cues.py -q
+Run: python3 -m pytest test_surface_actions_role_cues.py -q
 """
 
 import json

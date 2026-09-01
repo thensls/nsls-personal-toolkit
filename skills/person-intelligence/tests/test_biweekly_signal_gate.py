@@ -21,8 +21,15 @@ def test_gate_uses_eligibility_not_direct_report_only():
     assert bws.plan_signal(rel2, signal_available=True)["signal_ingest_planned"] is False
 
 
-def test_plan_signal_computes_eligibility_when_untagged():
+def test_plan_signal_computes_eligibility_when_untagged(monkeypatch):
     bws = _load("biweekly_sweep")
+    # is_signal_eligible FAILS CLOSED when SIGNAL_EXCLUDE is unconfigured, so
+    # without this the assertions below only pass on a machine whose .env
+    # happens to set it. This test is about the compute path, not the gate's
+    # fail-closed behaviour (covered by the module's own guard), so configure
+    # it explicitly: exclusion list present and empty = "exclude nobody".
+    monkeypatch.setattr(bws.list_relationships, "SIGNAL_EXCLUDE_CONFIGURED", True)
+    monkeypatch.setattr(bws.list_relationships, "SIGNAL_EXCLUDE", set())
     # sweep-path dict: no signal_eligible key set (build_manifest builds inline)
     rel = {"name": "Adam Ferris", "email": "aferris@nsls.org", "tracking_reason": "peer"}
     out = bws.plan_signal(rel, signal_available=True)

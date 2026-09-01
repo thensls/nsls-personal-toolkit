@@ -1,7 +1,7 @@
-#!/usr/bin/env python3.12
+#!/usr/bin/env python3
 """Tests for list_relationships.py.
 
-Run: python3.12 test_list_relationships.py
+Run: python3 test_list_relationships.py
 """
 
 import json
@@ -103,7 +103,7 @@ import list_relationships
 list_relationships.main()
 """
     result = subprocess.run(
-        ["python3.12", "-c", wrapper],
+        [sys.executable, "-c", wrapper],
         env=full_env,
         capture_output=True,
         text=True,
