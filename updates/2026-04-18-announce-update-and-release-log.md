@@ -55,7 +55,7 @@ Running history, newest first. GitHub renders this as the default view at `githu
 ```bash
 cd ~/nsls-skills/nsls-personal-toolkit
 git fetch upstream
-git checkout upstream/main -- commands/update-personal-productivity.md skills/announce-update/ updates/ .gitignore
+git checkout upstream/main -- skills/update-personal-productivity/ skills/announce-update/ updates/ .gitignore
 git commit -m "pull upstream: announce-update-and-release-log"
 ```
 
