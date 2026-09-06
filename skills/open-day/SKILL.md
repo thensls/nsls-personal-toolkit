@@ -584,27 +584,39 @@ Every item judged already-complete still goes into the candidate pool, in its ow
 
 ```markdown
 ### AI Suggested: Likely already done
-1. Ship the reporting skill — quicknote 2026-08-15: "reporting skill now shipped"
-2. Docs site refresh — quicknote 2026-08-15: "docs site (100% DONE)"
+1. Ship the reporting skill (quicknote 2026-08-15: "reporting skill now shipped")
+2. Docs site refresh (quicknote 2026-08-15: "docs site 100% DONE")
 
 ### Done
-- Ship the reporting skill
-- Docs site refresh
+- Ship the reporting skill (quicknote 2026-08-15: "reporting skill now shipped")
+- Docs site refresh (quicknote 2026-08-15: "docs site 100% DONE")
 ```
 
-**Getting the match right — this is easy to get wrong.** The companion runs
-`_clean_ai_item` on every candidate line, which **cuts the text at the first
-` — ` / ` - ` separator** and keeps only what precedes it. So a candidate written
-`Ship the skill — quicknote 8/15: "shipped"` displays and keys as
-`Ship the skill`. The `### Done` line must equal **that truncated form** —
-bare task text, no citation. Writing the full cited line into `### Done`
-verbatim does NOT match and silently leaves the row unchecked (observed
-2026-08-23). Keep the evidence on the candidate line only; it still displays,
-because truncation affects the matching key, not the rendered row.
-The comparison is **exact and case-sensitive** — `_build_plan_context` tests
-`s["text"] in done` against the raw `- ` lines, with none of the normalisation
-that `_norm_suggestion` applies elsewhere. Punctuation and capitalisation must
-match the candidate line character for character.
+**Cite in a trailing parenthetical — never after a dash.** This is the part that
+is easy to get wrong, and getting it wrong silently deletes the evidence the
+rule above depends on.
+
+`_extract_ai_suggestions` appends `{"text": cleaned}` and **discards the raw
+line**, where `cleaned` is `_clean_ai_item(raw)`. `_clean_ai_item` cuts at the
+first ` — ` / ` – ` / ` - ` separator (whitespace on *both* sides). So a
+dash-cited candidate loses its citation from the **rendered row as well as the
+matching key** — the builder sees a bare "likely done" with no source and
+cannot audit it. Parentheses and brackets pass through untouched, and a date
+like `2026-08-15` is safe inside one because its hyphens have no surrounding
+whitespace. Verified against `companion/server.py`:
+
+| Candidate line | What the builder sees |
+|---|---|
+| `Ship the reporting skill — quicknote 2026-08-15: "shipped"` | `Ship the reporting skill` — ❌ citation gone |
+| `Ship the reporting skill (quicknote 2026-08-15: "shipped")` | the full line — ✅ citation intact |
+
+**The `### Done` line must equal the rendered text character for character**,
+parenthetical included. The comparison is **exact and case-sensitive**:
+`_build_plan_context` tests `s["text"] in done` against the raw `- ` lines, with
+none of the normalisation `_norm_suggestion` applies elsewhere. Write the same
+full line in both places. A `### Done` line trimmed to the bare task text does
+NOT match a parenthetically-cited candidate, and silently leaves the row
+unchecked.
 
 **Expect fewer pre-checked rows than you listed, and don't fight it.**
 `_recent_dispositions` buries anything marked Done/Deleted/Dismissed in the
@@ -616,7 +628,7 @@ sections, you are re-deriving work the builder already closed: check the recent
 notes first (source 1) and leave those out.
 
 Rules:
-- **Always cite the evidence inline** — source + date + the quoted phrase. The builder needs to audit the call, and a bare "likely done" is unauditable.
+- **Always cite the evidence inline, in a trailing parenthetical** — source + date + the quoted phrase. The builder needs to audit the call, and a bare "likely done" is unauditable. A dash-led citation is stripped before display, which produces exactly that unauditable row — see the matching rule above.
 - **Never hide the item.** Suppressing it silently means a genuinely-open task disappears with no trace. Pre-checked and visible is the honest default; the builder unchecks if you got it wrong.
 - **Only today's note pre-checks; prior days bury.** `_recent_dispositions` tombstones anything marked Done/Deleted in the *previous* week's notes, so a correctly-completed item won't resurface tomorrow — and if the builder unchecks a wrong call today, no tombstone is written. This is why pre-checking is safe and silent suppression is not.
 - **Separate "done" from "gone."** Work that vanished from the quicknote without a completion signal goes under `### AI Suggested: Possibly dropped` instead, and is **not** added to `### Done` — the builder confirms the kill rather than having it recorded as an achievement.
