@@ -43,6 +43,48 @@ fi
 
 ---
 
+## Step 1.5: Work out what this machine is — and say it in one plain sentence
+
+**The builder never runs a git command. Not one. Ever.** If you catch yourself
+about to write "run `git remote -v`" or "run `git fetch upstream`", stop — that
+is this skill's job, and handing it over is the failure mode this step exists to
+prevent.
+
+Work it out silently:
+
+```bash
+ORIGIN=$(git -C "$REPO" remote get-url origin 2>/dev/null)
+BRANCH=$(git -C "$REPO" branch --show-current)
+BEHIND=$(git -C "$REPO" rev-list --count HEAD..upstream/main 2>/dev/null)
+AHEAD=$(git -C "$REPO" rev-list --count upstream/main..HEAD 2>/dev/null)
+DIRTY=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')
+```
+
+Classify the setup:
+
+- `$ORIGIN` points at **thensls/nsls-personal-toolkit** → **standard install.**
+  Their session hook pulls upstream directly, so they are usually close to
+  current already.
+- `$ORIGIN` points at **anything else** → **personal fork.** This is the case
+  that needs this skill: their session hook pulls *their own fork*, so nothing
+  NSLS ships ever arrives on its own. Expect a large `$BEHIND`.
+
+Then say **one plain sentence** — no table, no counts-as-jargon, no commands:
+
+> "You're on your own copy of the toolkit, so NSLS updates don't reach you
+> automatically — that's what this is for. Let me walk you through what's new."
+
+> "You're on the standard setup and nearly current — just a couple of things to
+> pick up."
+
+Record which of the two it is; Step 7.5 needs it. If `$DIRTY` is non-zero, add
+one sentence — *"You've got unsaved edits in the toolkit folder; I'll leave
+those alone"* — and keep going. If `$BRANCH` isn't `main`, note it in the same
+breath rather than as a warning: *"You're on a branch called `<X>`, so I'll
+apply everything there."*
+
+---
+
 ## Step 2: Load adoption state
 
 Read `$REPO/.toolkit-state.json` (the path resolved in Step 1). If missing, initialize with:
@@ -257,6 +299,45 @@ Update `pending_manual_steps` based on user confirmations.
 
 ---
 
+## Step 7.5: Bring the checkout genuinely current
+
+**The release walk alone does not make anyone current**, and saying "you're
+caught up" when they aren't is the failure this step closes. Release docs cover
+*published releases only*; plenty of fixes ship without one, so a checkout can
+finish Step 4 with nothing left to adopt and still be dozens of commits behind
+upstream. A fork is behind by definition — its own remote never receives NSLS
+changes.
+
+So re-check, and close the gap **yourself**:
+
+```bash
+git -C "$REPO" fetch upstream --quiet
+BEHIND=$(git -C "$REPO" rev-list --count HEAD..upstream/main)
+```
+
+- **`$BEHIND` is 0** → nothing to do; say so in Step 8 and stop.
+- **Otherwise, tell them what you're about to do in one sentence, then do it.**
+  *"There are also NN newer changes with no release note of their own — bringing
+  those in now."*
+
+  1. Try the clean path first: `git -C "$REPO" merge --ff-only upstream/main`.
+  2. If that's refused (they have local commits, or a fork has diverged), merge
+     properly: `git -C "$REPO" merge upstream/main --no-edit`.
+  3. **If the merge conflicts, do not hand the builder a conflict.** Resolve what
+     is unambiguous. For anything genuinely needing a human call, describe the
+     choice in plain language — *"your version of the day-planner adds a step
+     upstream doesn't have; I can keep yours, take theirs, or combine them"* —
+     and offer the options. Never print conflict markers, never name a git
+     command, never leave the working tree mid-merge at the end of a run. If you
+     truly cannot finish, `git -C "$REPO" merge --abort`, leave them exactly as
+     they were, and say plainly that their setup needs a hand — then tell Davo.
+
+**Success test for this whole skill:** the builder typed one slash command and
+typed nothing else that looks like code. If your run ends with an instruction
+for them to execute, the run failed, however correct the instruction was.
+
+---
+
 ## Step 8: Confirm
 
 > "Update complete.
@@ -265,8 +346,9 @@ Update `pending_manual_steps` based on user confirmations.
 > - Skipped: [N] releases
 > - Deferred: [N] releases (run again anytime to see them)
 > - Manual steps pending: [N]
+> - Now fully up to date with NSLS: [yes | brought current just now | needs a hand — say what]
 >
-> Changes are in your local fork — they'll be active in your next Claude Code session."
+> Changes are in your local copy — they'll be active in your next Claude Code session."
 
 ---
 
