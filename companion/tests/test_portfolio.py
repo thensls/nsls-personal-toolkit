@@ -2961,3 +2961,109 @@ def test_every_public_entry_point_survives_the_worked_payload():
     assert set(result["by_quadrant"]) == set(QUADRANTS) | {CROSS_CUTTING}
     assert all(math.isfinite(v) for v in result["by_quadrant"].values())
     json.dumps(result, allow_nan=False)
+
+
+# ---------------------------------------------------------------------------
+# The role rung's two defects, found running W36 (2026-08-29..09-04) against
+# the real vault before trusting anything downstream of it.
+#
+# 1. BLAST RADIUS. The rung's premise is "an attendee whose ROLE IS the
+#    category", which silently assumes that person only attends meetings of
+#    that category. For a founder/CEO at a small org that is false: one rule
+#    fired on 7 of 19 meetings (45% of meeting hours) and filed a finance
+#    quarterly review and a 7-person leadership huddle as founder-seat work.
+#    Fix: an optional `<=N` attendee cap, so a rule can be scoped to 1:1s.
+#
+# 2. ORDER DEPENDENCE. When two rules match one meeting, resolve_meeting
+#    looped attendees OUTER and rules INNER, so the first attendee that
+#    matched any rule won and the quadrant depended on attendee order — which
+#    the caller assembles from Fathom/calendar and has no reason to keep
+#    stable. Fix: agreement resolves; disagreement DECLINES and falls through
+#    to topic, carrying a note, in the same idiom the topic rung already uses.
+# ---------------------------------------------------------------------------
+
+TWO_RULES_AGREE = [
+    RoleRule(match="dana vance", quadrant="hygiene"),
+    RoleRule(match="rio okafor", quadrant="hygiene"),
+]
+TWO_RULES_CONFLICT = [
+    RoleRule(match="dana vance", quadrant="hygiene"),
+    RoleRule(match="rio okafor", quadrant="growth-driver"),
+]
+HUDDLE = ["Dana Vance", "Rio Okafor", "Wren Adeyemi", "Sol Bergstrom"]
+
+
+def test_agreeing_role_rules_resolve_regardless_of_attendee_order():
+    for attendees in (HUDDLE, list(reversed(HUDDLE))):
+        r = resolve_meeting(attendees, [], None, TWO_RULES_AGREE)
+        assert r.resolved_by == "role"
+        assert r.quadrant == "hygiene"
+
+
+def test_conflicting_role_rules_decline_instead_of_picking_by_order():
+    """The defect: same meeting, same map, reversed attendees -> different
+    quadrant, both reported resolved_by='role' with full confidence."""
+    got = []
+    for attendees in (HUDDLE, list(reversed(HUDDLE))):
+        r = resolve_meeting(attendees, [("growth-driver", 1.0)], None,
+                            TWO_RULES_CONFLICT)
+        got.append(r)
+    # Deterministic: order cannot change the answer any more.
+    assert got[0].quadrant == got[1].quadrant
+    assert got[0].resolved_by == got[1].resolved_by
+    # And it declines rather than guessing — falls through to topic.
+    assert got[0].resolved_by == "topic"
+    assert got[0].quadrant == "growth-driver"
+    assert "role" in got[0].note.lower()
+    assert "hygiene" in got[0].note and "growth-driver" in got[0].note
+
+
+def test_conflicting_role_rules_reach_unresolved_when_nothing_else_resolves():
+    """Declining the rung must not invent a resolution further down."""
+    r = resolve_meeting(HUDDLE, [], None, TWO_RULES_CONFLICT)
+    assert r.resolved_by == "unresolved"
+    assert r.quadrant is None
+    assert "role" in r.note.lower()
+
+
+def test_a_capped_role_rule_fires_on_a_one_to_one():
+    rules = [RoleRule(match="dana vance", quadrant="cross-cutting",
+                      max_attendees=2)]
+    r = resolve_meeting(["Dana Vance", "kp@example.org"], [], None, rules)
+    assert r.resolved_by == "role"
+    assert r.quadrant == "cross-cutting"
+
+
+def test_a_capped_role_rule_does_not_fire_on_a_group_meeting():
+    """The 45%-of-the-week defect, in one assertion."""
+    rules = [RoleRule(match="dana vance", quadrant="cross-cutting",
+                      max_attendees=2)]
+    r = resolve_meeting(HUDDLE, [("operating-efficiency", 1.0)], None, rules)
+    assert r.resolved_by == "topic"
+    assert r.quadrant == "operating-efficiency"
+
+
+def test_an_uncapped_role_rule_still_fires_on_a_group_meeting():
+    """Backward compatible: no cap means the old behaviour."""
+    r = resolve_meeting(HUDDLE, [("operating-efficiency", 1.0)], None,
+                        ROLE_MAP)
+    assert r.resolved_by == "role"
+    assert r.quadrant == "hygiene"
+
+
+def test_parse_role_map_reads_an_attendee_cap():
+    rules = parse_role_map("Dana Vance <=2 → cross-cutting  # 1:1s only\n")
+    assert rules == [RoleRule(match="dana vance", quadrant="cross-cutting",
+                              comment="1:1s only", max_attendees=2)]
+
+
+def test_parse_role_map_defaults_the_cap_to_none():
+    assert parse_role_map("Dana Vance → hygiene\n")[0].max_attendees is None
+
+
+def test_parse_role_map_drops_a_rule_whose_cap_is_not_a_positive_integer():
+    """Same rule as an unknown quadrant: a typo loses its rule, loudly by
+    absence, rather than silently mis-filing a category of meetings."""
+    for bad in ("<=0", "<=-1", "<=x", "<=1.5"):
+        text = f"Dana Vance {bad} → hygiene\nRio Okafor → reliability\n"
+        assert [r.match for r in parse_role_map(text)] == ["rio okafor"], bad
