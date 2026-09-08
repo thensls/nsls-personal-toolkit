@@ -160,9 +160,18 @@ def parse_role_map(text: str) -> list[RoleRule]:
         capped = re.match(r"^(?P<m>.*?)\s*<=\s*(?P<cap>.*)$", match)
         if capped:
             raw_cap = capped.group("cap").strip()
-            if not raw_cap.isdigit() or int(raw_cap) < 1:
+            # int() is the ONLY judge of whether this converts. `isdigit()` is
+            # True for characters int() refuses ('²', '٩'), and int() also
+            # refuses an all-digit value past the 4300-digit conversion limit,
+            # so an isdigit() pre-check raised ValueError out of this function
+            # and cost the WHOLE role map — every rule, and the week's meeting
+            # attribution with it — instead of the one malformed rule.
+            try:
+                max_attendees = int(raw_cap, 10)
+            except ValueError:
                 continue
-            max_attendees = int(raw_cap)
+            if max_attendees < 1:
+                continue
             match = capped.group("m").strip()
         if not match or quadrant not in _VALID:
             continue

@@ -3067,3 +3067,28 @@ def test_parse_role_map_drops_a_rule_whose_cap_is_not_a_positive_integer():
     for bad in ("<=0", "<=-1", "<=x", "<=1.5"):
         text = f"Dana Vance {bad} → hygiene\nRio Okafor → reliability\n"
         assert [r.match for r in parse_role_map(text)] == ["rio okafor"], bad
+
+
+def test_parse_role_map_drops_a_cap_python_cannot_convert():
+    """`int()` is the only judge of convertibility, and an `isdigit()`
+    pre-check is not the same question.
+
+    `str.isdigit()` is True for '²', which `int()` refuses, and `int()` also
+    refuses an all-digit value past its 4300-digit conversion limit. Both used
+    to raise straight out of parse_role_map, costing the WHOLE role map and
+    the week's meeting attribution rather than the one malformed rule.
+    """
+    for bad in ("<=²", "<=" + "9" * 5000):
+        text = f"Dana Vance {bad} → hygiene\nRio Okafor → reliability\n"
+        rules = parse_role_map(text)          # must not raise
+        assert [r.match for r in rules] == ["rio okafor"], bad
+
+
+def test_parse_role_map_keeps_a_cap_int_does_convert():
+    """The other half of the same contract: a non-ASCII DECIMAL digit is a
+    number Python converts ('٩' -> 9), so its rule is valid and is kept. The
+    rule is convertibility, not ASCII-ness — asserting a drop here would have
+    encoded a stricter contract than the code has any reason to enforce.
+    """
+    rules = parse_role_map("Dana Vance <=٩ → hygiene\n")
+    assert [(r.match, r.max_attendees) for r in rules] == [("dana vance", 9)]
