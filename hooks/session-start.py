@@ -30,6 +30,7 @@ So on macOS/Linux nothing fetched this toolkit before this hook was registered.
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HOME = Path.home()
@@ -152,14 +153,34 @@ def report_if_stale():
     if not (PLUGIN_DIR / ".git").exists():
         return
 
+    # stdout, not stderr: SessionStart stdout is what reaches the model's
+    # context on every surface. The builder toolkit learned this the hard way
+    # and prefixes its notices for the same reason — a warning on stderr can be
+    # swallowed by the desktop app, which is how a stale toolkit stays silent.
+    def notice(text):
+        print(f"[NSLS Personal Toolkit] {text}")
+
+    # --- forks: measured against NSLS, not against their own copy -----------
+    # This is the defect that hid a 196-commit gap on a real builder's machine.
+    # @{upstream} for a fork is the fork's own main, which they are usually
+    # perfectly in sync with — so the checks below reported "healthy" while
+    # nothing NSLS shipped had reached them for months. A fork's own remote
+    # never receives NSLS changes, so the only honest reference is upstream.
+    origin_ok, origin = _git("remote", "get-url", "origin")
+    is_canonical = origin_ok and "thensls/nsls-personal-toolkit" in origin
+    if origin_ok and not is_canonical:
+        _report_fork_drift(notice)
+        return
+
     dirty_ok, dirty = _git("status", "--porcelain", "--untracked-files=no")
     if dirty_ok and dirty:
         n = len(dirty.splitlines())
-        print(
-            f"personal-toolkit: auto-update skipped — {n} locally modified "
-            f"file(s) in {PLUGIN_DIR}. Commit, stash, or revert them to resume "
-            f"updates (git -C '{PLUGIN_DIR}' status).",
-            file=sys.stderr,
+        notice(
+            f"Auto-update is paused — this builder has {n} locally modified "
+            f"file(s) in the toolkit folder, so updates cannot be applied. "
+            f"Mention it in one plain sentence at a natural moment and offer to "
+            f"sort it out (save their edits on a side branch, then catch the "
+            f"toolkit up). Do NOT hand them a git command — do it for them."
         )
         return
 
@@ -175,18 +196,83 @@ def report_if_stale():
         return
 
     if behind and ahead:
-        print(
-            f"personal-toolkit: auto-update blocked — your copy has diverged "
-            f"({ahead} local commit(s), {behind} upstream). Rebase or reset "
-            f"{PLUGIN_DIR} to resume updates.",
-            file=sys.stderr,
+        notice(
+            f"Auto-update is blocked — this builder's toolkit has diverged "
+            f"({ahead} local commit(s), {behind} waiting from NSLS). Say so in "
+            f"one plain sentence and offer to catch it up for them (preserve "
+            f"their commits on a side branch first). Never hand them a git "
+            f"command."
         )
     elif behind:
-        print(
-            f"personal-toolkit: {behind} update(s) available but not applied. "
-            f"Run: git -C '{PLUGIN_DIR}' pull --ff-only",
-            file=sys.stderr,
+        notice(
+            f"{behind} NSLS update(s) are waiting and were not applied "
+            f"automatically. Offer to apply them now — run "
+            f"/update-personal-productivity, or bring the checkout current "
+            f"yourself if that skill is not present. Do it for them; do not "
+            f"hand over a git command."
         )
+
+
+# How often to ask NSLS whether a fork has fallen behind. The check costs one
+# network fetch, so it is throttled rather than run every session, and the stamp
+# lives OUTSIDE the repo — a stamp inside it would dirty the tree and trip the
+# "locally modified" branch above.
+_UPSTREAM_CHECK_EVERY_H = 12
+_UPSTREAM_STAMP = HOME / ".claude" / ".nsls-personal-upstream-check"
+_UPSTREAM_URL = "https://github.com/thensls/nsls-personal-toolkit.git"
+
+
+def _report_fork_drift(notice):
+    """Tell the session when a fork has fallen behind NSLS.
+
+    A fork's auto-update pulls the fork, so nothing NSLS ships ever arrives on
+    its own — by design, to protect customizations. The failure was never
+    telling anyone. Verified 2026-09-09: an active builder's fork sat 196
+    commits behind with every check reporting healthy, because every check
+    compared against her own fork.
+    """
+    try:
+        if _UPSTREAM_STAMP.exists():
+            age_h = (time.time() - _UPSTREAM_STAMP.stat().st_mtime) / 3600
+            if age_h < _UPSTREAM_CHECK_EVERY_H:
+                return
+    except Exception:
+        pass
+
+    remotes_ok, remotes = _git("remote")
+    if remotes_ok and "upstream" not in remotes.split():
+        _git("remote", "add", "upstream", _UPSTREAM_URL)
+
+    # Bounded and best-effort: offline, blocked, or slow all mean "say nothing
+    # this session" — never delay a session start over a nicety.
+    fetched, _ = _git("fetch", "upstream", "main", "--quiet", timeout=6)
+    try:
+        _UPSTREAM_STAMP.parent.mkdir(parents=True, exist_ok=True)
+        _UPSTREAM_STAMP.touch()
+    except Exception:
+        pass
+    if not fetched:
+        return
+
+    ok, count = _git("rev-list", "--count", "HEAD..upstream/main")
+    if not ok or not count.isdigit():
+        return
+    behind = int(count)
+    if behind == 0:
+        return
+
+    notice(
+        f"This builder's toolkit is their OWN FORK and is {behind} commit(s) "
+        f"behind NSLS — nothing shipped upstream has reached them, and their "
+        f"auto-update never will, because it follows their fork. Tell them in "
+        f"ONE plain sentence at the start of your first reply — e.g. \"Your "
+        f"toolkit is your own copy, so NSLS updates haven't been reaching you "
+        f"— want me to catch it up?\" — and if they agree, run "
+        f"/update-personal-productivity; if that skill is not present on this "
+        f"machine yet, merge upstream/main into the checkout yourself, "
+        f"preserving their own commits, then report what changed in plain "
+        f"language. NEVER hand them a git command."
+    )
 
 
 def sync_pointers():
