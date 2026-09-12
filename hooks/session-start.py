@@ -187,7 +187,11 @@ def report_if_stale():
     # No network here: the installer's pull entry runs before this one and has
     # already updated the remote-tracking ref, so a non-zero "behind" count means
     # the fast-forward itself was refused.
-    counts_ok, counts = _git("rev-list", "--left-right", "--count", "@{upstream}...HEAD")
+    # origin/main, not @{upstream}: origin is NSLS's own repo (verified above),
+    # so origin/main IS the NSLS line. @{upstream} follows whatever this BRANCH
+    # tracks — a personal remote, a feature branch — and would label those
+    # commits "waiting from NSLS".
+    counts_ok, counts = _git("rev-list", "--left-right", "--count", "origin/main...HEAD")
     if not counts_ok or not counts:
         return
     try:
@@ -220,12 +224,13 @@ def report_if_stale():
 _UPSTREAM_CHECK_EVERY_H = 12
 _UPSTREAM_STAMP = HOME / ".claude" / ".nsls-personal-upstream-check"
 _UPSTREAM_URL = "https://github.com/thensls/nsls-personal-toolkit.git"
-# A remote name WE own, deliberately not "upstream". A fork may already have an
-# `upstream` pointing at something else entirely — fetching that and reporting
-# its commits as "behind NSLS" would tell Claude to merge a foreign project into
-# the builder's toolkit. Clobbering their remote to prevent that would be its own
-# small act of vandalism, so we use our own name and leave theirs alone.
-_UPSTREAM_REMOTE = "nsls-upstream"
+# Where the fetch lands: a private ref, not a remote. A fork may already have an
+# `upstream` — or any other name — aimed at something else entirely; fetching
+# that reported a stranger's commits as NSLS's, and re-pointing it was found to
+# be its own small vandalism. Fetching NSLS by URL into a ref of our own touches
+# neither, and gives the notice a stable name to merge. (FETCH_HEAD would do,
+# but the installer's concurrent pull can overwrite it mid-check.)
+_UPSTREAM_REF = "refs/nsls/upstream-main"
 
 # The NSLS repo itself, in any spelling git accepts. Compared as host + path,
 # never as a substring: `mirror.example/thensls/nsls-personal-toolkit` and
@@ -273,6 +278,9 @@ def _report_fork_drift(notice):
     telling anyone. Verified 2026-09-09: an active builder's fork sat 196
     commits behind with every check reporting healthy, because every check
     compared against her own fork.
+
+    Reads and writes no remote: NSLS is fetched by URL into _UPSTREAM_REF. The
+    update skill owns the named remote it needs for its longer walk.
     """
     try:
         if _UPSTREAM_STAMP.exists():
@@ -286,16 +294,6 @@ def _report_fork_drift(notice):
     except Exception:
         pass
 
-    remotes_ok, remotes = _git("remote")
-    if not remotes_ok:
-        return
-    if _UPSTREAM_REMOTE in remotes.split():
-        # We own this name, so we may enforce its URL — that also repairs a
-        # checkout left pointing at a moved or mistyped repo.
-        _git("remote", "set-url", _UPSTREAM_REMOTE, _UPSTREAM_URL)
-    else:
-        _git("remote", "add", _UPSTREAM_REMOTE, _UPSTREAM_URL)
-
     # Claim the slot BEFORE fetching. The builder toolkit's own session hook
     # runs this same check against this same checkout, keyed on this same stamp,
     # and Claude Code starts SessionStart hooks concurrently — stamping after
@@ -308,23 +306,23 @@ def _report_fork_drift(notice):
         pass
 
     # Bounded and best-effort: offline, blocked, or slow all mean "say nothing
-    # this session" — never delay a session start over a nicety.
-    fetched, _ = _git("fetch", _UPSTREAM_REMOTE, "main", "--quiet", timeout=6)
+    # this session" — never delay a session start over a nicety. `+` so our own
+    # ref always follows NSLS's main, even across a force-push there.
+    fetched, _ = _git("fetch", "--quiet", _UPSTREAM_URL, f"+main:{_UPSTREAM_REF}", timeout=6)
     if not fetched:
         return
 
-    ok, count = _git("rev-list", "--count", f"HEAD..{_UPSTREAM_REMOTE}/main")
+    ok, count = _git("rev-list", "--count", f"HEAD..{_UPSTREAM_REF}")
     if not ok or not count.isdigit():
         return
     behind = int(count)
     if behind == 0:
         return
 
-    # Names OUR remote, never a bare "upstream": on a fork that already has an
-    # `upstream` of its own, "merge upstream/main" would be an instruction to
-    # merge a stranger's project. And the merged checkout contains the update
-    # skill even though the slash command will not exist until the next
-    # restart — so point Claude at the file, or the release walk is skipped.
+    # Names the ref we just fetched and the checkout path, and points Claude at
+    # the update skill's file: the merged checkout contains it, but the slash
+    # command will not exist until the next restart, and without the file the
+    # release walk is skipped.
     notice(
         f"This builder's toolkit is their OWN FORK and is {behind} commit(s) "
         f"behind NSLS — nothing shipped upstream has reached them, and their "
@@ -332,12 +330,13 @@ def _report_fork_drift(notice):
         f"ONE plain sentence at the start of your first reply — e.g. \"Your "
         f"toolkit is your own copy, so NSLS updates haven't been reaching you "
         f"— want me to catch it up?\" — and if they agree: run "
-        f"/update-personal-productivity if this machine has it; otherwise merge "
-        f"{_UPSTREAM_REMOTE}/main into the checkout at {PLUGIN_DIR} yourself, "
-        f"preserving their own commits, then read and follow "
-        f"skills/update-personal-productivity/SKILL.md from the freshly merged "
-        f"checkout to walk them through what's new (the slash command itself "
-        f"appears after their next restart). NEVER hand them a git command."
+        f"/update-personal-productivity if this machine has it; otherwise, in "
+        f"{PLUGIN_DIR}, merge {_UPSTREAM_REF} (NSLS's main, fetched from "
+        f"{_UPSTREAM_URL} moments ago) yourself, preserving their own commits, "
+        f"then read and follow skills/update-personal-productivity/SKILL.md "
+        f"from the freshly merged checkout to walk them through what's new "
+        f"(the slash command itself appears after their next restart). NEVER "
+        f"hand them a git command."
     )
 
 
