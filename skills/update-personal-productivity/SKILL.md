@@ -94,6 +94,36 @@ apply everything there."*
 
 ---
 
+## Step 1.6: Set unsaved edits aside — before anything touches a file
+
+If `$DIRTY` (Step 1.5) is non-zero, stop here first. Step 4's accept path checks
+NSLS's version of a file straight out over the working copy, and Step 7.5
+merges — either one destroys an unsaved edit, and a stash taken later cannot
+bring back what was already overwritten. So the edits are set aside NOW and
+restored at the very end (Step 7.6), whatever happens in between.
+
+Say it in their language, then do it yourself:
+
+> "You've got unsaved edits in <N> toolkit file(s). I'll set them aside safely
+> while I update, then put them back exactly as they were — or I can leave
+> everything as it is and stop here. Which?"
+
+- **Set aside** →
+  `git -C "$REPO" stash push --include-untracked -m "nsls-update-personal-productivity: edits set aside"`
+  then confirm `git -C "$REPO" status --porcelain` is empty. Remember that you
+  did this: Step 7.6 must run, however the middle of the run goes.
+- **Stop** → end the run here. Say in one plain sentence that nothing was
+  changed and why, and give Step 8 with "still behind — unsaved edits".
+
+Also look for a stash **left by an interrupted earlier run** — an entry in
+`git -C "$REPO" stash list` carrying the message above. If there is one, tell
+them their earlier edits are safe and will be put back at the end of this run
+too (Step 7.6 restores it as well).
+
+The builder types none of this. Never say "stash" to them.
+
+---
+
 ## Step 2: Load adoption state
 
 Read `$REPO/.toolkit-state.json` (the path resolved in Step 1). If missing, initialize with:
@@ -347,16 +377,10 @@ BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main)
   *"There are also NN newer changes with no release note of their own — bringing
   those in now."*
 
-  0. **Look before merging.** If `$DIRTY` (Step 1.5) is non-zero, git will
-     refuse to merge over any file they have edited, and both commands below
-     fail — silently, if nobody checks. Say so first, in their language —
-     *"you've got unsaved edits in <N> toolkit file(s); I'll set them aside
-     safely, bring in the changes, then put your edits back"* — and if they
-     agree, do exactly that yourself: `git -C "$REPO" stash push
-     --include-untracked`, the merge below, then `git -C "$REPO" stash pop`. If
-     the pop conflicts, treat it as a merge conflict (item 3). If they decline,
-     skip the rest of this step and say plainly in Step 8 that they are still
-     behind, and why.
+  0. **Unsaved edits were already set aside in Step 1.6.** If `$DIRTY` was
+     non-zero and they chose to stop there, this step never runs. If the tree
+     is dirty anyway (something wrote to it mid-run), do not merge over it —
+     go back to Step 1.6's ask and continue only once the tree is clean.
   1. Try the clean path first: `git -C "$REPO" merge --ff-only nsls-upstream/main`.
   2. If that's refused (they have local commits, or a fork has diverged), merge
      properly: `git -C "$REPO" merge nsls-upstream/main --no-edit`.
@@ -364,8 +388,8 @@ BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main)
      `git -C "$REPO" rev-list --count HEAD..nsls-upstream/main`. Anything but `0`
      means the merge was refused or aborted and the checkout is STILL BEHIND:
      do not walk into Step 8 as if it were current. Say what stopped it in one
-     plain sentence, offer the fix you can do for them (set edits aside as in
-     item 0, or resolve as in item 3), and if they decline, Step 8 reports
+     plain sentence, offer the fix you can do for them (Step 1.6's ask, or resolve
+     as in item 3), and if they decline, Step 8 reports
      "still behind" with the number and the reason.
   3. **If the merge conflicts, do not hand the builder a conflict.** Resolve what
      is unambiguous. For anything genuinely needing a human call, describe the
@@ -375,6 +399,24 @@ BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main)
      command, never leave the working tree mid-merge at the end of a run. If you
      truly cannot finish, `git -C "$REPO" merge --abort`, leave them exactly as
      they were, and say plainly that their setup needs a hand — then tell Davo.
+
+## Step 7.6: Put their edits back
+
+Runs whenever Step 1.6 set edits aside (or found an earlier run's stash), no
+matter how Steps 2–7.5 went — including after a refused or aborted merge.
+
+1. `git -C "$REPO" stash pop`
+2. **If the pop conflicts** (NSLS changed a line they had edited), treat it
+   exactly like a merge conflict in Step 7.5 item 3: resolve what is
+   unambiguous, describe any real choice in plain language — *"you'd edited the
+   day-planner's step 3 and NSLS rewrote that step; keep yours, take theirs, or
+   combine?"* — write the result, then `git -C "$REPO" stash drop` once the
+   working tree shows what they chose. Never print conflict markers, never name
+   a git command, never end the run with the conflict unresolved.
+3. If you truly cannot finish, leave the stash in place (their edits are safe in
+   it), say so in one plain sentence, tell Davo, and report it in Step 8.
+4. Confirm: `git -C "$REPO" stash list` no longer shows our message, and
+   `git -C "$REPO" status --porcelain` lists their edited files again.
 
 **Success test for this whole skill:** the builder typed one slash command and
 typed nothing else that looks like code. If your run ends with an instruction
@@ -390,6 +432,7 @@ for them to execute, the run failed, however correct the instruction was.
 > - Skipped: [N] releases
 > - Deferred: [N] releases (run again anytime to see them)
 > - Manual steps pending: [N]
+> - Your unsaved edits: [none to begin with | back in place | still set aside — <why>; they're safe, and the next run puts them back]
 > - Now fully up to date with NSLS: [yes | brought current just now | not yet, by your choice — you skipped NN | still behind by NN — <one plain reason, e.g. "unsaved edits in 2 files; say the word and I'll set them aside and finish"> | needs a hand — say what]
 >
 > Changes are in your local copy — they'll be active in your next Claude Code session."
@@ -410,7 +453,7 @@ If you're tempted to "accept all" across several releases at once, run the comma
 
 **User is on a branch other than `main`.** Warn: "You're on branch `<X>`, not `main`. Adoptions will commit here. Continue?"
 
-**User has uncommitted local changes.** Before Step 4, say: "You have unsaved edits in `<files>`. I can set them aside safely while I update and put them back after — or leave everything exactly as it is." If they agree, you do the setting-aside and the restoring (Step 7.5, item 0). Never tell them to stash or commit anything.
+**User has uncommitted local changes.** Step 1.6 handles it — before Step 4, never after: the accept path in Step 4 overwrites the working copy, and a stash taken later cannot recover what was already replaced. You set the edits aside and you restore them (Step 7.6); never tell them to stash or commit anything.
 
 **Release doc is malformed** (missing frontmatter, missing sections). Show what you could parse, warn about what's missing, ask the user whether to proceed with limited info or skip the release.
 
@@ -418,7 +461,7 @@ If you're tempted to "accept all" across several releases at once, run the comma
 
 **Network failure on `git fetch`.** Fall back to whatever's already in `nsls-upstream/main` locally; warn that data may be stale.
 
-**User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet — I'll bring in the base skills now." Then do it yourself (`git -C "$REPO" pull nsls-upstream main`, with Step 7.5's dirty-tree care); no release walk.
+**User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet — I'll bring in the base skills now." Then do it yourself (`git -C "$REPO" pull nsls-upstream main`, with Step 1.6 / 7.6's care for unsaved edits); no release walk.
 
 ---
 
