@@ -167,7 +167,7 @@ def report_if_stale():
     # nothing NSLS shipped had reached them for months. A fork's own remote
     # never receives NSLS changes, so the only honest reference is upstream.
     origin_ok, origin = _git("remote", "get-url", "origin")
-    is_canonical = origin_ok and "thensls/nsls-personal-toolkit" in origin
+    is_canonical = origin_ok and _is_canonical_origin(origin)
     if origin_ok and not is_canonical:
         _report_fork_drift(notice)
         return
@@ -227,6 +227,43 @@ _UPSTREAM_URL = "https://github.com/thensls/nsls-personal-toolkit.git"
 # small act of vandalism, so we use our own name and leave theirs alone.
 _UPSTREAM_REMOTE = "nsls-upstream"
 
+# The NSLS repo itself, in any spelling git accepts. Compared as host + path,
+# never as a substring: `mirror.example/thensls/nsls-personal-toolkit` and
+# `github.com/thensls/nsls-personal-toolkit-experiments` both CONTAIN the
+# canonical path, and a substring test classified either as NSLS's own repo —
+# skipping the fork check, so that checkout stayed silently stale.
+_CANONICAL_HOST = "github.com"
+_CANONICAL_PATH = "thensls/nsls-personal-toolkit"
+_URL_FORMS = (
+    # scheme://[user[:secret]@]host[:port]/path
+    re.compile(r"^[a-z][a-z0-9+.-]*://(?:[^@/]*@)?([^/:]+)(?::\d+)?/(.*)$", re.IGNORECASE),
+    # scp-like [user@]host:path — no scheme, and `host://...` is not this form
+    re.compile(r"^(?:[^@/:]+@)?([^/:]+):(?!//)/?(.*)$"),
+)
+
+
+def _is_canonical_origin(url):
+    """True only for NSLS's own repository on github.com.
+
+    Accepts https, ssh://, and scp-like spellings, optional user info and port,
+    `www.`, a trailing slash, `.git`, and any letter case (GitHub owner and repo
+    names are case-insensitive). Anything else — another host, another owner,
+    a longer repo name, a local path — is not canonical and gets the fork check.
+    """
+    for form in _URL_FORMS:
+        m = form.match((url or "").strip())
+        if m:
+            host, path = m.group(1).lower(), m.group(2)
+            break
+    else:
+        return False
+    if host.startswith("www."):
+        host = host[4:]
+    path = path.strip("/")
+    if path.lower().endswith(".git"):
+        path = path[:-4]
+    return host == _CANONICAL_HOST and path.rstrip("/").lower() == _CANONICAL_PATH
+
 
 def _report_fork_drift(notice):
     """Tell the session when a fork has fallen behind NSLS.
@@ -259,14 +296,20 @@ def _report_fork_drift(notice):
     else:
         _git("remote", "add", _UPSTREAM_REMOTE, _UPSTREAM_URL)
 
-    # Bounded and best-effort: offline, blocked, or slow all mean "say nothing
-    # this session" — never delay a session start over a nicety.
-    fetched, _ = _git("fetch", _UPSTREAM_REMOTE, "main", "--quiet", timeout=6)
+    # Claim the slot BEFORE fetching. The builder toolkit's own session hook
+    # runs this same check against this same checkout, keyed on this same stamp,
+    # and Claude Code starts SessionStart hooks concurrently — stamping after
+    # the fetch left a seconds-wide window in which both would fetch and both
+    # would speak. Stamping first shrinks that to the file write itself.
     try:
         _UPSTREAM_STAMP.parent.mkdir(parents=True, exist_ok=True)
         _UPSTREAM_STAMP.touch()
     except Exception:
         pass
+
+    # Bounded and best-effort: offline, blocked, or slow all mean "say nothing
+    # this session" — never delay a session start over a nicety.
+    fetched, _ = _git("fetch", _UPSTREAM_REMOTE, "main", "--quiet", timeout=6)
     if not fetched:
         return
 
@@ -277,17 +320,24 @@ def _report_fork_drift(notice):
     if behind == 0:
         return
 
+    # Names OUR remote, never a bare "upstream": on a fork that already has an
+    # `upstream` of its own, "merge upstream/main" would be an instruction to
+    # merge a stranger's project. And the merged checkout contains the update
+    # skill even though the slash command will not exist until the next
+    # restart — so point Claude at the file, or the release walk is skipped.
     notice(
         f"This builder's toolkit is their OWN FORK and is {behind} commit(s) "
         f"behind NSLS — nothing shipped upstream has reached them, and their "
         f"auto-update never will, because it follows their fork. Tell them in "
         f"ONE plain sentence at the start of your first reply — e.g. \"Your "
         f"toolkit is your own copy, so NSLS updates haven't been reaching you "
-        f"— want me to catch it up?\" — and if they agree, run "
-        f"/update-personal-productivity; if that skill is not present on this "
-        f"machine yet, merge upstream/main into the checkout yourself, "
-        f"preserving their own commits, then report what changed in plain "
-        f"language. NEVER hand them a git command."
+        f"— want me to catch it up?\" — and if they agree: run "
+        f"/update-personal-productivity if this machine has it; otherwise merge "
+        f"{_UPSTREAM_REMOTE}/main into the checkout at {PLUGIN_DIR} yourself, "
+        f"preserving their own commits, then read and follow "
+        f"skills/update-personal-productivity/SKILL.md from the freshly merged "
+        f"checkout to walk them through what's new (the slash command itself "
+        f"appears after their next restart). NEVER hand them a git command."
     )
 
 
