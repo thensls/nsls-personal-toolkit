@@ -347,9 +347,26 @@ BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main)
   *"There are also NN newer changes with no release note of their own — bringing
   those in now."*
 
+  0. **Look before merging.** If `$DIRTY` (Step 1.5) is non-zero, git will
+     refuse to merge over any file they have edited, and both commands below
+     fail — silently, if nobody checks. Say so first, in their language —
+     *"you've got unsaved edits in <N> toolkit file(s); I'll set them aside
+     safely, bring in the changes, then put your edits back"* — and if they
+     agree, do exactly that yourself: `git -C "$REPO" stash push
+     --include-untracked`, the merge below, then `git -C "$REPO" stash pop`. If
+     the pop conflicts, treat it as a merge conflict (item 3). If they decline,
+     skip the rest of this step and say plainly in Step 8 that they are still
+     behind, and why.
   1. Try the clean path first: `git -C "$REPO" merge --ff-only nsls-upstream/main`.
   2. If that's refused (they have local commits, or a fork has diverged), merge
      properly: `git -C "$REPO" merge nsls-upstream/main --no-edit`.
+  2b. **Confirm it actually happened — never assume.** Re-run
+     `git -C "$REPO" rev-list --count HEAD..nsls-upstream/main`. Anything but `0`
+     means the merge was refused or aborted and the checkout is STILL BEHIND:
+     do not walk into Step 8 as if it were current. Say what stopped it in one
+     plain sentence, offer the fix you can do for them (set edits aside as in
+     item 0, or resolve as in item 3), and if they decline, Step 8 reports
+     "still behind" with the number and the reason.
   3. **If the merge conflicts, do not hand the builder a conflict.** Resolve what
      is unambiguous. For anything genuinely needing a human call, describe the
      choice in plain language — *"your version of the day-planner adds a step
@@ -373,7 +390,7 @@ for them to execute, the run failed, however correct the instruction was.
 > - Skipped: [N] releases
 > - Deferred: [N] releases (run again anytime to see them)
 > - Manual steps pending: [N]
-> - Now fully up to date with NSLS: [yes | brought current just now | not yet, by your choice — you skipped NN | needs a hand — say what]
+> - Now fully up to date with NSLS: [yes | brought current just now | not yet, by your choice — you skipped NN | still behind by NN — <one plain reason, e.g. "unsaved edits in 2 files; say the word and I'll set them aside and finish"> | needs a hand — say what]
 >
 > Changes are in your local copy — they'll be active in your next Claude Code session."
 
@@ -393,7 +410,7 @@ If you're tempted to "accept all" across several releases at once, run the comma
 
 **User is on a branch other than `main`.** Warn: "You're on branch `<X>`, not `main`. Adoptions will commit here. Continue?"
 
-**User has uncommitted local changes.** Before Step 4, warn: "You have uncommitted changes in `<files>`. Stash or commit before adopting upstream? Continue anyway risks messy merges."
+**User has uncommitted local changes.** Before Step 4, say: "You have unsaved edits in `<files>`. I can set them aside safely while I update and put them back after — or leave everything exactly as it is." If they agree, you do the setting-aside and the restoring (Step 7.5, item 0). Never tell them to stash or commit anything.
 
 **Release doc is malformed** (missing frontmatter, missing sections). Show what you could parse, warn about what's missing, ask the user whether to proceed with limited info or skip the release.
 
@@ -401,7 +418,7 @@ If you're tempted to "accept all" across several releases at once, run the comma
 
 **Network failure on `git fetch`.** Fall back to whatever's already in `nsls-upstream/main` locally; warn that data may be stale.
 
-**User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet. Run `git pull nsls-upstream main` to get the base skills." Continue with a vanilla pull, no release walk.
+**User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet — I'll bring in the base skills now." Then do it yourself (`git -C "$REPO" pull nsls-upstream main`, with Step 7.5's dirty-tree care); no release walk.
 
 ---
 
