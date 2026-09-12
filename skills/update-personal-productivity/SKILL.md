@@ -405,7 +405,12 @@ BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main)
 Runs whenever Step 1.6 set edits aside (or found an earlier run's stash), no
 matter how Steps 2–7.5 went — including after a refused or aborted merge.
 
-1. `git -C "$REPO" stash pop`
+1. Find OUR entries — never a bare `stash pop`, which takes whatever is newest
+   and may be something else of theirs entirely:
+   `git -C "$REPO" stash list --format='%gd %s' | grep 'nsls-update-personal-productivity: edits set aside'`
+   Pop the first one listed by its reference — `git -C "$REPO" stash pop stash@{N}` —
+   then list again and repeat until none of ours remain (indices shift after
+   every pop). Any stash that is not ours stays exactly where it was.
 2. **If the pop conflicts** (NSLS changed a line they had edited), treat it
    exactly like a merge conflict in Step 7.5 item 3: resolve what is
    unambiguous, describe any real choice in plain language — *"you'd edited the
@@ -461,7 +466,7 @@ If you're tempted to "accept all" across several releases at once, run the comma
 
 **Network failure on `git fetch`.** Fall back to whatever's already in `nsls-upstream/main` locally; warn that data may be stale.
 
-**User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet — I'll bring in the base skills now." Then do it yourself (`git -C "$REPO" pull nsls-upstream main`, with Step 1.6 / 7.6's care for unsaved edits); no release walk.
+**User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet — I'll bring in the base skills now." Then skip the release walk (Steps 2–7) and run Steps 1.6, 7.5 and 7.6 exactly as written — fast-forward first, a real merge if that's refused, conflicts resolved or aborted, edits set aside and put back. Never a bare `git pull` here: it can stop mid-merge with nothing to catch it.
 
 ---
 
