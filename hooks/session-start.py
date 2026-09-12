@@ -302,8 +302,15 @@ def _pull_source():
     """(remote, url) this checkout's branch actually pulls from — the same
     source a bare `git pull` uses — falling back to origin. ("", "") when
     neither resolves."""
-    ok, tracking = _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
-    remote = tracking.split("/", 1)[0] if ok and "/" in tracking else "origin"
+    # From config, not by splitting `@{u}` on "/": a remote may itself be
+    # named with a slash (`personal/fork`), and the split kept only `personal`.
+    remote = ""
+    ok, branch = _git("symbolic-ref", "--short", "HEAD")  # fails when detached
+    if ok and branch:
+        ok, configured = _git("config", "--get", f"branch.{branch}.remote")
+        if ok and configured and configured != ".":  # "." tracks a local branch
+            remote = configured
+    remote = remote or "origin"
     ok, url = _git("remote", "get-url", remote)
     if (not ok or not url) and remote != "origin":
         remote = "origin"
