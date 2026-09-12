@@ -408,15 +408,20 @@ matter how Steps 2–7.5 went — including after a refused or aborted merge.
 1. Find OUR entries — never a bare `stash pop`, which takes whatever is newest
    and may be something else of theirs entirely:
    `git -C "$REPO" stash list --format='%gd %s' | grep 'nsls-update-personal-productivity: edits set aside'`
-   Pop the first one listed by its reference — `git -C "$REPO" stash pop stash@{N}` —
-   then list again and repeat until none of ours remain (indices shift after
-   every pop). Any stash that is not ours stays exactly where it was.
+   Pop the first one listed by its reference, restoring staged state too —
+   `git -C "$REPO" stash pop --index stash@{N}` — then list again and repeat
+   until none of ours remain (indices shift after every pop). Any stash that is
+   not ours stays exactly where it was. If `--index` is refused (git cannot
+   reinstate what was staged), pop that entry without it and say in Step 8 that
+   their edits are back but no longer staged.
 2. **If the pop conflicts** (NSLS changed a line they had edited), treat it
    exactly like a merge conflict in Step 7.5 item 3: resolve what is
    unambiguous, describe any real choice in plain language — *"you'd edited the
    day-planner's step 3 and NSLS rewrote that step; keep yours, take theirs, or
-   combine?"* — write the result, then `git -C "$REPO" stash drop` once the
-   working tree shows what they chose. Never print conflict markers, never name
+   combine?"* — write the result, then drop that same entry by its reference,
+   `git -C "$REPO" stash drop stash@{N}`, once the working tree shows what they
+   chose (a conflicted pop leaves the entry in place; a bare `drop` would take
+   whatever is newest). Never print conflict markers, never name
    a git command, never end the run with the conflict unresolved.
 3. If you truly cannot finish, leave the stash in place (their edits are safe in
    it), say so in one plain sentence, tell Davo, and report it in Step 8.
