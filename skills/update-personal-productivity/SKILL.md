@@ -316,7 +316,25 @@ BEHIND=$(git -C "$REPO" rev-list --count HEAD..upstream/main)
 ```
 
 - **`$BEHIND` is 0** → nothing to do; say so in Step 8 and stop.
-- **Otherwise, tell them what you're about to do in one sentence, then do it.**
+- **If they skipped or deferred anything, STOP and ask first.** Catching a
+  checkout up to `upstream/main` installs *everything* upstream has — including
+  the releases they just chose to skip or defer in Step 4. Merging anyway would
+  silently overturn a decision they made two minutes ago, and this skill's whole
+  contract is that no skill-level change happens without them saying so. So when
+  `skipped_releases` is non-empty, or they deferred a release in this run, put
+  the choice to them in plain language:
+
+  > *"There are also NN newer changes with no release note of their own. I can
+  > bring everything current in one go — but that would also pull in the
+  > \<release\> you just skipped. Want everything, or shall I leave you where you
+  > are for now?"*
+
+  Take **everything** only if they say so. If they decline, skip the rest of this
+  step, and say plainly in Step 8 that they are current on releases but still
+  behind on other changes by their own choice — never report them as fully
+  up to date.
+- **Otherwise (nothing skipped or deferred), tell them what you're about to do in
+  one sentence, then do it.**
   *"There are also NN newer changes with no release note of their own — bringing
   those in now."*
 
@@ -346,7 +364,7 @@ for them to execute, the run failed, however correct the instruction was.
 > - Skipped: [N] releases
 > - Deferred: [N] releases (run again anytime to see them)
 > - Manual steps pending: [N]
-> - Now fully up to date with NSLS: [yes | brought current just now | needs a hand — say what]
+> - Now fully up to date with NSLS: [yes | brought current just now | not yet, by your choice — you skipped NN | needs a hand — say what]
 >
 > Changes are in your local copy — they'll be active in your next Claude Code session."
 
