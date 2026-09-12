@@ -220,6 +220,12 @@ def report_if_stale():
 _UPSTREAM_CHECK_EVERY_H = 12
 _UPSTREAM_STAMP = HOME / ".claude" / ".nsls-personal-upstream-check"
 _UPSTREAM_URL = "https://github.com/thensls/nsls-personal-toolkit.git"
+# A remote name WE own, deliberately not "upstream". A fork may already have an
+# `upstream` pointing at something else entirely — fetching that and reporting
+# its commits as "behind NSLS" would tell Claude to merge a foreign project into
+# the builder's toolkit. Clobbering their remote to prevent that would be its own
+# small act of vandalism, so we use our own name and leave theirs alone.
+_UPSTREAM_REMOTE = "nsls-upstream"
 
 
 def _report_fork_drift(notice):
@@ -234,18 +240,28 @@ def _report_fork_drift(notice):
     try:
         if _UPSTREAM_STAMP.exists():
             age_h = (time.time() - _UPSTREAM_STAMP.stat().st_mtime) / 3600
-            if age_h < _UPSTREAM_CHECK_EVERY_H:
+            # 0 <= age: a stamp dated in the FUTURE (clock skew, a restored
+            # backup, a synced home directory) yields a negative age, which a
+            # bare `<` would read as freshly-checked and could suppress the
+            # check for far longer than 12 hours.
+            if 0 <= age_h < _UPSTREAM_CHECK_EVERY_H:
                 return
     except Exception:
         pass
 
     remotes_ok, remotes = _git("remote")
-    if remotes_ok and "upstream" not in remotes.split():
-        _git("remote", "add", "upstream", _UPSTREAM_URL)
+    if not remotes_ok:
+        return
+    if _UPSTREAM_REMOTE in remotes.split():
+        # We own this name, so we may enforce its URL — that also repairs a
+        # checkout left pointing at a moved or mistyped repo.
+        _git("remote", "set-url", _UPSTREAM_REMOTE, _UPSTREAM_URL)
+    else:
+        _git("remote", "add", _UPSTREAM_REMOTE, _UPSTREAM_URL)
 
     # Bounded and best-effort: offline, blocked, or slow all mean "say nothing
     # this session" — never delay a session start over a nicety.
-    fetched, _ = _git("fetch", "upstream", "main", "--quiet", timeout=6)
+    fetched, _ = _git("fetch", _UPSTREAM_REMOTE, "main", "--quiet", timeout=6)
     try:
         _UPSTREAM_STAMP.parent.mkdir(parents=True, exist_ok=True)
         _UPSTREAM_STAMP.touch()
@@ -254,7 +270,7 @@ def _report_fork_drift(notice):
     if not fetched:
         return
 
-    ok, count = _git("rev-list", "--count", "HEAD..upstream/main")
+    ok, count = _git("rev-list", "--count", f"HEAD..{_UPSTREAM_REMOTE}/main")
     if not ok or not count.isdigit():
         return
     behind = int(count)
