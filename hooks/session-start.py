@@ -27,9 +27,11 @@ git_pull() pulls only its own directory (its PowerShell counterpart pulls both).
 So on macOS/Linux nothing fetched this toolkit before this hook was registered.
 """
 
+import os
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 HOME = Path.home()
@@ -152,21 +154,52 @@ def report_if_stale():
     if not (PLUGIN_DIR / ".git").exists():
         return
 
+    # stdout, not stderr: SessionStart stdout is what reaches the model's
+    # context on every surface. The builder toolkit learned this the hard way
+    # and prefixes its notices for the same reason — a warning on stderr can be
+    # swallowed by the desktop app, which is how a stale toolkit stays silent.
+    def notice(text):
+        print(f"[NSLS Personal Toolkit] {text}")
+
+    # --- forks: measured against NSLS, not against their own copy -----------
+    # This is the defect that hid a 196-commit gap on a real builder's machine.
+    # @{upstream} for a fork is the fork's own main, which they are usually
+    # perfectly in sync with — so the checks below reported "healthy" while
+    # nothing NSLS shipped had reached them for months. A fork's own remote
+    # never receives NSLS changes, so the only honest reference is upstream.
+    # Judged by the remote the branch actually PULLS from (falling back to
+    # origin): a canonical origin beside a branch that tracks a personal fork is
+    # a fork in every way that matters, and a fork whose remote is not called
+    # origin is still a fork.
+    remote, url = _pull_source()
+    is_fork = bool(url) and not _is_canonical_origin(url)
+    if is_fork:
+        _report_fork_drift(notice)
+        # No return here: a fork with uncommitted edits still needs the notice
+        # below, or Claude is told to merge over edits nobody mentioned.
+
     dirty_ok, dirty = _git("status", "--porcelain", "--untracked-files=no")
     if dirty_ok and dirty:
         n = len(dirty.splitlines())
-        print(
-            f"personal-toolkit: auto-update skipped — {n} locally modified "
-            f"file(s) in {PLUGIN_DIR}. Commit, stash, or revert them to resume "
-            f"updates (git -C '{PLUGIN_DIR}' status).",
-            file=sys.stderr,
+        notice(
+            f"Auto-update is paused — this builder has {n} locally modified "
+            f"file(s) in the toolkit folder, so updates cannot be applied. "
+            f"Mention it in one plain sentence at a natural moment and offer to "
+            f"sort it out (save their edits on a side branch, then catch the "
+            f"toolkit up). Do NOT hand them a git command — do it for them."
         )
         return
+    if is_fork or not url:
+        return  # a fork's own main is not the NSLS line; no remote at all, nothing to say
 
     # No network here: the installer's pull entry runs before this one and has
     # already updated the remote-tracking ref, so a non-zero "behind" count means
     # the fast-forward itself was refused.
-    counts_ok, counts = _git("rev-list", "--left-right", "--count", "@{upstream}...HEAD")
+    # <remote>/main, not @{upstream}: the remote this branch pulls from is
+    # verified as NSLS's own repo above, so its main IS the NSLS line. @{upstream}
+    # follows whatever the BRANCH tracks — a feature branch, say — and would
+    # label those commits "waiting from NSLS".
+    counts_ok, counts = _git("rev-list", "--left-right", "--count", f"{remote}/main...HEAD")
     if not counts_ok or not counts:
         return
     try:
@@ -175,18 +208,216 @@ def report_if_stale():
         return
 
     if behind and ahead:
-        print(
-            f"personal-toolkit: auto-update blocked — your copy has diverged "
-            f"({ahead} local commit(s), {behind} upstream). Rebase or reset "
-            f"{PLUGIN_DIR} to resume updates.",
-            file=sys.stderr,
+        notice(
+            f"Auto-update is blocked — this builder's toolkit has diverged "
+            f"({ahead} local commit(s), {behind} waiting from NSLS). Say so in "
+            f"one plain sentence and offer to catch it up for them (preserve "
+            f"their commits on a side branch first). Never hand them a git "
+            f"command."
         )
     elif behind:
-        print(
-            f"personal-toolkit: {behind} update(s) available but not applied. "
-            f"Run: git -C '{PLUGIN_DIR}' pull --ff-only",
-            file=sys.stderr,
+        notice(
+            f"{behind} NSLS update(s) are waiting and were not applied "
+            f"automatically. Offer to apply them now — run "
+            f"/update-personal-productivity, or bring the checkout current "
+            f"yourself if that skill is not present. Do it for them; do not "
+            f"hand over a git command."
         )
+
+
+# How often to ask NSLS whether a fork has fallen behind. The check costs one
+# network fetch, so it is throttled rather than run every session, and the stamp
+# lives OUTSIDE the repo — a stamp inside it would dirty the tree and trip the
+# "locally modified" branch above.
+_UPSTREAM_CHECK_EVERY_H = 12
+_UPSTREAM_STAMP = HOME / ".claude" / ".nsls-personal-upstream-check"
+# The stamp is a throttle, not a claim: two hooks can both read it as stale
+# before either writes it. The lock is the claim — created exclusively, so
+# exactly one of them fetches and speaks. The builder toolkit's own session hook
+# runs this same check against this same checkout, keyed on these same files.
+_UPSTREAM_LOCK = HOME / ".claude" / ".nsls-personal-upstream-check.lock"
+_LOCK_STALE_S = 120  # a lock this old belongs to a hook that died
+_UPSTREAM_URL = "https://github.com/thensls/nsls-personal-toolkit.git"
+# Where the fetch lands: a private ref, not a remote. A fork may already have an
+# `upstream` — or any other name — aimed at something else entirely; fetching
+# that reported a stranger's commits as NSLS's, and re-pointing it was found to
+# be its own small vandalism. Fetching NSLS by URL into a ref of our own touches
+# neither, and gives the notice a stable name to merge. (FETCH_HEAD would do,
+# but the installer's concurrent pull can overwrite it mid-check.) The refspec
+# names refs/heads/main explicitly so a tag called main cannot stand in.
+_UPSTREAM_REF = "refs/nsls/upstream-main"
+_UPSTREAM_REFSPEC = f"+refs/heads/main:{_UPSTREAM_REF}"
+
+# The NSLS repo itself, in any spelling git accepts. Compared as host + path,
+# never as a substring: `mirror.example/thensls/nsls-personal-toolkit` and
+# `github.com/thensls/nsls-personal-toolkit-experiments` both CONTAIN the
+# canonical path, and a substring test classified either as NSLS's own repo —
+# skipping the fork check, so that checkout stayed silently stale. Schemes are
+# an allow-list: `file://github.com/...` need never touch GitHub.
+_CANONICAL_HOST = "github.com"
+_CANONICAL_PATH = "thensls/nsls-personal-toolkit"
+_CANONICAL_SCHEMES = ("https", "http", "ssh", "git", "git+ssh", "ssh+git")
+_URL_FORMS = (
+    # scheme://[user[:secret]@]host[:port]/path
+    re.compile(r"^([a-z][a-z0-9+.-]*)://(?:[^@/]*@)?([^/:]+)(?::\d+)?/(.*)$", re.IGNORECASE),
+    # scp-like [user@]host:path — no scheme, and `host://...` is not this form
+    re.compile(r"^(?:[^@/:]+@)?([^/:]+):(?!//)/?(.*)$"),
+)
+
+
+def _is_canonical_origin(url):
+    """True only for NSLS's own repository on github.com.
+
+    Accepts https, ssh://, and scp-like spellings, optional user info and port,
+    `www.`, a trailing slash, `.git`, and any letter case (GitHub owner and repo
+    names are case-insensitive). Anything else — another host, another owner,
+    a longer repo name, a local path, an unexpected scheme — is not canonical.
+    """
+    u = (url or "").strip()
+    m = _URL_FORMS[0].match(u)
+    if m:
+        if m.group(1).lower() not in _CANONICAL_SCHEMES:
+            return False
+        host, path = m.group(2).lower(), m.group(3)
+    else:
+        m = _URL_FORMS[1].match(u)
+        if not m:
+            return False
+        host, path = m.group(1).lower(), m.group(2)
+    if host.startswith("www."):
+        host = host[4:]
+    path = path.strip("/")
+    if path.lower().endswith(".git"):
+        path = path[:-4]
+    return host == _CANONICAL_HOST and path.rstrip("/").lower() == _CANONICAL_PATH
+
+
+def _safe_text(value, limit=200):
+    """A path for the notice: printable ASCII only, bounded. Everything printed
+    here is model context, and a path is text someone else can choose."""
+    return re.sub(r"[^\x20-\x7e]", "?", str(value))[:limit]
+
+
+def _pull_source():
+    """(remote, url) this checkout's branch actually pulls from — the same
+    source a bare `git pull` uses — falling back to origin. ("", "") when
+    neither resolves."""
+    # From config, not by splitting `@{u}` on "/": a remote may itself be
+    # named with a slash (`personal/fork`), and the split kept only `personal`.
+    remote = ""
+    ok, branch = _git("symbolic-ref", "--short", "HEAD")  # fails when detached
+    if ok and branch:
+        ok, configured = _git("config", "--get", f"branch.{branch}.remote")
+        if ok and configured and configured != ".":  # "." tracks a local branch
+            remote = configured
+    remote = remote or "origin"
+    ok, url = _git("remote", "get-url", remote)
+    if (not ok or not url) and remote != "origin":
+        remote = "origin"
+        ok, url = _git("remote", "get-url", remote)
+    return (remote, url) if ok and url else ("", "")
+
+
+def _stamp_is_fresh():
+    """Bounded at BOTH ends: a stamp dated in the future (clock skew, a restored
+    backup, a synced home directory) yields a negative age, which a bare `<`
+    would read as freshly checked and could silence the check for days."""
+    try:
+        if _UPSTREAM_STAMP.exists():
+            age_h = (time.time() - _UPSTREAM_STAMP.stat().st_mtime) / 3600
+            return 0 <= age_h < _UPSTREAM_CHECK_EVERY_H
+    except OSError:
+        pass
+    return False
+
+
+def _claim_lock():
+    """Create the lock exclusively; False when another hook holds it. A lock
+    older than _LOCK_STALE_S was left by a hook that died — broken once."""
+    for attempt in (1, 2):
+        try:
+            _UPSTREAM_LOCK.parent.mkdir(parents=True, exist_ok=True)
+            os.close(os.open(str(_UPSTREAM_LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            return True
+        except FileExistsError:
+            try:
+                if attempt == 1 and time.time() - _UPSTREAM_LOCK.stat().st_mtime > _LOCK_STALE_S:
+                    _UPSTREAM_LOCK.unlink()
+                    continue
+            except OSError:
+                pass
+            return False
+        except OSError:
+            return False
+    return False
+
+
+def _release_lock():
+    try:
+        _UPSTREAM_LOCK.unlink()
+    except OSError:
+        pass
+
+
+def _report_fork_drift(notice):
+    """Tell the session when a fork has fallen behind NSLS.
+
+    A fork's auto-update pulls the fork, so nothing NSLS ships ever arrives on
+    its own — by design, to protect customizations. The failure was never
+    telling anyone. Verified 2026-09-09: an active builder's fork sat 196
+    commits behind with every check reporting healthy, because every check
+    compared against her own fork.
+
+    Reads and writes no remote: NSLS is fetched by URL into _UPSTREAM_REF. The
+    update skill owns the named remote it needs for its longer walk.
+    """
+    if _stamp_is_fresh():
+        return
+    if not _claim_lock():
+        return  # another hook is mid-check this very second; it will speak
+    try:
+        if _stamp_is_fresh():
+            return  # it finished between our two looks
+        try:
+            _UPSTREAM_STAMP.parent.mkdir(parents=True, exist_ok=True)
+            _UPSTREAM_STAMP.touch()
+        except OSError:
+            pass
+
+        # Bounded and best-effort: offline, blocked, or slow all mean "say nothing
+        # this session" — never delay a session start over a nicety.
+        fetched, _ = _git("fetch", "--quiet", _UPSTREAM_URL, _UPSTREAM_REFSPEC, timeout=6)
+        if not fetched:
+            return
+        ok, count = _git("rev-list", "--count", f"HEAD..{_UPSTREAM_REF}")
+        if not ok or not count.isdigit():
+            return
+        behind = int(count)
+        if behind == 0:
+            return
+
+        # Names the ref we just fetched and the checkout path, and points Claude
+        # at the update skill's file: the merged checkout contains it, but the
+        # slash command will not exist until the next restart, and without the
+        # file the release walk is skipped.
+        notice(
+            f"This builder's toolkit is their OWN FORK and is {behind} commit(s) "
+            f"behind NSLS — nothing shipped upstream has reached them, and their "
+            f"auto-update never will, because it follows their fork. Tell them in "
+            f"ONE plain sentence at the start of your first reply — e.g. \"Your "
+            f"toolkit is your own copy, so NSLS updates haven't been reaching you "
+            f"— want me to catch it up?\" — and if they agree: run "
+            f"/update-personal-productivity if this machine has it; otherwise, in "
+            f"{_safe_text(PLUGIN_DIR)}, merge {_UPSTREAM_REF} (NSLS's main, fetched "
+            f"from {_UPSTREAM_URL} moments ago) yourself, preserving their own "
+            f"commits and setting aside any uncommitted edits first, then read and "
+            f"follow skills/update-personal-productivity/SKILL.md from the freshly "
+            f"merged checkout to walk them through what's new (the slash command "
+            f"itself appears after their next restart). NEVER hand them a git "
+            f"command."
+        )
+    finally:
+        _release_lock()
 
 
 def sync_pointers():
