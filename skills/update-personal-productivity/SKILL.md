@@ -27,19 +27,100 @@ REPO=~/.claude/local-plugins/nsls-personal-toolkit
 [ -d "$REPO/.git" ] || REPO=~/nsls-skills/nsls-personal-toolkit
 [ -d "$REPO/.git" ] || { echo "Personal toolkit checkout not found — run install.sh first."; }
 
-# Ensure upstream remote exists (forks only)
-if ! git -C "$REPO" remote | grep -q '^upstream$'; then
-  git -C "$REPO" remote add upstream https://github.com/thensls/nsls-personal-toolkit.git
+# Ensure OUR remote for NSLS exists. The name is nsls-upstream — never a bare
+# "upstream", which a fork may already aim at something else entirely; fetching
+# that blind would count a stranger's commits as NSLS's and Step 7.5 would merge
+# them. Absent: add it. Present with NSLS's URL: use it. Present with any other
+# URL: re-point it AND say so — the name is reserved for NSLS's repo, and this
+# is an interactive walk, so the builder hears about it in one sentence.
+NSLS_URL=https://github.com/thensls/nsls-personal-toolkit.git
+if ! git -C "$REPO" remote | grep -q '^nsls-upstream$'; then
+  git -C "$REPO" remote add nsls-upstream "$NSLS_URL"
+elif [ "$(git -C "$REPO" remote get-url nsls-upstream)" != "$NSLS_URL" ]; then
+  git -C "$REPO" remote set-url nsls-upstream "$NSLS_URL"
+  echo "NOTE: the nsls-upstream remote pointed elsewhere and has been re-pointed at NSLS — tell the user in one plain sentence."
 fi
 
 # Fetch latest
-git -C "$REPO" fetch upstream
+git -C "$REPO" fetch nsls-upstream
 
 # Ensure .toolkit-state.json is gitignored
 if ! grep -q '^.toolkit-state.json$' "$REPO/.gitignore" 2>/dev/null; then
   echo '.toolkit-state.json' >> "$REPO/.gitignore"
 fi
 ```
+
+---
+
+## Step 1.5: Work out what this machine is — and say it in one plain sentence
+
+**The builder never runs a git command. Not one. Ever.** If you catch yourself
+about to write "run `git remote -v`" or "run `git fetch nsls-upstream`", stop — that
+is this skill's job, and handing it over is the failure mode this step exists to
+prevent.
+
+Work it out silently:
+
+```bash
+ORIGIN=$(git -C "$REPO" remote get-url origin 2>/dev/null)
+BRANCH=$(git -C "$REPO" branch --show-current)
+BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main 2>/dev/null)
+AHEAD=$(git -C "$REPO" rev-list --count nsls-upstream/main..HEAD 2>/dev/null)
+DIRTY=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')
+```
+
+Classify the setup:
+
+- `$ORIGIN` points at **thensls/nsls-personal-toolkit** → **standard install.**
+  Their session hook pulls upstream directly, so they are usually close to
+  current already.
+- `$ORIGIN` points at **anything else** → **personal fork.** This is the case
+  that needs this skill: their session hook pulls *their own fork*, so nothing
+  NSLS ships ever arrives on its own. Expect a large `$BEHIND`.
+
+Then say **one plain sentence** — no table, no counts-as-jargon, no commands:
+
+> "You're on your own copy of the toolkit, so NSLS updates don't reach you
+> automatically — that's what this is for. Let me walk you through what's new."
+
+> "You're on the standard setup and nearly current — just a couple of things to
+> pick up."
+
+Record which of the two it is; Step 7.5 needs it. If `$DIRTY` is non-zero, add
+one sentence — *"You've got unsaved edits in the toolkit folder; I'll leave
+those alone"* — and keep going. If `$BRANCH` isn't `main`, note it in the same
+breath rather than as a warning: *"You're on a branch called `<X>`, so I'll
+apply everything there."*
+
+---
+
+## Step 1.6: Set unsaved edits aside — before anything touches a file
+
+If `$DIRTY` (Step 1.5) is non-zero, stop here first. Step 4's accept path checks
+NSLS's version of a file straight out over the working copy, and Step 7.5
+merges — either one destroys an unsaved edit, and a stash taken later cannot
+bring back what was already overwritten. So the edits are set aside NOW and
+restored at the very end (Step 7.6), whatever happens in between.
+
+Say it in their language, then do it yourself:
+
+> "You've got unsaved edits in <N> toolkit file(s). I'll set them aside safely
+> while I update, then put them back exactly as they were — or I can leave
+> everything as it is and stop here. Which?"
+
+- **Set aside** →
+  `git -C "$REPO" stash push --include-untracked -m "nsls-update-personal-productivity: edits set aside"`
+  then confirm `git -C "$REPO" status --porcelain` is empty. Remember that you
+  did this: Step 7.6 must run, however the middle of the run goes.
+- **Stop** → end the run here. Say in one plain sentence that nothing was
+  changed and why, and give Step 8 with "still behind — unsaved edits".
+
+Also look for a stash **left by an interrupted earlier run** — an entry in
+`git -C "$REPO" stash list` carrying the message above. If there is one, tell
+them their earlier edits are safe and will be put back at the end of this run
+too (Step 7.6 restores it as well).
+
+The builder types none of this. Never say "stash" to them.
 
 ---
 
@@ -138,11 +219,11 @@ If `adopt`: go to 4c.
 
 For each skill in `skills_changed`:
 
-**Detect customization** — has the user made **local commits** that touch this skill? This is the clean test because `git diff upstream/main` conflates local changes with "behind upstream."
+**Detect customization** — has the user made **local commits** that touch this skill? This is the clean test because `git diff nsls-upstream/main` conflates local changes with "behind upstream."
 
 ```bash
 # Local-only commits touching this file (not in upstream)
-git -C "$REPO" log upstream/main..HEAD --oneline -- skills/<name>/SKILL.md
+git -C "$REPO" log nsls-upstream/main..HEAD --oneline -- skills/<name>/SKILL.md
 ```
 
 - If empty → user has no local customizations. **Fast path available.**
@@ -153,7 +234,7 @@ git -C "$REPO" log upstream/main..HEAD --oneline -- skills/<name>/SKILL.md
 **Check whether upstream has new content to offer:**
 
 ```bash
-git -C "$REPO" log HEAD..upstream/main -- skills/<name>/SKILL.md --oneline
+git -C "$REPO" log HEAD..nsls-upstream/main -- skills/<name>/SKILL.md --oneline
 ```
 
 - If empty → nothing to pull for this skill (may have been adopted earlier, or this release didn't actually change it). Skip.
@@ -176,11 +257,11 @@ git -C "$REPO" log HEAD..upstream/main -- skills/<name>/SKILL.md --oneline
 
 **For `accept`:**
 ```bash
-git -C "$REPO" checkout upstream/main -- skills/<name>/SKILL.md
+git -C "$REPO" checkout nsls-upstream/main -- skills/<name>/SKILL.md
 ```
 
 **For `merge`:**
-- Show upstream diff: `git -C "$REPO" diff HEAD upstream/main -- skills/<name>/SKILL.md`
+- Show upstream diff: `git -C "$REPO" diff HEAD nsls-upstream/main -- skills/<name>/SKILL.md`
 - Show user's local changes: `git -C "$REPO" log -p HEAD -- skills/<name>/SKILL.md | head -200`
 - Present both, ask which upstream additions to accept, draft a merged file, show to user, write after confirmation
 
@@ -257,6 +338,102 @@ Update `pending_manual_steps` based on user confirmations.
 
 ---
 
+## Step 7.5: Bring the checkout genuinely current
+
+**The release walk alone does not make anyone current**, and saying "you're
+caught up" when they aren't is the failure this step closes. Release docs cover
+*published releases only*; plenty of fixes ship without one, so a checkout can
+finish Step 4 with nothing left to adopt and still be dozens of commits behind
+upstream. A fork is behind by definition — its own remote never receives NSLS
+changes.
+
+So re-check, and close the gap **yourself**:
+
+```bash
+git -C "$REPO" fetch nsls-upstream --quiet
+BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main)
+```
+
+- **`$BEHIND` is 0** → nothing to do; say so in Step 8 and stop.
+- **If they skipped or deferred anything, STOP and ask first.** Catching a
+  checkout up to `nsls-upstream/main` installs *everything* upstream has — including
+  the releases they just chose to skip or defer in Step 4. Merging anyway would
+  silently overturn a decision they made two minutes ago, and this skill's whole
+  contract is that no skill-level change happens without them saying so. So when
+  `skipped_releases` is non-empty, or they deferred a release in this run, put
+  the choice to them in plain language:
+
+  > *"There are also NN newer changes with no release note of their own. I can
+  > bring everything current in one go — but that would also pull in the
+  > \<release\> you just skipped. Want everything, or shall I leave you where you
+  > are for now?"*
+
+  Take **everything** only if they say so. If they decline, skip the rest of this
+  step, and say plainly in Step 8 that they are current on releases but still
+  behind on other changes by their own choice — never report them as fully
+  up to date.
+- **Otherwise (nothing skipped or deferred), tell them what you're about to do in
+  one sentence, then do it.**
+  *"There are also NN newer changes with no release note of their own — bringing
+  those in now."*
+
+  0. **Unsaved edits were already set aside in Step 1.6.** If `$DIRTY` was
+     non-zero and they chose to stop there, this step never runs. If the tree
+     is dirty anyway (something wrote to it mid-run), do not merge over it —
+     go back to Step 1.6's ask and continue only once the tree is clean.
+  1. Try the clean path first: `git -C "$REPO" merge --ff-only nsls-upstream/main`.
+  2. If that's refused (they have local commits, or a fork has diverged), merge
+     properly: `git -C "$REPO" merge nsls-upstream/main --no-edit`.
+  2b. **Confirm it actually happened — never assume.** Re-run
+     `git -C "$REPO" rev-list --count HEAD..nsls-upstream/main`. Anything but `0`
+     means the merge was refused or aborted and the checkout is STILL BEHIND:
+     do not walk into Step 8 as if it were current. Say what stopped it in one
+     plain sentence, offer the fix you can do for them (Step 1.6's ask, or resolve
+     as in item 3), and if they decline, Step 8 reports
+     "still behind" with the number and the reason.
+  3. **If the merge conflicts, do not hand the builder a conflict.** Resolve what
+     is unambiguous. For anything genuinely needing a human call, describe the
+     choice in plain language — *"your version of the day-planner adds a step
+     upstream doesn't have; I can keep yours, take theirs, or combine them"* —
+     and offer the options. Never print conflict markers, never name a git
+     command, never leave the working tree mid-merge at the end of a run. If you
+     truly cannot finish, `git -C "$REPO" merge --abort`, leave them exactly as
+     they were, and say plainly that their setup needs a hand — then tell Davo.
+
+## Step 7.6: Put their edits back
+
+Runs whenever Step 1.6 set edits aside (or found an earlier run's stash), no
+matter how Steps 2–7.5 went — including after a refused or aborted merge.
+
+1. Find OUR entries — never a bare `stash pop`, which takes whatever is newest
+   and may be something else of theirs entirely:
+   `git -C "$REPO" stash list --format='%gd %s' | grep 'nsls-update-personal-productivity: edits set aside'`
+   Pop the first one listed by its reference, restoring staged state too —
+   `git -C "$REPO" stash pop --index stash@{N}` — then list again and repeat
+   until none of ours remain (indices shift after every pop). Any stash that is
+   not ours stays exactly where it was. If `--index` is refused (git cannot
+   reinstate what was staged), pop that entry without it and say in Step 8 that
+   their edits are back but no longer staged.
+2. **If the pop conflicts** (NSLS changed a line they had edited), treat it
+   exactly like a merge conflict in Step 7.5 item 3: resolve what is
+   unambiguous, describe any real choice in plain language — *"you'd edited the
+   day-planner's step 3 and NSLS rewrote that step; keep yours, take theirs, or
+   combine?"* — write the result, then drop that same entry by its reference,
+   `git -C "$REPO" stash drop stash@{N}`, once the working tree shows what they
+   chose (a conflicted pop leaves the entry in place; a bare `drop` would take
+   whatever is newest). Never print conflict markers, never name
+   a git command, never end the run with the conflict unresolved.
+3. If you truly cannot finish, leave the stash in place (their edits are safe in
+   it), say so in one plain sentence, tell Davo, and report it in Step 8.
+4. Confirm: `git -C "$REPO" stash list` no longer shows our message, and
+   `git -C "$REPO" status --porcelain` lists their edited files again.
+
+**Success test for this whole skill:** the builder typed one slash command and
+typed nothing else that looks like code. If your run ends with an instruction
+for them to execute, the run failed, however correct the instruction was.
+
+---
+
 ## Step 8: Confirm
 
 > "Update complete.
@@ -265,14 +442,16 @@ Update `pending_manual_steps` based on user confirmations.
 > - Skipped: [N] releases
 > - Deferred: [N] releases (run again anytime to see them)
 > - Manual steps pending: [N]
+> - Your unsaved edits: [none to begin with | back in place | still set aside — <why>; they're safe, and the next run puts them back]
+> - Now fully up to date with NSLS: [yes | brought current just now | not yet, by your choice — you skipped NN | still behind by NN — <one plain reason, e.g. "unsaved edits in 2 files; say the word and I'll set them aside and finish"> | needs a hand — say what]
 >
-> Changes are in your local fork — they'll be active in your next Claude Code session."
+> Changes are in your local copy — they'll be active in your next Claude Code session."
 
 ---
 
 ## Critical safety rule
 
-**Never run `git checkout upstream/main -- skills/` across multiple releases at once.** This overwrites customizations you preserved in an earlier release's merge. The command walks per-skill, per-release specifically so customizations survive across multiple releases when the same skill is touched more than once.
+**Never run `git checkout nsls-upstream/main -- skills/` across multiple releases at once.** This overwrites customizations you preserved in an earlier release's merge. The command walks per-skill, per-release specifically so customizations survive across multiple releases when the same skill is touched more than once.
 
 If you're tempted to "accept all" across several releases at once, run the command once per release — the state file tracks progress, so you can stop and resume anytime.
 
@@ -280,19 +459,19 @@ If you're tempted to "accept all" across several releases at once, run the comma
 
 ## Edge cases
 
-**User hasn't set up the upstream remote.** Step 1 adds it automatically.
+**User hasn't set up the nsls-upstream remote.** Step 1 adds it automatically.
 
 **User is on a branch other than `main`.** Warn: "You're on branch `<X>`, not `main`. Adoptions will commit here. Continue?"
 
-**User has uncommitted local changes.** Before Step 4, warn: "You have uncommitted changes in `<files>`. Stash or commit before adopting upstream? Continue anyway risks messy merges."
+**User has uncommitted local changes.** Step 1.6 handles it — before Step 4, never after: the accept path in Step 4 overwrites the working copy, and a stash taken later cannot recover what was already replaced. You set the edits aside and you restore them (Step 7.6); never tell them to stash or commit anything.
 
 **Release doc is malformed** (missing frontmatter, missing sections). Show what you could parse, warn about what's missing, ask the user whether to proceed with limited info or skip the release.
 
 **User customized a skill that upstream deleted.** Edge case — tell the user "Upstream removed `skills/<name>`. Your local version still exists. Keep it, or delete?" Default: keep.
 
-**Network failure on `git fetch`.** Fall back to whatever's already in `upstream/main` locally; warn that data may be stale.
+**Network failure on `git fetch`.** Fall back to whatever's already in `nsls-upstream/main` locally; warn that data may be stale.
 
-**User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet. Run `git pull upstream main` to get the base skills." Continue with a vanilla pull, no release walk.
+**User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet — I'll bring in the base skills now." Then skip the release walk (Steps 2–7) and run Steps 1.6, 7.5 and 7.6 exactly as written — fast-forward first, a real merge if that's refused, conflicts resolved or aborted, edits set aside and put back. Never a bare `git pull` here: it can stop mid-merge with nothing to catch it.
 
 ---
 
