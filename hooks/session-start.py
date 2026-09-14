@@ -29,6 +29,7 @@ So on macOS/Linux nothing fetched this toolkit before this hook was registered.
 
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -120,14 +121,41 @@ def unquote_scalar(value):
 
 
 def _git(*args, timeout=10):
-    """Run a git command in the plugin dir. Returns (ok, stdout) — never raises."""
+    """Run a git command in the plugin dir. Returns (ok, stdout) — never raises.
+
+    git runs in its own session so a timeout kills the whole process TREE — a
+    fetch's HTTPS remote helper is a child that killing git alone would leave
+    running the network operation after we had released the lock."""
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             ["git", "-C", str(PLUGIN_DIR), *args],
-            capture_output=True, text=True, timeout=timeout
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+            text=True, start_new_session=True,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
-        return proc.returncode == 0, (proc.stdout or "").strip()
     except Exception:
+        return False, ""
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+        return proc.returncode == 0, (out or "").strip()
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        try:
+            proc.communicate(timeout=2)
+        except Exception:
+            pass
+        return False, ""
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
         return False, ""
 
 
@@ -306,10 +334,23 @@ def _pull_source():
     # named with a slash (`personal/fork`), and the split kept only `personal`.
     remote = ""
     ok, branch = _git("symbolic-ref", "--short", "HEAD")  # fails when detached
-    if ok and branch:
+    seen = set()
+    while ok and branch and branch not in seen:
+        seen.add(branch)  # stop only on a cycle, not at an arbitrary hop count
         ok, configured = _git("config", "--get", f"branch.{branch}.remote")
-        if ok and configured and configured != ".":  # "." tracks a local branch
+        if not ok or not configured:
+            break
+        if configured != ".":
             remote = configured
+            break
+        # "." means the branch pulls from a LOCAL branch, not a remote. Follow
+        # that chain to the remote it ends at, rather than pretending it is
+        # origin — but never give up on the checkout: its remote of record is
+        # still the honest fallback, and silence on a fork is the failure here.
+        ok, merge = _git("config", "--get", f"branch.{branch}.merge")
+        if not ok or not merge.startswith("refs/heads/"):
+            break
+        branch = merge[len("refs/heads/"):]
     remote = remote or "origin"
     ok, url = _git("remote", "get-url", remote)
     if (not ok or not url) and remote != "origin":
@@ -332,29 +373,82 @@ def _stamp_is_fresh():
 
 
 def _claim_lock():
-    """Create the lock exclusively; False when another hook holds it. A lock
-    older than _LOCK_STALE_S was left by a hook that died — broken once."""
+    """Create the lock exclusively and write a token into it; the token (truthy)
+    when we hold the lock, None when another hook does.
+
+    A lock whose age is outside 0.._LOCK_STALE_S was left by a hook that died
+    (or is dated in the future) and is reclaimed ATOMICALLY: the stale inode is
+    renamed away rather than deleted by name. Only one of two racing hooks can
+    win that rename; the loser sees ENOENT and simply retries the exclusive
+    create, which then fails on the winner's fresh lock. Deleting by name let
+    the loser remove the winner's new lock and both proceed."""
+    path = _UPSTREAM_LOCK
+    token = f"{os.getpid()}-{time.time_ns()}-{os.urandom(4).hex()}"
     for attempt in (1, 2):
         try:
-            _UPSTREAM_LOCK.parent.mkdir(parents=True, exist_ok=True)
-            os.close(os.open(str(_UPSTREAM_LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            return True
-        except FileExistsError:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             try:
-                if attempt == 1 and time.time() - _UPSTREAM_LOCK.stat().st_mtime > _LOCK_STALE_S:
-                    _UPSTREAM_LOCK.unlink()
-                    continue
+                os.write(fd, token.encode("ascii"))
+            finally:
+                os.close(fd)
+            return token
+        except FileExistsError:
+            if attempt != 1:
+                return None
+            try:
+                st = path.stat()
+            except FileNotFoundError:
+                continue  # vanished under us: retry the create once
+            except OSError:
+                return None
+            # Negative age counts as stale too: a lock dated in the FUTURE
+            # (clock skew, a restored backup) would otherwise read as held
+            # until that moment arrives, silencing every check until then.
+            age_s = time.time() - st.st_mtime
+            if 0 <= age_s <= _LOCK_STALE_S:
+                return None  # live: someone is mid-check right now
+            grave = path.with_name(f"{path.name}.stale-{token}")
+            try:
+                os.rename(path, grave)
+            except FileNotFoundError:
+                continue  # the other racer won the rename: retry the create once
+            except OSError:
+                return None
+            try:
+                same = grave.stat().st_ino == st.st_ino
+            except OSError:
+                same = True
+            if not same:
+                # We moved a LIVE lock created between our look and our rename.
+                # Put it back if the name is still free (link is atomic and
+                # refuses an existing path), and do not claim.
+                try:
+                    os.link(str(grave), str(path))
+                except OSError:
+                    pass
+                try:
+                    grave.unlink()
+                except OSError:
+                    pass
+                return None
+            try:
+                grave.unlink()
             except OSError:
                 pass
-            return False
+            continue
         except OSError:
-            return False
-    return False
+            return None
+    return None
 
 
-def _release_lock():
+def _release_lock(token):
+    """Delete the lock only if it still carries OUR token. A hook paused past the
+    stale threshold (a laptop asleep mid-check) would otherwise delete the lock
+    a newer hook created after breaking ours, letting a third one in."""
     try:
-        _UPSTREAM_LOCK.unlink()
+        if _UPSTREAM_LOCK.read_text(encoding="ascii", errors="replace") == token:
+            _UPSTREAM_LOCK.unlink()
     except OSError:
         pass
 
@@ -373,7 +467,8 @@ def _report_fork_drift(notice):
     """
     if _stamp_is_fresh():
         return
-    if not _claim_lock():
+    lock = _claim_lock()
+    if lock is None:
         return  # another hook is mid-check this very second; it will speak
     try:
         if _stamp_is_fresh():
@@ -386,8 +481,18 @@ def _report_fork_drift(notice):
 
         # Bounded and best-effort: offline, blocked, or slow all mean "say nothing
         # this session" — never delay a session start over a nicety.
-        fetched, _ = _git("fetch", "--quiet", _UPSTREAM_URL, _UPSTREAM_REFSPEC, timeout=6)
+        # --no-tags: a plain fetch also auto-follows tags reachable from main,
+        # writing NSLS's tags into the builder's checkout — or failing when one
+        # collides with a tag of theirs. Only our ref should move.
+        fetched, _ = _git("fetch", "--quiet", "--no-tags", _UPSTREAM_URL, _UPSTREAM_REFSPEC, timeout=6)
         if not fetched:
+            return
+        # A fork shares history with NSLS. A repository that does not — some
+        # unrelated project sitting at this path — is not a fork, and telling
+        # Claude to merge NSLS's main into it would be an instruction to merge
+        # two unrelated histories. Nothing to say about such a checkout.
+        related, _ = _git("merge-base", "HEAD", _UPSTREAM_REF)
+        if not related:
             return
         ok, count = _git("rev-list", "--count", f"HEAD..{_UPSTREAM_REF}")
         if not ok or not count.isdigit():
@@ -417,7 +522,7 @@ def _report_fork_drift(notice):
             f"command."
         )
     finally:
-        _release_lock()
+        _release_lock(lock)
 
 
 def sync_pointers():
