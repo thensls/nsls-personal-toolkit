@@ -40,7 +40,10 @@ For each meeting, the first rule that resolves wins, and every result records wh
 rule produced it (`resolved_by`):
 
 1. **Role** — an attendee appears in `~/.claude/portfolio-role-map.txt` → that
-   quadrant, no matter what the meeting was about.
+   quadrant, no matter what the meeting was about. Two guards, both added after
+   measuring a real week (see "The role rung's two guards" below): a rule may
+   carry an `<=N` attendee cap, and rules that match the same meeting but
+   disagree decline the rung instead of racing.
 2. **Topic** — the Fathom summary's topic sections map to quadrants.
 3. **Project** — the meeting maps to a project → inherit that project's
    `portfolio-category`.
@@ -62,6 +65,29 @@ happened. The cascade continues to rule 3 and then rule 4, and the resolution ca
 a note saying which rung declined and why. Same for a share or a quadrant that cannot
 be read at all: it is dropped from the topic list before any arithmetic, so an
 unreadable value costs its own topic rather than aborting the cascade.
+
+**The role rung's two guards.** The rung's premise is "an attendee whose *role is*
+the category", which silently assumes that person only appears in meetings of that
+category. Measured on W36 (2026-08-29 → 09-04) that assumption failed twice, so the
+module now guards both:
+
+- **`<=N` attendee cap.** An uncapped rule for a founder/CEO fired on 7 of 19
+  meetings — 45% of the week's meeting hours — filing a finance quarterly review and
+  a seven-person leadership huddle as founder-seat work. `gary-equivalent <=1 →
+  cross-cutting` scopes the rule to 1:1s. **N counts the attendee list as passed**,
+  and Step 1a passes Fathom `calendar_invitees`, which excludes the builder — so a
+  true 1:1 is **one** attendee and `<=1` is the right cap. `<=2` still lets a
+  three-person meeting through. A cap that is present but not a positive integer
+  drops the rule, exactly as an unknown quadrant does.
+- **Conflicting rules decline.** When two mapped people share a meeting, the module
+  used to loop attendees outer and rules inner and return on the first hit, so the
+  winner was whichever attendee the caller happened to list first — and that list
+  comes from Fathom/calendar with no reason to be stable. The same huddle resolved to
+  two different quadrants depending on attendee order, both reported
+  `resolved_by="role"` with full confidence. Now matching rules that **agree** resolve
+  it (order cannot matter — they say the same thing), and matching rules that
+  **disagree** decline the rung, fall through to topic, and carry a note naming the
+  conflicting quadrants.
 
 Rules 1, 3, and 4's bookkeeping — matching, lookup, apportioning hours into totals —
 is mechanical and lives in the module. Rule 2 is the judgment call this file owns:
