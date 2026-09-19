@@ -260,11 +260,11 @@ def report_if_stale():
 _UPSTREAM_CHECK_EVERY_H = 12
 _UPSTREAM_STAMP = HOME / ".claude" / ".nsls-personal-upstream-check"
 # The stamp is a throttle, not a claim: two hooks can both read it as stale
-# before either writes it. The lock is the claim — created exclusively, so
-# exactly one of them fetches and speaks. The builder toolkit's own session hook
-# runs this same check against this same checkout, keyed on these same files.
+# before either writes it. The lock is the claim — an OS-level exclusive lock
+# on a file that is never deleted, so exactly one of them fetches and speaks.
+# The builder toolkit's own session hook runs this same check against this
+# same checkout, keyed on these same files.
 _UPSTREAM_LOCK = HOME / ".claude" / ".nsls-personal-upstream-check.lock"
-_LOCK_STALE_S = 120  # a lock this old belongs to a hook that died
 _UPSTREAM_URL = "https://github.com/thensls/nsls-personal-toolkit.git"
 # Where the fetch lands: a private ref, not a remote. A fork may already have an
 # `upstream` — or any other name — aimed at something else entirely; fetching
@@ -372,83 +372,70 @@ def _stamp_is_fresh():
     return False
 
 
-def _claim_lock():
-    """Create the lock exclusively and write a token into it; the token (truthy)
-    when we hold the lock, None when another hook does.
-
-    A lock whose age is outside 0.._LOCK_STALE_S was left by a hook that died
-    (or is dated in the future) and is reclaimed ATOMICALLY: the stale inode is
-    renamed away rather than deleted by name. Only one of two racing hooks can
-    win that rename; the loser sees ENOENT and simply retries the exclusive
-    create, which then fails on the winner's fresh lock. Deleting by name let
-    the loser remove the winner's new lock and both proceed."""
-    path = _UPSTREAM_LOCK
-    token = f"{os.getpid()}-{time.time_ns()}-{os.urandom(4).hex()}"
-    for attempt in (1, 2):
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            try:
-                os.write(fd, token.encode("ascii"))
-            finally:
-                os.close(fd)
-            return token
-        except FileExistsError:
-            if attempt != 1:
-                return None
-            try:
-                st = path.stat()
-            except FileNotFoundError:
-                continue  # vanished under us: retry the create once
-            except OSError:
-                return None
-            # Negative age counts as stale too: a lock dated in the FUTURE
-            # (clock skew, a restored backup) would otherwise read as held
-            # until that moment arrives, silencing every check until then.
-            age_s = time.time() - st.st_mtime
-            if 0 <= age_s <= _LOCK_STALE_S:
-                return None  # live: someone is mid-check right now
-            grave = path.with_name(f"{path.name}.stale-{token}")
-            try:
-                os.rename(path, grave)
-            except FileNotFoundError:
-                continue  # the other racer won the rename: retry the create once
-            except OSError:
-                return None
-            try:
-                same = grave.stat().st_ino == st.st_ino
-            except OSError:
-                same = True
-            if not same:
-                # We moved a LIVE lock created between our look and our rename.
-                # Put it back if the name is still free (link is atomic and
-                # refuses an existing path), and do not claim.
-                try:
-                    os.link(str(grave), str(path))
-                except OSError:
-                    pass
-                try:
-                    grave.unlink()
-                except OSError:
-                    pass
-                return None
-            try:
-                grave.unlink()
-            except OSError:
-                pass
-            continue
-        except OSError:
-            return None
-    return None
-
-
-def _release_lock(token):
-    """Delete the lock only if it still carries OUR token. A hook paused past the
-    stale threshold (a laptop asleep mid-check) would otherwise delete the lock
-    a newer hook created after breaking ours, letting a third one in."""
+def _lock_exclusive(fd):
+    """Non-blocking exclusive lock on an open descriptor: flock where the
+    platform has it, the C runtime's byte-range lock on Windows. Raises
+    OSError when another process holds it."""
     try:
-        if _UPSTREAM_LOCK.read_text(encoding="ascii", errors="replace") == token:
-            _UPSTREAM_LOCK.unlink()
+        import fcntl
+    except ImportError:
+        import msvcrt
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _claim_lock():
+    """Take an exclusive OS lock on the lock file; the open descriptor when we
+    hold it, None when another hook does.
+
+    An OS lock, not create-exclusively/rename/unlink: the kernel owns the
+    claim and drops it the instant the holder exits, so a hook that dies
+    mid-check leaves nothing to reclaim — no stale threshold, no token, no
+    grave — and there is no step at which a third hook can be handed a lock
+    that is still in use. The file is never deleted: every hook locks the same
+    inode. On a PC the builder toolkit's PowerShell hook opens this same file
+    with sharing denied, so whichever of the two opens first holds it and the
+    other's open simply fails."""
+    path = _UPSTREAM_LOCK
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(path), os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0), 0o644)
+    except OSError:
+        return None  # includes a Windows sharing violation: the PowerShell hook holds it
+    try:
+        _lock_exclusive(fd)
+    except (OSError, ImportError):
+        _release_lock(fd)
+        return None
+    # Compatibility with the lock this replaces (created exclusively with a
+    # token inside, stale after 120 s), for the day a machine may run one old
+    # copy of this check beside one new: an old hook mid-check right now has
+    # written its token into this same file within the last two minutes —
+    # yield to it. Then leave the file empty with a fresh mtime, so an old hook
+    # that looks while we hold the lock sees a live lock, not a stale one to
+    # break. Harmless once every copy has moved to the OS lock.
+    try:
+        st = os.fstat(fd)
+        legacy_live = st.st_size > 0 and 0 <= time.time() - st.st_mtime <= 120
+    except OSError:
+        legacy_live = False
+    if legacy_live:
+        _release_lock(fd)
+        return None
+    try:
+        os.ftruncate(fd, 0)
+        os.utime(fd if os.utime in os.supports_fd else str(path), None)
+    except OSError:
+        pass
+    return fd
+
+
+def _release_lock(fd):
+    """Closing the descriptor drops the lock; the file itself stays."""
+    try:
+        os.close(fd)
     except OSError:
         pass
 
