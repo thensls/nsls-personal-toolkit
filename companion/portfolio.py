@@ -123,6 +123,16 @@ class RoleRule:
     match: str      # lowercased substring matched against attendee name/email
     quadrant: str
     comment: str = ""
+    max_attendees: int | None = None
+    """Optional `<=N` cap: the rule fires only on meetings with at most N
+    attendees, so it can be scoped to 1:1s. None = fires at any size, which
+    is the original behaviour and stays the default.
+
+    This exists because the rung's premise — "an attendee whose ROLE IS the
+    category" — silently assumes that person only attends meetings of that
+    category. Measured on a real week, one uncapped rule for a founder/CEO
+    fired on 7 of 19 meetings (45% of meeting hours) and filed a finance
+    quarterly review and a 7-person leadership huddle as founder-seat work."""
 
 
 def parse_role_map(text: str) -> list[RoleRule]:
@@ -141,10 +151,33 @@ def parse_role_map(text: str) -> list[RoleRule]:
         left, _, right = body.partition(arrow)
         quadrant = right.strip().lower()
         match = left.strip().lower()
+        # Optional trailing `<=N` attendee cap. A cap that is present but not
+        # a positive integer DROPS the rule, for the same reason an unknown
+        # quadrant does: a typo must lose its rule (visible as absence) rather
+        # than silently widen it back to every meeting, which is the exact
+        # mis-filing the cap was added to prevent.
+        max_attendees = None
+        capped = re.match(r"^(?P<m>.*?)\s*<=\s*(?P<cap>.*)$", match)
+        if capped:
+            raw_cap = capped.group("cap").strip()
+            # int() is the ONLY judge of whether this converts. `isdigit()` is
+            # True for characters int() refuses ('²', '٩'), and int() also
+            # refuses an all-digit value past the 4300-digit conversion limit,
+            # so an isdigit() pre-check raised ValueError out of this function
+            # and cost the WHOLE role map — every rule, and the week's meeting
+            # attribution with it — instead of the one malformed rule.
+            try:
+                max_attendees = int(raw_cap, 10)
+            except ValueError:
+                continue
+            if max_attendees < 1:
+                continue
+            match = capped.group("m").strip()
         if not match or quadrant not in _VALID:
             continue
         rules.append(RoleRule(match=match, quadrant=quadrant,
-                              comment=comment.strip()))
+                              comment=comment.strip(),
+                              max_attendees=max_attendees))
     return rules
 
 
@@ -251,19 +284,56 @@ class Resolution:
         object.__setattr__(self, "splits", normalised)
 
 
+def _join_notes(*notes: str) -> str:
+    """Join the rungs' decline reasons in cascade order, dropping empties.
+
+    More than one rung can decline on the same meeting (role conflicts AND
+    topic shares unreadable), and a caller that only ever showed the last one
+    would report a partial reason for a fully unresolved row."""
+    return "; ".join(n for n in notes if n)
+
+
 def resolve_meeting(
     attendees: list[str],
     topics: list[tuple[str, float]],
     project_quadrant: str | None,
     role_map: list[RoleRule],
 ) -> Resolution:
-    """First rule that resolves wins: role -> topic -> project -> unresolved."""
-    for person in attendees:
-        needle = person.lower()
-        local = needle.split("@")[0].replace(".", " ")
-        for rule in role_map:
+    """First rung that resolves wins: role -> topic -> project -> unresolved.
+
+    THE ROLE RUNG CONSIDERS EVERY MATCHING RULE, NOT THE FIRST ONE FOUND.
+    It used to loop attendees OUTER and rules INNER and return on the first
+    hit, so when two mapped people shared a meeting the winner was whichever
+    attendee happened to be listed first — and the caller assembles that list
+    from Fathom/calendar with no reason to keep it stable. The same meeting
+    with the same role map resolved to two different quadrants depending on
+    attendee order, both reported `resolved_by="role"` with full confidence.
+
+    Now: matching rules that AGREE resolve the meeting (order cannot matter,
+    they all say the same thing), and matching rules that DISAGREE decline the
+    rung and fall through to topic, carrying a note that names the conflict —
+    the same "a rung that cannot be read declines rather than resolving on a
+    guess" idiom the topic rung below already follows.
+    """
+    role_note = ""
+    matched: list[RoleRule] = []
+    for rule in role_map:
+        if (rule.max_attendees is not None
+                and len(attendees) > rule.max_attendees):
+            continue
+        for person in attendees:
+            needle = person.lower()
+            local = needle.split("@")[0].replace(".", " ")
             if rule.match in needle or rule.match in local:
-                return Resolution(rule.quadrant, "role")
+                matched.append(rule)
+                break
+    if matched:
+        quadrants = {rule.quadrant for rule in matched}
+        if len(quadrants) == 1:
+            return Resolution(matched[0].quadrant, "role")
+        role_note = (
+            "role rung declined — attendees match conflicting rules ("
+            + ", ".join(sorted(quadrants)) + ")")
 
     # TYPE BEFORE VALUE here too: `q in _VALID` raises TypeError on an
     # unhashable quadrant and `s > 0` raises on a string or None, so a topic
@@ -305,13 +375,17 @@ def resolve_meeting(
             # only when the topic actually accounted for all of it. Below 1.0,
             # keep the share as a split so the remainder reaches unresolved.
             if len(valid_topics) == 1 and total >= 1.0 - 1e-6:
-                return Resolution(valid_topics[0][0], "topic", note=note)
-            return Resolution(None, "topic", tuple(valid_topics), note)
+                return Resolution(valid_topics[0][0], "topic",
+                                  note=_join_notes(role_note, note))
+            return Resolution(None, "topic", tuple(valid_topics),
+                              _join_notes(role_note, note))
 
     if _known_quadrant(project_quadrant):
-        return Resolution(project_quadrant, "project", note=topic_note)
+        return Resolution(project_quadrant, "project",
+                          note=_join_notes(role_note, topic_note))
 
-    return Resolution(None, "unresolved", note=topic_note)
+    return Resolution(None, "unresolved",
+                      note=_join_notes(role_note, topic_note))
 
 
 @dataclass(frozen=True)
