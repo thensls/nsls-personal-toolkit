@@ -29,6 +29,7 @@ So on macOS/Linux nothing fetched this toolkit before this hook was registered.
 
 import os
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -120,14 +121,41 @@ def unquote_scalar(value):
 
 
 def _git(*args, timeout=10):
-    """Run a git command in the plugin dir. Returns (ok, stdout) — never raises."""
+    """Run a git command in the plugin dir. Returns (ok, stdout) — never raises.
+
+    git runs in its own session so a timeout kills the whole process TREE — a
+    fetch's HTTPS remote helper is a child that killing git alone would leave
+    running the network operation after we had released the lock."""
     try:
-        proc = subprocess.run(
+        proc = subprocess.Popen(
             ["git", "-C", str(PLUGIN_DIR), *args],
-            capture_output=True, text=True, timeout=timeout
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
+            text=True, start_new_session=True,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
         )
-        return proc.returncode == 0, (proc.stdout or "").strip()
     except Exception:
+        return False, ""
+    try:
+        out, _ = proc.communicate(timeout=timeout)
+        return proc.returncode == 0, (out or "").strip()
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except Exception:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+        try:
+            proc.communicate(timeout=2)
+        except Exception:
+            pass
+        return False, ""
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
         return False, ""
 
 
@@ -232,11 +260,11 @@ def report_if_stale():
 _UPSTREAM_CHECK_EVERY_H = 12
 _UPSTREAM_STAMP = HOME / ".claude" / ".nsls-personal-upstream-check"
 # The stamp is a throttle, not a claim: two hooks can both read it as stale
-# before either writes it. The lock is the claim — created exclusively, so
-# exactly one of them fetches and speaks. The builder toolkit's own session hook
-# runs this same check against this same checkout, keyed on these same files.
+# before either writes it. The lock is the claim — an OS-level exclusive lock
+# on a file that is never deleted, so exactly one of them fetches and speaks.
+# The builder toolkit's own session hook runs this same check against this
+# same checkout, keyed on these same files.
 _UPSTREAM_LOCK = HOME / ".claude" / ".nsls-personal-upstream-check.lock"
-_LOCK_STALE_S = 120  # a lock this old belongs to a hook that died
 _UPSTREAM_URL = "https://github.com/thensls/nsls-personal-toolkit.git"
 # Where the fetch lands: a private ref, not a remote. A fork may already have an
 # `upstream` — or any other name — aimed at something else entirely; fetching
@@ -306,10 +334,23 @@ def _pull_source():
     # named with a slash (`personal/fork`), and the split kept only `personal`.
     remote = ""
     ok, branch = _git("symbolic-ref", "--short", "HEAD")  # fails when detached
-    if ok and branch:
+    seen = set()
+    while ok and branch and branch not in seen:
+        seen.add(branch)  # stop only on a cycle, not at an arbitrary hop count
         ok, configured = _git("config", "--get", f"branch.{branch}.remote")
-        if ok and configured and configured != ".":  # "." tracks a local branch
+        if not ok or not configured:
+            break
+        if configured != ".":
             remote = configured
+            break
+        # "." means the branch pulls from a LOCAL branch, not a remote. Follow
+        # that chain to the remote it ends at, rather than pretending it is
+        # origin — but never give up on the checkout: its remote of record is
+        # still the honest fallback, and silence on a fork is the failure here.
+        ok, merge = _git("config", "--get", f"branch.{branch}.merge")
+        if not ok or not merge.startswith("refs/heads/"):
+            break
+        branch = merge[len("refs/heads/"):]
     remote = remote or "origin"
     ok, url = _git("remote", "get-url", remote)
     if (not ok or not url) and remote != "origin":
@@ -331,30 +372,70 @@ def _stamp_is_fresh():
     return False
 
 
-def _claim_lock():
-    """Create the lock exclusively; False when another hook holds it. A lock
-    older than _LOCK_STALE_S was left by a hook that died — broken once."""
-    for attempt in (1, 2):
-        try:
-            _UPSTREAM_LOCK.parent.mkdir(parents=True, exist_ok=True)
-            os.close(os.open(str(_UPSTREAM_LOCK), os.O_CREAT | os.O_EXCL | os.O_WRONLY))
-            return True
-        except FileExistsError:
-            try:
-                if attempt == 1 and time.time() - _UPSTREAM_LOCK.stat().st_mtime > _LOCK_STALE_S:
-                    _UPSTREAM_LOCK.unlink()
-                    continue
-            except OSError:
-                pass
-            return False
-        except OSError:
-            return False
-    return False
-
-
-def _release_lock():
+def _lock_exclusive(fd):
+    """Non-blocking exclusive lock on an open descriptor: flock where the
+    platform has it, the C runtime's byte-range lock on Windows. Raises
+    OSError when another process holds it."""
     try:
-        _UPSTREAM_LOCK.unlink()
+        import fcntl
+    except ImportError:
+        import msvcrt
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+    else:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _claim_lock():
+    """Take an exclusive OS lock on the lock file; the open descriptor when we
+    hold it, None when another hook does.
+
+    An OS lock, not create-exclusively/rename/unlink: the kernel owns the
+    claim and drops it the instant the holder exits, so a hook that dies
+    mid-check leaves nothing to reclaim — no stale threshold, no token, no
+    grave — and there is no step at which a third hook can be handed a lock
+    that is still in use. The file is never deleted: every hook locks the same
+    inode. On a PC the builder toolkit's PowerShell hook opens this same file
+    with sharing denied, so whichever of the two opens first holds it and the
+    other's open simply fails."""
+    path = _UPSTREAM_LOCK
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(path), os.O_CREAT | os.O_RDWR | getattr(os, "O_CLOEXEC", 0), 0o644)
+    except OSError:
+        return None  # includes a Windows sharing violation: the PowerShell hook holds it
+    try:
+        _lock_exclusive(fd)
+    except (OSError, ImportError):
+        _release_lock(fd)
+        return None
+    # Compatibility with the lock this replaces (created exclusively with a
+    # token inside, stale after 120 s), for the day a machine may run one old
+    # copy of this check beside one new: an old hook mid-check right now has
+    # written its token into this same file within the last two minutes —
+    # yield to it. Then leave the file empty with a fresh mtime, so an old hook
+    # that looks while we hold the lock sees a live lock, not a stale one to
+    # break. Harmless once every copy has moved to the OS lock.
+    try:
+        st = os.fstat(fd)
+        legacy_live = st.st_size > 0 and 0 <= time.time() - st.st_mtime <= 120
+    except OSError:
+        legacy_live = False
+    if legacy_live:
+        _release_lock(fd)
+        return None
+    try:
+        os.ftruncate(fd, 0)
+        os.utime(fd if os.utime in os.supports_fd else str(path), None)
+    except OSError:
+        pass
+    return fd
+
+
+def _release_lock(fd):
+    """Closing the descriptor drops the lock; the file itself stays."""
+    try:
+        os.close(fd)
     except OSError:
         pass
 
@@ -373,7 +454,8 @@ def _report_fork_drift(notice):
     """
     if _stamp_is_fresh():
         return
-    if not _claim_lock():
+    lock = _claim_lock()
+    if lock is None:
         return  # another hook is mid-check this very second; it will speak
     try:
         if _stamp_is_fresh():
@@ -386,8 +468,18 @@ def _report_fork_drift(notice):
 
         # Bounded and best-effort: offline, blocked, or slow all mean "say nothing
         # this session" — never delay a session start over a nicety.
-        fetched, _ = _git("fetch", "--quiet", _UPSTREAM_URL, _UPSTREAM_REFSPEC, timeout=6)
+        # --no-tags: a plain fetch also auto-follows tags reachable from main,
+        # writing NSLS's tags into the builder's checkout — or failing when one
+        # collides with a tag of theirs. Only our ref should move.
+        fetched, _ = _git("fetch", "--quiet", "--no-tags", _UPSTREAM_URL, _UPSTREAM_REFSPEC, timeout=6)
         if not fetched:
+            return
+        # A fork shares history with NSLS. A repository that does not — some
+        # unrelated project sitting at this path — is not a fork, and telling
+        # Claude to merge NSLS's main into it would be an instruction to merge
+        # two unrelated histories. Nothing to say about such a checkout.
+        related, _ = _git("merge-base", "HEAD", _UPSTREAM_REF)
+        if not related:
             return
         ok, count = _git("rev-list", "--count", f"HEAD..{_UPSTREAM_REF}")
         if not ok or not count.isdigit():
@@ -417,7 +509,7 @@ def _report_fork_drift(notice):
             f"command."
         )
     finally:
-        _release_lock()
+        _release_lock(lock)
 
 
 def sync_pointers():
