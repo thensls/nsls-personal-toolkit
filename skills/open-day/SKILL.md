@@ -463,7 +463,7 @@ If the `apple-health` MCP is configured (`~/.claude.json` contains `mcpServers.a
 mcp__apple-health__apple_health_daily(date="YYYY-MM-DD")  # yesterday's date
 ```
 
-If the response contains `{error: ...}` (no data for that day yet), skip this step silently and omit the "Yesterday's body" line from Step 3 + the health frontmatter from Step 6. Don't surface the error to the builder.
+If the response contains `{error: ...}` (no data for that day yet), omit the "Yesterday's body" line from Step 3 + the health frontmatter from Step 6. If the response also carries `warnings`, the export file exists but iCloud has not downloaded it to this Mac yet (the server skips it rather than blocking on it) — say so in one line in Step 3, e.g. *"Yesterday's body: export not downloaded from iCloud yet."* A plain `error` with no `warnings` means the phone has not exported that day at all; that case stays silent.
 
 Extract these fields for use in Steps 3 and 6:
 

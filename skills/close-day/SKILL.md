@@ -614,6 +614,7 @@ If `(target+1)` data is not yet synced (export typically syncs by mid-morning), 
 - Last night's sleep: _pending — export not yet synced. /open-day will backfill once available._
 - Energy:
 ```
+If the response carries `warnings`, the export file exists but iCloud has not downloaded it to this Mac (the server skips it rather than blocking). Use the same placeholder but say *"export exists, iCloud has not downloaded it yet"* — that points at the Mac's iCloud sync, not the phone.
 Then `/open-day` next morning replaces the placeholder with the real numbers.
 
 Cross-reference against the morning note's `Top 3` and `Goal cues today` (read the morning note from `01-daily/YYYY-MM-DD.md` if it exists). Extract:
