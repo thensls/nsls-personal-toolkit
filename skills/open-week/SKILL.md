@@ -199,9 +199,9 @@ If the `apple-health` MCP is configured (`~/.claude.json` contains `mcpServers.a
 mcp__apple-health__apple_health_trends(days=28)
 ```
 
-Returns an array of daily records with: `steps`, `active_energy`, `exercise_min`, `resting_hr`, `hrv`, `sleep_total_hrs`, `sleep_restorative_pct`, `weight`, `vo2_max`. Most days have null for `vo2_max` (Apple Watch only computes it on qualifying outdoor activity) and null for `resting_hr` (HAE's daily-aggregate CSV doesn't include it — gap, not error).
+Returns `{ days, results, warnings? }`. `results` is an array of daily records with: `steps`, `active_energy`, `exercise_min`, `resting_hr`, `hrv`, `sleep_total_hrs`, `sleep_restorative_pct`, `weight`, `vo2_max`. Most days have null for `vo2_max` (Apple Watch only computes it on qualifying outdoor activity) and null for `resting_hr` (HAE's daily-aggregate CSV doesn't include it — gap, not error). Days with no export file are simply absent from `results`.
 
-If the call fails or returns `[]`, skip this step silently and omit the "Body & Recovery" section from Step 3. Don't surface the error to the builder.
+`warnings` is present only when export files exist but have not been downloaded from iCloud yet (the server skips them rather than blocking on them). **If `warnings` is present, say so in one line in the Body & Recovery section** — e.g. *"2 of 28 days skipped: iCloud hasn't downloaded them yet"* — so a thin week is never mistaken for a rest week. If the call fails outright or `results` is empty, omit the "Body & Recovery" section from Step 3 and add one line noting that health data was unavailable. Never drop the section without saying why.
 
 **Aggregate the 28-day window into these weekly metrics:**
 
