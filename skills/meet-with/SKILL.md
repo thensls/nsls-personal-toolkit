@@ -318,9 +318,21 @@ Creating a calendar event with guests **emails real invitations to real people**
    guest address, Meet link yes/no, description. Nothing vague.
 2. Require an explicit yes **to that manifest** in this run. Content edits reset
    approval. Never add, swap, or "helpfully" include a guest that wasn't approved.
-3. Create via the connector's `create_event` (suffix-resolved) with attendees + Google
+3. **Re-check that one slot immediately before creating.** Everything up to here rests
+   on the Step 2 snapshot, and a human approval takes as long as it takes — minutes,
+   or a coffee. Someone can book over the slot in that gap, and the invitation still
+   goes out to real people for a time that is no longer free. Availability changing is
+   just as much a reason to reset approval as the user editing the title; nothing
+   enforced that until now.
+
+   Re-read busy for **the chosen slot only**, every attendee, through the same engine
+   Step 2 used — one narrow window, not the whole search. If it is still clear, carry
+   straight on to 4. If it is not, **do not create it**: say who is now busy, drop the
+   selection, and offer the next slots from a fresh computation. A stale yes is not a
+   yes to a different meeting.
+4. Create via the connector's `create_event` (suffix-resolved) with attendees + Google
    Meet. Default description one-liner: `Scheduled via /meet-with.`
-4. **Verify by reading it back** — `list_events` over that window must show the new
+5. **Verify by reading it back** — `list_events` over that window must show the new
    event with the right guests. An exit code is not proof. Echo the `htmlLink`.
 
 Heartbeat: `Step 5: created "<title>" <when> — guests <n>, Meet ✓, verified ✓`
