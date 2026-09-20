@@ -132,8 +132,11 @@ returning nothing, because they look checked.
 
 So: **no Calendar connector, no slots.** Stop before Step 4. Say plainly that their own
 calendar cannot be read and nothing can be offered because of it, and give them the one
-thing that fixes it — grant the calendar scope (Step 0, ~30 seconds). Never present
-colleague-only availability as if it were free, and never half-book.
+thing that actually fixes it — **authorize the Calendar connector** for this session.
+Do not send them to the `gws` calendar scope here: that is a separate remediation for
+the availability engine and grants no `list_events` or `create_event`, so following it
+leaves the skill exactly as stuck. Never present colleague-only availability as if it
+were free, and never half-book.
 
 If the connector is present for reading but `create_event` fails at Step 5, that is the
 other case: the slots were genuinely checked, so present them plus the exact manifest and
@@ -142,7 +145,11 @@ let the user create it themselves. Say precisely what is missing.
 **The user's own busy (all engines):** connector `list_events` on their primary calendar
 and each extra calendar. Skip events that don't block: `transparency: transparent`
 (marked Free), `status: cancelled`, events the user has RSVP'd **declined**. All-day
-out-of-office events DO block.
+out-of-office events DO block — and Calendar returns those as date-only
+`start.date` / `end.date`. Convert them to timezone-aware midnight bounds in `w['tz']`
+before writing `busy.json`: **every busy interval must carry an offset.** A date-only
+value parses as naive and then raises `TypeError` against the aware candidates, which
+takes the whole computation down rather than blocking that one day.
 
 Heartbeat per person: `Step 2: <email> — N busy blocks (source: gws|browser|user-said)`.
 **If any attendee's data came from nowhere** (all engines failed), STOP and say so —
@@ -197,7 +204,19 @@ if not isinstance(duration_min, (int, float)) or duration_min <= 0:
     )
 dur = timedelta(minutes=duration_min)
 weekdays_only = w.get('weekdays_only', True)
-iso = datetime.fromisoformat
+
+def iso(s):
+    """Parse a bound and guarantee it is timezone-aware.
+
+    All-day events come back date-only ("2026-09-21"), which fromisoformat
+    parses as NAIVE midnight. One naive value meeting the aware candidates
+    below raises TypeError on the first comparison -- so a single all-day
+    out-of-office event took the entire computation down instead of blocking
+    its day. Coercing here rather than at each call site means every bound,
+    from any engine, is aware by the time anything compares it.
+    """
+    dt = datetime.fromisoformat(s)
+    return dt.replace(tzinfo=tz) if dt.tzinfo is None else dt
 
 def hm(t):  # cross-platform 12h format (no %-I on Windows)
     return f"{t.hour % 12 or 12}:{t.minute:02d}"
@@ -219,12 +238,6 @@ def blockers(s, e):
             if any(not (e <= a or s >= b) for a, b in ivs)]
 
 start, end = iso(w['start']), iso(w['end'])
-# A naive bound would crash the .astimezone() below; read it as already being in
-# the meeting's timezone, which is the only reading that makes sense here.
-if start.tzinfo is None:
-    start = start.replace(tzinfo=tz)
-if end.tzinfo is None:
-    end = end.replace(tzinfo=tz)
 
 # "Tuesday 9-5" asked for on Tuesday at 2pm must not offer 9am. The candidate
 # check below only compares against `start`, so an elapsed morning stays
