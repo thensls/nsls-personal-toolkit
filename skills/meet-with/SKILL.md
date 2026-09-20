@@ -123,10 +123,21 @@ free**: fall to Engine C for that person. Never screenshot-guess ambiguous edges
 until the boundary is legible. Colleague event details seen this way are for scheduling
 math only — don't echo titles into the conversation unless the user asks.
 
-Engine B covers **availability only** — booking in Step 5 still needs the Calendar
-connector's `create_event`. If that connector is absent, stop after Step 4: present the
-slots plus the exact manifest and tell the user to create it themselves (say precisely
-what's missing — don't half-book).
+Engine B covers **colleagues' availability only, and that is not enough on its own.**
+The user's own busy comes from the connector's `list_events` (below) and from nowhere
+else. With no connector there is no picture of the user's own calendar, so every slot
+computed is "free for everyone except possibly you" — which is this skill's founding bug
+pointed at the user instead of a colleague. Presenting those as bookable is worse than
+returning nothing, because they look checked.
+
+So: **no Calendar connector, no slots.** Stop before Step 4. Say plainly that their own
+calendar cannot be read and nothing can be offered because of it, and give them the one
+thing that fixes it — grant the calendar scope (Step 0, ~30 seconds). Never present
+colleague-only availability as if it were free, and never half-book.
+
+If the connector is present for reading but `create_event` fails at Step 5, that is the
+other case: the slots were genuinely checked, so present them plus the exact manifest and
+let the user create it themselves. Say precisely what is missing.
 
 **The user's own busy (all engines):** connector `list_events` on their primary calendar
 and each extra calendar. Skip events that don't block: `transparency: transparent`
@@ -162,8 +173,29 @@ from zoneinfo import ZoneInfo
 
 cfg = json.loads(pathlib.Path('/tmp/meet-with-ctx/busy.json').read_text())
 w = cfg['window']
-tz = ZoneInfo(w['tz'])
-dur = timedelta(minutes=w['duration_min'])
+
+# Everything below computes times people will be invited to, so refuse anything
+# that cannot produce a real one rather than producing a confident wrong one.
+# A missing prerequisite or a nonsense input must fail loudly here; past this
+# point the arithmetic has no way to tell a bad window from a tight one.
+try:
+    tz = ZoneInfo(w['tz'])
+except Exception as exc:                      # ZoneInfoNotFoundError and friends
+    raise SystemExit(
+        f"Cannot load timezone data for {w['tz']!r} ({exc.__class__.__name__}). "
+        "Python does not bundle the zoneinfo database on Windows: run "
+        "`pip install tzdata` and try again. Refusing to fall back to a fixed "
+        "offset -- a wrong timezone yields confident, wrong meeting times."
+    )
+
+duration_min = w['duration_min']
+if not isinstance(duration_min, (int, float)) or duration_min <= 0:
+    raise SystemExit(
+        f"duration_min must be a positive number of minutes, got {duration_min!r}. "
+        "A zero or negative duration builds backwards ranges like 09:00-08:30, "
+        "which look like ordinary slots all the way to create_event."
+    )
+dur = timedelta(minutes=duration_min)
 weekdays_only = w.get('weekdays_only', True)
 iso = datetime.fromisoformat
 
@@ -187,6 +219,25 @@ def blockers(s, e):
             if any(not (e <= a or s >= b) for a, b in ivs)]
 
 start, end = iso(w['start']), iso(w['end'])
+# A naive bound would crash the .astimezone() below; read it as already being in
+# the meeting's timezone, which is the only reading that makes sense here.
+if start.tzinfo is None:
+    start = start.replace(tzinfo=tz)
+if end.tzinfo is None:
+    end = end.replace(tzinfo=tz)
+
+# "Tuesday 9-5" asked for on Tuesday at 2pm must not offer 9am. The candidate
+# check below only compares against `start`, so an elapsed morning stays
+# bookable and accepting one sends an invitation into the past.
+now = datetime.now(tz)
+if start < now:
+    start = now
+if start >= end:
+    raise SystemExit(
+        "That whole window is in the past -- there is no time left in it to book. "
+        "Ask for a window that ends in the future."
+    )
+
 dsh, dsm = map(int, w['day_start'].split(':'))
 deh, dem = map(int, w['day_end'].split(':'))
 
