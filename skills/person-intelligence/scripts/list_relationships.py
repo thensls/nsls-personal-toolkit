@@ -161,6 +161,55 @@ def build_untracked_set(vault_path):
     return untracked
 
 
+VALID_REASONS = {"direct_report", "management_peer", "key_relationship",
+                 "key_relationship_external", "manager"}
+
+
+def build_reason_overrides(vault_path):
+    """Names the vault has re-classified with an explicit `tracking_reason:`.
+
+    `tracked: false` is all-or-nothing, and some people need the middle setting. A vendor
+    on a defined engagement can sit in the org chart under `manages` — Rippling models a
+    contractor's point of contact as their manager — and arrive as a `direct_report`, which
+    hands them a health score, coaching goals and a Manager Mode entry. Excluding them loses
+    a real relationship; leaving them coaches a supplier.
+
+    So the vault is the control surface for *how* someone is tracked, the same way
+    `build_untracked_set` makes it the control surface for *whether*. Only the leading
+    frontmatter counts, and only a value in VALID_REASONS is honored — a typo must not
+    invent a category that downstream coaching frames then fail to match.
+
+    Returns {name-or-email lowercased: reason}.
+    """
+    import re as _re
+
+    overrides = {}
+    if not vault_path or str(vault_path) == ".":
+        return overrides
+    people_dir = vault_path / "30-people"
+    if not people_dir.is_dir():
+        return overrides
+    for path in sorted(people_dir.rglob("*.md")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        fm = _frontmatter(text)
+        if fm is None:
+            continue
+        m = _re.search(r"^tracking_reason:[ \t]*[\"']?([a-z_]+)[\"']?[ \t]*$",
+                       fm, _re.MULTILINE | _re.IGNORECASE)
+        if not m:
+            continue
+        reason = m.group(1).strip().lower()
+        if reason not in VALID_REASONS:
+            continue
+        overrides[path.stem.lower()] = reason
+        for em in _re.finditer(r"^email(?:_alt)?:[ \t]*(\S+)[ \t]*$", fm, _re.MULTILINE):
+            overrides[em.group(1).strip().strip('"').strip("'").lower()] = reason
+    return overrides
+
+
 def _frontmatter(text):
     """Return the leading YAML frontmatter body, or None when the file has none."""
     import re as _re
@@ -279,10 +328,31 @@ def main():
     redirect_map = build_redirect_map(Path(os.environ.get("OBSIDIAN_VAULT_PATH", "")).expanduser())
     _vault = Path(os.environ.get("OBSIDIAN_VAULT_PATH", "")).expanduser()
     untracked = build_untracked_set(_vault)
+    reason_overrides = build_reason_overrides(_vault)
     # Names that some redirect points AT — i.e. canonical identities the vault has declared.
     # Any org-chart record resolving to one of these IS that person, whichever order the
     # records happen to arrive in. Precomputed once; add() runs in a loop.
     redirect_targets = {v.lower() for v in redirect_map.values()}
+
+    def resolve_reason(name, emp_email, reason):
+        """The vault's `tracking_reason:` override, or `reason` unchanged.
+
+        Every append path must call this — not just `add()`. The untracked gate had
+        exactly this bug (see the KEY_RELATIONSHIPS branch below, whose comment describes
+        it), and applying a second gate in only one of the paths reintroduced it: a vault
+        override on someone absent from the org chart was silently ignored, because that
+        branch appends directly.
+        """
+        override = reason_overrides.get(name.lower()) or (
+            reason_overrides.get(emp_email.lower()) if emp_email else None
+        )
+        if override and override != reason:
+            warnings.append(
+                f"Re-classified '{name}': org chart says {reason}, vault frontmatter says "
+                f"{override}. Using {override}."
+            )
+            return override
+        return reason
 
     def add(emp, reason):
         raw_name = emp.get("name", "")
@@ -340,6 +410,11 @@ def main():
         if key_email:
             seen_emails.add(key_email)
         seen_names.add(key_name)
+        # The vault may re-classify how this person is tracked. Applied after the untracked
+        # gate, which is stronger: `tracked: false` removes someone outright and an override
+        # must never resurrect them. Announced, because a silent re-class would look exactly
+        # like the org chart having said so all along.
+        reason = resolve_reason(name, emp_email, reason)
         relationships.append(
             {
                 "name": name,
@@ -410,7 +485,12 @@ def main():
                     "slack": "",
                     "title": "",
                     "department": "",
-                    "tracking_reason": "key_relationship_external",
+                    # Same reasoning as the untracked gate immediately above: this branch
+                    # skips add(), so every gate add() applies has to be repeated here or
+                    # it does not exist for anyone absent from the org chart.
+                    "tracking_reason": resolve_reason(
+                        name, "", "key_relationship_external"
+                    ),
                 }
             )
 
