@@ -241,6 +241,39 @@ def test_sweep_and_roster_agree_on_the_override(tmp_path, monkeypatch):
     assert _reason_of(manifest, "Archived Report") == "key_relationship"
 
 
+@pytest.mark.parametrize("who,fixture_files,env,expected", [
+    # add() — the path that already worked.
+    ("Archived Report", {"Archived Report.md": REASON_FM}, {}, "key_relationship"),
+    # The manager path: appends directly, never touches add().
+    ("Boss Person", {"Boss Person.md": REASON_FM}, {}, "key_relationship"),
+    # The external KEY_RELATIONSHIPS path: same, for anyone absent from the org chart.
+    ("Outside Coach", {"Outside Coach.md": REASON_FM},
+     {"KEY_RELATIONSHIPS": "Outside Coach"}, "key_relationship"),
+])
+def test_override_applies_on_every_append_path(
+    tmp_path, monkeypatch, who, fixture_files, env, expected
+):
+    """Macroscope caught this on PR #77: the untracked gate was fixed across all three
+    append paths, then the NEW override gate was applied only in add() — the same
+    partial-coverage bug the PR was about, one layer up. add() is the only path with a
+    natural test; the other two append directly and are easy to forget twice."""
+    files = {"Kept Report.md": TRACKED_FM}
+    files.update(fixture_files)
+    manifest = _manifest(tmp_path, monkeypatch, FIXTURE, files, env=env)
+    assert _reason_of(manifest, who) == expected
+
+
+def test_external_key_relationship_override_is_not_hardcoded(tmp_path, monkeypatch):
+    """Without the fix this is always `key_relationship_external`, whatever the vault says."""
+    manifest = _manifest(
+        tmp_path, monkeypatch, FIXTURE,
+        {"Kept Report.md": TRACKED_FM, "Outside Coach.md": REASON_FM},
+        env={"KEY_RELATIONSHIPS": "Outside Coach"},
+    )
+    assert _reason_of(manifest, "Outside Coach") == "key_relationship"
+    assert _reason_of(manifest, "Outside Coach") != "key_relationship_external"
+
+
 @pytest.mark.parametrize("reason_file,expected", [
     ("_archive/Archived Report.md", "Archived Report"),
     ("_archive/Boss Person.md", "Boss Person"),

@@ -291,7 +291,10 @@ def build_manifest(vault_path, cache_dir):
                     "slack": mgr_emp.get("slack", ""),
                     "title": mgr_emp.get("title", ""),
                     "department": mgr_emp.get("department", ""),
-                    "tracking_reason": "manager",
+                    # This path skips add(), so the override has to be repeated here.
+                    "tracking_reason": apply_reason_override(
+                        mgr_canonical, mgr_email, "manager"
+                    ),
                     "relationship_type": "manager",
                 })
                 seen_emails.add(mgr_email.lower())
@@ -316,7 +319,10 @@ def build_manifest(vault_path, cache_dir):
                 "slack": "",
                 "title": "",
                 "department": "",
-                "tracking_reason": "key_relationship_external",
+                # Skips add() too — same repetition, same reason.
+                "tracking_reason": apply_reason_override(
+                    canonical, "", "key_relationship_external"
+                ),
                 "relationship_type": "key_relationship",
             })
 
