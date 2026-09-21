@@ -1,4 +1,10 @@
 .env
+# Any sibling of .env holds the same three API keys. A bare `.env` rule matches that
+# one filename and nothing else, so `.env.bak`, `.env.local` or a dated backup made
+# while editing config is committable — which is exactly when one gets made.
+# `.env.example` is the intended exception: it ships placeholders, never values.
+.env.*
+!.env.example
 # Your personal harvest denylist — private by design, never shared to the template.
 # Seed it from skills/harvest-meeting/references/harvest-exclude.example.txt
 harvest-exclude.txt

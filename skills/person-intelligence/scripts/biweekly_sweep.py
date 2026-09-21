@@ -195,6 +195,45 @@ def build_manifest(vault_path, cache_dir):
     seen_emails = set()
     seen_names = set()
 
+    # The vault's `tracked: false` markers are the control surface for who is swept.
+    # org-chart.json is a Rippling mirror — arbiter of current-staff status, never of
+    # tracked-relationship status — so the archive has to actually remove someone or it
+    # is decoration. list_relationships.main() applies this; this inline path did not,
+    # which is how the 2026-09-13 sweep swept 30 people against a roster of 28 and told
+    # Kevin to open first assessments on a departed employee and an out-of-scope
+    # contractor. Every append path below must consult it.
+    untracked = list_relationships.build_untracked_set(vault_path)
+    untracked_excluded = []
+    # Same reasoning as the untracked gate above, and the same trap: this lives in
+    # list_relationships and is applied inside its main(), which this inline path never
+    # calls. One gate, two callers — wire both or the sweep quietly disagrees with the
+    # roster, which is exactly how 2026-09-13 swept 30 people against a roster of 28.
+    reason_overrides = list_relationships.build_reason_overrides(vault_path)
+
+    def apply_reason_override(name, emp_email, reason):
+        override = reason_overrides.get(name.lower()) or (
+            reason_overrides.get(emp_email.lower()) if emp_email else None
+        )
+        if override and override != reason:
+            print(f"NOTE: re-classified '{name}': org chart says {reason}, "
+                  f"vault says {override}.", file=sys.stderr)
+            return override
+        return reason
+
+    def is_untracked(name, emp_email, reason):
+        keys = {name.lower()}
+        if emp_email:
+            keys.add(emp_email.lower())
+        if not (keys & untracked):
+            return False
+        untracked_excluded.append(name)
+        print(
+            f"WARNING: skipped '{name}' ({reason}): marked `tracked: false` in the vault. "
+            f"org-chart.json still lists them; the archive is the arbiter here.",
+            file=sys.stderr,
+        )
+        return True
+
     def add(emp, reason):
         name = resolve_canonical_name(vault_path, emp.get("name", ""))
         emp_email = emp.get("email", "")
@@ -204,6 +243,9 @@ def build_manifest(vault_path, cache_dir):
             return
         if not key_email and key_name in seen_names:
             return
+        if is_untracked(name, emp_email, reason):
+            return
+        reason = apply_reason_override(name, emp_email, reason)
         if key_email:
             seen_emails.add(key_email)
         seen_names.add(key_name)
@@ -239,7 +281,10 @@ def build_manifest(vault_path, cache_dir):
         if mgr_emp:
             # Override relationship_type to "manager"
             mgr_email = mgr_emp.get("email", "")
-            if mgr_email.lower() not in seen_emails:
+            mgr_canonical = resolve_canonical_name(vault_path, mgr_emp.get("name", ""))
+            if mgr_email.lower() not in seen_emails and not is_untracked(
+                mgr_canonical, mgr_email, "manager"
+            ):
                 rel_set.append({
                     "name": mgr_emp.get("name", ""),
                     "email": mgr_email,
@@ -261,6 +306,8 @@ def build_manifest(vault_path, cache_dir):
         else:
             canonical = resolve_canonical_name(vault_path, name)
             if canonical.lower() in seen_names:
+                continue
+            if is_untracked(canonical, "", "key_relationship_external"):
                 continue
             seen_names.add(canonical.lower())
             rel_set.append({
@@ -328,6 +375,10 @@ def build_manifest(vault_path, cache_dir):
         "relationship_count": len(rel_set),
         "relationships": rel_set,
         "completed_relationships": [],  # populated as each is processed
+        # Announce why the roster shrank rather than just shrinking — a silent
+        # exclusion reads identically to a person who was never tracked.
+        "untracked_excluded_count": len(untracked_excluded),
+        "untracked_excluded": untracked_excluded,
     }
 
     return manifest, None
