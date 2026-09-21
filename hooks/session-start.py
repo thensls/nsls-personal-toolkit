@@ -268,8 +268,10 @@ _UPSTREAM_LOCK = HOME / ".claude" / ".nsls-personal-upstream-check.flock"
 # The lock file of the protocol this one replaced (created exclusively, a token
 # inside, treated as stale after 120 s). A machine may briefly run one old copy
 # of this check beside one new — the builder plugin cache and this checkout
-# update on different schedules — so this file is READ, never written: a fresh
-# token means an old hook is mid-check and the new one yields. Two files, so
+# update on different schedules — so while the OS lock is held this copy ALSO
+# claims under that protocol: it creates the old file exclusively and leaves it
+# empty (see _shadow_legacy_claim); a fresh, non-empty token there means an old
+# hook is mid-check and this one yields. Two files, so
 # nothing the old protocol renames or deletes can ever be the inode locked here.
 _UPSTREAM_LEGACY_LOCK = HOME / ".claude" / ".nsls-personal-upstream-check.lock"
 _UPSTREAM_URL = "https://github.com/thensls/nsls-personal-toolkit.git"
@@ -416,7 +418,7 @@ def _claim_lock():
     except (OSError, ImportError):
         _release_lock(fd)
         return None
-    if _legacy_lock_is_live(_UPSTREAM_LEGACY_LOCK):
+    if not _shadow_legacy_claim(_UPSTREAM_LEGACY_LOCK):
         _release_lock(fd)
         return None  # an old copy of this check is mid-check right now; it will speak
     return fd
@@ -424,15 +426,49 @@ def _claim_lock():
 
 def _legacy_lock_is_live(path):
     """True while a hook still on the previous lock protocol is mid-check: its
-    token file exists, is non-empty, and is under 120 s old (its own stale
-    threshold). Older or future-dated means a dead hook left it; empty means
-    nothing. Read only — in the other order, when this copy claims first, the
-    stamp checked again under the lock is what keeps the old copy quiet."""
+    token file exists, is NON-EMPTY, and is under 120 s old (its own stale
+    threshold). Older or future-dated means a dead hook left it. Empty means a
+    hook on THIS protocol left its shadow claim (below) — never a live old hook,
+    whose token is always written."""
     try:
         st = path.stat()
     except OSError:
         return False
     return st.st_size > 0 and 0 <= time.time() - st.st_mtime <= 120
+
+
+def _shadow_legacy_claim(path):
+    """Also claim under the previous protocol while the OS lock is held, so a
+    hook still on the old code sees a live lock and yields — the one atomic
+    handshake the two protocols share is the old one's own exclusive create.
+    Only ever called while holding the OS lock, so no two hooks on this protocol
+    touch the file at once; the only other actor is an old hook, and the old
+    rules apply to it: a file under 120 s old is someone mid-check.
+
+    False when an old hook is mid-check right now (yield). True when the shadow
+    is ours, or the file cannot be written at all (then the stamp, re-checked
+    under the lock, is what arbitrates). The shadow is left EMPTY and never
+    deleted by us: old tokens are never empty, so a later hook on this protocol
+    does not mistake our own leftover for a live old hook, and an old hook's
+    own release only ever deletes a file that still carries its token."""
+    for attempt in (1, 2):
+        try:
+            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            if _legacy_lock_is_live(path):
+                return False
+            if attempt == 2:
+                return True
+            try:
+                path.unlink()  # a dead old hook's token, or our own empty shadow from last time
+            except OSError:
+                return True
+            continue
+        except OSError:
+            return True
+        os.close(fd)
+        return True
+    return True
 
 
 def _release_lock(fd):
