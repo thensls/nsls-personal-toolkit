@@ -296,8 +296,8 @@ it is for, then ask a single yes or no:
 > *"There's an optional extra here: [what it is, in their words]. [What they get from it]. It
 > costs [money / time / disk / privacy]. It's mainly for [who]. Most people skip it. Want it?"*
 
-No, or anything short of a clear yes, means skip: nothing is added to pending. Yes means add it to
-`pending_manual_steps`, and help them do it now if they would like.
+No, or anything short of a clear yes, means skip: nothing is added to pending. Yes means help them do
+it now if they would like, and add it to `pending_manual_steps` only if it is left unfinished.
 
 **Steps that finish the release:**
 
