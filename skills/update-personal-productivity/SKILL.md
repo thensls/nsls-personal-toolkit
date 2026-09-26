@@ -273,7 +273,33 @@ After all skills in the release are processed, move to 4d.
 
 ### 4d. Queue manual steps
 
-Read the release doc's `## Manual Steps` section. For each checkbox item:
+Read the release doc's `## Manual Steps` section. Before saying anything, sort each checkbox item
+into one of two kinds:
+
+- **A step that finishes the release** — something the change needs in order to work, such as
+  editing a template it now reads. Ask it the ordinary way, below.
+- **An optional extra** — anything that installs other software, costs money, records or sends
+  data, or only suits one platform or one group of people. Extras get their own treatment.
+
+**Never offer an extra that does not apply to this person.** If the release frontmatter
+(`platforms:` or `audience:`) or the step itself says it is for one platform, check this machine
+first and leave it out silently when it does not match: a Windows-only tool is never mentioned on
+a Mac. The same goes for a step meant for one group, such as SLT. If you cannot tell whether they
+are in that group, leave it out; a skill that needs group-specific setup offers it the first time
+it is used.
+
+**Optional extras: one question each, with an honest pitch, and skip is the default.** Never
+bundle extras into one multi-select, and never file them as a to-do list. For each one, say in
+plain language what they get from it, what it costs them in money, time, disk or privacy, and who
+it is for, then ask a single yes or no:
+
+> *"There's an optional extra here: [what it is, in their words]. [What they get from it]. It
+> costs [money / time / disk / privacy]. It's mainly for [who]. Most people skip it. Want it?"*
+
+No, or anything short of a clear yes, means skip: nothing is added to pending. Yes means add it to
+`pending_manual_steps`, and help them do it now if they would like.
+
+**Steps that finish the release:**
 
 > "**Manual step** for [release slug]:
 >
@@ -285,6 +311,11 @@ Read the release doc's `## Manual Steps` section. For each checkbox item:
 - `no` → add `{release, step, added_date: today}` to `pending_manual_steps`
 - `skip` → don't add (user declined this specific step)
 - `help` → show the step with full context; re-ask
+
+Whichever kind it is, never hand the builder a command to run. If a step names one, do it for them
+once they agree, or describe it in plain language. The one exception is a setup or verification
+script: never run one from here. Say in a sentence what it is for, and leave it to the skill it
+belongs to, which offers its own setup the first time it is used.
 
 ### 4e. Commit the adoption
 
