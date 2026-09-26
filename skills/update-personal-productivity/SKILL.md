@@ -173,9 +173,16 @@ ls "$REPO/updates/" | grep -v '^README.md$' | sort
 
 Filenames are `YYYY-MM-DD-<slug>.md` — sort order = chronological.
 
-For each file, read the frontmatter to get: `date`, `slug`, `skills_changed`, `cost_to_adopt`, `breaking`, `backfilled`.
+For each file, read the frontmatter to get: `date`, `slug`, `skills_changed`, `cost_to_adopt`, `breaking`, `backfilled`, `offered`.
 
 Filter to **unprocessed** releases: those whose slug is in neither `adopted_releases` nor `skipped_releases`.
+
+**Leave out releases NSLS no longer offers.** A release whose frontmatter says `offered: false`
+is never walked, pitched, or asked about. Drop it from the list silently and record its slug in
+`adopted_releases`, not `skipped_releases`: the builder made no choice, and Step 7.5 reads
+`skipped_releases` as decisions to protect, so filing it there would make every later catch-up
+stop and ask about a release nobody was ever shown. Its files still arrive whenever the checkout
+is brought current; only the pitch and its manual steps are withheld.
 
 If the list is empty:
 > "You're caught up. No unadopted releases in upstream."
