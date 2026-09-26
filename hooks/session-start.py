@@ -120,6 +120,28 @@ def unquote_scalar(value):
     return " ".join(_CONTROL.sub(" ", v).split())
 
 
+# git reads these ahead of `-C`: with GIT_DIR or GIT_WORK_TREE set, `git -C <toolkit>`
+# still works on the repository they name. Claude launched from inside a git hook
+# inherits them (git exports GIT_DIR and GIT_INDEX_FILE to its hooks), so every git
+# call here would read, fetch into, or fast-forward that repository instead of the
+# toolkit. This is git's own list (`git rev-parse --local-env-vars`), the set it
+# clears itself when it moves into another repository.
+_GIT_REPO_ENV = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT", "GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE", "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE", "GIT_PREFIX",
+    "GIT_INTERNAL_SUPER_PREFIX", "GIT_SHALLOW_FILE", "GIT_COMMON_DIR",
+)
+
+
+def _git_env():
+    """The environment for every git call aimed at the toolkit checkout."""
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_REPO_ENV}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
 def _git(*args, timeout=10):
     """Run a git command in the plugin dir. Returns (ok, stdout) — never raises.
 
@@ -131,7 +153,7 @@ def _git(*args, timeout=10):
             ["git", "-C", str(PLUGIN_DIR), *args],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
             text=True, start_new_session=True,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            env=_git_env(),
         )
     except Exception:
         return False, ""
@@ -163,7 +185,7 @@ def git_pull():
     try:
         subprocess.run(
             ["git", "-C", str(PLUGIN_DIR), "pull", "--ff-only", "--quiet"],
-            capture_output=True, timeout=10
+            capture_output=True, timeout=10, env=_git_env(),
         )
     except Exception:
         pass
@@ -480,12 +502,16 @@ def _release_lock(fd):
 
 
 # The catch-up for a fork with nothing of its own is a local write. It is only
-# begun early in the check, and it is never killed: git stopped half-way through a
-# checkout leaves a half-updated folder and a stale index.lock. Session start waits
-# _FF_WAIT_S for it to report; one still running after that is left to finish on
-# its own and reported as such. Same rules as the builder toolkit's copy.
-_FF_LATEST_START_S = 10
-_FF_WAIT_S = 20
+# begun early, and it is never killed: git stopped half-way through a checkout
+# leaves a half-updated folder and a stale index.lock. Both limits are measured
+# from the start of this hook, which the installer gives 20 seconds in all with
+# sync_pointers still to run after this check: the write is not begun after
+# _FF_LATEST_START_S, and session start stops waiting for it at _FF_DONE_BY_S.
+# One still running then is left to finish on its own and reported as such. Same
+# rules as the builder toolkit's copy.
+_HOOK_STARTED = time.monotonic()
+_FF_LATEST_START_S = 8
+_FF_DONE_BY_S = 12
 # git's markers for an operation in progress: mid-bisect, -rebase, -am or -revert a
 # checkout can look clean and sit on main, and moving main changes that operation.
 _OP_STATE = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_START",
@@ -543,7 +569,7 @@ def _ff_merge(wait):
              "merge", "--ff-only", "--no-squash", "--no-autostash",
              "--no-overwrite-ignore", "--quiet", _UPSTREAM_REF],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            start_new_session=True, env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            start_new_session=True, env=_git_env(),
         )
     except Exception:
         return -1
@@ -567,18 +593,19 @@ def _checkout_state(head_before, target):
     return "broken"
 
 
-def _fast_forward_clean_fork(started):
+def _fast_forward_clean_fork():
     """'caught_up'; 'untouched' (conditions not met, too late, or git refused
     cleanly: the builder gets the offer); 'unfinished'; or 'broken'."""
     if not _clean_to_fast_forward():
         return "untouched"
-    if time.monotonic() - started > _FF_LATEST_START_S:
-        return "untouched"   # a write we might abandon is a write we do not begin
     ok_b, before = _git("rev-parse", "HEAD")
     ok_t, target = _git("rev-parse", _UPSTREAM_REF)
     if not (ok_b and ok_t):
         return "untouched"
-    if _ff_merge(_FF_WAIT_S) is None:
+    elapsed = time.monotonic() - _HOOK_STARTED
+    if elapsed > _FF_LATEST_START_S:
+        return "untouched"   # a write we might abandon is a write we do not begin
+    if _ff_merge(_FF_DONE_BY_S - elapsed) is None:
         return "unfinished"
     return _checkout_state(before, target)
 
@@ -597,7 +624,6 @@ def _report_fork_drift(notice):
     """
     if _stamp_is_fresh():
         return
-    started = time.monotonic()
     lock = _claim_lock()
     if lock is None:
         return  # another hook is mid-check this very second; it will speak
@@ -635,7 +661,7 @@ def _report_fork_drift(notice):
         # Nothing of theirs in the way: catch it up and say so once. Anything of
         # theirs in the way keeps the offer below, because only they can decide
         # what happens to it.
-        outcome = _fast_forward_clean_fork(started)
+        outcome = _fast_forward_clean_fork()
         if outcome in ("unfinished", "broken"):
             notice(
                 f"An automatic catch-up of this builder's toolkit (their own fork, "
