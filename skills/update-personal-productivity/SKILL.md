@@ -33,7 +33,14 @@ REPO=~/.claude/local-plugins/nsls-personal-toolkit
 # count a stranger's commits as NSLS's. A fixed URL cannot be mis-aimed. An
 # nsls-upstream remote left behind by an earlier run of this skill is harmless
 # and is left alone.
-git -C "$REPO" fetch --quiet https://github.com/thensls/nsls-personal-toolkit.git +main:refs/nsls/upstream-main
+if ! git -C "$REPO" fetch --quiet https://github.com/thensls/nsls-personal-toolkit.git +main:refs/nsls/upstream-main; then
+  # Offline or GitHub unreachable: work from the last copy of NSLS's main on this
+  # machine (see "Network failure" under Edge cases). A checkout this skill last ran
+  # on before it fetched by URL holds that copy under its old remote's name.
+  git -C "$REPO" rev-parse -q --verify refs/nsls/upstream-main >/dev/null \
+    || git -C "$REPO" update-ref refs/nsls/upstream-main refs/remotes/nsls-upstream/main 2>/dev/null \
+    || echo "NSLS_UNREACHABLE"
+fi
 
 # Ensure .toolkit-state.json is gitignored
 if ! grep -q '^.toolkit-state.json$' "$REPO/.gitignore" 2>/dev/null; then
@@ -464,7 +471,7 @@ If you're tempted to "accept all" across several releases at once, run the comma
 
 **User customized a skill that upstream deleted.** Edge case — tell the user "Upstream removed `skills/<name>`. Your local version still exists. Keep it, or delete?" Default: keep.
 
-**Network failure on `git fetch`.** Fall back to whatever's already in `refs/nsls/upstream-main` locally; warn that data may be stale.
+**Network failure on `git fetch`.** Fall back to whatever's already in `refs/nsls/upstream-main` locally; Step 1 fills it from an `nsls-upstream` remote left by an earlier run when it is missing. Say in one sentence that the list may be out of date. If Step 1 printed `NSLS_UNREACHABLE` there is nothing to work from: say NSLS could not be reached just now, suggest trying again once online, and stop.
 
 **User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet — I'll bring in the base skills now." Then skip the release walk (Steps 2–7) and run Steps 1.6, 7.5 and 7.6 exactly as written — fast-forward first, a real merge if that's refused, conflicts resolved or aborted, edits set aside and put back. Never a bare `git pull` here: it can stop mid-merge with nothing to catch it.
 
