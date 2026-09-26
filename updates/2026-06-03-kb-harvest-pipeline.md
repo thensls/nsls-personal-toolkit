@@ -52,27 +52,8 @@ which now does the clone + identity for you.)
 
 ## Safe Merge
 
-**If you haven't customized these skills:**
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/harvest-meeting skills/close-day/SKILL.md skills/close-week/SKILL.md skills/personal-setup/SKILL.md
-git commit -m "pull upstream: kb-harvest-pipeline"
-```
-(`harvest-meeting` is a new directory, so the whole folder comes over — SKILL.md, `kb_authors.txt`, and `references/`.)
-
-**If you have customized one or more of these skills:**
-
-For each skill, see what changed upstream vs. what you changed locally:
-```bash
-git diff HEAD upstream/main -- skills/<skill>/SKILL.md
-git log --oneline 9c8daf7..upstream/main -- skills/<skill>/SKILL.md
-```
-
-Three options per skill:
-1. **Accept upstream, lose your changes** — `git checkout upstream/main -- skills/<skill>/SKILL.md`
-2. **Merge manually** — edit by hand, keeping your customizations
-3. **Skip this skill entirely** — stay on your version and miss this change
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

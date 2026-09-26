@@ -49,14 +49,8 @@ Each step tells you what you'll do, why it matters, and what's optional.
 
 ## Safe Merge
 
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/person-intelligence/ skills/open-day/ skills/open-week/ skills/close-day/ skills/personal-setup/
-git commit -m "pull upstream: person-intelligence-v3-setup-redesign"
-```
-
-All 5 skills changed — if you've customized `open-day`, `open-week`, or `close-day`, the new relationship blocks are additive (inserted between existing steps). Merge by hand, keeping your custom logic before/after the new blocks.
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

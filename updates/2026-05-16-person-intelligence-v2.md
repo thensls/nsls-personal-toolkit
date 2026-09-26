@@ -1,10 +1,16 @@
 ---
 date: 2026-05-16
+slug: person-intelligence-v2
+last_commit: 01881787d490602fceb67a6fb8950cc99d138e78
 title: Person Intelligence v2 — manager coaching, biweekly automation, two-way coaching
+skills_changed: [person-intelligence]
+cost_to_adopt: "2 min"
 breaking: false
 ---
 
 # Person Intelligence v2
+
+## Why
 
 The `/person-intelligence` skill grew from a single-person synthesis tool into a manager-coaching system that runs biweekly across your direct reports, ingests Fathom + Slack + Gmail, and surfaces actionable coaching moves in your daily and weekly routines.
 
@@ -75,11 +81,12 @@ INGEST_EXCLUDE_THREADS=     # subject/channel patterns to skip (defaults cover l
 
 ## For forks
 
-If you have your own customizations to the previous version:
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for you,
+one skill at a time, and keeps any changes you have made.
 
-1. Pull this update: `git pull upstream main`
-2. Check your local `.env` against `.env.example` — add the new vars (most have sensible defaults)
-3. Existing single-person `Synthesize [name]` commands continue to work unchanged. The new modes are additive.
-4. If you have a `30-people/[Name].md` profile of your own manager, the next synthesis will add `## My Stance` + `## How I Can Work More Effectively with [Name]` — but won't overwrite any existing curated content you've added.
+- Your existing single-person `Synthesize [name]` commands keep working. The new modes are additive.
+- If you have a profile of your own manager, the next synthesis adds the two new sections without
+  overwriting anything you have written.
+- The new settings in `.env.example` all have sensible defaults.
 
-The new modes are opt-in by behavior. Nothing fires automatically until you register the `/schedule` routine.
+The new modes are opt-in by behaviour: nothing runs on a schedule until you set one up.

@@ -1,6 +1,21 @@
+---
+date: 2026-05-17
+slug: companion-v1
+last_commit: 31d4b12a6aa7606585ed04a824e6b4d4d70532aa
+skills_changed: [open-day, close-day, open-week, close-week, reset-day]
+cost_to_adopt: "15 min"
+breaking: false
+---
+
 # Companion v1.0
 
 A local web companion for the toolkit. Browser-based UI on localhost:7777.
+
+## Why
+
+The daily ritual lived only in chat. The companion puts today's plan, the week and your streaks
+in a browser tab beside it, reading and writing the same Obsidian notes, so nothing moves out of
+the vault.
 
 ## What's new
 
@@ -18,9 +33,5 @@ A local web companion for the toolkit. Browser-based UI on localhost:7777.
 
 ## Install or upgrade
 
-```bash
-cd ~/.claude/local-plugins/nsls-personal-toolkit && git pull
-./install.sh
-```
-
-When prompted, opt into the companion.
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for you.
+The companion sets itself up the first time a day skill opens it.

@@ -53,14 +53,8 @@ Required for session tracking, announcements, and PR credits.
 
 ## Safe Merge
 
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/ commands/ hooks/ .env.example
-git commit -m "pull upstream: open-close-learn-announcements"
-```
-
-Customized `plan-day` or `plan-week`? They're now `open-day` and `open-week`. Port your customizations by hand — don't try to merge the rename diff directly.
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

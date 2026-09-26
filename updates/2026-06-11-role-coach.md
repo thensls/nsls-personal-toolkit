@@ -45,27 +45,12 @@ It works for every seat. An IC gets coaching grounded in their own Quick Notes a
 
 ## Cost to Adopt
 
-**15 min** — git pull + a 5-minute first-run interview. Optional Signal connection adds ~5 minutes.
+**15 min** — the update itself plus a 5-minute first-run interview. Optional Signal connection adds ~5 minutes.
 
 ## Safe Merge
 
-**If you haven't customized these skills:**
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/role-coach skills/close-day/SKILL.md skills/close-week/SKILL.md skills/open-day/SKILL.md skills/open-week/SKILL.md skills/person-intelligence/scripts/surface_actions_for_day.py skills/person-intelligence/tests/test_surface_actions_role_cues.py skills/personal-setup/SKILL.md CLAUDE.md
-git commit -m "pull upstream: role-coach"
-```
-
-**If you have customized one or more skills:**
-
-For each skill, see what changed upstream vs. your local changes:
-```bash
-git diff HEAD upstream/main -- skills/<skill>/SKILL.md
-git log --oneline eb21cfe..HEAD -- skills/<skill>/SKILL.md
-```
-
-Three options per skill: accept upstream (`git checkout upstream/main -- skills/<skill>/SKILL.md`), merge manually, or skip it entirely.
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

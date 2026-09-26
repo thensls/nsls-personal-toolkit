@@ -25,27 +25,12 @@ Your morning planner stops saying a generic "work toward your goal" and starts t
 
 ## Cost to Adopt
 
-**2 min** — it's a one-file `git pull` of `open-day/SKILL.md`, no manual steps. Using the new capability is optional and additive: add a `weekly_schedule` map to a goal whenever you want day-specific cues.
+**2 min** — one skill file changes, and there are no manual steps. Using the new capability is optional and additive: add a `weekly_schedule` map to a goal whenever you want day-specific cues.
 
 ## Safe Merge
 
-**If you haven't customized `open-day`:**
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/open-day/SKILL.md
-git commit -m "pull upstream: weekly-schedule-cues"
-```
-
-**If you have customized `open-day`:**
-```bash
-# What upstream changed (the new goal-cue logic lives in Step 2l)
-git diff HEAD upstream/main -- skills/open-day/SKILL.md
-```
-The change is localized to the **goal anchor cues** step (Step 2l) — it adds a "prefer `weekly_schedule`" path above the existing anchor parsing and an effective-date guard. Three options:
-1. **Accept upstream** — `git checkout upstream/main -- skills/open-day/SKILL.md` (loses your open-day edits)
-2. **Merge by hand** — paste the new `weekly_schedule` block into your Step 2l, keep everything else of yours
-3. **Skip** — stay on your version; you keep flat `weekly_action`/`anchor` cues
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

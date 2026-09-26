@@ -36,18 +36,8 @@ Skills that previously referenced `~/Library/Mobile Documents/iCloud~md~obsidian
 
 ## Safe Merge
 
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/personal-setup/ skills/log/ skills/person-intelligence/
-git commit -m "pull upstream: stabilization"
-```
-
-If you customized any of these three skills already, view the upstream diffs first:
-
-```bash
-git diff HEAD upstream/main -- skills/<name>/SKILL.md
-```
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

@@ -91,26 +91,8 @@ which changed in this range.
 
 ## Safe Merge
 
-The guided path (recommended — it walks releases one at a time and respects
-your customizations):
-
-```
-/update-personal-productivity
-```
-
-Manual, **if you haven't customized these skills** (from your fork checkout —
-usually `~/.claude/local-plugins/nsls-personal-toolkit`):
-
-```bash
-cd ~/.claude/local-plugins/nsls-personal-toolkit
-git fetch upstream
-git merge --ff-only upstream/main   # clean forks fast-forward
-```
-
-**If you have customized skills:** for each one, see what upstream changed
-(`git diff HEAD upstream/main -- skills/<skill>/SKILL.md`), then per skill:
-accept upstream (`git checkout upstream/main -- skills/<skill>/SKILL.md`),
-merge by hand, or skip it and keep your version.
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

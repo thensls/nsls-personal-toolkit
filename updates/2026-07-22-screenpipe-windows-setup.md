@@ -1,7 +1,7 @@
 ---
 date: 2026-07-22
 slug: screenpipe-windows-setup
-last_commit: 3a9961b070db5a4ac1412a9a719f9a951c547b2f
+last_commit: 7177b93a07f5cfb2e05b287895188b210207c958
 commit_range: 6232d64..3a9961b
 skills_changed: [screenpipe-windows-setup]
 files_changed: 1
@@ -80,14 +80,8 @@ capture at all can ignore this entirely — like `/familiar`, it's fully optiona
 
 ## Safe Merge
 
-New skill, no conflicts possible — nothing to merge against:
-
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/screenpipe-windows-setup/
-git commit -m "pull upstream: screenpipe-windows-setup"
-```
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Manual Steps
 
