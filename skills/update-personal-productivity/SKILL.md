@@ -27,22 +27,13 @@ REPO=~/.claude/local-plugins/nsls-personal-toolkit
 [ -d "$REPO/.git" ] || REPO=~/nsls-skills/nsls-personal-toolkit
 [ -d "$REPO/.git" ] || { echo "Personal toolkit checkout not found — run install.sh first."; }
 
-# Ensure OUR remote for NSLS exists. The name is nsls-upstream — never a bare
-# "upstream", which a fork may already aim at something else entirely; fetching
-# that blind would count a stranger's commits as NSLS's and Step 7.5 would merge
-# them. Absent: add it. Present with NSLS's URL: use it. Present with any other
-# URL: re-point it AND say so — the name is reserved for NSLS's repo, and this
-# is an interactive walk, so the builder hears about it in one sentence.
-NSLS_URL=https://github.com/thensls/nsls-personal-toolkit.git
-if ! git -C "$REPO" remote | grep -q '^nsls-upstream$'; then
-  git -C "$REPO" remote add nsls-upstream "$NSLS_URL"
-elif [ "$(git -C "$REPO" remote get-url nsls-upstream)" != "$NSLS_URL" ]; then
-  git -C "$REPO" remote set-url nsls-upstream "$NSLS_URL"
-  echo "NOTE: the nsls-upstream remote pointed elsewhere and has been re-pointed at NSLS — tell the user in one plain sentence."
-fi
-
-# Fetch latest
-git -C "$REPO" fetch nsls-upstream
+# Fetch NSLS's main by URL into a private reference, exactly as the session hook
+# does. No remote is added or changed: the builder's git config stays theirs, and
+# on a fork a remote name can already be aimed at something else, which would
+# count a stranger's commits as NSLS's. A fixed URL cannot be mis-aimed. An
+# nsls-upstream remote left behind by an earlier run of this skill is harmless
+# and is left alone.
+git -C "$REPO" fetch --quiet https://github.com/thensls/nsls-personal-toolkit.git +main:refs/nsls/upstream-main
 
 # Ensure .toolkit-state.json is gitignored
 if ! grep -q '^.toolkit-state.json$' "$REPO/.gitignore" 2>/dev/null; then
@@ -55,7 +46,7 @@ fi
 ## Step 1.5: Work out what this machine is — and say it in one plain sentence
 
 **The builder never runs a git command. Not one. Ever.** If you catch yourself
-about to write "run `git remote -v`" or "run `git fetch nsls-upstream`", stop — that
+about to write "run `git remote -v`" or "run `git fetch`", stop — that
 is this skill's job, and handing it over is the failure mode this step exists to
 prevent.
 
@@ -64,8 +55,8 @@ Work it out silently:
 ```bash
 ORIGIN=$(git -C "$REPO" remote get-url origin 2>/dev/null)
 BRANCH=$(git -C "$REPO" branch --show-current)
-BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main 2>/dev/null)
-AHEAD=$(git -C "$REPO" rev-list --count nsls-upstream/main..HEAD 2>/dev/null)
+BEHIND=$(git -C "$REPO" rev-list --count HEAD..refs/nsls/upstream-main 2>/dev/null)
+AHEAD=$(git -C "$REPO" rev-list --count refs/nsls/upstream-main..HEAD 2>/dev/null)
 DIRTY=$(git -C "$REPO" status --porcelain | wc -l | tr -d ' ')
 ```
 
@@ -219,11 +210,11 @@ If `adopt`: go to 4c.
 
 For each skill in `skills_changed`:
 
-**Detect customization** — has the user made **local commits** that touch this skill? This is the clean test because `git diff nsls-upstream/main` conflates local changes with "behind upstream."
+**Detect customization** — has the user made **local commits** that touch this skill? This is the clean test because `git diff refs/nsls/upstream-main` conflates local changes with "behind upstream."
 
 ```bash
 # Local-only commits touching this file (not in upstream)
-git -C "$REPO" log nsls-upstream/main..HEAD --oneline -- skills/<name>/SKILL.md
+git -C "$REPO" log refs/nsls/upstream-main..HEAD --oneline -- skills/<name>/SKILL.md
 ```
 
 - If empty → user has no local customizations. **Fast path available.**
@@ -234,7 +225,7 @@ git -C "$REPO" log nsls-upstream/main..HEAD --oneline -- skills/<name>/SKILL.md
 **Check whether upstream has new content to offer:**
 
 ```bash
-git -C "$REPO" log HEAD..nsls-upstream/main -- skills/<name>/SKILL.md --oneline
+git -C "$REPO" log HEAD..refs/nsls/upstream-main -- skills/<name>/SKILL.md --oneline
 ```
 
 - If empty → nothing to pull for this skill (may have been adopted earlier, or this release didn't actually change it). Skip.
@@ -257,11 +248,11 @@ git -C "$REPO" log HEAD..nsls-upstream/main -- skills/<name>/SKILL.md --oneline
 
 **For `accept`:**
 ```bash
-git -C "$REPO" checkout nsls-upstream/main -- skills/<name>/SKILL.md
+git -C "$REPO" checkout refs/nsls/upstream-main -- skills/<name>/SKILL.md
 ```
 
 **For `merge`:**
-- Show upstream diff: `git -C "$REPO" diff HEAD nsls-upstream/main -- skills/<name>/SKILL.md`
+- Show upstream diff: `git -C "$REPO" diff HEAD refs/nsls/upstream-main -- skills/<name>/SKILL.md`
 - Show user's local changes: `git -C "$REPO" log -p HEAD -- skills/<name>/SKILL.md | head -200`
 - Present both, ask which upstream additions to accept, draft a merged file, show to user, write after confirmation
 
@@ -307,6 +298,10 @@ Write `$REPO/.toolkit-state.json` (the path resolved in Step 1) with updated `ad
 
 ## Step 6: Log to Railway
 
+**Only when `$REPO/.env` has a `BUILDER_EMAIL`.** Without one, skip this step silently: never ask
+for it and never mention the log, because it is bookkeeping for NSLS, not something the builder
+needs to act on.
+
 ```bash
 curl -sS -X POST https://web-production-6281e.up.railway.app/event \
   -H "Content-Type: application/json" \
@@ -350,13 +345,13 @@ changes.
 So re-check, and close the gap **yourself**:
 
 ```bash
-git -C "$REPO" fetch nsls-upstream --quiet
-BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main)
+git -C "$REPO" fetch --quiet https://github.com/thensls/nsls-personal-toolkit.git +main:refs/nsls/upstream-main
+BEHIND=$(git -C "$REPO" rev-list --count HEAD..refs/nsls/upstream-main)
 ```
 
 - **`$BEHIND` is 0** → nothing to do; say so in Step 8 and stop.
 - **If they skipped or deferred anything, STOP and ask first.** Catching a
-  checkout up to `nsls-upstream/main` installs *everything* upstream has — including
+  checkout up to `refs/nsls/upstream-main` installs *everything* upstream has — including
   the releases they just chose to skip or defer in Step 4. Merging anyway would
   silently overturn a decision they made two minutes ago, and this skill's whole
   contract is that no skill-level change happens without them saying so. So when
@@ -381,11 +376,11 @@ BEHIND=$(git -C "$REPO" rev-list --count HEAD..nsls-upstream/main)
      non-zero and they chose to stop there, this step never runs. If the tree
      is dirty anyway (something wrote to it mid-run), do not merge over it —
      go back to Step 1.6's ask and continue only once the tree is clean.
-  1. Try the clean path first: `git -C "$REPO" merge --ff-only nsls-upstream/main`.
+  1. Try the clean path first: `git -C "$REPO" merge --ff-only refs/nsls/upstream-main`.
   2. If that's refused (they have local commits, or a fork has diverged), merge
-     properly: `git -C "$REPO" merge nsls-upstream/main --no-edit`.
+     properly: `git -C "$REPO" merge refs/nsls/upstream-main --no-edit`.
   2b. **Confirm it actually happened — never assume.** Re-run
-     `git -C "$REPO" rev-list --count HEAD..nsls-upstream/main`. Anything but `0`
+     `git -C "$REPO" rev-list --count HEAD..refs/nsls/upstream-main`. Anything but `0`
      means the merge was refused or aborted and the checkout is STILL BEHIND:
      do not walk into Step 8 as if it were current. Say what stopped it in one
      plain sentence, offer the fix you can do for them (Step 1.6's ask, or resolve
@@ -451,7 +446,7 @@ for them to execute, the run failed, however correct the instruction was.
 
 ## Critical safety rule
 
-**Never run `git checkout nsls-upstream/main -- skills/` across multiple releases at once.** This overwrites customizations you preserved in an earlier release's merge. The command walks per-skill, per-release specifically so customizations survive across multiple releases when the same skill is touched more than once.
+**Never run `git checkout refs/nsls/upstream-main -- skills/` across multiple releases at once.** This overwrites customizations you preserved in an earlier release's merge. The command walks per-skill, per-release specifically so customizations survive across multiple releases when the same skill is touched more than once.
 
 If you're tempted to "accept all" across several releases at once, run the command once per release — the state file tracks progress, so you can stop and resume anytime.
 
@@ -459,7 +454,7 @@ If you're tempted to "accept all" across several releases at once, run the comma
 
 ## Edge cases
 
-**User hasn't set up the nsls-upstream remote.** Step 1 adds it automatically.
+**No NSLS remote on this checkout.** Nothing to set up: Step 1 fetches NSLS by URL into a private reference and never adds or changes a remote.
 
 **User is on a branch other than `main`.** Warn: "You're on branch `<X>`, not `main`. Adoptions will commit here. Continue?"
 
@@ -469,7 +464,7 @@ If you're tempted to "accept all" across several releases at once, run the comma
 
 **User customized a skill that upstream deleted.** Edge case — tell the user "Upstream removed `skills/<name>`. Your local version still exists. Keep it, or delete?" Default: keep.
 
-**Network failure on `git fetch`.** Fall back to whatever's already in `nsls-upstream/main` locally; warn that data may be stale.
+**Network failure on `git fetch`.** Fall back to whatever's already in `refs/nsls/upstream-main` locally; warn that data may be stale.
 
 **User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet — I'll bring in the base skills now." Then skip the release walk (Steps 2–7) and run Steps 1.6, 7.5 and 7.6 exactly as written — fast-forward first, a real merge if that's refused, conflicts resolved or aborted, edits set aside and put back. Never a bare `git pull` here: it can stop mid-merge with nothing to catch it.
 

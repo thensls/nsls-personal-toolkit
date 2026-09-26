@@ -101,6 +101,11 @@ if [ -d "$KBDIR/.git" ]; then
   else
     bad "push access FAILED — you likely need collaborator access on thensls/nsls-knowledge (ask Marcus) or GitHub auth (gh auth login)"
   fi
+elif [ -z "$VAULT" ]; then
+  # Without this branch the missing clone was reported at "/60-nsls-knowledge",
+  # a path that reads like a real folder rather than an unset setting.
+  bad "vault location not set, so there is nowhere to look for the KB clone"
+  info "set OBSIDIAN_VAULT_PATH in the toolkit's .env, then run this check again"
 else
   bad "clone MISSING at $KBDIR"
   info "fix: git clone https://github.com/thensls/nsls-knowledge.git \"\$OBSIDIAN_VAULT_PATH/60-nsls-knowledge\""
