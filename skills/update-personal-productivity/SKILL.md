@@ -14,6 +14,11 @@ description: >-
 
 Walk through unadopted releases in `updates/` one at a time. Safely merge each one with your local customizations. Keep a list of manual steps you still need to do.
 
+**Releases NSLS no longer offers are never shown.** A release whose frontmatter says
+`offered: false` is never pitched, walked, summarised or asked about anywhere in this skill, and
+its manual steps are never surfaced, including in Step 2's review of historical releases. Step 3
+says how it is recorded.
+
 ---
 
 ## Step 1: Prep
@@ -153,7 +158,7 @@ Show the user a one-time summary:
 
 Then set `first_run_initialized: true`. Subsequent runs skip this step.
 
-**Caveat:** auto-detection is accurate for the skill files but can't know if the fork completed the **manual steps** for those releases. After the auto-mark, ask: "I marked [N] historical releases as adopted based on your commit history. Want to review their manual-step checklists to confirm you've done them, or trust that you have?" If review, surface manual steps from each auto-adopted release as pending items.
+**Caveat:** auto-detection is accurate for the skill files but can't know if the fork completed the **manual steps** for those releases. After the auto-mark, ask: "I marked [N] historical releases as adopted based on your commit history. Want to review their manual-step checklists to confirm you've done them, or trust that you have?" If review, surface manual steps from each auto-adopted release as pending items, leaving out any release marked `offered: false`.
 
 **State schema:**
 - `adopted_releases`: release slugs where the user pulled some or all of the changes
