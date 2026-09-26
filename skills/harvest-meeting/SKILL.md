@@ -480,8 +480,8 @@ nobody has told the builder where their notes will live. Say it in one plain sen
     s="$d/nsls-personal-toolkit/skills/harvest-meeting/references/setup.sh"
     [ -f "$s" ] && { bash "$s"; break; }
   done
-  ``` If
-  setup reports they lack access, say so and suggest asking Marcus. Never show them a clone
+  ```
+  If setup reports they lack access, say so and suggest asking Marcus. Never show them a clone
   command or any other git command.
 
 ### 1b. Load topic index and rubric
