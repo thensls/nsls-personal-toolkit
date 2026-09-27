@@ -148,6 +148,9 @@ def _git(*args, timeout=10):
     git runs in its own session so a timeout kills the whole process TREE — a
     fetch's HTTPS remote helper is a child that killing git alone would leave
     running the network operation after we had released the lock."""
+    timeout = min(timeout, _HOOK_STARTED + _GIT_DONE_BY_S - time.monotonic())
+    if timeout <= 0:
+        return False, ""   # past this hook's budget: spawn nothing
     try:
         proc = subprocess.Popen(
             ["git", "-C", str(PLUGIN_DIR), *args],
@@ -507,11 +510,14 @@ def _release_lock(fd):
 # from the start of this hook, which the installer gives 20 seconds in all with
 # sync_pointers still to run after this check: the write is not begun after
 # _FF_LATEST_START_S, and session start stops waiting for it at _FF_DONE_BY_S.
-# One still running then is left to finish on its own and reported as such. Same
-# rules as the builder toolkit's copy.
+# One still running then is left to finish on its own and reported as such. And
+# every git call in this hook ends by _GIT_DONE_BY_S, whatever timeout it asked
+# for, so a wedged checkout cannot run the hook past its 20 seconds. Same rules as
+# the builder toolkit's copy.
 _HOOK_STARTED = time.monotonic()
 _FF_LATEST_START_S = 8
 _FF_DONE_BY_S = 12
+_GIT_DONE_BY_S = 16
 # git's markers for an operation in progress: mid-bisect, -rebase, -am or -revert a
 # checkout can look clean and sit on main, and moving main changes that operation.
 _OP_STATE = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_START",
@@ -584,7 +590,12 @@ def _checkout_state(head_before, target):
     ok_h, head = _git("rev-parse", "HEAD", timeout=5)
     ok_s, dirty = _git(*_STATUS_ARGS, timeout=10)
     ok_l, lock = _git("rev-parse", "--git-path", "index.lock", timeout=5)
+    # Still on main: a checkout moved to another branch between the checks and the
+    # merge would have had THAT branch moved. Reported for a look, never caught up.
+    ok_b, branch = _git("symbolic-ref", "-q", "HEAD", timeout=5)
     if not (ok_h and ok_s and ok_l) or dirty or _git_path_exists(lock):
+        return "broken"
+    if not ok_b or branch != "refs/heads/main":
         return "broken"
     if head == target:
         return "caught_up"
