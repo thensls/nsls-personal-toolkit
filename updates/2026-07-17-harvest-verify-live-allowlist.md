@@ -76,12 +76,7 @@ won't conflict.
 
 ## Manual Steps
 
-None for existing writers. After pulling:
-
-- [ ] **New SLT writer?** Run `bash skills/harvest-meeting/references/setup.sh` (or say "set up my
-      harvest") — it clones the KB repo, sets your identity, and verifies in one go.
-- [ ] **Already set up?** Optional sanity check: `bash skills/harvest-meeting/references/verify-setup.sh`
-      (or "verify my harvest setup") and confirm it prints `COMPANY KB ✓`.
+None. On SLT, harvest offers to connect you to the shared Knowledge Base the first time you use it.
 
 ## Commits Included
 - `dfe40ab` — harvest-meeting: self-serve setup verification + live allowlist from KB repo

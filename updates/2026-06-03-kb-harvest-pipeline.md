@@ -9,7 +9,7 @@ cost_to_adopt: "15 min"
 breaking: false
 ---
 
-# Harvest meetings into the NSLS Knowledge Base
+# Help build the Knowledge Base?
 
 ## Why
 
@@ -86,19 +86,11 @@ Everything here is independently adoptable:
 
 ## Manual Steps
 
-- [ ] Ask Marcus to (a) add your `@nsls.org` email to `kb_authors.txt` and (b) add your GitHub
-      account as a collaborator on `thensls/nsls-knowledge`. Both are quick.
-- [ ] Clone the KB into your vault (note: repo is `nsls-knowledge`, folder is `60-nsls-knowledge`):
-      ```bash
-      git clone https://github.com/thensls/nsls-knowledge.git "$OBSIDIAN_VAULT_PATH/60-nsls-knowledge"
-      git -C "$OBSIDIAN_VAULT_PATH/60-nsls-knowledge" config user.email <you>@nsls.org
-      ```
-- [ ] **Or skip the two steps above** and just run `/personal-setup` — it now automates the clone
-      and git identity for SLT builders.
+None for most people. Harvest keeps your meeting notes in a private knowledge base on your own
+computer, and sets that up by itself the first time you use it.
 
-Not breaking — but the harvest **won't write** until the setup above is done. Until then,
-`/harvest-meeting` will stop with a clear "clone the repo / ask for access" message rather than
-failing silently.
+**On SLT?** Your notes belong in the shared company Knowledge Base instead. Harvest offers to
+connect you the first time you use it. If it says you are not on the list yet, ask Marcus to add you.
 
 ## Commits Included
 - `095de7b` — harvest-meeting: add First-Time Setup to prevent wrong-repo clone

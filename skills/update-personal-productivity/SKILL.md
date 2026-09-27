@@ -481,3 +481,6 @@ If you're tempted to "accept all" across several releases at once, run the comma
 - **Does not auto-complete manual steps.** Those are vault edits, env vars, external services — outside the repo. The user confirms done, the command just tracks.
 - **Does not delete skipped releases.** A skipped release stays in `updates/` forever; the state file just records "don't re-prompt."
 - **Does not revert.** If a user accepts upstream and regrets it, they use git. This command is forward-only.
+- **Does not run setup or verification scripts.** A release's manual steps sometimes mention one;
+  the update never runs it and never shows the builder its output. A skill sets itself up the first
+  time it is used, where it can explain what it is doing and why.

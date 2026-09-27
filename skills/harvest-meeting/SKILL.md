@@ -411,17 +411,18 @@ source /tmp/harvest-meeting-ctx/env.sh   # sets KB_TARGET, KB_DIR, KB_PUSH (from
 
 if [ "$KB_TARGET" = "company" ]; then
     if [ ! -d "$KB_DIR/.git" ]; then
-        echo "Step 1a: FATAL — company KB not cloned to $KB_DIR."
-        echo "  The repo is 'nsls-knowledge' (NOT '60-nsls-knowledge' — that's just the local folder)."
-        echo "  Run: git clone https://github.com/thensls/nsls-knowledge.git \"$KB_DIR\""
-        echo "  If that 404s, you need collaborator access — ask Marcus. See First-Time Setup."
+        echo "Step 1a: COMPANY_KB_NOT_SET_UP — the shared company KB is not on this computer yet ($KB_DIR)."
+        echo "  Offer to set it up (see 'Say where the notes go' below). Never hand the builder a git command."
         exit 1
     fi
     git -C "$KB_DIR" pull --ff-only --quiet
     echo "Step 1a: company KB synced to $(git -C "$KB_DIR" rev-parse --short HEAD)"
 else
     # Local KB: scaffold on first run, never add a remote (push is impossible by design).
+    # local-plugins first: it is where both installers put the toolkit today. Without it, every
+    # non-SLT first harvest on a current install stopped here with "seed not found".
     SEED_CANDIDATES=(
+        "$HOME/.claude/local-plugins/nsls-personal-toolkit/skills/harvest-meeting/references/local-kb-seed"
         "$HOME/nsls-skills/nsls-personal-toolkit/skills/harvest-meeting/references/local-kb-seed"
         "$HOME/.claude/plugins/nsls-personal-toolkit/skills/harvest-meeting/references/local-kb-seed"
     )
@@ -463,6 +464,25 @@ PYEOF
     fi
 fi
 ```
+
+**Say where the notes go, once, on the first run.** The first time harvest runs on a machine,
+nobody has told the builder where their notes will live. Say it in one plain sentence, then carry on:
+
+- **Step 1a printed `local KB created`** → *"Your meeting notes will be kept in a private
+  knowledge base on this computer. Nothing is shared or sent anywhere."*
+- **Step 1a printed `COMPANY_KB_NOT_SET_UP`** → they are on SLT and the shared Knowledge Base is
+  not on this computer yet. Offer it in their language — *"You're on the SLT list, so your notes
+  belong in the shared company Knowledge Base, which isn't set up on this computer yet. Want me to
+  set that up now?"* — and on yes run the setup script from whichever toolkit folder this
+  machine has, then re-run this harvest:
+  ```bash
+  for d in ~/.claude/local-plugins ~/.claude/plugins ~/nsls-skills; do
+    s="$d/nsls-personal-toolkit/skills/harvest-meeting/references/setup.sh"
+    [ -f "$s" ] && { bash "$s"; break; }
+  done
+  ```
+  If setup reports they lack access, say so and suggest asking Marcus. Never show them a clone
+  command or any other git command.
 
 ### 1b. Load topic index and rubric
 
