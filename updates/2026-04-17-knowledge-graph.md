@@ -37,12 +37,8 @@ Instead of inline links, `/learn` now writes each resource as an individual file
 
 ## Safe Merge
 
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/close-day/ skills/close-week/ skills/learn/
-git commit -m "pull upstream: knowledge-graph"
-```
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

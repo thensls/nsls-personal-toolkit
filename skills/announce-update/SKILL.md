@@ -122,29 +122,8 @@ breaking: true | false
 
 ## Safe Merge
 
-**If you haven't customized these skills:**
-```bash
-cd ~/.claude/local-plugins/nsls-personal-toolkit   # or your dev clone
-git fetch upstream
-git checkout upstream/main -- skills/<skill-1>/SKILL.md skills/<skill-2>/SKILL.md
-git commit -m "pull upstream: [slug]"
-```
-
-**If you have customized one or more skills:**
-
-For each skill, first see what changed upstream vs. what you've changed locally:
-```bash
-# What upstream changed
-git diff HEAD upstream/main -- skills/<skill>/SKILL.md
-
-# What you've changed vs upstream's old baseline
-git log --oneline <last_commit>..HEAD -- skills/<skill>/SKILL.md
-```
-
-Three options per skill:
-1. **Accept upstream, lose your changes** — `git checkout upstream/main -- skills/<skill>/SKILL.md`
-2. **Merge manually** — `git merge-file` or edit by hand, keeping your customizations
-3. **Skip this skill entirely** — don't pull it; you stay on your current version and miss this change
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

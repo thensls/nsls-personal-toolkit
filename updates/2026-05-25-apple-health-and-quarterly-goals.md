@@ -1,7 +1,7 @@
 ---
 date: 2026-05-25
 slug: apple-health-and-quarterly-goals
-last_commit: 9c8daf747dec6a06fee2c95e9eeacb5810b4dffd
+last_commit: b931bcd48a3bc68e57c167d2e94a2720ddf9eab4
 commit_range: de6d64f..9c8daf7
 skills_changed: [open-day, open-week, close-day, close-week, quarter-set]
 files_changed: 5
@@ -61,35 +61,8 @@ Hard cap of 3 active personal goals per quarter; `category: personal` vs `catego
 
 ## Safe Merge
 
-**If you haven't customized these skills:**
-
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/quarter-set/SKILL.md \
-                              skills/open-day/SKILL.md \
-                              skills/open-week/SKILL.md \
-                              skills/close-day/SKILL.md \
-                              skills/close-week/SKILL.md
-git commit -m "pull upstream: apple-health-and-quarterly-goals"
-```
-
-**If you have customized one or more of those four planning skills**, do them one at a time:
-
-```bash
-# What upstream changed
-git diff HEAD upstream/main -- skills/<skill>/SKILL.md
-
-# What you've changed locally
-git log --oneline de6d64f..HEAD -- skills/<skill>/SKILL.md
-```
-
-Three options per skill:
-1. **Accept upstream, lose your changes** — `git checkout upstream/main -- skills/<skill>/SKILL.md`
-2. **Merge manually** — keep your customizations, copy in the relevant new step blocks (they're clearly labeled "**1g.**", "**1h.**", "**1i.**", "**1e.**", "**2k.**", "**2l.**", "**Output B.5**")
-3. **Skip this skill entirely** — your fork stays on its current version; that skill misses this update
-
-The `quarter-set` skill is new — there's nothing to merge against, just `git checkout upstream/main -- skills/quarter-set/`.
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

@@ -52,14 +52,8 @@ Running history, newest first. GitHub renders this as the default view at `githu
 
 ## Safe Merge
 
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/update-personal-productivity/ skills/announce-update/ updates/ .gitignore
-git commit -m "pull upstream: announce-update-and-release-log"
-```
-
-After pulling, run `/update-personal-productivity`. It will find all the backfilled release docs and walk you through them one at a time. You can skip any that don't apply (e.g., if you never adopted the strategy layer, skip the 2026-04-08 release).
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

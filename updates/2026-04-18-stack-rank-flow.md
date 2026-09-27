@@ -39,33 +39,8 @@ The Projects Touched section now reads your week's stack rank and tags each proj
 
 ## Safe Merge
 
-**If you haven't customized `open-week`, `open-day`, or `close-day`:**
-
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch origin
-git checkout origin/main -- skills/open-week/SKILL.md skills/open-day/SKILL.md skills/close-day/SKILL.md
-git commit -m "pull upstream: stack-rank-flow"
-```
-
-**If you have customized one or more of these skills:**
-
-First see what changed upstream:
-
-```bash
-# See upstream changes per skill
-git diff HEAD origin/main -- skills/open-week/SKILL.md
-git diff HEAD origin/main -- skills/open-day/SKILL.md
-git diff HEAD origin/main -- skills/close-day/SKILL.md
-```
-
-Three options per skill:
-
-1. **Accept upstream, lose your changes**: `git checkout origin/main -- skills/<name>/SKILL.md`
-2. **Merge manually**: open the file, apply the upstream additions alongside your customizations. The changes are additive (new sections and format rules), so most merges will be clean.
-3. **Skip this skill**: you miss the annotation behavior but everything else keeps working.
-
-The three skills work **together** but each piece is useful alone — see Opt-Out Guide below.
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

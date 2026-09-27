@@ -47,18 +47,8 @@ Previously hard-failed without Airtable. Now works with a gentle warning if Airt
 
 ## Safe Merge
 
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/plan-day/ skills/plan-week/ skills/self-insight/ skills/close-week/ skills/personal-setup/ skills/person-intelligence/
-git commit -m "pull upstream: strategy-layer"
-```
-
-Customized `plan-day` or `plan-week`? Merge carefully — the strategy-aware additions live inside Step 1 and Step 2 of each. Diff first:
-
-```bash
-git diff HEAD upstream/main -- skills/plan-day/SKILL.md
-```
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

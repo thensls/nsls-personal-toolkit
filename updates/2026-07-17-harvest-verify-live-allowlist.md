@@ -47,23 +47,8 @@ one-commit onboarding step on his side, not something you do to your fork.)
 
 ## Safe Merge
 
-**If you haven't customized `harvest-meeting`:**
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/harvest-meeting/SKILL.md \
-  skills/harvest-meeting/kb_authors.txt \
-  skills/harvest-meeting/references/verify-setup.sh
-git commit -m "pull upstream: harvest-verify-live-allowlist"
-```
-
-**If you have customized `harvest-meeting`:** see what changed upstream first, then merge by hand:
-```bash
-git diff HEAD upstream/main -- skills/harvest-meeting/SKILL.md
-```
-The change is confined to Step 0 (allowlist loading) and the new First-Time Setup / verify
-section, plus a new `references/verify-setup.sh`. If you've edited other parts of the skill, they
-won't conflict.
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 

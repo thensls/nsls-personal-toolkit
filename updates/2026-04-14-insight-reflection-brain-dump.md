@@ -44,14 +44,8 @@ Every weekly note gets a `## Insight Reflection` (full-shape synthesis of the we
 
 ## Safe Merge
 
-```bash
-cd ~/nsls-skills/nsls-personal-toolkit
-git fetch upstream
-git checkout upstream/main -- skills/close-day/ skills/close-week/ skills/open-week/
-git commit -m "pull upstream: insight-reflection-brain-dump"
-```
-
-Customized `close-day`? The new sections are additive (Step 1h, Step 7d, daily-note format). Merge by hand.
+Nothing to do by hand. Say **"update personal productivity"** and it applies this release for
+you, one skill at a time, and keeps any changes you have made to those skills.
 
 ## Opt-Out Guide
 
