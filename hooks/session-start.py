@@ -120,18 +120,43 @@ def unquote_scalar(value):
     return " ".join(_CONTROL.sub(" ", v).split())
 
 
+# git reads these ahead of `-C`: with GIT_DIR or GIT_WORK_TREE set, `git -C <toolkit>`
+# still works on the repository they name. Claude launched from inside a git hook
+# inherits them (git exports GIT_DIR and GIT_INDEX_FILE to its hooks), so every git
+# call here would read, fetch into, or fast-forward that repository instead of the
+# toolkit. This is git's own list (`git rev-parse --local-env-vars`), the set it
+# clears itself when it moves into another repository.
+_GIT_REPO_ENV = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT", "GIT_OBJECT_DIRECTORY", "GIT_DIR", "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE", "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS", "GIT_REPLACE_REF_BASE", "GIT_PREFIX",
+    "GIT_INTERNAL_SUPER_PREFIX", "GIT_SHALLOW_FILE", "GIT_COMMON_DIR",
+)
+
+
+def _git_env():
+    """The environment for every git call aimed at the toolkit checkout."""
+    env = {k: v for k, v in os.environ.items() if k not in _GIT_REPO_ENV}
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    return env
+
+
 def _git(*args, timeout=10):
     """Run a git command in the plugin dir. Returns (ok, stdout) — never raises.
 
     git runs in its own session so a timeout kills the whole process TREE — a
     fetch's HTTPS remote helper is a child that killing git alone would leave
     running the network operation after we had released the lock."""
+    timeout = min(timeout, _HOOK_STARTED + _GIT_DONE_BY_S - time.monotonic())
+    if timeout <= 0:
+        return False, ""   # past this hook's budget: spawn nothing
     try:
         proc = subprocess.Popen(
             ["git", "-C", str(PLUGIN_DIR), *args],
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL,
             text=True, start_new_session=True,
-            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+            env=_git_env(),
         )
     except Exception:
         return False, ""
@@ -163,7 +188,7 @@ def git_pull():
     try:
         subprocess.run(
             ["git", "-C", str(PLUGIN_DIR), "pull", "--ff-only", "--quiet"],
-            capture_output=True, timeout=10
+            capture_output=True, timeout=10, env=_git_env(),
         )
     except Exception:
         pass
@@ -479,6 +504,123 @@ def _release_lock(fd):
         pass
 
 
+# The catch-up for a fork with nothing of its own is a local write. It is only
+# begun early, and it is never killed: git stopped half-way through a checkout
+# leaves a half-updated folder and a stale index.lock. Both limits are measured
+# from the start of this hook, which the installer gives 20 seconds in all with
+# sync_pointers still to run after this check: the write is not begun after
+# _FF_LATEST_START_S, and session start stops waiting for it at _FF_DONE_BY_S.
+# One still running then is left to finish on its own and reported as such. And
+# every git call in this hook ends by _GIT_DONE_BY_S, whatever timeout it asked
+# for, so a wedged checkout cannot run the hook past its 20 seconds. Same rules as
+# the builder toolkit's copy.
+_HOOK_STARTED = time.monotonic()
+_FF_LATEST_START_S = 8
+_FF_DONE_BY_S = 12
+_GIT_DONE_BY_S = 16
+# git's markers for an operation in progress: mid-bisect, -rebase, -am or -revert a
+# checkout can look clean and sit on main, and moving main changes that operation.
+_OP_STATE = ("MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_START",
+             "BISECT_LOG", "rebase-merge", "rebase-apply", "sequencer")
+# The status that counts everything: untracked files even where
+# status.showUntrackedFiles=no hides them, and submodules even where configured away.
+_STATUS_ARGS = ("status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none")
+
+
+def _git_path_exists(rel):
+    # rev-parse --git-path answers relative to the checkout, or absolute.
+    return bool(rel) and (PLUGIN_DIR / rel).exists()
+
+
+def _clean_to_fast_forward():
+    """Every condition under which a fast-forward can only add NSLS's commits.
+
+    On the branch `main`; no operation in progress; no submodules and no sparse
+    checkout, neither proven here; no commits NSLS lacks; nothing unsaved,
+    untracked, or in a submodule.
+    """
+    ok, branch = _git("symbolic-ref", "--short", "-q", "HEAD")
+    if not ok or branch != "main":
+        return False
+    ok, paths = _git("rev-parse", *[a for name in _OP_STATE for a in ("--git-path", name)])
+    if not ok or any(_git_path_exists(rel) for rel in paths.splitlines()):
+        return False
+    if (PLUGIN_DIR / ".gitmodules").exists():
+        return False
+    _, sparse = _git("config", "--bool", "--get", "core.sparseCheckout")
+    if sparse == "true":
+        return False
+    ok, ahead = _git("rev-list", "--count", f"{_UPSTREAM_REF}..HEAD")
+    if not ok or ahead != "0":
+        return False
+    ok, dirty = _git(*_STATUS_ARGS)
+    return ok and not dirty
+
+
+def _ff_merge(wait):
+    """The fast-forward itself: its exit code, or None if still running. Never killed.
+
+    Runs in its own session with its output discarded, so it can outlive this
+    hook. Switched off for this one call: branch.main.mergeOptions (with
+    --no-squash and --no-autostash stated outright), hooks (via a hooks directory
+    that does not exist; a post-merge hook runs after the branch has moved and
+    can hang), background maintenance and auto-gc, and overwriting an ignored file.
+    """
+    no_hooks = PLUGIN_DIR / ".git" / "nsls-no-hooks"   # deliberately never created
+    try:
+        proc = subprocess.Popen(
+            ["git", "-C", str(PLUGIN_DIR),
+             "-c", f"core.hooksPath={no_hooks.as_posix()}", "-c", "maintenance.auto=false",
+             "-c", "gc.auto=0", "-c", "branch.main.mergeOptions=",
+             "merge", "--ff-only", "--no-squash", "--no-autostash",
+             "--no-overwrite-ignore", "--quiet", _UPSTREAM_REF],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            start_new_session=True, env=_git_env(),
+        )
+    except Exception:
+        return -1
+    try:
+        return proc.wait(timeout=wait)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def _checkout_state(head_before, target):
+    """'caught_up', 'untouched' or 'broken', read fresh after the attempt."""
+    ok_h, head = _git("rev-parse", "HEAD", timeout=5)
+    ok_s, dirty = _git(*_STATUS_ARGS, timeout=10)
+    ok_l, lock = _git("rev-parse", "--git-path", "index.lock", timeout=5)
+    # Still on main: a checkout moved to another branch between the checks and the
+    # merge would have had THAT branch moved. Reported for a look, never caught up.
+    ok_b, branch = _git("symbolic-ref", "-q", "HEAD", timeout=5)
+    if not (ok_h and ok_s and ok_l) or dirty or _git_path_exists(lock):
+        return "broken"
+    if not ok_b or branch != "refs/heads/main":
+        return "broken"
+    if head == target:
+        return "caught_up"
+    if head == head_before:
+        return "untouched"
+    return "broken"
+
+
+def _fast_forward_clean_fork():
+    """'caught_up'; 'untouched' (conditions not met, too late, or git refused
+    cleanly: the builder gets the offer); 'unfinished'; or 'broken'."""
+    if not _clean_to_fast_forward():
+        return "untouched"
+    ok_b, before = _git("rev-parse", "HEAD")
+    ok_t, target = _git("rev-parse", _UPSTREAM_REF)
+    if not (ok_b and ok_t):
+        return "untouched"
+    elapsed = time.monotonic() - _HOOK_STARTED
+    if elapsed > _FF_LATEST_START_S:
+        return "untouched"   # a write we might abandon is a write we do not begin
+    if _ff_merge(_FF_DONE_BY_S - elapsed) is None:
+        return "unfinished"
+    return _checkout_state(before, target)
+
+
 def _report_fork_drift(notice):
     """Tell the session when a fork has fallen behind NSLS.
 
@@ -525,6 +667,38 @@ def _report_fork_drift(notice):
             return
         behind = int(count)
         if behind == 0:
+            return
+
+        # Nothing of theirs in the way: catch it up and say so once. Anything of
+        # theirs in the way keeps the offer below, because only they can decide
+        # what happens to it.
+        outcome = _fast_forward_clean_fork()
+        if outcome in ("unfinished", "broken"):
+            notice(
+                f"An automatic catch-up of this builder's toolkit (their own fork, "
+                f"{behind} commit(s) behind NSLS) did not finish cleanly, so the folder "
+                f"at {_safe_text(PLUGIN_DIR)} may be part-way through an update. Nothing "
+                f"of theirs was at risk: it only starts on a clean checkout with no "
+                f"commits of their own. Tell them in ONE plain sentence at the start of "
+                f"your first reply that their toolkit needs a quick look, and offer to "
+                f"sort it out. If they agree, inspect before changing anything — whether "
+                f"a git process is still running, whether .git/index.lock exists, git "
+                f"status, and where HEAD sits relative to {_UPSTREAM_REF} — then finish "
+                f"the fast-forward or put it back. NEVER hand them a git command."
+            )
+            return
+        if outcome == "caught_up":
+            notice(
+                f"This builder's toolkit was their OWN FORK, {behind} commit(s) behind "
+                f"NSLS, with no commits or unsaved edits of their own, so it has just "
+                f"been caught up with NSLS automatically. Tell them in ONE plain "
+                f"sentence at the start of your first reply — e.g. \"Your toolkit was "
+                f"your own copy, so NSLS updates hadn't been reaching you; I've caught "
+                f"it up.\" — then offer to show them what's new: read and follow "
+                f"skills/update-personal-productivity/SKILL.md in {_safe_text(PLUGIN_DIR)} "
+                f"(the slash command itself appears after their next restart). NEVER "
+                f"hand them a git command."
+            )
             return
 
         # Names the ref we just fetched and the checkout path, and points Claude
