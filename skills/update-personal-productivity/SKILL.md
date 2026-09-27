@@ -132,6 +132,29 @@ The builder types none of this. Never say "stash" to them.
 
 ---
 
+## Step 1.7: Already current? Skip the walk
+
+A checkout can be fully current with NSLS before this skill even starts: the session hook may have
+just caught a fork up, or they caught up some other way. Then there is nothing left to decide
+release by release, and walking every release would ask them about changes they already have.
+Check the number Step 1.5 worked out:
+
+- **`$BEHIND` is 0** → skip the release walk entirely:
+  1. Load `$REPO/.toolkit-state.json` as Step 2 does, creating it with Step 2's starting schema
+     if it is missing, since this path never reaches Step 2. Then record every release in
+     `updates/` as adopted, leave
+     `skipped_releases` exactly as it is, and set `first_run_initialized: true`. Do not run
+     Step 2's commit check: it exists to work out what a behind checkout already has, and a
+     current checkout has everything.
+  2. Tell them what's new in **three to five plain bullets**: the changes that alter what they
+     will see or can do, newest first, drawn from the release titles and their Why sections. No
+     skill names used as jargon, no commit counts, no commands.
+  3. Then run Step 5 (save state), Step 6 (log), Step 7 (steps still pending from earlier runs),
+     Step 7.6 (put back anything Step 1.6 set aside) and Step 8. Skip Steps 2 to 4 and Step 7.5.
+- **`$BEHIND` is above 0** → carry on to Step 2 as normal.
+
+---
+
 ## Step 2: Load adoption state
 
 Read `$REPO/.toolkit-state.json` (the path resolved in Step 1). If missing, initialize with:
