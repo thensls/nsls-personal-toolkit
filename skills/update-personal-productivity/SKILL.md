@@ -17,7 +17,10 @@ Walk through unadopted releases in `updates/` one at a time. Safely merge each o
 **Releases NSLS no longer offers are never shown.** A release whose frontmatter says
 `offered: false` is never pitched, walked, summarised or asked about anywhere in this skill, and
 its manual steps are never surfaced, including in Step 2's review of historical releases. Step 3
-says how it is recorded.
+says how it is recorded. When Step 2 loads the state, move any such slug already in
+`skipped_releases` to `adopted_releases` and drop its items from `pending_manual_steps`: a skip
+made before NSLS stopped offering it is not a decision for Step 7.5 to stop and protect, and its
+steps are no longer asked for.
 
 ---
 
