@@ -14,6 +14,14 @@ description: >-
 
 Walk through unadopted releases in `updates/` one at a time. Safely merge each one with your local customizations. Keep a list of manual steps you still need to do.
 
+**Releases NSLS no longer offers are never shown.** A release whose frontmatter says
+`offered: false` is never pitched, walked, summarised or asked about anywhere in this skill, and
+its manual steps are never surfaced, including in Step 2's review of historical releases. Step 3
+says how it is recorded. When Step 2 loads the state, move any such slug already in
+`skipped_releases` to `adopted_releases` and drop its items from `pending_manual_steps`: a skip
+made before NSLS stopped offering it is not a decision for Step 7.5 to stop and protect, and its
+steps are no longer asked for.
+
 ---
 
 ## Step 1: Prep
@@ -153,7 +161,7 @@ Show the user a one-time summary:
 
 Then set `first_run_initialized: true`. Subsequent runs skip this step.
 
-**Caveat:** auto-detection is accurate for the skill files but can't know if the fork completed the **manual steps** for those releases. After the auto-mark, ask: "I marked [N] historical releases as adopted based on your commit history. Want to review their manual-step checklists to confirm you've done them, or trust that you have?" If review, surface manual steps from each auto-adopted release as pending items.
+**Caveat:** auto-detection is accurate for the skill files but can't know if the fork completed the **manual steps** for those releases. After the auto-mark, ask: "I marked [N] historical releases as adopted based on your commit history. Want to review their manual-step checklists to confirm you've done them, or trust that you have?" If review, surface manual steps from each auto-adopted release as pending items, leaving out any release marked `offered: false`.
 
 **State schema:**
 - `adopted_releases`: release slugs where the user pulled some or all of the changes
@@ -173,9 +181,16 @@ ls "$REPO/updates/" | grep -v '^README.md$' | sort
 
 Filenames are `YYYY-MM-DD-<slug>.md` — sort order = chronological.
 
-For each file, read the frontmatter to get: `date`, `slug`, `skills_changed`, `cost_to_adopt`, `breaking`, `backfilled`.
+For each file, read the frontmatter to get: `date`, `slug`, `skills_changed`, `cost_to_adopt`, `breaking`, `backfilled`, `offered`.
 
 Filter to **unprocessed** releases: those whose slug is in neither `adopted_releases` nor `skipped_releases`.
+
+**Leave out releases NSLS no longer offers.** A release whose frontmatter says `offered: false`
+is never walked, pitched, or asked about. Drop it from the list silently and record its slug in
+`adopted_releases`, not `skipped_releases`: the builder made no choice, and Step 7.5 reads
+`skipped_releases` as decisions to protect, so filing it there would make every later catch-up
+stop and ask about a release nobody was ever shown. Its files still arrive whenever the checkout
+is brought current; only the pitch and its manual steps are withheld.
 
 If the list is empty:
 > "You're caught up. No unadopted releases in upstream."

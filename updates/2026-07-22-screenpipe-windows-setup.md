@@ -7,6 +7,7 @@ skills_changed: [screenpipe-windows-setup]
 files_changed: 1
 cost_to_adopt: "30+ min"
 breaking: false
+offered: false
 ---
 
 # Screenpipe on Windows — setup skill for the PC alternative to Familiar
@@ -77,6 +78,9 @@ running?" resolves almost nothing here — it nearly always is.
 July 2026 — check screenpi.pe for current pricing), the install, merging the
 settings block, and a test call to verify audio. Builders who don't want screen
 capture at all can ignore this entirely — like `/familiar`, it's fully optional.
+
+**Not offered by the updater.** Nothing else in the toolkit reads Screenpipe's data, so the
+updater no longer suggests installing it. This skill stays for anyone who already runs Screenpipe.
 
 ## Safe Merge
 
