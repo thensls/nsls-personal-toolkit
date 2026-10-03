@@ -134,14 +134,41 @@ with open(path, encoding="utf-8-sig") as f:
 
 cfg.setdefault("enabledPlugins", {})["nsls-personal-toolkit@local"] = True
 
+# git reads GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE and the rest of
+# `git rev-parse --local-env-vars` ahead of -C, and exports GIT_DIR and
+# GIT_INDEX_FILE to its own hooks. So with Claude launched from inside a git hook
+# (claude -p in a prepare-commit-msg hook), a bare pull fast-forwards the
+# PROJECT mid-commit and leaves the toolkit untouched. `unset` is a shell
+# builtin, so the entry still needs nothing but git: hooks run under sh -c, or
+# Git Bash on Windows (which this script runs in). install.ps1 writes the
+# PowerShell equivalent. Same list as _GIT_REPO_ENV in hooks/session-start.py.
+GIT_REPO_ENV = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS "
+    "GIT_CONFIG_COUNT GIT_OBJECT_DIRECTORY GIT_DIR GIT_WORK_TREE "
+    "GIT_IMPLICIT_WORK_TREE GIT_GRAFT_FILE GIT_INDEX_FILE "
+    "GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_PREFIX "
+    "GIT_INTERNAL_SUPER_PREFIX GIT_SHALLOW_FILE GIT_COMMON_DIR"
+)
+LEGACY_PULL_CMD = f'git -C "{plugin_dir}" pull --ff-only --quiet'
+PULL_CMD = f"unset {GIT_REPO_ENV}; {LEGACY_PULL_CMD}"
 # Absolute interpreter path, so the entry can't be broken later by PATH order.
-PULL_CMD = f'git -C "{plugin_dir}" pull --ff-only --quiet'
 SYNC_CMD = f'"{py_bin}" "{plugin_dir}/hooks/session-start.py" --no-pull'
 PULL_MARKER = f'{plugin_dir}" pull'
 SYNC_MARKER = "nsls-personal-toolkit/hooks/session-start.py"
 
 hooks = cfg.setdefault("hooks", {})
 session_start = hooks.setdefault("SessionStart", [])
+
+# An install from before the unset carries LEGACY_PULL_CMD, which still
+# contains PULL_MARKER and so would be skipped as present. Upgrade it in place:
+# the one edit this installer makes to an existing hook, and only to a command
+# that is exactly the one it wrote.
+upgraded = 0
+for e in session_start:
+    for h in (e.get("hooks", []) if isinstance(e, dict) else []):
+        if isinstance(h, dict) and h.get("command") == LEGACY_PULL_CMD:
+            h["command"] = PULL_CMD
+            upgraded += 1
 
 # Idempotency is checked across EVERY entry, and we only ever append our own
 # entry. Two rules learned the hard way:
@@ -172,7 +199,8 @@ with open(path, "w", encoding="utf-8") as f:
 
 chk = json.load(open(path, encoding="utf-8-sig"))
 if chk.get("enabledPlugins", {}).get("nsls-personal-toolkit@local"):
-    print(f"NSLS_SETTINGS_OK Enabled plugin + registered {len(new_hooks)} auto-update hook(s).")
+    note = f" Upgraded {upgraded} older update hook(s)." if upgraded else ""
+    print(f"NSLS_SETTINGS_OK Enabled plugin + registered {len(new_hooks)} auto-update hook(s).{note}")
 PYEOF
   _settings_out="$(cat "$_settings_tmp" 2>/dev/null || true)"
   rm -f "$_settings_tmp"

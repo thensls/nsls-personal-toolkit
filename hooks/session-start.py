@@ -27,11 +27,15 @@ git_pull() pulls only its own directory (its PowerShell counterpart pulls both).
 So on macOS/Linux nothing fetched this toolkit before this hook was registered.
 """
 
+import codecs
+import json
 import os
 import re
 import signal
+import stat
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -190,6 +194,70 @@ def git_pull():
             ["git", "-C", str(PLUGIN_DIR), "pull", "--ff-only", "--quiet"],
             capture_output=True, timeout=10, env=_git_env(),
         )
+    except Exception:
+        pass
+
+
+# The settings.json pull entry the installers wrote before it cleared the
+# variables above, matched whole: `git -C "<toolkit>" pull --ff-only --quiet`.
+# Either path spelling (C:\... from install.ps1, /c/... from Git Bash). Anything
+# a builder has edited by hand no longer matches and is left alone.
+_LEGACY_PULL = re.compile(r'git -C "[^"]*[/\\]nsls-personal-toolkit" pull --ff-only --quiet')
+_PULL_UNSET = "unset " + " ".join(_GIT_REPO_ENV) + "; "
+
+
+def upgrade_pull_hook():
+    """Give an existing install the git-variable-proof pull entry.
+
+    The installers now write the pull as `unset <_GIT_REPO_ENV>; git -C ...`,
+    but nobody re-runs an installer, so an existing machine keeps the bare
+    entry and its hazard until something rewrites it. This hook already runs
+    every session, so it does: once, only that exact command, by replacing its
+    JSON string in place so every other byte of settings.json stays as it was,
+    and only when re-parsing proves nothing else changed. Never raises."""
+    path = Path(os.environ.get("CLAUDE_CONFIG_DIR") or (HOME / ".claude")) / "settings.json"
+    try:
+        real = Path(os.path.realpath(path))   # a dotfiles symlink stays a symlink
+        data = real.read_bytes()
+        if b"pull --ff-only --quiet" not in data:
+            return
+        bom = codecs.BOM_UTF8 if data.startswith(codecs.BOM_UTF8) else b""
+        raw = data[len(bom):].decode("utf-8")
+        cfg = json.loads(raw)
+        legacy = set()
+        for entry in (cfg.get("hooks") or {}).get("SessionStart") or []:
+            for h in (entry.get("hooks") or [] if isinstance(entry, dict) else []):
+                cmd = h.get("command") if isinstance(h, dict) else None
+                if isinstance(cmd, str) and _LEGACY_PULL.fullmatch(cmd):
+                    h["command"] = _PULL_UNSET + cmd
+                    legacy.add(cmd)
+        if not legacy:
+            return
+        text = raw
+        for cmd in legacy:
+            new = json.dumps(_PULL_UNSET + cmd, ensure_ascii=False)
+            for old in (json.dumps(cmd), json.dumps(cmd, ensure_ascii=False)):
+                text = text.replace(old, new)
+        if json.loads(text) != cfg:
+            return   # spelled some other way: leave it to the installer
+        fd, tmp = tempfile.mkstemp(prefix=".settings.json.", dir=str(real.parent))
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(bom + text.encode("utf-8"))
+            os.chmod(tmp, stat.S_IMODE(real.stat().st_mode))
+            # Anything that wrote settings.json since we read it (Claude Code,
+            # an installer, an editor) wins: drop ours and try next session.
+            if real.read_bytes() != data:
+                raise OSError("settings.json changed while upgrading")
+            os.replace(tmp, str(real))
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            return
+        print("personal-toolkit update hook now ignores git variables from the "
+              "calling repository", file=sys.stderr)
     except Exception:
         pass
 
@@ -798,6 +866,9 @@ def main():
     # The installer registers the pull as its own bare `git` entry (no
     # interpreter needed, so the update path can't be broken by a missing or
     # miswired python) and passes --no-pull here to avoid a second round trip.
+    # First: it is quick and contained, and a slow or failing step below must
+    # not keep a machine on the unsafe pull entry.
+    upgrade_pull_hook()
     if "--no-pull" not in sys.argv:
         git_pull()
     report_if_stale()

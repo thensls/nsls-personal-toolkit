@@ -123,6 +123,15 @@ written idempotently by `install.sh` / `install.ps1`:
 
 - The pull entry is a bare `git` call on purpose — no python, no bash, so neither a
   missing Git Bash nor the Microsoft-Store python stub can defeat it.
+- It first clears git's `--local-env-vars` list (`GIT_DIR`, `GIT_INDEX_FILE`, …).
+  git reads those ahead of `-C` and exports two of them to its own hooks, so a
+  Claude session launched from a git hook would otherwise pull the user's
+  *project* — mid-commit — instead of the toolkit. `install.sh` writes
+  `unset …;` (a shell builtin; hooks run under `sh -c`, or Git Bash on Windows).
+  `install.ps1` writes `Remove-Item Env:… -ErrorAction Ignore;` with
+  `"shell": "powershell"`, so it holds whether or not Git Bash is installed.
+  Existing installs are upgraded in place by either installer, or on macOS/Linux
+  by `hooks/session-start.py` on its next run.
 - `matcher` is `startup|resume`, not `startup` — a resumed session must update too.
 - Both installers **append their own entry and never touch another**. The builder
   toolkit registers into this same array; an earlier version of the PowerShell block

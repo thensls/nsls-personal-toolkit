@@ -74,7 +74,29 @@ try {
   }
   $ss = @(@($cfg.hooks.SessionStart) | Where-Object { $null -ne $_ })
 
-  $pullCmd = 'git -C "' + $PluginDir + '" pull --ff-only --quiet'
+  # git reads GIT_DIR, GIT_INDEX_FILE and the rest of `git rev-parse
+  # --local-env-vars` ahead of -C, and exports GIT_DIR and GIT_INDEX_FILE to its
+  # own hooks. So with Claude launched from inside a git hook, a bare pull
+  # fast-forwards the PROJECT mid-commit and leaves the toolkit untouched.
+  #
+  # The entry clears them in PowerShell and says so with "shell": "powershell",
+  # so it is protected whether or not Git Bash is installed (this installer
+  # exists for machines that may not have it) and still needs no Python. A
+  # profile's $ErrorActionPreference can't stop the pull: -ErrorAction Ignore.
+  # A client that ignores the shell field runs it in Git Bash, where Remove-Item
+  # is not found and the pull runs as it always did. Same list as install.sh and
+  # _GIT_REPO_ENV in hooks/session-start.py.
+  $gitRepoEnv = 'GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_CONFIG GIT_CONFIG_PARAMETERS ' +
+    'GIT_CONFIG_COUNT GIT_OBJECT_DIRECTORY GIT_DIR GIT_WORK_TREE ' +
+    'GIT_IMPLICIT_WORK_TREE GIT_GRAFT_FILE GIT_INDEX_FILE ' +
+    'GIT_NO_REPLACE_OBJECTS GIT_REPLACE_REF_BASE GIT_PREFIX ' +
+    'GIT_INTERNAL_SUPER_PREFIX GIT_SHALLOW_FILE GIT_COMMON_DIR'
+  $legacyPullCmd = 'git -C "' + $PluginDir + '" pull --ff-only --quiet'
+  # What hooks/session-start.py upgrades $legacyPullCmd to on a machine where
+  # install.sh registered it too: right for Git Bash, not for PowerShell.
+  $unsetPullCmd = 'unset ' + $gitRepoEnv + '; ' + $legacyPullCmd
+  $envPaths = ($gitRepoEnv -split ' ' | ForEach-Object { 'Env:' + $_ }) -join ','
+  $pullCmd = 'Remove-Item ' + $envPaths + ' -ErrorAction Ignore; ' + $legacyPullCmd
   $pullMarker = $PluginDir + '" pull'
 
   # Append-only, and idempotency is checked across EVERY entry. Never filter or
@@ -83,16 +105,25 @@ try {
   # entries whose commands merely mentioned our path — which silently deleted
   # the builder toolkit's hook (its auto-update, pointer sync and tracker ping)
   # on any machine where install.sh had run first.
+  #
+  # The one exception: an older install carries $legacyPullCmd (or the unset
+  # form of it), which still contains $pullMarker and so would be skipped as
+  # present. Upgrade it in place, and only when it is exactly one of those
+  # (-ceq: case-sensitive, as a string compare should be here).
   $found = $false
   foreach ($entry in $ss) {
     foreach ($h in @($entry.hooks)) {
+      if ($h.command -ceq $legacyPullCmd -or $h.command -ceq $unsetPullCmd) {
+        $h.command = $pullCmd
+        $h | Add-Member -NotePropertyName shell -NotePropertyValue 'powershell' -Force
+      }
       if ($h.command -and $h.command.Contains($pullMarker)) { $found = $true }
     }
   }
   if (-not $found) {
     # startup|resume: a resumed session must update too.
     $ss += , @{ matcher = 'startup|resume'; hooks = @(@{ type = 'command'; command = $pullCmd;
-                 timeout = 20; statusMessage = 'Updating personal toolkit...' }) }
+                 shell = 'powershell'; timeout = 20; statusMessage = 'Updating personal toolkit...' }) }
   }
   $cfg.hooks | Add-Member -NotePropertyName SessionStart -NotePropertyValue $ss -Force
 
