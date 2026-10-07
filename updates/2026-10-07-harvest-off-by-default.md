@@ -1,6 +1,7 @@
 ---
 date: 2026-10-07
 slug: harvest-off-by-default
+last_commit: 162704ea19649bf322fd4373777ba7c34209d8c4
 skills_changed: [close-day, close-week, harvest-meeting]
 files_changed: 6
 cost_to_adopt: "2 min"
