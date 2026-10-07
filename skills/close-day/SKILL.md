@@ -1069,7 +1069,8 @@ works when invoked directly.
 ```bash
 # Frontmatter only: the first --- block at the top of the file, CRLF-tolerant.
 KB_HARVEST=$(awk '{sub(/\r$/,"")} NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit}
-  NR>1&&/^kb_harvest:/{sub(/^kb_harvest:[ \t]*/,""); gsub(/["'"'"' \t]/,""); print; exit}' \
+  NR>1&&/^kb_harvest:/{v=$0; sub(/^kb_harvest:[ \t]*/,"",v); sub(/[ \t]+$/,"",v)
+    if (v ~ /^".*"$/ || v ~ /^'"'"'.*'"'"'$/) v=substr(v,2,length(v)-2); print v; exit}' \
   "$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md" 2>/dev/null)
 if [ "$KB_HARVEST" != "on" ]; then
   echo "Step 4c: KB harvest is off — skipping (say \"turn on KB harvest\" to enable)"
