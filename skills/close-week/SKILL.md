@@ -515,15 +515,27 @@ Rules:
 
 The Insight Reflection is the **first section** in the weekly note (Output A), before Achievements. It is also summarized as a single "Insight of the Week" sentence in Output B.
 
-### Step 2b. NSLS Knowledge Base week audit
+### Step 2b. NSLS Knowledge Base week audit — OFF by default
 
-Always runs. Everyone gets the audit; write actions (promotions, stale-flags) apply to your KB — pushed if you're on SLT (company KB), committed locally otherwise.
+**Off unless the builder turned it on**, same switch as close-day Step 4c: run this step only
+when `kb_harvest` in the frontmatter of `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`
+is the literal string `on`. Otherwise print the skip line, write no `## Knowledge Base` section,
+ask nothing, and go to Step 2c. When on, write actions (promotions, stale-flags) apply to your
+KB — pushed if you're on SLT (company KB), committed locally otherwise.
 
 ```bash
-echo "Step 2b: auditing your knowledge base for week $WEEK..."
+# Frontmatter only: the first --- block at the top of the file, CRLF-tolerant.
+KB_HARVEST=$(awk '{sub(/\r$/,"")} NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit}
+  NR>1&&/^kb_harvest:/{sub(/^kb_harvest:[ \t]*/,""); gsub(/["'"'"' \t]/,""); print; exit}' \
+  "$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md" 2>/dev/null)
+if [ "$KB_HARVEST" != "on" ]; then
+  echo "Step 2b: KB harvest is off — skipping (say \"turn on KB harvest\" to enable)"
+else
+  echo "Step 2b: auditing your knowledge base for week $WEEK..."
+fi
 ```
 
-Invoke the harvest skill in audit mode:
+When it is on, invoke the harvest skill in audit mode:
 
 ```
 /harvest-meeting --week-audit --week $WEEK
