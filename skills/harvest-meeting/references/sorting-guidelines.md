@@ -75,8 +75,8 @@ to a problem").
   cliffs, cash-out terms.
 - Named person owning an area → fine as-is ("Dana owns chapter onboarding") **unless** it is
   part of an unannounced change, then REJECT.
-- **Named person attached to a problem** (a miss, a delay, a bug, a failure — blamed or merely
-  linked) → cut the name, keep the fact. `cut` = "name — attached to a problem". The builder sees
+- **Named person attached to a problem** — shown as the cause of a miss, delay, bug or failure,
+  or as falling short → cut the name, keep the fact. `cut` = "name — attached to a problem". The builder sees
   why on the ✂ line and can `edit` the name back in. A named person who is simply assigned to fix
   something, with no blame implied, is fine.
 
