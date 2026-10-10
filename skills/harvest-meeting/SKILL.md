@@ -955,8 +955,8 @@ Harvest from YYYY-MM-DD — {M} meeting(s)
   u1. <text>
       → <question>
 
-🚫 Not adding — sensitive ({R}): individual pay (1), unannounced change (2)
-· Skipped {S} minor items (undecided ideas, logistics)
+🚫 Not adding — sensitive ({R}): individual pay (1), not yet announced (2)
+· Skipped {S} trivial item(s): <what kind, e.g. "short-lived sprint tasks"> · `show skipped`
 
 Reply: yes · yes + u1 · drop 3 · why 2 · edit 1: <text> · topic 5: <slug> · show 2 · cancel
 (`yes` adds the ✅ list and leaves every ❓ item out unless you name it.)
