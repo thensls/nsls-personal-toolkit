@@ -789,7 +789,8 @@ For each meeting loaded in Step 2, ask Claude to extract candidate KB entries.
 - The `[paste the never-write categories table]` placeholder with the actual rubric table from `/tmp/harvest-meeting-ctx/rubric.md`
 - The `INPUT` block with the meeting's title, date, attendees, summary, and transcript
 
-**Invocation:** Call Claude with the constructed prompt. Parse the JSON response. Expect 0–10 candidates per meeting; flag if > 15 (probably mis-parsing). Add each meeting's `withheld` counts into a run total (`/tmp/harvest-meeting-ctx/withheld.json`); Step 7's 🚫 line is withheld + Step 6 REJECTs. Stash all candidates in `/tmp/harvest-meeting-ctx/candidates.json`:
+**Invocation:** Call Claude with the constructed prompt. Parse the JSON response. Expect 0–10 candidates per meeting; flag if > 15 (probably mis-parsing). Attach the meeting's id, title, URL, date and attendee list from Step 2 to **every** candidate it
+produced (Step 6 needs them to apply the stricter 1:1 rules per candidate). Add each meeting's `withheld` counts into a run total (`/tmp/harvest-meeting-ctx/withheld.json`); Step 7's 🚫 line is withheld + Step 6 REJECTs. Stash all candidates in `/tmp/harvest-meeting-ctx/candidates.json`:
 
 ```json
 [{
@@ -797,6 +798,7 @@ For each meeting loaded in Step 2, ask Claude to extract candidate KB entries.
   "meeting_title": "...",
   "meeting_url": "...",
   "meeting_date": "YYYY-MM-DD",
+  "meeting_attendees": ["<name>", ...],
   "kind": "...", "text": "...", "fathom_timestamp_sec": ..., "speaker": "...", "confidence": ...
 }, ...]
 ```
@@ -871,7 +873,7 @@ run's candidates in one call so the UNSURE cap of 4 is applied across the run, n
 
 Today: <YYYY-MM-DD>. Each candidate carries its own meeting title, date and attendee count —
 judge meeting type per candidate, not per run.
-Candidates: <JSON list of {id, meeting_title, meeting_date, attendees, kind, target_file, text}>
+Candidates: <JSON list of {id, meeting_title, meeting_date, meeting_attendees, kind, target_file, text}>
 
 Return a JSON list, one object per candidate:
 {"id": ..., "bucket": "ADD" | "TRIM" | "REJECT" | "SKIP" | "UNSURE",
@@ -920,7 +922,8 @@ Return JSON: {"new_current_state": "<full rewritten block>",
 
 Store `new_current_state` on the candidate. If the model reports it dropped non-trivial context,
 move the candidate to UNSURE (question: "This rewrite drops <X> from Current State. OK?"), still
-inside the cap of 4.
+then **re-apply the cap of 4 across all UNSURE items**: Step 6 items keep their rank, 6b items rank
+after them, and overflow becomes REJECT (`unsure overflow`, counted, never shown).
 
 **Heartbeat:** `Step 6b: merged N current_state replacement(s) (M flagged for dropped context)`
 
@@ -1106,7 +1109,7 @@ last-updated: {today}
                       f"refusing to clobber existing content. Re-run with Step 6b.")
                 continue
             # Empty Current State: safe to write the candidate directly.
-            new_text = cand.get('reshape_to') or cand['text']
+            new_text = cand['text']
         text = re.sub(
             r'(## Current State\n)(.*?)(?=\n## )',
             rf'\1\n{new_text}\n',

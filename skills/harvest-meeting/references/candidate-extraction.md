@@ -59,7 +59,8 @@ Transcript: <full transcript>
 ## Worked examples
 
 Each example shows the `candidates` array only; the real output wraps it in
-`{"candidates": [...], "withheld": {...}}`.
+`{"candidates": [...], "withheld": {...}}`, e.g.
+`{"candidates": [{"kind": "decision", "text": "...", "fathom_timestamp_sec": 634, "speaker": "...", "confidence": 0.95}], "withheld": {"individual pay": 1}}`.
 
 ### Example 1: A clear decision
 
