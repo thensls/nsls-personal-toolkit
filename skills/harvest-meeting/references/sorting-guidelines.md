@@ -17,9 +17,9 @@ SKIP and REJECT both stay out. The difference is *why*: SKIP is boring, REJECT i
 **Every decision carries a `reason`** of 12 words or fewer, in plain English ("names a
 colleague's leave", "small talk about the offsite"). The builder can ask `why <N>` for any item.
 
-**The test for everything:** *Could this appear in an all-hands email without HR, Finance,
-Legal or InfoSec flagging it?* And: *Would someone on another team look this up in three
-months?* ADD needs yes to both.
+**The test for everything:** *Will knowing this serve the company?* *Could it appear in an
+all-hands email without HR, Finance, Legal or InfoSec flagging it?* *Will it still be true, and
+worth looking up, in three months?* ADD needs yes to all three.
 
 ## Which rule wins
 
@@ -63,7 +63,8 @@ Reject when the sensitive part *is* the point, so trimming would leave nothing u
 ## TRIM → ADD — keep the decision, cut the detail
 
 Most past near-misses were good decisions carrying one bad detail. Cut the detail and add.
-Mark the item ✂ and name what was cut in three words or fewer ("✂ deal figure").
+Mark the item ✂ and say what was cut and why in a few words ("✂ deal figure", "✂ name — attached
+to a problem").
 
 - Named deal + revenue projection → keep "partnership with a large public university in
   negotiation"; drop the school and the figures.
@@ -74,6 +75,10 @@ Mark the item ✂ and name what was cut in three words or fewer ("✂ deal figur
   cliffs, cash-out terms.
 - Named person owning an area → fine as-is ("Dana owns chapter onboarding") **unless** it is
   part of an unannounced change, then REJECT.
+- **Named person attached to a problem** (a miss, a delay, a bug, a failure — blamed or merely
+  linked) → cut the name, keep the fact. `cut` = "name — attached to a problem". The builder sees
+  why on the ✂ line and can `edit` the name back in. A named person who is simply assigned to fix
+  something, with no blame implied, is fine.
 
 If after trimming the sentence no longer says anything useful, SKIP it.
 
@@ -84,10 +89,12 @@ Skip only these. When in doubt between SKIP and ADD, **ADD** — the ✅ list is
 
 - Small talk, scheduling, logistics.
 - Ideas floated but not decided ("maybe we should", "worth exploring").
+- Short-lived task assignments: who is doing what this sprint or week ("Chris runs the load
+  test by Oct 22"). The KB keeps what stays true for months.
 - Exact repeats of what the topic file already says (Step 5 catches most of these).
 
-Sprint task owners, product metrics and scope cuts are **not** SKIP: they're facts a colleague
-may look up.
+Product metrics, scope decisions and standing ownership ("Dana owns chapter onboarding") are
+**not** SKIP: they stay true and a colleague may look them up.
 
 ## UNSURE — at most 4, and zero is a good answer
 
