@@ -1,6 +1,7 @@
 ---
 date: 2026-10-10
 slug: harvest-three-lists
+last_commit: c1a19b421aafc4bdaf92d58d1245815d8b5086c9
 skills_changed: [harvest-meeting, close-day, close-week]
 files_changed: 6
 cost_to_adopt: "2 min"
