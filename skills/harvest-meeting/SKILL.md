@@ -878,6 +878,7 @@ Candidates: <JSON list of {id, meeting_title, meeting_date, meeting_attendees, k
 Return a JSON list, one object per candidate:
 {"id": ..., "bucket": "ADD" | "TRIM" | "REJECT" | "SKIP" | "UNSURE",
  "text": "<final text — the trimmed version for TRIM/UNSURE>",
+ "reason": "<≤12 plain words — why this bucket>",
  "cut": "<≤3 words, TRIM only>",
  "category": "<REJECT only — one of the withheld labels in candidate-extraction.md>",
  "question": "<UNSURE only — one question the builder can answer in a second>",
@@ -955,7 +956,7 @@ Harvest from YYYY-MM-DD — {M} meeting(s)
 🚫 Not adding — sensitive ({R}): individual pay (1), unannounced change (2)
 · Skipped {S} minor items (undecided ideas, logistics)
 
-Reply: yes · yes + u1 · drop 3 · edit 1: <text> · topic 5: <slug> · show 2 · cancel
+Reply: yes · yes + u1 · drop 3 · why 2 · edit 1: <text> · topic 5: <slug> · show 2 · cancel
 (`yes` adds the ✅ list and leaves every ❓ item out unless you name it.)
 > _
 ```
@@ -971,6 +972,9 @@ then `Nothing to add from today's meetings.` and exit cleanly without asking.
 - `topic <N>: <slug>` → file item N under that topic instead (low-confidence or `mapping:
   ERROR` items from Step 4 show their alternatives inline; an ERROR item with no valid slug is
   left out unless the builder picks one)
+- `why <N>` (or `why u1`) → print that item's reason, then wait
+- `show skipped` → list the SKIP items with their reasons (they're harmless by definition; REJECT
+  items are never listed)
 - `show <N>` → print the full Current State diff (whole existing block as `-`, full
   `new_current_state` as `+`), then wait
 - `cancel` → abort, no writes

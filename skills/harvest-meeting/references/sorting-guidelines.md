@@ -4,13 +4,18 @@ Step 6 sorts every candidate into exactly one of four buckets. The builder sees 
 them; the fourth is a count. The goal is a short list the builder can approve in one
 keystroke, not a long list they wave through.
 
-| Bucket | What the builder sees | Default |
-|---|---|---|
-| **ADD** | Bulleted list, approved together | Added on `yes` |
-| **TRIM → ADD** | Same list, marked ✂ with what was cut | Added on `yes` |
-| **REJECT** | Count by category, no content | Never added |
-| **SKIP** | One count line | Never added |
-| **UNSURE** | At most 4, each with a one-line question | Rejected unless the builder says add |
+| Bucket | Plain meaning | Goes in the KB? | What the builder sees |
+|---|---|---|---|
+| **ADD** | Useful and safe | Yes, on `yes` | ✅ list |
+| **TRIM** | Useful, but one detail was risky, so that detail was cut | Yes, minus the detail | ✅ list, marked ✂ |
+| **SKIP** | Harmless but trivial (small talk, logistics, undecided) | No | One count line; `show skipped` lists them |
+| **REJECT** | Sensitive | No | Count by category; never the content |
+| **UNSURE** | Can't tell without something only the builder knows | Only if named | ❓ list, max 4 |
+
+SKIP and REJECT both stay out. The difference is *why*: SKIP is boring, REJECT is risky.
+
+**Every decision carries a `reason`** of 12 words or fewer, in plain English ("names a
+colleague's leave", "small talk about the offsite"). The builder can ask `why <N>` for any item.
 
 **The test for everything:** *Could this appear in an all-hands email without HR, Finance,
 Legal or InfoSec flagging it?* And: *Would someone on another team look this up in three
@@ -72,16 +77,17 @@ Mark the item ✂ and name what was cut in three words or fewer ("✂ deal figur
 
 If after trimming the sentence no longer says anything useful, SKIP it.
 
-## SKIP — not sensitive, not worth an entry
+## SKIP — harmless, but not knowledge
 
-Silent except for one count. Skip:
+Skip only these. When in doubt between SKIP and ADD, **ADD** — the ✅ list is approved with one
+`yes`, so an extra harmless line costs the builder almost nothing.
 
+- Small talk, scheduling, logistics.
 - Ideas floated but not decided ("maybe we should", "worth exploring").
-- Status with no change, restated known facts, small talk, scheduling, logistics.
-- Action items that only matter to the people in the room this week.
-- Anything already in the topic file (Step 5 catches most of these).
+- Exact repeats of what the topic file already says (Step 5 catches most of these).
 
-Be strict here: this bucket is what keeps the ADD list short.
+Sprint task owners, product metrics and scope cuts are **not** SKIP: they're facts a colleague
+may look up.
 
 ## UNSURE — at most 4, and zero is a good answer
 
@@ -96,8 +102,9 @@ public yet?* It is not a place for "I'd rather not decide".
 
 ## Meeting type changes the default
 
-- **1:1s and small private meetings**: only org-level decisions both people clearly agreed
-  to. Nothing about either person. Expect most 1:1s to produce zero ADDs — that is correct.
+- **1:1s and small private meetings**: org-level facts and decisions (product metrics, launch
+  dates, who owns a product area) are fine. Nothing about either person — their workload, pay,
+  plans, leave, performance or feelings. Many 1:1s will produce few or no ADDs.
 - **External calls**: the partner's terms, numbers and opinions are theirs, not ours. Keep only
   our own process decisions.
 - **SLT and team meetings**: normal rules.
