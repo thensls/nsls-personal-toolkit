@@ -942,6 +942,7 @@ Harvest from YYYY-MM-DD — {M} meeting(s)
   2. <topic>.md → Current State (rewrite): <one-line gist>   · `show 2` for the full diff
   3. 🆕 <suggested_slug>.md: <text>
   4. <topic>.md → Key Decisions: <text>   ✂ deal figure
+  5. <topic>.md → Key Decisions: <text>   · topic unsure, or <alt>.md? (`topic 5: <slug>`)
 
 ❓ Your call ({U}, max 4):
   u1. <text>
@@ -950,7 +951,7 @@ Harvest from YYYY-MM-DD — {M} meeting(s)
 🚫 Not adding — sensitive ({R}): individual pay (1), unannounced change (2)
 · Skipped {S} minor items (undecided ideas, logistics)
 
-Reply: yes · yes + u1 · drop 3 · edit 1: <text> · show 2 · cancel
+Reply: yes · yes + u1 · drop 3 · edit 1: <text> · topic 5: <slug> · show 2 · cancel
 (`yes` adds the ✅ list and leaves every ❓ item out unless you name it.)
 > _
 ```
@@ -963,6 +964,9 @@ then `Nothing to add from today's meetings.` and exit cleanly without asking.
 - `yes + u1,u3` (or `add u1`) → also approve those ❓ items
 - `drop <numbers>` → remove those ✅ items, then approve the rest
 - `edit <N>: <text>` → replace item N's text, re-render, wait for `yes`
+- `topic <N>: <slug>` → file item N under that topic instead (low-confidence or `mapping:
+  ERROR` items from Step 4 show their alternatives inline; an ERROR item with no valid slug is
+  left out unless the builder picks one)
 - `show <N>` → print the full Current State diff (whole existing block as `-`, full
   `new_current_state` as `+`), then wait
 - `cancel` → abort, no writes
