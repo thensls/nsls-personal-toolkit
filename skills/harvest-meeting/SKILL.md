@@ -879,14 +879,16 @@ Return a JSON list, one object per candidate:
 {"id": ..., "bucket": "ADD" | "TRIM" | "REJECT" | "SKIP" | "UNSURE",
  "text": "<final text — the trimmed version for TRIM/UNSURE>",
  "reason": "<≤12 plain words — why this bucket>",
+ "target_file": "<the target, with any partner/vendor/person name removed from a NEW page's slug and title>",
  "cut": "<≤3 words, TRIM only>",
  "category": "<REJECT only — one of the withheld labels in candidate-extraction.md>",
  "question": "<UNSURE only — one question the builder can answer in a second>",
  "rank": <UNSURE only — 1 = most useful>}
 ```
 
-Replace each candidate's `text` with the returned `text` (Steps 6b–8 read `text`, so a trim must
-land there). Enforce the cap after parsing: keep the 4 lowest-ranked UNSURE items and change the rest to
+Replace each candidate's `text` with the returned `text`, and its Step 4 topic slug (and a NEW
+page's title) with the returned `target_file` — Steps 6b–8 read these, so a trim must land in both,
+or a name cut from the text would still reach the KB as a file name. Enforce the cap after parsing: keep the 4 lowest-ranked UNSURE items and change the rest to
 REJECT (category `unsure overflow`). Drop REJECT and SKIP from the proposal list; keep their
 counts by category for Step 7.
 
