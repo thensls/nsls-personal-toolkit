@@ -1,27 +1,21 @@
 ---
 name: harvest-meeting
-description: Harvest decisions, project definitions, and state changes from meetings into a knowledge base. SLT members write to the shared company KB (thensls/nsls-knowledge); everyone else builds a local, private KB (never pushed). Use when you've just finished a strategic meeting, want to backfill a specific Fathom URL, or as part of close-day Step 4c / close-week Step 2b (those only run it when kb_harvest: on). Also handles "turn on KB harvest" / "turn off KB harvest".
+description: Harvest decisions, project definitions, and state changes from meetings into a knowledge base. SLT members write to the shared company KB (thensls/nsls-knowledge); everyone else builds a local, private KB (never pushed). Use when you've just finished a strategic meeting, want to backfill a specific Fathom URL, or as part of close-day Step 4c / close-week Step 2b (skipped when kb_harvest: off). Also handles "turn on KB harvest" / "turn off KB harvest".
 ---
 
 # Harvest Meeting — NSLS Knowledge Base Pipeline
 
 Pulls decisions, project definitions, and state changes from recorded meetings, gates them through the employee-facing sensitive-content rubric, and proposes precise edits to topic files. Routing is automatic: SLT members (on `kb_authors.txt`) write to the shared company KB (`60-nsls-knowledge`) and push to `main`; everyone else writes to a local, private KB (`60-nsls-knowledge-local`) that is committed locally and never pushed.
 
-## Off by default in close-day and close-week
+## The on/off switch for close-day and close-week
 
-`/close-day` and `/close-week` **do not harvest** unless you turn it on. It surfaced too much
-private meeting content (comp, personnel, 1:1 material) to lean on the approval gate, so it stays
-off until its filters are rebuilt and tested. Invoking `/harvest-meeting` directly still works,
-with every gate below.
+`/close-day` and `/close-week` harvest unless you turn it off. The switch is one frontmatter line
+in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`: `kb_harvest: off`. Absent or anything
+else means on. Invoking `/harvest-meeting` directly always works.
 
-The switch is one frontmatter line in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`:
-`kb_harvest: on`. Absent or anything else means off.
-
-- **"turn on KB harvest"** → set `kb_harvest: on` in that file's frontmatter (add the field if
-  missing, create the file with just that frontmatter if it doesn't exist). Before writing, say
-  in one line that the filters are still being rebuilt and every candidate needs a careful read.
-  Then STOP; don't start a harvest.
-- **"turn off KB harvest"** → set `kb_harvest: off`. STOP.
+- **"turn off KB harvest"** → set `kb_harvest: off` in that file's frontmatter (add the field if
+  missing, create the file with just that frontmatter if it doesn't exist). STOP.
+- **"turn on KB harvest"** → set `kb_harvest: on`. STOP; don't start a harvest.
 
 ## First-Time Setup (read before you clone)
 
@@ -81,9 +75,9 @@ gateway URL or token to verify** (the kb-gateway only powers the bot + kb.nsls.o
 
 | Mode | When | Source |
 |---|---|---|
-| `--date YYYY-MM-DD` | close-day Step 4c (only when `kb_harvest: on`) | Your Fathom recordings for the date, minus exclusions |
+| `--date YYYY-MM-DD` | close-day Step 4c (unless `kb_harvest: off`) | Your Fathom recordings for the date, minus exclusions |
 | `--fathom-url <url>` | Manual after important meeting | Single meeting |
-| `--week-audit --week YYYY-Www` | close-week Step 2b (only when `kb_harvest: on`) | Git log + topic files for the week |
+| `--week-audit --week YYYY-Www` | close-week Step 2b (unless `kb_harvest: off`) | Git log + topic files for the week |
 
 | Flag | Effect |
 |---|---|
@@ -99,11 +93,11 @@ to avoid. You decide what to exclude; the skill never decides for you.
 
 Two independent controls. It matters which does what:
 
-1. **Step 7 approval gate — always on, prevents *writing*.** Every candidate edit is presented
-   individually, with its target file and section, and you approve or drop them **item by item**
-   (`all` / `drop 1,3` / `edit 2: <text>` / `cancel`). Nothing is committed or pushed until you
-   say so. This is the control that is always protecting you, on every run, with no setup. If a
-   1:1 produces a candidate you don't want in the KB, you drop that line and it never lands.
+1. **Step 6 sort + Step 7 approval — always on, prevents *writing*.** Step 6 rejects sensitive
+   candidates before you see them (`references/sorting-guidelines.md`), trims risky detail from
+   the rest, and holds back at most 4 it can't call. Step 7 shows a short ✅ list you approve
+   with `yes`, plus the ❓ items, which stay out unless you name them. Nothing is committed or
+   pushed until you say so. If something on the ✅ list shouldn't land, `drop` it.
 2. **`harvest-exclude.txt` — opt-in, prevents *reading*.** If you'd rather a whole class of
    meeting never be read at all, put it in your settings and the skill will skip it before
    fetching a transcript — content never read, never sent to Claude, never written to `/tmp`.
@@ -143,7 +137,7 @@ only changes the destination.
 result, and STOP. If they asked to *verify / check* their setup, run
 `bash references/verify-setup.sh`, report its ROUTE verdict, and STOP. In both cases do not
 proceed to Step 1 or fetch any meeting. Likewise **"turn on / turn off KB harvest"** only flips
-the switch (see "Off by default in close-day and close-week") and STOPs.
+the switch (see "The on/off switch for close-day and close-week") and STOPs.
 
 Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`) and whether
 `--dry-run` is present. Treat "dry run", "preview", "what would this harvest", and "show me
@@ -795,7 +789,8 @@ For each meeting loaded in Step 2, ask Claude to extract candidate KB entries.
 - The `[paste the never-write categories table]` placeholder with the actual rubric table from `/tmp/harvest-meeting-ctx/rubric.md`
 - The `INPUT` block with the meeting's title, date, attendees, summary, and transcript
 
-**Invocation:** Call Claude with the constructed prompt. Parse the JSON response. Expect 0–10 candidates per meeting; flag if > 15 (probably mis-parsing). Stash all candidates in `/tmp/harvest-meeting-ctx/candidates.json`:
+**Invocation:** Call Claude with the constructed prompt. Parse the JSON response. Expect 0–10 candidates per meeting; flag if > 15 (probably mis-parsing). Attach the meeting's id, title, URL, date and attendee list from Step 2 to **every** candidate it
+produced (Step 6 needs them to apply the stricter 1:1 rules per candidate). Add each meeting's `withheld` counts into a run total (`/tmp/harvest-meeting-ctx/withheld.json`); Step 7's 🚫 line is withheld + Step 6 REJECTs. Stash all candidates in `/tmp/harvest-meeting-ctx/candidates.json`:
 
 ```json
 [{
@@ -803,13 +798,14 @@ For each meeting loaded in Step 2, ask Claude to extract candidate KB entries.
   "meeting_title": "...",
   "meeting_url": "...",
   "meeting_date": "YYYY-MM-DD",
+  "meeting_attendees": ["<name>", ...],
   "kind": "...", "text": "...", "fathom_timestamp_sec": ..., "speaker": "...", "confidence": ...
 }, ...]
 ```
 
 **Heartbeat per meeting:**
 ```
-Step 3: meeting "<title>" → N candidates (D decisions, P projects, S state-changes)
+Step 3: meeting "<title>" → N candidates (D decisions, P projects, S state-changes, H how-we-work), W withheld
 ```
 
 **Edge cases:**
@@ -864,31 +860,41 @@ Annotate each candidate with the dedup verdict. Drop DUPLICATEs. Mark REFINEMENT
 Step 5: dedup → N NEW, M REFINEMENT (replacing existing), K DUPLICATE (dropped)
 ```
 
-## Step 6: Apply sensitive-content rubric
+## Step 6: Sort candidates — Add / Not adding / Unsure
 
-For each surviving candidate (NEW or REFINEMENT), apply the full rubric from `/tmp/harvest-meeting-ctx/rubric.md`:
+For each surviving candidate (NEW or REFINEMENT), sort it using
+`references/sorting-guidelines.md` **and** the KB rubric from `/tmp/harvest-meeting-ctx/rubric.md`
+(the rubric is the floor; the guidelines are stricter and win where they differ). Sort all of a
+run's candidates in one call so the UNSURE cap of 4 is applied across the run, not per item.
 
 ```
-Apply this rubric to the candidate text:
+<paste references/sorting-guidelines.md>
+<paste full rubric from /tmp/harvest-meeting-ctx/rubric.md>
 
-<paste full rubric from /tmp/harvest-meeting-ctx/rubric.md, including never-write
-table AND reshape rules>
+Today: <YYYY-MM-DD>. Each candidate carries its own meeting title, date and attendee count —
+judge meeting type per candidate, not per run.
+Candidates: <JSON list of {id, meeting_title, meeting_date, meeting_attendees, kind, target_file, text}>
 
-Candidate text: "<candidate.text>"
-
-Return JSON:
-{"verdict": "PASS" | "RESHAPE" | "DROP_UNSAFE",
- "reshape_to": "<reshaped text>",  // only for RESHAPE
- "category": "<which never-write category triggered>",  // for DROP_UNSAFE or RESHAPE
- "reason": "<one-sentence>"}
+Return a JSON list, one object per candidate:
+{"id": ..., "bucket": "ADD" | "TRIM" | "REJECT" | "SKIP" | "UNSURE",
+ "text": "<final text — the trimmed version for TRIM/UNSURE>",
+ "reason": "<≤12 plain words — why this bucket>",
+ "target_file": "<the target, with any partner/vendor/person name removed from a NEW page's slug and title>",
+ "cut": "<≤3 words, TRIM only>",
+ "category": "<REJECT only — one of the withheld labels in candidate-extraction.md>",
+ "question": "<UNSURE only — one question the builder can answer in a second>",
+ "rank": <UNSURE only — 1 = most useful>}
 ```
 
-Annotate each candidate. DROP_UNSAFE candidates are removed from the proposal list but logged for the summary at end of approval display.
+Replace each candidate's `text` with the returned `text`, and its Step 4 topic slug (and a NEW
+page's title) with the returned `target_file` — Steps 6b–8 read these, so a trim must land in both,
+or a name cut from the text would still reach the KB as a file name. Enforce the cap after parsing: keep the 4 lowest-ranked UNSURE items and change the rest to
+REJECT (category `unsure overflow`). Drop REJECT and SKIP from the proposal list; keep their
+counts by category for Step 7.
 
 **Heartbeat:**
 ```
-Step 6: rubric → N PASS, M RESHAPE, K DROP_UNSAFE
-  Dropped categories: <comma-separated list, e.g., "individual comp (2), profit number (1)">
+Step 6: sorted → A add, T trimmed, U unsure, R rejected, S skipped
 ```
 
 ## Step 6b: Merge current_state replacements (never clobber)
@@ -911,80 +917,100 @@ Existing Current State:
 <full current_state from /tmp/harvest-meeting-ctx/topics.json>
 
 New change (from meeting <date>): <candidate.text>
-(If the rubric reshaped this candidate, use the reshaped text: <candidate.reshape_to>)
+(Use the candidate's final `text` from Step 6, which is the trimmed version for TRIM.)
 
 Return JSON: {"new_current_state": "<full rewritten block>",
               "dropped_context": "<anything you removed and why, or 'none'>"}
 ```
 
 Store `new_current_state` on the candidate. If the model reports it dropped non-trivial context,
-surface that in the approval list so the human can check.
+move it to UNSURE with the question "This rewrite drops <X> from Current State. OK?". If it is
+already UNSURE, keep its Step 6 question and append this one, so the builder sees both conditions
+in one item and `yes + uN` answers both. Then **re-apply the cap of 4 across all UNSURE items**: Step 6 items keep their rank, 6b items rank
+after them, and overflow becomes REJECT (`unsure overflow`, counted, never shown).
 
 **Heartbeat:** `Step 6b: merged N current_state replacement(s) (M flagged for dropped context)`
 
 If Current State is empty, skip the merge — write the candidate text directly.
 
-## Step 7: Present numbered approval list
+## Step 7: Present the three lists
 
-Render the surviving candidates as a numbered list grouped by topic file, with clear diff markers. Then parse the user's response.
-
-> **Current State diffs must show the FULL existing block** (not a truncated snippet) as the
-> `-` lines, and the full `new_current_state` as the `+` lines, so clobbering or dropped context
-> is visible before the user types `all`.
+One screen, short enough to read in under a minute. Safe items are approved together; only
+UNSURE items need a decision each. **Never show the text of REJECT or SKIP items** — a count by
+category is enough, and repeating sensitive content in chat is its own small leak.
 
 **Render format:**
 
 ```
-Harvest candidates from YYYY-MM-DD ({M} meeting(s), {N} candidates after rubric):
+Harvest from YYYY-MM-DD — {M} meeting(s)
 
-[1] <topic-slug>.md → Key Decisions
-    + YYYY-MM-DD: <candidate text> ([▶](<fathom_url>?timestamp=<sec>))
+✅ Adding to the {company|local} KB ({A+T}):
+  1. <topic>.md → Key Decisions: <text> ([▶](<fathom_url>?timestamp=<sec>))
+  2. <topic>.md → Current State (rewrite): <one-line gist>   · `show 2` for the full diff
+  3. 🆕 <suggested_slug>.md: <text>
+  4. <topic>.md → Key Decisions: <text>   ✂ deal figure
+  5. <topic>.md → Key Decisions: <text>   · topic unsure, or <alt>.md? (`topic 5: <slug>`)
 
-[2] <topic-slug>.md → Current State (REPLACE)
-    - <existing text>
-    + <new text>
+❓ Your call ({U}, max 4):
+  u1. <text>
+      → <question>
 
-[3] <topic-slug>.md → Open Questions
-    + <candidate text>
+🚫 Not adding — sensitive ({R}): individual pay (1), unannounced change (2)
+· Skipped {S} minor items (undecided ideas, logistics)
 
-[4] 🆕 NEW: <suggested_slug>.md (parent: <parent_slug>, type: <type>)
-    + Key Decision: YYYY-MM-DD: <candidate text> ([▶](<fathom_url>?timestamp=<sec>))
-
-[5] <topic-slug>.md → Key Decisions (RESHAPED)
-    original: <original candidate text>
-    reshaped: <rubric-reshape>
-    category: <which never-write category drove reshape>
-
-[?6] <topic-slug>.md → Key Decisions  (LOW CONFIDENCE — please confirm topic)
-    + YYYY-MM-DD: <candidate text>
-    alternatives: <secondary_topics>
-
-⚠ N candidates dropped by rubric:
-  - "<candidate text>" (<never-write category>)
-  - "<candidate text>" (<never-write category>)
-
-Approve? all / drop 1,3 / edit 2: <new text> / topic ?6: <slug> / cancel
+Reply: yes · yes + u1 · drop 3 · why 2 · edit 1: <text> · topic 5: <slug> · show 2 · cancel
+(`yes` adds the ✅ list and leaves every ❓ item out unless you name it.)
 > _
 ```
 
-**Parser:** Accept input. Parse against this grammar:
-- `all` → approve every numbered item (including `?` items as-is)
-- `cancel` → abort, no writes
-- `drop <comma-separated-numbers>` → exclude those numbers, approve the rest
-- `edit <N>: <text>` → replace candidate N's text with `<text>`, then approve the rest (assumed `all` unless another action follows)
-- `topic <?N>: <slug>` → resolve a low-confidence flag by picking the topic, then approve
-- Compound: `drop 1,3 edit 2: foo topic ?6: bar` → apply each action
+Omit any section that is empty. If ✅ and ❓ are both empty, print the 🚫 and skipped lines,
+then `Nothing to add from today's meetings.` and exit cleanly without asking.
 
-Re-render after any `edit` or `topic` so the user sees the result before final approval. Loop until user types `all`, `cancel`, or unambiguous full-list approval.
+**Parser:**
+- `yes` → approve every ✅ item; reject every ❓ item
+- `yes + u1,u3` (or `add u1`) → also approve those ❓ items
+- `drop <numbers>` → remove those ✅ items, then approve the rest
+- `edit <N>: <text>` → replace item N's text, re-render, wait for `yes`
+- `topic <N>: <slug>` → file item N under that topic instead (low-confidence or `mapping:
+  ERROR` items from Step 4 show their alternatives inline; an ERROR item with no valid slug is
+  left out unless the builder picks one)
+- `why <N>` (or `why u1`) → print that item's reason, then wait
+- `show skipped` → list the SKIP items with their reasons (they're harmless by definition; REJECT
+  items are never listed)
+- `show <N>` → print the full Current State diff (whole existing block as `-`, full
+  `new_current_state` as `+`), then wait
+- `cancel` → abort, no writes
+- Compound replies are fine: `drop 2 edit 1: foo yes + u1`
 
 **Heartbeat:**
 ```
-Step 7: presenting N candidates for approval...
+Step 7: presenting A adding, U unsure ({R} rejected, {S} skipped)...
 [after user response]
-Step 7: user approved K candidates (M edited, J dropped)
+Step 7: user approved K ({J} dropped, {V} unsure added)
 ```
 
 If the user types `cancel`, heartbeat `Step 7: harvest cancelled, no changes.` and exit cleanly.
+
+### 7b. Record the counts (no content)
+
+After the user responds (including `cancel` and the nothing-to-add exit), append one line to
+`$OBSIDIAN_VAULT_PATH/.harvest-log.jsonl`. Counts only, never candidate text:
+
+```bash
+python3 - <<'EOF'
+import json, os, datetime, pathlib
+p = pathlib.Path(os.environ['OBSIDIAN_VAULT_PATH']) / '.harvest-log.jsonl'
+# Fill every <…> from this run before executing. On `cancel`: cancelled = True and
+# approved / dropped / unsure_added = 0. On the nothing-to-add exit: cancelled = False, all three 0.
+row = {"ts": datetime.datetime.now().isoformat(timespec='seconds'), "mode": "<date|url>",
+       "meetings": <M>, "adding": <A>, "trimmed": <T>, "unsure": <U>, "rejected": <R>,
+       "skipped": <S>, "approved": <K>, "dropped": <J>, "unsure_added": <V>,
+       "cancelled": <True|False>}
+with p.open('a') as f: f.write(json.dumps(row) + '\n')
+EOF
+```
+
+This is how we measure whether the list got shorter. It stays on the builder's machine.
 
 ## Step 8: Apply edits, commit, push
 
@@ -1093,7 +1119,7 @@ last-updated: {today}
                       f"refusing to clobber existing content. Re-run with Step 6b.")
                 continue
             # Empty Current State: safe to write the candidate directly.
-            new_text = cand.get('reshape_to') or cand['text']
+            new_text = cand['text']
         text = re.sub(
             r'(## Current State\n)(.*?)(?=\n## )',
             rf'\1\n{new_text}\n',

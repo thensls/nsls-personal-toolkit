@@ -1055,16 +1055,12 @@ Show the full daily note draft. Ask:
 - "Anything to add or correct?"
 - "Ready to write?"
 
-### Step 4c. NSLS Knowledge Base harvest — OFF by default
+### Step 4c. NSLS Knowledge Base harvest
 
-**Off unless the builder turned it on.** Read `kb_harvest` from the top-level frontmatter of
-`$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. Run this step **only** when it is the
-literal string `on`. Absent, missing file, or any other value means **off**: print the one skip
-line below, write no `## Knowledge Base` section, ask nothing, and go straight to Step 4d.
-
-Harvest surfaced too much private meeting content (comp, personnel, 1:1 material) to rely on the
-approval gate, so it stays off until its filters are rebuilt and tested. `/harvest-meeting` still
-works when invoked directly.
+**On unless the builder turned it off.** Read `kb_harvest` from the top-level frontmatter of
+`$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. Skip this step **only** when it is the
+literal string `off`: print the one skip line below, write no `## Knowledge Base` section, ask
+nothing, and go straight to Step 4d. Absent, missing file, or any other value means **on**.
 
 ```bash
 # Frontmatter only: the first --- block at the top of the file, CRLF-tolerant.
@@ -1072,7 +1068,7 @@ KB_HARVEST=$(awk '{sub(/\r$/,"")} NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit}
   NR>1&&/^kb_harvest:/{v=$0; sub(/^kb_harvest:[ \t]*/,"",v); sub(/[ \t]+$/,"",v)
     if (v ~ /^".*"$/ || v ~ /^'"'"'.*'"'"'$/) v=substr(v,2,length(v)-2); print v; exit}' \
   "$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md" 2>/dev/null)
-if [ "$KB_HARVEST" != "on" ]; then
+if [ "$KB_HARVEST" = "off" ]; then
   echo "Step 4c: KB harvest is off — skipping (say \"turn on KB harvest\" to enable)"
 else
   # /harvest-meeting self-routes (SLT → company KB, others → local KB) and resolves
@@ -1081,7 +1077,7 @@ else
 fi
 ```
 
-When it is on, invoke the harvest skill:
+Otherwise invoke the harvest skill:
 
 ```
 /harvest-meeting --date $TODAY
@@ -1092,7 +1088,7 @@ The skill will:
 2. Load KB topic index + rubric
 3. Pull Fathom meetings for today
 4. Extract → map → dedup → rubric
-5. Present numbered approval list to the user
+5. Sort candidates and show three short lists (adding / your call / not adding)
 6. Apply edits → commit (push if company KB) → or exit cleanly if cancelled
 
 **After the skill returns:** Append a `## Knowledge Base` section to today's daily note with one of:
