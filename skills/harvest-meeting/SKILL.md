@@ -921,8 +921,9 @@ Return JSON: {"new_current_state": "<full rewritten block>",
 ```
 
 Store `new_current_state` on the candidate. If the model reports it dropped non-trivial context,
-move the candidate to UNSURE (question: "This rewrite drops <X> from Current State. OK?"), still
-then **re-apply the cap of 4 across all UNSURE items**: Step 6 items keep their rank, 6b items rank
+move it to UNSURE with the question "This rewrite drops <X> from Current State. OK?". If it is
+already UNSURE, keep its Step 6 question and append this one, so the builder sees both conditions
+in one item and `yes + uN` answers both. Then **re-apply the cap of 4 across all UNSURE items**: Step 6 items keep their rank, 6b items rank
 after them, and overflow becomes REJECT (`unsure overflow`, counted, never shown).
 
 **Heartbeat:** `Step 6b: merged N current_state replacement(s) (M flagged for dropped context)`
