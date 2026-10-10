@@ -1055,17 +1055,33 @@ Show the full daily note draft. Ask:
 - "Anything to add or correct?"
 - "Ready to write?"
 
-### Step 4c. NSLS Knowledge Base harvest
+### Step 4c. NSLS Knowledge Base harvest — OFF by default
 
-Heartbeat sequence:
+**Off unless the builder turned it on.** Read `kb_harvest` from the top-level frontmatter of
+`$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`. Run this step **only** when it is the
+literal string `on`. Absent, missing file, or any other value means **off**: print the one skip
+line below, write no `## Knowledge Base` section, ask nothing, and go straight to Step 4d.
+
+Harvest surfaced too much private meeting content (comp, personnel, 1:1 material) to rely on the
+approval gate, so it stays off until its filters are rebuilt and tested. `/harvest-meeting` still
+works when invoked directly.
 
 ```bash
-# Everyone harvests: /harvest-meeting self-routes (SLT → company KB, others → local KB)
-# and resolves identity cwd-independently in its own Step 0 — no pre-gate here.
-echo "Step 4c: invoking /harvest-meeting --date $TODAY (routes to company or local KB)..."
+# Frontmatter only: the first --- block at the top of the file, CRLF-tolerant.
+KB_HARVEST=$(awk '{sub(/\r$/,"")} NR==1&&$0!="---"{exit} NR>1&&$0=="---"{exit}
+  NR>1&&/^kb_harvest:/{v=$0; sub(/^kb_harvest:[ \t]*/,"",v); sub(/[ \t]+$/,"",v)
+    if (v ~ /^".*"$/ || v ~ /^'"'"'.*'"'"'$/) v=substr(v,2,length(v)-2); print v; exit}' \
+  "$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md" 2>/dev/null)
+if [ "$KB_HARVEST" != "on" ]; then
+  echo "Step 4c: KB harvest is off — skipping (say \"turn on KB harvest\" to enable)"
+else
+  # /harvest-meeting self-routes (SLT → company KB, others → local KB) and resolves
+  # identity cwd-independently in its own Step 0 — no pre-gate here.
+  echo "Step 4c: invoking /harvest-meeting --date $TODAY (routes to company or local KB)..."
+fi
 ```
 
-Invoke the harvest skill:
+When it is on, invoke the harvest skill:
 
 ```
 /harvest-meeting --date $TODAY

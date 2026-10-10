@@ -1,11 +1,27 @@
 ---
 name: harvest-meeting
-description: Harvest decisions, project definitions, and state changes from meetings into a knowledge base. SLT members write to the shared company KB (thensls/nsls-knowledge); everyone else builds a local, private KB (never pushed). Use when you've just finished a strategic meeting, want to backfill a specific Fathom URL, or as part of close-day Step 4c / close-week Step 2b.
+description: Harvest decisions, project definitions, and state changes from meetings into a knowledge base. SLT members write to the shared company KB (thensls/nsls-knowledge); everyone else builds a local, private KB (never pushed). Use when you've just finished a strategic meeting, want to backfill a specific Fathom URL, or as part of close-day Step 4c / close-week Step 2b (those only run it when kb_harvest: on). Also handles "turn on KB harvest" / "turn off KB harvest".
 ---
 
 # Harvest Meeting — NSLS Knowledge Base Pipeline
 
 Pulls decisions, project definitions, and state changes from recorded meetings, gates them through the employee-facing sensitive-content rubric, and proposes precise edits to topic files. Routing is automatic: SLT members (on `kb_authors.txt`) write to the shared company KB (`60-nsls-knowledge`) and push to `main`; everyone else writes to a local, private KB (`60-nsls-knowledge-local`) that is committed locally and never pushed.
+
+## Off by default in close-day and close-week
+
+`/close-day` and `/close-week` **do not harvest** unless you turn it on. It surfaced too much
+private meeting content (comp, personnel, 1:1 material) to lean on the approval gate, so it stays
+off until its filters are rebuilt and tested. Invoking `/harvest-meeting` directly still works,
+with every gate below.
+
+The switch is one frontmatter line in `$OBSIDIAN_VAULT_PATH/50-reference/builder-profile.md`:
+`kb_harvest: on`. Absent or anything else means off.
+
+- **"turn on KB harvest"** → set `kb_harvest: on` in that file's frontmatter (add the field if
+  missing, create the file with just that frontmatter if it doesn't exist). Before writing, say
+  in one line that the filters are still being rebuilt and every candidate needs a careful read.
+  Then STOP; don't start a harvest.
+- **"turn off KB harvest"** → set `kb_harvest: off`. STOP.
 
 ## First-Time Setup (read before you clone)
 
@@ -65,9 +81,9 @@ gateway URL or token to verify** (the kb-gateway only powers the bot + kb.nsls.o
 
 | Mode | When | Source |
 |---|---|---|
-| `--date YYYY-MM-DD` | close-day Step 4c | Your Fathom recordings for the date, minus exclusions |
+| `--date YYYY-MM-DD` | close-day Step 4c (only when `kb_harvest: on`) | Your Fathom recordings for the date, minus exclusions |
 | `--fathom-url <url>` | Manual after important meeting | Single meeting |
-| `--week-audit --week YYYY-Www` | close-week Step 2b | Git log + topic files for the week |
+| `--week-audit --week YYYY-Www` | close-week Step 2b (only when `kb_harvest: on`) | Git log + topic files for the week |
 
 | Flag | Effect |
 |---|---|
@@ -126,7 +142,8 @@ only changes the destination.
 `bash references/setup.sh` (clones, sets identity, checks allowlist, then verifies), report the
 result, and STOP. If they asked to *verify / check* their setup, run
 `bash references/verify-setup.sh`, report its ROUTE verdict, and STOP. In both cases do not
-proceed to Step 1 or fetch any meeting.
+proceed to Step 1 or fetch any meeting. Likewise **"turn on / turn off KB harvest"** only flips
+the switch (see "Off by default in close-day and close-week") and STOPs.
 
 Parse arguments to determine mode (`--date`, `--fathom-url`, or `--week-audit`) and whether
 `--dry-run` is present. Treat "dry run", "preview", "what would this harvest", and "show me
