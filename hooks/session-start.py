@@ -247,6 +247,10 @@ def upgrade_pull_hook():
             os.chmod(tmp, stat.S_IMODE(real.stat().st_mode))
             # Anything that wrote settings.json since we read it (Claude Code,
             # an installer, an editor) wins: drop ours and try next session.
+            # This narrows the race, it does not close it: a write landing
+            # between this check and the replace is still lost. Nothing else
+            # that writes settings.json takes a lock this hook could share, and
+            # the upgrade fires once per machine.
             if real.read_bytes() != data:
                 raise OSError("settings.json changed while upgrading")
             os.replace(tmp, str(real))
