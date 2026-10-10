@@ -993,9 +993,12 @@ After the user responds (including `cancel` and the nothing-to-add exit), append
 python3 - <<'EOF'
 import json, os, datetime, pathlib
 p = pathlib.Path(os.environ['OBSIDIAN_VAULT_PATH']) / '.harvest-log.jsonl'
+# Fill every <…> from this run before executing. On `cancel`: cancelled = True and
+# approved / dropped / unsure_added = 0. On the nothing-to-add exit: cancelled = False, all three 0.
 row = {"ts": datetime.datetime.now().isoformat(timespec='seconds'), "mode": "<date|url>",
-       "meetings": M, "adding": A, "trimmed": T, "unsure": U, "rejected": R, "skipped": S,
-       "approved": K, "dropped": J, "unsure_added": V, "cancelled": False}
+       "meetings": <M>, "adding": <A>, "trimmed": <T>, "unsure": <U>, "rejected": <R>,
+       "skipped": <S>, "approved": <K>, "dropped": <J>, "unsure_added": <V>,
+       "cancelled": <True|False>}
 with p.open('a') as f: f.write(json.dumps(row) + '\n')
 EOF
 ```
