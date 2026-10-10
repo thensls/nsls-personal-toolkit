@@ -1092,7 +1092,7 @@ The skill will:
 2. Load KB topic index + rubric
 3. Pull Fathom meetings for today
 4. Extract → map → dedup → rubric
-5. Present numbered approval list to the user
+5. Sort candidates and show three short lists (adding / your call / not adding)
 6. Apply edits → commit (push if company KB) → or exit cleanly if cancelled
 
 **After the skill returns:** Append a `## Knowledge Base` section to today's daily note with one of:

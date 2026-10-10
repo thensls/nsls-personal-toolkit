@@ -11,8 +11,13 @@ Before extraction, paste the rubric's **Never write** list from `60-nsls-knowled
 ```
 You are extracting candidate KB entries from an SLT meeting at NSLS (a leadership honor society).
 
-OUTPUT FORMAT: JSON array. No prose, no markdown fences.
-Each element: {"kind": "decision" | "project_definition" | "state_change",
+OUTPUT FORMAT: one JSON object. No prose, no markdown fences.
+{"candidates": [ ... ], "withheld": {"<category>": <count>, ...}}
+"withheld" counts the moments you left out because they fall in a never-write category,
+using these labels only: individual pay, people decision, private life, financials beyond
+revenue, deal or vendor terms, security, legal, not yet announced, outside-org gossip,
+member data. Count only; never describe them.
+Each candidate: {"kind": "decision" | "project_definition" | "state_change" | "how_we_work",
                "text": "<one-sentence summary>",
                "fathom_timestamp_sec": <integer>,
                "speaker": "<name or 'unknown'>",
@@ -24,6 +29,9 @@ KINDS:
 - project_definition: a project, initiative, or workstream is being scoped or
   introduced. Includes owner if mentioned. Phrasing like "Project X exists",
   "Y owns this", "we're kicking off Z".
+- how_we_work: a standing practice stated as current fact by someone who runs it, that a
+  colleague elsewhere would look up ("partner onboarding takes about six weeks", "legal turns
+  data-sharing agreements around in two to three weeks"). Not one-off logistics.
 - state_change: a material change since the topic's last KB update. Numeric
   shifts ("conversion rate moved from 12% to 18%"), structural shifts
   ("now using 4 tiers instead of 3"), program changes ("SARs grants now
@@ -33,6 +41,7 @@ DO NOT extract:
 - Status updates without a decision ("chapter retention has been declining")
 - Plans-in-discussion or hypothetical proposals ("we should probably look at pricing")
 - Context, observations, or opinions ("Dana raised a good point")
+- Logistics and scheduling (offsites, meeting times, expense tools, holiday closures)
 - Anything that falls in these never-write categories from the NSLS sensitive-content
   rubric: [paste the never-write categories table from 60-nsls-knowledge/CLAUDE.md]
 
@@ -48,6 +57,9 @@ Transcript: <full transcript>
 ```
 
 ## Worked examples
+
+Each example shows the `candidates` array only; the real output wraps it in
+`{"candidates": [...], "withheld": {...}}`.
 
 ### Example 1: A clear decision
 
