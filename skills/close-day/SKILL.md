@@ -502,13 +502,24 @@ If you need the full transcript for a specific meeting (e.g., to extract decisio
 
 **1d. Sent Email — outbound communications**
 
-Use the `gmail_search_messages` MCP tool:
+Use the Gmail connector's thread/message search tool, bounded by **epoch seconds for the local day** — never `after:YYYY/MM/DD`:
+
+```bash
+python3 -c "
+from datetime import datetime; d='YYYY-MM-DD'
+a=datetime.fromisoformat(f'{d}T00:00:00').astimezone(); b=datetime.fromisoformat(f'{d}T23:59:59').astimezone()
+print(int(a.timestamp()), int(b.timestamp())+1)"
 ```
-gmail_search_messages(
-  q="from:me after:YYYY/M/DD before:YYYY/M/DD+1",
-  maxResults=30
-)
 ```
+search(query="from:me after:<start_epoch> before:<end_epoch>", pageSize=50)
+```
+
+> ⚠️ **Date-form `after:`/`before:` resolve to the UTC day through the API.** On 2026-10-12 the
+> date-form query returned 1 sent email while ~200 Houston invites sent at 6:25 PM MDT
+> (00:25Z next day) were silently excluded — close-day then reported the outreach as not sent.
+> Evening sends are exactly what close-day runs after, so this is the common case. Epoch
+> seconds are exact instants and avoid it. If results exceed one page, report the
+> `resultCountEstimate` and summarize by subject/label rather than listing every thread.
 Extract: who the builder emailed, subject, and the snippet (which captures their reply). Look for approvals, decisions, delegations, and follow-ups.
 
 **1e. Sent Slack — conversations and coordination**
