@@ -288,8 +288,35 @@ Use this algorithm to compute total active work hours from session data:
 Present work blocks as a compact list:
 ```
 Work blocks: 03:31–11:50 (8.3h), 12:24–17:41 (5.3h)
-Total active: 13.6 hours
+On-screen active: 13.6 hours
 ```
+
+**🛑 Phase 2b — On-screen hours are a FLOOR, never the day. Ask before you publish a total.**
+
+Familiar sees screens. It cannot see in-person working sessions, and for this builder the
+gap is routinely **3–5 hours a day** — enough to turn a 6.3h reading into an 11h day and to
+move "meetings were 70% of the day" to 40%. Publishing the on-screen figure as the day's
+work time is a **reporting error**, not a conservative estimate, and it has shipped more than
+once.
+
+So before writing Time Allocation:
+
+1. **Ask the builder for the day's total work time**, in one line, offering the on-screen
+   figure as the floor: *"Familiar shows 6.3h on-screen. What was the real total? (In-person
+   work doesn't get captured — recent days have run 10–11h.)"* Ask even when it looks like a
+   light day; a light screen day is exactly when the gap is largest.
+2. **If the builder doesn't answer**, estimate off-screen from the ~13h/wk in-person baseline
+   and label it an estimate. Never silently default to the on-screen number.
+3. **Compute** `off_screen = total − on_screen`, and split it **≈50% product / ≈50% team
+   management** unless the builder says otherwise.
+4. **Never name the person** the in-person work happens with. It is company work; frame it as
+   product / team-management hours.
+
+**Every denominator downstream uses the TOTAL, not the on-screen figure** — the meeting
+percentage, the Doing-vs-Orchestrating split, and any "X% of the day" claim. The category
+table stays an on-screen measure and must be labelled as one.
+
+This is a standing instruction from the builder (7/11 close-week), not a nicety.
 
 **Phase 3: Categorize captures into work categories (after Fathom completes)**
 
@@ -405,11 +432,25 @@ Present as a flat list sorted by capture count. Do NOT nest Chrome sub-categorie
 | Learning / Research | 1.4h | 10% | YouTube, news |
 | Marketing / Sales | 0.1h | 1% | Recruiting |
 
-**Active work: 13.6 hours** (3:31 AM – 5:41 PM)
-Work blocks: 3:31–11:50 (8.3h), 12:24–5:41 (5.3h)
-Doing vs. Orchestrating: 23% hands-on building, 42% managing/meeting, 35% admin/research
-**Meeting time (calendar): ~7h across 9 meetings** (50% of active work)
+### Total work time: ~17 hours
+
+| | Hours | Source |
+|---|---|---|
+| On-screen (Familiar) | 13.6h | measured |
+| **Off-screen in-person work** | **~3.4h** | builder's estimate |
+| **Total** | **~17h** | |
+
+Off-screen splits ≈50% product / ≈50% team management. Familiar cannot see in-person
+working sessions, so the on-screen figure is a floor, never the day.
+
+**On-screen blocks** (3:31 AM – 5:41 PM): 3:31–11:50 (8.3h), 12:24–5:41 (5.3h)
+**Meeting time: ~7h across 9 meetings — 41% of the ~17h day**
+Doing vs. Orchestrating, against the full day: ~28% hands-on building, ~44% managing/meeting,
+~28% admin/research. The category table above measures **screen attention only**.
 ```
+
+**The Total work time block is mandatory.** A Time Allocation section that leads with the
+on-screen figure, or computes a percentage against it, is wrong — see Step 1b Phase 2b.
 
 The "Doing vs. Orchestrating" line is a quick summary:
 - **Doing** = Coding / Building
@@ -890,10 +931,30 @@ Include the raw numbers: steps, distance_mi, exercise_min, hr_max, sleep total, 
 | [Category] | [X.Xh] | [XX%] | [top 2-3 tools] |
 | ... | | | |
 
-**Active work: [X.X] hours** ([first block start] – [last block end])
-Work blocks: [HH:MM–HH:MM (X.Xh), ...]
-Doing vs. Orchestrating: [X%] hands-on building, [X%] managing/meeting, [X%] admin/research
-**Meeting time: ~[X]h across [N] meetings** ([X%] of active work) [— includes N impromptu, if any]
+### Total work time: ~[X] hours
+
+| | Hours | Source |
+|---|---|---|
+| On-screen (Familiar) | [X.X]h | measured |
+| **Off-screen in-person work** | **~[X.X]h** | builder's estimate, [date] |
+| **Total** | **~[X]h** | |
+
+Off-screen splits ≈50% product / ≈50% team management — **~[X.X]h product, ~[X.X]h team
+management**. Familiar cannot see in-person working sessions, so the on-screen figure is a
+floor, never the day.
+
+**On-screen blocks** ([first] – [last]): [HH:MM–HH:MM (X.Xh), ...]
+**Meeting time: ~[X]h across [N] meetings — [X]% of the ~[X]h day** [— includes N impromptu]
+Doing vs. Orchestrating, against the full day: [X%] hands-on building, [X%] managing/meeting,
+[X%] admin/research. The category table above measures **screen attention only**.
+
+> **Mandatory, and every percentage uses the TOTAL as its denominator** — never the on-screen
+> figure. See Step 1b Phase 2b. Never name the person the in-person work happens with.
+
+**Attribute the off-screen hours in `## Projects Touched`.** They are real project hours and
+`companion/portfolio.py` reads only those lines, so hours left unassigned vanish from the
+weekly roll-up. Ask which projects the in-person time went to; if the builder doesn't say,
+add an explicit ⚠️ line naming the unattributed total so close-week surfaces the gap.
 
 ## Time Distribution
 - [Category]: [percentage] ([capture count] captures)
