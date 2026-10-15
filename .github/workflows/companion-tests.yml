@@ -1,0 +1,35 @@
+name: companion-tests
+
+# The visual companion has a ~600-test suite (companion/tests) that until now ran
+# only when someone remembered to run it locally. Run it on every PR that
+# touches the companion, on Mac and Linux.
+on:
+  pull_request:
+    paths:
+      - 'companion/**'
+      - '.github/workflows/companion-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'companion/**'
+      - '.github/workflows/companion-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  companion-tests:
+    name: companion/tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --quiet -r companion/requirements.txt
+      - run: python -m pytest -q companion/tests
