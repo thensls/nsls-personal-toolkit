@@ -543,25 +543,31 @@ If you need the full transcript for a specific meeting (e.g., to extract decisio
 
 **1d. Sent Email — outbound communications**
 
-Use the Gmail connector's thread/message search tool, bounded by **epoch seconds for the local day** — never `after:YYYY/MM/DD`:
+Use the Gmail connector's thread search with the **date form**, **fetch wide, then filter on each message's own send time** — the same pattern as Step 1c. Do not use epoch seconds, and do not search the bare local day.
 
 ```bash
-python3 -c "
-from datetime import datetime; d='YYYY-MM-DD'
-a=datetime.fromisoformat(f'{d}T00:00:00').astimezone(); b=datetime.fromisoformat(f'{d}T23:59:59').astimezone()
-print(int(a.timestamp()), int(b.timestamp())+1)"
+python3 - "$TARGET_DATE" <<'PYEOF'
+import sys
+from datetime import datetime, timedelta
+d = sys.argv[1]                                    # YYYY-MM-DD, the builder's local calendar day
+day = datetime.fromisoformat(f'{d}T00:00:00')
+print('after: ', (day - timedelta(days=1)).strftime('%Y/%m/%d'))
+print('before:', (day + timedelta(days=2)).strftime('%Y/%m/%d'))
+print('keep_date:', d)
+PYEOF
 ```
 ```
-search(query="from:me after:<start_epoch> before:<end_epoch>", pageSize=50)
+search(query="from:me after:<after> before:<before>", view="THREAD_VIEW_METADATA_ONLY", pageSize=50)
+get_thread(threadId=<id>, messageFormat="MINIMAL")   # once per thread — search results carry no date
 ```
 
-> ⚠️ **Date-form `after:`/`before:` resolve to the UTC day through the API.** On 2026-10-12 the
-> date-form query returned 1 sent email while ~200 Houston invites sent at 6:25 PM MDT
-> (00:25Z next day) were silently excluded — close-day then reported the outreach as not sent.
-> Evening sends are exactly what close-day runs after, so this is the common case. Epoch
-> seconds are exact instants and avoid it. If results exceed one page, report the
-> `resultCountEstimate` and summarize by subject/label rather than listing every thread.
-Extract: who the builder emailed, subject, and the snippet (which captures their reply). Look for approvals, decisions, delegations, and follow-ups.
+Keep a message only when its labels include `SENT` **and** its `date` (UTC, ends in `Z`) converts into `keep_date` in the builder's timezone. Filter per message, not per thread: a thread that matched can hold sends from other days.
+
+> ⚠️ **Why not the narrow forms.** Date-form `after:`/`before:` resolve to the UTC day through the API: on 2026-10-12 a bare-day query returned 1 sent email while ~200 Houston invites sent at 6:25 PM MDT (00:25Z next day) were silently excluded, and close-day reported the outreach as not sent. **Epoch seconds are not the fix** — the connector ignores them. On 2026-10-27 `from:me after:<epoch> before:<epoch>` and `in:sent` with the same bounds both returned zero threads on a day with sent mail, which close-day then reported as a list of 4 emails pulled from a looser retry, two of which were sent the next morning. A ±1-day pad on the date form plus a per-message filter is what holds.
+
+**Heartbeat the window and the filter**, so an empty result is visible: `Step 1d: Gmail <after> → <before> (wide); N threads fetched, M sent messages kept for YYYY-MM-DD (<tz>)`. If M is 0 on a day with meetings or Slack activity, say so and say the search may be failing — never write "no email sent". If more than one page comes back, paginate and run the per-message filter over **all** candidate threads first (the padded following day can crowd out the target day's threads, so never cap before filtering), then limit only the summary to the 30 most recent kept messages and report the `resultCountEstimate`.
+
+Extract: who the builder emailed, subject, and the snippet. Look for approvals, decisions, delegations, and follow-ups. **A reply is not an original send** — describe it by what it did ("approved", "OK'd the wording"), and read the quoted text beneath it for what it approved. Don't write "sent X" for a one-line reply.
 
 **1e. Sent Slack — conversations and coordination**
 
