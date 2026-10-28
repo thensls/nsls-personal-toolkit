@@ -54,8 +54,8 @@ def test_morning_coach_renders_plan_and_done(client_with_today):
     client, _ = client_with_today
     resp = client.get("/?mode=coach-morning")
     assert resp.status_code == 200
-    for label in (b"Plan your day", b"Your Top 3",
-                  b"Bonus list", b"Command Center"):
+    for label in (b"Plan your day", b"Top 3",
+                  b"Bonus", b"Command Center"):
         assert label in resp.data, f"missing: {label}"
     # The weekday + full date must show at the top even in coach-morning mode
     # (regression: it used to render only in Command Center / results).

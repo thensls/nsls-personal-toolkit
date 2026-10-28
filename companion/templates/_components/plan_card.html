@@ -1,0 +1,55 @@
+{# One draggable task card on Plan-your-day. Expects:
+     card  — {"text", "est", "raw_index", "taken", "source"}
+     lane  — "top_3" | "bonus" | "pool"
+     top3_full — Top 3 already holds three tasks
+   Buttons carry no hx-* attributes: static/drag.js reads the card's
+   data-text at click time, so a renamed card never posts its old title. #}
+{% set set_aside = lane == 'pool' and card.taken in ('done', 'deleted', 'deferred') %}
+{# A typed task set aside today belongs to no suggestion list: un-toggling its
+   mark would make it vanish, so its lit button is locked and Top 3 / Bonus
+   (or a drag) bring it back. #}
+{% set lock_mark = set_aside and card.typed %}
+<div class="nsls-tcard{% if set_aside %} is-set-aside{% endif %}" draggable="true"
+     data-drag-item data-lane="{{ lane }}" data-text="{{ card.text }}"
+     data-est="{{ '%g'|format(card.est) if card.est else '' }}">
+  <span class="nsls-grip" title="Drag to move" aria-hidden="true">⋮⋮</span>
+  {% if lane == 'pool' %}
+  <span class="nsls-tcard-text">
+    <span class="nsls-row-text{% if set_aside %} is-done{% endif %}">{{ card.text }}</span>
+    {% if card.est %}<span class="nsls-tcard-meta" style="color:var(--nsls-teal)">~{{ '%g'|format(card.est) }}h left</span>{% endif %}
+    {% if card.source %}<span class="nsls-tcard-meta">{{ card.source }}</span>{% endif %}
+  </span>
+  {% else %}
+  <input type="text" class="nsls-tcard-title" name="text" value="{{ card.text }}" autocomplete="off"
+         aria-label="Task title" title="Rename — use ✕, Defer or Bonus to move it off"
+         hx-post="{{ '/set-top-3' if lane == 'top_3' else '/set-bonus' }}"
+         hx-vals='{"index": "{{ card.raw_index }}"}'
+         hx-trigger="change" hx-swap="none"
+         hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
+  <span class="nsls-est">
+    <input type="text" inputmode="decimal" name="hours" autocomplete="off"
+           value="{{ '%g'|format(card.est) if card.est else '' }}" placeholder="—"
+           aria-label="Estimated hours" title="Estimated hours (timeboxing)"
+           hx-post="/set-estimate"
+           hx-vals='{"section":"{{ lane }}","index":"{{ card.raw_index }}"}'
+           hx-trigger="change, keyup[key=='Enter']" hx-swap="none"
+           hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
+    <span class="u">h</span>
+  </span>
+  {% endif %}
+  <span class="nsls-pills" role="group" aria-label="Where this task goes">
+    <button type="button" data-plan-pill="pri"
+            class="{{ 'is-active' if lane == 'top_3' else '' }}"
+            {% if lane == 'top_3' %}disabled aria-pressed="true"
+            {% elif top3_full %}disabled title="Top 3 is full — drag this task into Top 3 to swap"{% endif %}>Top 3</button>
+    <button type="button" data-plan-pill="bonus"
+            class="{{ 'is-active' if lane == 'bonus' else '' }}"
+            {% if lane == 'bonus' %}disabled aria-pressed="true"{% endif %}>Bonus</button>
+    {% for act, taken, label, tip in [('defer', 'deferred', 'Defer', ''), ('done', 'done', '✓', 'Already done'), ('delete', 'deleted', '✕', 'Delete')] %}
+    {% set lit = lane == 'pool' and card.taken == taken %}
+    <button type="button" data-plan-pill="{{ act }}"
+            class="{{ 'is-del' if act == 'delete' else '' }} {{ 'is-active' if lit else '' }}"
+            {% if lit and lock_mark %}disabled title="Use Top 3 or Bonus to bring it back"{% elif tip %}title="{{ tip }}"{% endif %}>{{ label }}</button>
+    {% endfor %}
+  </span>
+</div>

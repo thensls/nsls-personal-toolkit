@@ -1,108 +1,58 @@
-<div id="plan-your-day" hx-target="#plan-your-day" hx-swap="outerHTML">
+{# Plan-your-day: three stacked lanes — Top 3, Bonus, and the suggestions
+   pool. Every card drags (reorder, or move between lanes) and carries the
+   same Top 3 / Bonus / Defer / ✓ / ✕ buttons. static/drag.js posts drops to
+   /move-item and button clicks to /move-item or /plan-action; each returns
+   this partial, which replaces #plan-your-day. #}
+{% set top3_full = plan.priorities|length >= 3 %}
+{% set pool = plan.suggestions | rejectattr("taken", "in", ["pri", "bonus"]) | list %}
+<div id="plan-your-day" hx-target="#plan-your-day" hx-swap="outerHTML" data-drag-view="plan">
   <h3 class="font-semibold text-lg mb-1 nsls-h1">Plan your day</h3>
   <p class="text-sm nsls-subtle mb-3">
-    Pick <strong>three</strong> priorities. Anything else goes on the Bonus list.
+    Pick <strong>three</strong> priorities. Drag a task to move or reorder it, or use its buttons.
   </p>
 
-  {% if plan.suggestions %}
-  <div class="rounded mb-4" style="border:1px solid var(--nsls-hairline)">
-    <div class="px-3 py-2 nsls-card-title nsls-divider" style="background:var(--nsls-lightblue)">
-      Suggestions &amp; carry-overs
+  <section class="nsls-lane nsls-lane--top3" data-drop-lane="top_3">
+    <div class="nsls-lane-head">
+      <span>Top 3</span>
+      <span class="nsls-tip nsls-lane-hint">est. hrs<span class="ic">i</span><span class="pop"><b>Estimated time (timeboxing).</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span>
     </div>
-    <table class="w-full text-sm">
-      <thead>
-        <tr class="text-xs text-stone-500">
-          <th class="px-2 py-1 w-12 text-center">Top 3</th>
-          <th class="px-2 py-1 w-12 text-center">Bonus</th>
-          <th class="px-2 py-1 w-12 text-center">Defer</th>
-          <th class="px-2 py-1 w-12 text-center">Done</th>
-          <th class="px-2 py-1 w-12 text-center">Delete</th>
-          <th class="px-2 py-1 text-left">Item</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in plan.suggestions %}
-        <tr class="border-t {{ 'opacity-50' if s.taken else '' }}">
-          <td class="px-2 py-1 text-center">
-            <input type="checkbox" {% if s.taken == 'pri' %}checked{% endif %}
-                   hx-post="/plan-action"
-                   hx-vals='{"text": {{ s.text|tojson }}, "action": "pri"{% if s.est %}, "est": "{{ '%g'|format(s.est) }}"{% endif %}}'
-                   hx-trigger="change"
-                   {% if plan.priorities|length >= 3 and s.taken != 'pri' %}disabled title="3 priorities already chosen"{% endif %}>
-          </td>
-          <td class="px-2 py-1 text-center">
-            <input type="checkbox" {% if s.taken == 'bonus' %}checked{% endif %}
-                   hx-post="/plan-action"
-                   hx-vals='{"text": {{ s.text|tojson }}, "action": "bonus"{% if s.est %}, "est": "{{ '%g'|format(s.est) }}"{% endif %}}'
-                   hx-trigger="change">
-          </td>
-          <td class="px-2 py-1 text-center">
-            <input type="checkbox" {% if s.taken == 'deferred' %}checked{% endif %}
-                   hx-post="/plan-action"
-                   hx-vals='{"text": {{ s.text|tojson }}, "action": "defer"}'
-                   hx-trigger="change">
-          </td>
-          <td class="px-2 py-1 text-center">
-            <input type="checkbox" {% if s.taken == 'done' %}checked{% endif %}
-                   hx-post="/plan-action"
-                   hx-vals='{"text": {{ s.text|tojson }}, "action": "done"}'
-                   hx-trigger="change">
-          </td>
-          <td class="px-2 py-1 text-center">
-            <input type="checkbox" {% if s.taken == 'deleted' %}checked{% endif %}
-                   hx-post="/plan-action"
-                   hx-vals='{"text": {{ s.text|tojson }}, "action": "delete"}'
-                   hx-trigger="change">
-          </td>
-          <td class="px-2 py-1">
-            <span {% if s.taken in ('done', 'deleted', 'deferred') %}class="line-through text-stone-400"{% endif %}>{{ s.text }}</span>
-            {% if s.est %}<span class="text-xs ml-1" style="color:var(--nsls-teal)">~{{ '%g'|format(s.est) }}h left</span>{% endif %}
-            {% if s.source %}<span class="text-xs text-stone-400 ml-1">({{ s.source }})</span>{% endif %}
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% else %}
-  <p class="text-xs text-stone-500 mb-4 italic">No suggestions yet — they'll appear here after `/close-day` runs the night before, or carry over from yesterday's unfinished Top 3.</p>
-  {% endif %}
-
-  <div class="mb-4">
-    <h4 class="nsls-card-title mb-2">Your Top 3 <span class="nsls-tip" style="text-transform:none;letter-spacing:0;font-weight:400;color:var(--nsls-darkblue)">· est. hrs<span class="ic">i</span><span class="pop"><b>Estimated time (timeboxing).</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></h4>
-    <ol class="space-y-2">
-      {% for i in range(3) %}
-        <li class="flex items-center gap-2">
-          <span class="nsls-subtle text-sm w-4">{{ i + 1 }}.</span>
-          <input type="text"
-                 value="{{ plan.top3_slots[i] }}"
-                 placeholder="Priority {{ i + 1 }}"
-                 hx-post="/set-top-3"
-                 hx-vals='{"index": "{{ i }}"}'
-                 hx-trigger="change, keyup changed delay:600ms"
-                 hx-swap="none"
-                 name="text"
-                 autocomplete="off"
-                 class="flex-1 nsls-input">
-          <span class="nsls-est">
-            <input type="text" inputmode="decimal" name="hours" autocomplete="off"
-                   value="{{ '%g'|format(plan.top3_est[i]) if plan.top3_est is defined and plan.top3_est[i] else '' }}" placeholder="—"
-                   aria-label="Estimated hours for priority {{ i + 1 }}"
-                   hx-post="/set-estimate"
-                   hx-vals='{"section":"top_3","index":"{{ i }}"}'
-                   hx-trigger="change, keyup[key=='Enter']"
-                   hx-swap="none">
-            <span class="u">h</span>
-          </span>
-        </li>
+    <div class="nsls-lane-stack">
+      {% for p in plan.priorities %}
+        {% with card=p, lane='top_3' %}{% include "_components/plan_card.html" %}{% endwith %}
       {% endfor %}
-    </ol>
-  </div>
+      {% for i in range(plan.priorities|length, 3) %}
+      <div class="nsls-slot">
+        <span class="nsls-slot-n">{{ i + 1 }}</span>
+        <input type="text" name="text" autocomplete="off"
+               placeholder="Type a priority, or drag a task here"
+               aria-label="Priority {{ i + 1 }}"
+               hx-post="/move-item"
+               hx-vals='{"to": "top_3", "view": "plan"}'
+               hx-trigger="keyup[key=='Enter'], change"
+               hx-sync="this:drop"
+               hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
+      </div>
+      {% endfor %}
+    </div>
+  </section>
 
-  <div class="mb-4">
-    <h4 class="nsls-card-title mb-2">Bonus list</h4>
+  <section class="nsls-lane nsls-lane--bonus" data-drop-lane="bonus">
+    <div class="nsls-lane-head"><span>Bonus</span></div>
     {% include "_components/bonus_list.html" %}
-  </div>
+  </section>
+
+  <section class="nsls-lane nsls-lane--pool">
+    <div class="nsls-lane-head"><span>Suggestions &amp; carry-overs</span></div>
+    {% if pool %}
+    <div class="nsls-lane-stack">
+      {% for s in pool %}
+        {% with card=s, lane='pool' %}{% include "_components/plan_card.html" %}{% endwith %}
+      {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-xs text-stone-500 italic nsls-lane-empty">{% if plan.suggestions %}All suggestions placed.{% else %}No suggestions yet — they'll appear here after `/close-day` runs the night before, or carry over from yesterday's unfinished Top 3.{% endif %}</p>
+    {% endif %}
+  </section>
 
   <div class="flex justify-end">
     <button hx-post="/reset-plan"

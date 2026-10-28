@@ -1,38 +1,25 @@
-<ul id="bonus-list" class="space-y-2">
+{# The Bonus lane on Plan-your-day: draggable cards, then the add box.
+   Also returned alone by /set-bonus and /delete-bonus (target #bonus-list). #}
+{% set top3_full = plan.priorities|length >= 3 %}
+<div id="bonus-list" class="nsls-lane-stack">
   {% for b in plan.bonus %}
-  <li class="flex items-center gap-2">
-    <span class="text-stone-400 text-sm w-4">•</span>
-    <input type="text"
-           value="{{ b.text }}"
-           hx-post="/set-bonus"
-           hx-vals='{"index": "{{ loop.index0 }}"}'
-           hx-trigger="change, keyup changed delay:600ms"
-           hx-swap="none"
-           name="text"
-           class="flex-1 border rounded px-3 py-2 text-sm">
-    <button hx-post="/delete-bonus"
-            hx-vals='{"index": "{{ loop.index0 }}"}'
-            hx-target="#bonus-list" hx-swap="outerHTML"
-            class="text-stone-400 hover:text-red-600 px-1" title="Remove">✕</button>
-  </li>
+    {% with card=b, lane='bonus' %}{% include "_components/plan_card.html" %}{% endwith %}
   {% endfor %}
-  <li class="flex items-center gap-2">
-    <span class="text-stone-400 text-sm w-4">+</span>
+  <div class="nsls-slot">
+    <span class="nsls-slot-n">+</span>
     <input type="text"
            value=""
            placeholder="Add a bonus item..."
-           hx-post="/set-bonus"
-           {# add=1 marks the trailing "add" slot so /set-bonus refocuses it
-              after the swap — see set_bonus(). #}
-           hx-vals='{"index": "{{ plan.bonus|length }}", "add": "1"}'
-           hx-trigger="change, keyup[key=='Enter']"
+           hx-post="/move-item"
+           hx-vals='{"to": "bonus", "view": "plan", "add": "1"}'
+           hx-trigger="keyup[key=='Enter'], change"
            hx-sync="this:drop"
-           hx-target="#bonus-list" hx-swap="outerHTML"
+           hx-target="#plan-your-day" hx-swap="outerHTML"
+           hx-on:htmx:response-error="window.__toolkitErrorToast(event)"
            name="text"
-           autocomplete="off"
-           class="flex-1 border rounded px-3 py-2 text-sm">
-  </li>
-</ul>
+           autocomplete="off">
+  </div>
+</div>
 {% if focus_add %}
 <script>
   // One-shot: after this partial is swapped in, focus the fresh add slot so
