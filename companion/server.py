@@ -484,6 +484,15 @@ def _build_plan_context(daily_md: str, vault_path: Path, today: str,
         seen.add(key)
         suggestions.append(item)
 
+    # A typed task set aside today (Defer / Done / Delete) is in no suggestion
+    # list, so it would vanish with no way back. Show it in the pool, faded,
+    # with its active button, like a set-aside suggestion.
+    for text in sorted(done | deleted | deferred):
+        key = _norm_suggestion(text)
+        if key not in seen:
+            seen.add(key)
+            suggestions.append({"text": text, "source": "", "est": None, "typed": True})
+
     priority_texts = {p["text"] for p in priorities if p.get("text")}
     bonus_texts = {b["text"] for b in bonus if b.get("text")}
 
@@ -1832,7 +1841,9 @@ def create_app(vault_path: str) -> Flask:
     def set_bonus():
         # Existing bonus inputs save with hx-swap="none" and ignore this body;
         # the trailing "add" input targets #bonus-list to surface a fresh slot.
-        resp = _set_morning_item("### Bonus", "bonus", rerender_partial=False)
+        # Bonus takes the /set-unplanned bound: the drag UI adds Bonus tasks
+        # freely, so an eleventh one must stay renamable.
+        resp = _set_morning_item("### Bonus", "bonus", rerender_partial=False, max_index=99)
         if isinstance(resp, tuple) and resp[1] != 204:
             return resp  # validation error — pass through
         # Refocus the fresh add slot whenever this render REPLACES the list —
@@ -2404,12 +2415,13 @@ def create_app(vault_path: str) -> Flask:
         plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today, top_3, bonus_items)
         return render_template("_components/plan_your_day.html", plan=plan)
 
-    def _set_morning_item(heading: str, broadcast_label: str, rerender_partial: bool = False):
+    def _set_morning_item(heading: str, broadcast_label: str, rerender_partial: bool = False,
+                          max_index: int = 9):
         try:
             index = int(request.form.get("index", ""))
         except (TypeError, ValueError):
             return ("invalid index", 400)
-        if index < 0 or index > 9:
+        if index < 0 or index > max_index:
             return ("index out of bounds", 400)
         text = request.form.get("text", "").rstrip()
         if "\n" in text or "\r" in text or len(text) > 256:

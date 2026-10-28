@@ -94,8 +94,8 @@ def test_plan_page_shows_carried_estimate(client):
     c, _ = client
     html = c.get("/?mode=coach-morning").get_data(as_text=True)
     assert "~2.5h left" in html
-    # and the take-buttons pass the estimate along
-    assert '"est": "2.5"' in html
+    # and the card hands the estimate to its take-buttons and drags
+    assert 'data-est="2.5"' in html
 
 
 def test_bad_carried_est_still_takes_item(client):

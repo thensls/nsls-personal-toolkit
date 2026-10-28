@@ -1,18 +1,13 @@
-{# The whole Command Center task table (Top 3 + Bonus). Controls swap this
-   entire <table> via hx-target="#task-table" — swapping a bare <tbody>
-   fragment triggers the browser table-parsing pitfall that collapsed the
-   layout after a click. #}
+{# The Command Center task lanes (Top 3 + Bonus). Every control swaps this
+   whole container via hx-target="#task-table" — never one lane on its own,
+   so both lanes and their row indexes always come back together. Cards drag
+   between and within the lanes (static/drag.js → /move-item, view=command). #}
 {% if swap_oob %}{% with oob=true %}{% include "_components/planned_total.html" %}{% endwith %}{% endif %}
-<table class="nsls-tasktable" id="task-table">
-  <thead>
-    <tr>
-      <th class="tt-disc"></th>
-      <th class="tt-goal"></th>
-      <th class="tt-est"><span class="tt-est-stack">Estimated<br>remaining<br>time</span><span class="nsls-tip"><span class="ic">i</span><span class="pop"><b>Timeboxing.</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></th>
-      <th class="tt-prog">Progress</th>
-      <th class="tt-del"></th>
-    </tr>
-  </thead>
+<div class="nsls-lanes" id="task-table" data-drag-view="command">
+  <div class="nsls-lane-cols" aria-hidden="true">
+    <span>Estimated remaining time<span class="nsls-tip"><span class="ic">i</span><span class="pop"><b>Timeboxing.</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></span>
+    <span>Progress</span>
+  </div>
   {% with section='top_3', items=top_3 %}{% include "_components/task_rows.html" %}{% endwith %}
-  {% with section='bonus', items=bonus, section_label='Bonus' %}{% include "_components/task_rows.html" %}{% endwith %}
-</table>
+  {% with section='bonus', items=bonus %}{% include "_components/task_rows.html" %}{% endwith %}
+</div>

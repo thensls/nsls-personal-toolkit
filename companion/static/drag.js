@@ -194,13 +194,20 @@
     if (card && input.value.trim()) card.dataset.text = input.value.trim();
   });
 
-  // Empty Top 3 slots and the Bonus add box submit on Enter / change; a
-  // blank box sends nothing. (htmx trigger filters can't read the box's
-  // value, so the guard lives here.)
+  // Blank submits send nothing. An empty Top 3 slot or the Bonus add box
+  // simply stays empty. A card title cleared to nothing snaps back to its
+  // name: removing a task is ✕ / Defer / Bonus, never an empty title (a blank
+  // save would leave the card acting on a task that no longer exists).
+  // (htmx trigger filters can't read the box's value, so the guard is here.)
   document.addEventListener("htmx:beforeRequest", (e) => {
     const elt = e.detail && e.detail.elt;
-    if (elt && elt.matches && elt.matches(".nsls-slot input") && !elt.value.trim()) {
+    if (!elt || !elt.matches || elt.value === undefined || elt.value.trim()) return;
+    if (elt.matches(".nsls-slot input")) {
       e.preventDefault();
+    } else if (elt.matches(".nsls-tcard-title")) {
+      e.preventDefault();
+      const card = elt.closest("[data-drag-item]");
+      if (card) elt.value = card.dataset.text;
     }
   });
 
