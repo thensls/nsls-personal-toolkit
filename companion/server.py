@@ -942,6 +942,122 @@ def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
     return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
 
 
+_NUMBERED_ROW_RE = re.compile(r"^\s*\d+\.\s+(.*)$")
+
+
+def _morning_bounds(lines: list[str]) -> tuple[int, int]:
+    """Line range of ``## Morning Check-in``'s body (whole note if absent)."""
+    for i, line in enumerate(lines):
+        if line.strip() == "## Morning Check-in":
+            for j in range(i + 1, len(lines)):
+                if lines[j].startswith("## "):
+                    return i + 1, j
+            return i + 1, len(lines)
+    return 0, len(lines)
+
+
+def _numbered_rows(lines: list[str], heading: str) -> tuple[int | None, list[int]]:
+    """(heading line, numbered-row line indexes) for `heading` in Morning Check-in."""
+    start, end = _morning_bounds(lines)
+    head = next((i for i in range(start, end) if lines[i].strip() == heading), None)
+    if head is None:
+        return None, []
+    rows = []
+    for i in range(head + 1, end):
+        if lines[i].startswith("### ") or lines[i].startswith("## "):
+            break
+        if _NUMBERED_ROW_RE.match(lines[i]):
+            rows.append(i)
+    return head, rows
+
+
+def _row_title(body: str) -> str:
+    """Visible title of a numbered row body (checkbox and markers stripped)."""
+    if body.startswith("[ ]") or body[:3].lower() == "[x]":
+        body = body[3:]
+    body, _ = _strip_est(body.strip())
+    body, _ = _strip_progress(body)
+    return body.strip()
+
+
+def _move_task(md: str, text: str, to: str, position: int | None = None,
+               est: float | None = None, from_lane: str | None = None) -> str:
+    """Drag-and-drop move: place task `text` at `position` in Top 3 or Bonus.
+
+    ``to`` is ``"top_3"`` or ``"bonus"``; ``position`` counts filled items in
+    the destination after the task leaves its old place (None = the end).
+    A task already in Top 3 / Bonus keeps its whole row — checkbox, progress
+    and estimate travel with it. Anything else (a suggestion or carry-over, or
+    a typed new task) becomes a fresh row carrying ``est``, and any Done /
+    Deleted / Deferred mark it had is cleared — dragging it in means "I want
+    it today". Top 3 holds three: a fourth pushes the last one to the top of
+    Bonus. Both lists are rewritten compact and renumbered (Top 3 padded back
+    to its three slots); every caller re-renders from the note afterwards, so
+    the row indexes the page posts next are recomputed.
+
+    Only ONE row moves: the first row titled `text` in ``from_lane`` (the lane
+    the card was dragged from), else in Top 3, else in Bonus. A same-titled
+    row elsewhere keeps its own state. Dash rows are left where they are.
+    """
+    text = text.strip()
+    for heading in ("### My Top 3", "### Bonus"):
+        if _numbered_rows(md.splitlines(), heading)[0] is None:
+            md = _set_nth_item_text(md, heading, 0, "")
+
+    lines = md.splitlines()
+    _, top_idx = _numbered_rows(lines, "### My Top 3")
+    _, bonus_idx = _numbered_rows(lines, "### Bonus")
+
+    def bodies(idx: list[int]) -> list[str]:
+        out = []
+        for i in idx:
+            body = _NUMBERED_ROW_RE.match(lines[i]).group(1).strip()
+            if not _row_title(body):
+                continue  # blank slot
+            if not (body.startswith("[ ]") or body[:3].lower() == "[x]"):
+                body = f"[ ] {body}"
+            out.append(body)
+        return out
+
+    top, bonus = bodies(top_idx), bodies(bonus_idx)
+    search = [bonus, top] if from_lane == "bonus" else [top, bonus]
+    moving = None
+    for lane in search:
+        k = next((k for k, b in enumerate(lane) if _row_title(b) == text), None)
+        if k is not None:
+            moving = lane.pop(k)
+            break
+    from_lanes = moving is not None
+    if not from_lanes:
+        moving = f"[ ] {text}" + (f" <!--e:{_fmt_hours(est)}-->" if est else "")
+
+    dest = top if to == "top_3" else bonus
+    pos = len(dest) if position is None else max(0, min(position, len(dest)))
+    dest.insert(pos, moving)
+    if len(top) > 3:
+        bonus[0:0] = top[3:]
+        del top[3:]
+
+    for heading, items, pad in (("### Bonus", bonus, 0), ("### My Top 3", top, 3)):
+        head, idx = _numbered_rows(lines, heading)
+        rows = [f"{n + 1}. {b}" for n, b in enumerate(items)]
+        rows += [f"{n + 1}. [ ]" for n in range(len(items), pad)]
+        insert_at = idx[0] if idx else head + 1
+        for i in reversed(idx):
+            del lines[i]
+        lines[insert_at:insert_at] = rows
+
+    if not from_lanes:
+        # Clear the old disposition inside Morning Check-in only — a same-named
+        # `### Done` under End of Day is a different record.
+        start, end = _morning_bounds(lines)
+        morning = "\n".join(lines[start:end])
+        for heading in ("Done", "Deleted", "Deferred", "Dismissed"):
+            morning = _remove_from_subsection(morning, heading, text)
+        lines[start:end] = morning.split("\n") if morning else []
+    return "\n".join(lines) + ("\n" if md.endswith("\n") else "")
+
+
 def _replace_section_body(md: str, section_name: str, new_body: str) -> str:
     """Replace the body of `## <section_name>` with new_body, preserving
     surrounding sections. If section doesn't exist, append it at the end.
@@ -2043,6 +2159,58 @@ def create_app(vault_path: str) -> Flask:
         broadcast(f"01-daily/{today}.md")
         return _render_task_table(today)
 
+    @app.route("/move-item", methods=["POST"])
+    def move_item():
+        """Drag-and-drop: move a task into Top 3 or Bonus at a position.
+
+        Used by both Plan-your-day (view=plan, also for typing a new priority
+        into an empty Top 3 slot) and the Command Center (view=command); each
+        gets its own partial back. See _move_task for the rules.
+        """
+        text = (request.form.get("text") or "").strip()
+        to = (request.form.get("to") or "").strip()
+        view = (request.form.get("view") or "plan").strip()
+        if to not in _TASK_HEADINGS:
+            return ("invalid destination", 400)
+        if view not in ("plan", "command"):
+            return ("invalid view", 400)
+        if not text or "\n" in text or "\r" in text or len(text) > 256:
+            return ("invalid text", 400)
+        position: int | None = None
+        pos_raw = (request.form.get("position") or "").strip()
+        if pos_raw:
+            try:
+                position = int(pos_raw)
+            except ValueError:
+                return ("invalid position", 400)
+            if position < 0 or position > 99:
+                return ("invalid position", 400)
+        est: float | None = None
+        est_raw = (request.form.get("est") or "").strip()
+        if est_raw:
+            try:
+                est = float(est_raw)
+            except ValueError:
+                return ("est must be a number", 400)
+            if not math.isfinite(est) or est <= 0 or est > 24:
+                est = None  # bad carried value — move the task, drop the estimate
+
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        _ensure_daily_note_scaffold(note_path)
+        from_lane = (request.form.get("from") or "").strip() or None
+        safe_modify(note_path, lambda md: _move_task(md, text, to, position, est, from_lane))
+        broadcast(f"01-daily/{today}.md")
+        if view == "command":
+            return _render_task_table(today)
+        daily_md = note_path.read_text(encoding="utf-8")
+        morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
+        plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today,
+                                   _extract_top_3(morning), _extract_bonus(morning))
+        # add=1: the Bonus add box sent it — refocus the fresh box after the swap.
+        return render_template("_components/plan_your_day.html", plan=plan,
+                               focus_add=request.form.get("add") == "1")
+
     @app.route("/add-bonus-slot", methods=["POST"])
     def add_bonus_slot():
         """Re-render the plan partial — the template always shows one empty
@@ -2167,24 +2335,28 @@ def create_app(vault_path: str) -> Flask:
                         existing = _remove_from_subsection(existing, head, text)
                 # A dispositioned item is no longer a live priority — vacate any
                 # Top 3 / Bonus slot it occupies so it doesn't show in both.
-                for i, t in enumerate(top_3):
+                # raw_index, not the compacted position: a blank slot above the
+                # item would otherwise shift the write onto the wrong row.
+                for t in top_3:
                     if t.get("text") == text:
-                        existing = _set_nth_item_text(existing, "### My Top 3", i, "")
-                for i, b in enumerate(bonus_items):
+                        existing = _set_nth_item_text(existing, "### My Top 3", t["raw_index"], "")
+                for b in bonus_items:
                     if b.get("text") == text:
-                        existing = _set_nth_item_text(existing, "### Bonus", i, "")
+                        existing = _set_nth_item_text(existing, "### Bonus", b["raw_index"], "")
                 return _add_to_subsection(existing, DISPOSITIONS[action], text)
 
             # If the suggestion already sits in Top 3 / Bonus and the user
             # clicked the same column again, treat it as "untake" — clear it.
-            for i, t in enumerate(top_3):
+            for t in top_3:
                 if t.get("text") == text:
+                    i = t["raw_index"]
                     if action == "pri":
                         return _set_nth_item_text(existing, "### My Top 3", i, "")
                     existing = _set_nth_item_text(existing, "### My Top 3", i, "")
                     break
-            for i, b in enumerate(bonus_items):
+            for b in bonus_items:
                 if b.get("text") == text:
+                    i = b["raw_index"]
                     if action == "bonus":
                         return _set_nth_item_text(existing, "### Bonus", i, "")
                     existing = _set_nth_item_text(existing, "### Bonus", i, "")
