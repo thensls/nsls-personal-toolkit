@@ -514,3 +514,100 @@ body {
   animation: nsls-rot .8s linear infinite;
 }
 @keyframes nsls-rot { to { transform: rotate(360deg); } }
+
+/* ---- Vertical task lanes + draggable cards (Plan-your-day, Command Center) ----
+ * Lanes stack top to bottom: Top 3 (gold), Bonus (teal), suggestions (grey).
+ * Cards drag within and between lanes; static/drag.js draws the drop line. */
+.nsls-lanes { display: flex; flex-direction: column; gap: 0.85rem; }
+.nsls-lane {
+  border: 1px solid var(--nsls-hairline); border-radius: 12px;
+  background: #F7F9FC; margin-bottom: 0.85rem; overflow: hidden;
+  transition: box-shadow .12s, border-color .12s;
+}
+.nsls-lanes .nsls-lane { margin-bottom: 0; }
+.nsls-lane--top3 { border: 1.5px solid #EBC468; background: #FFFBF0; }
+.nsls-lane--bonus { border: 1.5px solid #7EC8D8; background: #F2FAFC; }
+.nsls-lane-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.5rem 0.85rem; font-size: 0.68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.09em; color: var(--nsls-darkblue);
+  border-bottom: 1px solid var(--nsls-hairline); background: rgba(255,255,255,0.55);
+}
+.nsls-lane--top3 .nsls-lane-head { color: #8A6400; border-bottom-color: #F1D48A; background: #FFF4D6; }
+.nsls-lane--bonus .nsls-lane-head { color: var(--nsls-teal-dark); border-bottom-color: #A8DCE7; background: #E5F5F8; }
+.nsls-lane-hint { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--nsls-darkblue); }
+.nsls-lane-stack { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.6rem; min-height: 2.6rem; }
+.nsls-lane-empty { margin: 0; padding: 0.2rem 0.3rem; }
+.nsls-lane.is-drag-over { box-shadow: 0 0 0 2px var(--nsls-teal); border-color: var(--nsls-teal); }
+.nsls-lane-cols {
+  display: flex; justify-content: flex-end; gap: 1.6rem; padding: 0 2.6rem 0 0;
+  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--nsls-darkblue);
+}
+
+.nsls-tcard {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 0.55rem 0.7rem;
+  background: #fff; border: 1px solid #E3E9F1; border-radius: 10px;
+  padding: 0.5rem 0.65rem 0.5rem 0.4rem;
+  box-shadow: 0 1px 2px rgba(24,49,90,0.05);
+  cursor: grab; transition: box-shadow .12s, opacity .12s, transform .12s;
+}
+.nsls-tcard:hover { box-shadow: 0 3px 10px -4px rgba(24,49,90,0.22); }
+.nsls-tcard:active { cursor: grabbing; }
+.nsls-tcard.is-dragging { opacity: 0.4; transform: scale(0.99); }
+.nsls-tcard.is-set-aside { background: #FAFBFD; }
+.nsls-tcard.is-set-aside .nsls-tcard-text { opacity: 0.6; }
+.nsls-grip {
+  flex: none; width: 1rem; text-align: center; color: #A9B4C2;
+  font-size: 0.85rem; letter-spacing: -0.12em; line-height: 1; user-select: none;
+}
+.nsls-tcard:hover .nsls-grip { color: var(--nsls-darkblue); }
+.nsls-tcard-text { flex: 1 1 8rem; min-width: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.15rem 0.45rem; }
+.nsls-tcard-meta { font-size: 0.72rem; color: #8592A3; }
+.nsls-tcard-title {
+  flex: 1 1 8rem; min-width: 0; font-family: inherit; font-size: 0.9rem;
+  color: var(--nsls-nearblack); background: transparent;
+  border: 1px solid transparent; border-radius: 7px; padding: 0.3rem 0.4rem;
+}
+.nsls-tcard-title:hover { border-color: var(--nsls-disc-empty); }
+.nsls-tcard-title:focus { outline: none; border-color: var(--nsls-teal); background: #fff; }
+.nsls-tcard--cc .nsls-row-text { flex: 1 1 8rem; }
+.nsls-tcard-controls { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.7rem; margin-left: auto; }
+.nsls-tcard.is-complete { background: #FFFDF6; }
+
+/* Destination buttons on Plan-your-day cards (one segmented group) */
+.nsls-pills {
+  display: inline-flex; flex: none; margin-left: auto;
+  border: 1px solid #D9E1EA; border-radius: 8px; overflow: hidden; background: #fff;
+}
+.nsls-pills button {
+  font-family: inherit; font-size: 0.72rem; font-weight: 500;
+  padding: 0.32rem 0.6rem; color: var(--nsls-navy); background: #fff;
+  border: none; border-left: 1px solid #D9E1EA; cursor: pointer;
+  transition: background .1s, color .1s;
+}
+.nsls-pills button:first-child { border-left: none; }
+.nsls-pills button:hover:not(:disabled) { background: var(--nsls-lightblue); }
+.nsls-pills button.is-active { background: var(--nsls-teal); color: #fff; font-weight: 600; cursor: default; }
+.nsls-pills button.is-del.is-active { background: var(--nsls-red); }
+.nsls-pills button:disabled:not(.is-active) { color: #B7C0CC; cursor: not-allowed; }
+
+/* Empty Top 3 slots and the add box: dashed rows inside a lane */
+.nsls-slot {
+  display: flex; align-items: center; gap: 0.6rem;
+  border: 1px dashed #CBD5E1; border-radius: 10px; padding: 0.35rem 0.6rem;
+  background: rgba(255,255,255,0.6);
+}
+.nsls-slot-n { width: 1rem; text-align: center; font-size: 0.8rem; color: #A9B4C2; }
+.nsls-slot input {
+  flex: 1; min-width: 0; font-family: inherit; font-size: 0.88rem;
+  border: none; background: transparent; padding: 0.3rem 0;
+}
+.nsls-slot input:focus { outline: none; }
+.nsls-slot--drop { justify-content: center; font-size: 0.75rem; color: #A9B4C2; min-height: 2.4rem; }
+
+.nsls-drop-marker {
+  height: 3px; border-radius: 2px; background: var(--nsls-teal);
+  box-shadow: 0 0 0 2px rgba(0,145,174,0.15); margin: -1px 0.3rem;
+}
+
