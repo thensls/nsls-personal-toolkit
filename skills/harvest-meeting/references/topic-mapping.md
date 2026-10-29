@@ -100,3 +100,9 @@ Could fit `data-analytics`, `data-infrastructure`, or `tech-debt-modernization`.
 ```
 
 Approval step will surface this candidate with a "?" flag and let the user pick the topic.
+
+## Standing practices (`how_we_work`)
+
+File a `how_we_work` candidate under **Current State** of the topic it describes (it is how
+things work now), merged through Step 6b like any Current State change. If the topic has no
+Current State yet, write it there directly.
