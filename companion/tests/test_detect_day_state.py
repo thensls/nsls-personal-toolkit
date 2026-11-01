@@ -173,6 +173,6 @@ def test_lock_in_response_shows_locked_banner(client_no_status):
     c = client_no_status
     c.post("/set-top-3", data={"index": "0", "text": "first priority"})
     html = c.post("/lock-in", data={"phase": "morning"}).get_data(as_text=True)
-    assert "Claude's logged your plan" in html
+    assert "Ready to wrap up?" in html
     assert "I'm done — close my day" in html
     assert "isn't locked in yet" not in html

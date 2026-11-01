@@ -23,21 +23,25 @@
 {% include "_components/day_header.html" %}
 <p class="text-sm nsls-subtle mb-4">Command Center{% if not is_today %} — closing out a past day{% endif %}</p>
 
-{% include "_components/command_banner.html" %}
+{% with position='top' %}{% include "_components/command_banner.html" %}{% endwith %}
 
-<div class="space-y-2 mb-6">
+<section class="nsls-card nsls-card--row">
   {% with when='morning', label='Energy — beginning of day', value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
-</div>
+</section>
 
 <section class="nsls-card">
-  <div class="flex items-baseline justify-between mb-3">
-    <h2 class="nsls-card-title">Today's tasks</h2>
+  <div class="nsls-section-head">
+    <div>
+      <h2 class="nsls-section-title">Today's tasks</h2>
+      <p class="nsls-section-sub">Drag tasks between sections. Mark progress or adjust the time remaining.</p>
+    </div>
     {% include "_components/planned_total.html" %}
   </div>
   {% include "_components/task_table.html" %}
-  {% include "_components/bonus_add.html" %}
-  <p class="text-xs nsls-subtle mt-3">Drag a task to reorder it or move it between Top 3 and Bonus. Anything under 100% carries forward to tomorrow. 0 = didn't get to it. ✕ marks for deletion (reversible).</p>
+  <p class="text-xs nsls-subtle mt-3">Anything under 100% carries forward to tomorrow. 0 = didn't get to it. ✕ marks for deletion (reversible).</p>
 </section>
+
+{% include "_components/add_item.html" %}
 
 <section class="nsls-card">
   <h2 class="nsls-card-title mb-2">Unplanned wins</h2>
@@ -81,12 +85,11 @@
             placeholder="What did you notice about yourself today?">{{ daily_insight_text }}</textarea>
 </section>
 
-<section class="nsls-card">
-  <h2 class="nsls-card-title mb-3">Energy — end of day</h2>
-  {% with when='evening', label='How did you end the day?', value=evening_energy %}{% include "_components/energy_row.html" %}{% endwith %}
+<section class="nsls-card nsls-card--row">
+  {% with when='evening', label='Energy — end of day', value=evening_energy %}{% include "_components/energy_row.html" %}{% endwith %}
 </section>
 
-<div class="mt-6">{% include "_components/command_banner.html" %}</div>
+<div class="mt-6">{% with position='bottom' %}{% include "_components/command_banner.html" %}{% endwith %}</div>
 
 {% endif %}
 </div>

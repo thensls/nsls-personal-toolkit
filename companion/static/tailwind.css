@@ -415,8 +415,13 @@ body {
 .nsls-divider { border-bottom: 1px solid var(--nsls-hairline); }
 
 /* Energy Low/Med/High selector */
+.nsls-energy-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.nsls-energy-label {
+  font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.09em; color: var(--nsls-darkblue);
+}
 .nsls-energy-btn {
-  width: 3.5rem; height: 1.85rem; font-size: 0.75rem; font-weight: 500;
+  min-width: 3.5rem; padding: 0 0.85rem; height: 1.85rem; font-size: 0.75rem; font-weight: 500;
   border-radius: 8px; cursor: pointer;
   background: #fff; color: var(--nsls-darkblue);
   border: 1px solid var(--nsls-disc-empty);
@@ -502,8 +507,8 @@ body {
 .nsls-lane--bonus { border: 1.5px solid #7EC8D8; background: #F2FAFC; }
 .nsls-lane-head {
   display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
-  padding: 0.5rem 0.85rem; font-size: 0.68rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: 0.09em; color: var(--nsls-darkblue);
+  padding: 0.55rem 0.85rem; font-size: 0.78rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: 0.1em; color: var(--nsls-darkblue);
   border-bottom: 1px solid var(--nsls-hairline); background: rgba(255,255,255,0.55);
 }
 .nsls-lane--top3 .nsls-lane-head { color: #8A6400; border-bottom-color: #F1D48A; background: #FFF4D6; }
@@ -512,10 +517,53 @@ body {
 .nsls-lane-stack { display: flex; flex-direction: column; gap: 0.45rem; padding: 0.6rem; min-height: 2.6rem; }
 .nsls-lane-empty { margin: 0; padding: 0.2rem 0.3rem; }
 .nsls-lane.is-drag-over { box-shadow: 0 0 0 2px var(--nsls-teal); border-color: var(--nsls-teal); }
+/* Command Center columns: the heading row and every card share one grid, so
+ * "Estimated time remaining" and "Progress" sit right over their controls.
+ * The heading row is padded by the lane + card insets to line up. */
+.nsls-cols {
+  display: grid; align-items: center; column-gap: 0.7rem;
+  grid-template-columns: 1rem 22px minmax(0, 1fr) 7.2rem 10.75rem 1.75rem;
+}
 .nsls-lane-cols {
-  display: flex; justify-content: flex-end; gap: 1.6rem; padding: 0 2.6rem 0 0;
-  font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--nsls-darkblue);
+  padding: 0 calc(1.5px + 0.6rem + 1px + 0.65rem) 0.45rem calc(1.5px + 0.6rem + 1px + 0.4rem);
+  font-size: 0.64rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--nsls-darkblue);
+}
+.nsls-lane-cols .nsls-col-task { grid-column: 3; }
+.nsls-lane-cols .nsls-col-est { grid-column: 4; display: block; line-height: 1.25; }
+.nsls-lane-cols .nsls-col-est .nsls-tip { display: inline-flex; vertical-align: middle; margin-left: 0.2rem; }
+.nsls-lane-cols .nsls-col-prog { grid-column: 5; text-align: center; }
+.nsls-tcard--cc.nsls-cols { display: grid; }
+.nsls-tcard--cc .nsls-tcard-controls { display: contents; }
+.nsls-tcard--cc .nsls-est { justify-self: start; }
+
+/* Section headings (Today's tasks, Add an item) */
+.nsls-section-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.9rem; }
+.nsls-section-title { font-size: 1.2rem; font-weight: 700; color: var(--nsls-navy); letter-spacing: -0.01em; margin: 0; }
+.nsls-section-sub { font-size: 0.8rem; color: var(--nsls-darkblue); margin: 0.15rem 0 0; }
+.nsls-card--row { padding: 0.95rem 1.35rem; }
+
+/* Add an item panel */
+.nsls-add-item { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.85rem; }
+.nsls-add-item input, .nsls-add-item select {
+  font-family: inherit; font-size: 0.88rem; color: var(--nsls-nearblack);
+  background: #fff; border: 1px solid #D9E1EA; border-radius: 10px; padding: 0.55rem 0.75rem;
+}
+.nsls-add-item input { flex: 1 1 14rem; min-width: 0; }
+.nsls-add-item input:focus, .nsls-add-item select:focus { outline: none; border-color: var(--nsls-teal); }
+.nsls-add-status { min-height: 1.2rem; margin: 0.6rem 0 0; font-size: 0.8rem; font-weight: 600; color: #2E7D4F; }
+.nsls-add-status:empty { display: none; }
+
+/* Long task titles: two lines, full text on hover */
+.nsls-tcard .nsls-row-text {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+
+@media (max-width: 640px) {
+  .nsls-lane-cols { display: none; }
+  .nsls-tcard--cc.nsls-cols { display: flex; flex-wrap: wrap; }
+  .nsls-tcard--cc .nsls-tcard-controls { display: inline-flex; }
+  .nsls-section-head { flex-direction: column; gap: 0.3rem; }
 }
 
 .nsls-tcard {

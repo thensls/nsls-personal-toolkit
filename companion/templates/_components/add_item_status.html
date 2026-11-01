@@ -1,0 +1,4 @@
+{# Out-of-band confirmation for the Add an item panel (see add_item.html). #}
+<p id="add-item-status" class="nsls-add-status" aria-live="polite" hx-swap-oob="true">
+  {{ 'Moved' if moved else 'Added' }} “{{ text }}” to {{ 'Top 3' if to == 'top_3' else 'Bonus' }}.{% for b in bumped %} Made room: “{{ b }}” → Bonus.{% endfor %}
+</p>
