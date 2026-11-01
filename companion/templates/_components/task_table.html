@@ -4,9 +4,12 @@
    between and within the lanes (static/drag.js → /move-item, view=command). #}
 {% if swap_oob %}{% with oob=true %}{% include "_components/planned_total.html" %}{% endwith %}{% endif %}
 <div class="nsls-lanes" id="task-table" data-drag-view="command">
-  <div class="nsls-lane-cols" aria-hidden="true">
-    <span>Estimated remaining time<span class="nsls-tip"><span class="ic">i</span><span class="pop"><b>Timeboxing.</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></span>
-    <span>Progress</span>
+  {# Column headings share the cards' grid (.nsls-cols), so each heading sits
+     exactly over its column. #}
+  <div class="nsls-lane-cols nsls-cols" aria-hidden="true">
+    <span class="nsls-col-task">Task</span>
+    <span class="nsls-col-est">Estimated time remaining<span class="nsls-tip"><span class="ic">i</span><span class="pop"><b>Timeboxing.</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></span>
+    <span class="nsls-col-prog">Progress</span>
   </div>
   {% with section='top_3', items=top_3 %}{% include "_components/task_rows.html" %}{% endwith %}
   {% with section='bonus', items=bonus %}{% include "_components/task_rows.html" %}{% endwith %}

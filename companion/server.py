@@ -2225,10 +2225,32 @@ def create_app(vault_path: str) -> Flask:
         note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
         _ensure_daily_note_scaffold(note_path)
         from_lane = (request.form.get("from") or "").strip() or None
+
+        def lane_titles() -> tuple[list[str], list[str]]:
+            md = note_path.read_text(encoding="utf-8")
+            morning = parse_daily_note_sections(md).get("Morning Check-in", "")
+            return ([t["text"] for t in _extract_top_3(morning)],
+                    [b["text"] for b in _extract_bonus(morning)])
+
+        top3_before, bonus_before = lane_titles()
+        if to == "top_3" and position is None and request.form.get("add") == "1":
+            # A typed task added to Top 3 must land IN Top 3: take the last
+            # slot when it's full, so the old #3 is the one pushed to Bonus.
+            position = min(len(top3_before), 2)
         safe_modify(note_path, lambda md: _move_task(md, text, to, position, est, from_lane))
         broadcast(f"01-daily/{today}.md")
         if view == "command":
-            return _render_task_table(today)
+            table = _render_task_table(today)
+            if request.form.get("add") != "1":
+                return table
+            # The Add an item panel: confirm where it landed, and name the
+            # task a full Top 3 pushed down to Bonus to make room.
+            top3_after = lane_titles()[0]
+            bumped = [t for t in top3_before if t != text and t not in top3_after]
+            # A title already on today's list is moved, not duplicated — say so.
+            moved = text in top3_before or text in bonus_before
+            return table + render_template(
+                "_components/add_item_status.html", text=text, to=to, bumped=bumped, moved=moved)
         daily_md = note_path.read_text(encoding="utf-8")
         morning = parse_daily_note_sections(daily_md).get("Morning Check-in", "")
         plan = _build_plan_context(daily_md, app.config["VAULT_PATH"], today,

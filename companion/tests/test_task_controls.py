@@ -444,7 +444,7 @@ def test_active_day_banner_offers_close_button(client_with_today):
     note = vault / "01-daily" / f"{date.today().isoformat()}.md"
     note.write_text("---\nstatus: active\n---\n" + note.read_text())
     html = client.get("/").get_data(as_text=True)
-    assert "Claude's logged your plan" in html
+    assert "Ready to wrap up?" in html
     assert "/close-ready" in html and "I'm done — close my day" in html
     assert "close day" not in html  # no type-this-in-the-terminal copy
     client.post("/close-ready")

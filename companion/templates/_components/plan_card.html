@@ -15,13 +15,13 @@
   <span class="nsls-grip" title="Drag to move" aria-hidden="true">⋮⋮</span>
   {% if lane == 'pool' %}
   <span class="nsls-tcard-text">
-    <span class="nsls-row-text{% if set_aside %} is-done{% endif %}">{{ card.text }}</span>
+    <span class="nsls-row-text{% if set_aside %} is-done{% endif %}" title="{{ card.text }}">{{ card.text }}</span>
     {% if card.est %}<span class="nsls-tcard-meta" style="color:var(--nsls-teal)">~{{ '%g'|format(card.est) }}h left</span>{% endif %}
     {% if card.source %}<span class="nsls-tcard-meta">{{ card.source }}</span>{% endif %}
   </span>
   {% else %}
   <input type="text" class="nsls-tcard-title" name="text" value="{{ card.text }}" autocomplete="off"
-         aria-label="Task title" title="Rename — use ✕, Defer or Bonus to move it off"
+         aria-label="Task title" title="{{ card.text }}"
          hx-post="{{ '/set-top-3' if lane == 'top_3' else '/set-bonus' }}"
          hx-vals='{"index": "{{ card.raw_index }}"}'
          hx-trigger="change" hx-swap="none"
