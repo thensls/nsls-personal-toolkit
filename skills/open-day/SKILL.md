@@ -1040,7 +1040,15 @@ hrv_ms: 61
 [preserved from close-day seed if it existed]
 
 <!-- AI-Suggested item format — write each item as a PLAIN numbered line:
-       1. <item text> <!--e:0.75-->
+       1. <short title> — <optional context> <!--e:0.75-->
+     • The title is what the builder sees and what the task is called once
+       taken: verb first, about 8 words, never more than ~60 characters
+       ("Reply to Erin about reporting time", not the whole backstory).
+     • Context (who asked, when, links, why) goes AFTER a spaced dash ` — `.
+       The companion shows only the text before it, so the note keeps the
+       context for you and the screen stays short. Never put a ` — ` inside
+       the title itself. (Exception: "Likely already done" rows keep their
+       citation in a trailing parenthetical, per Step 2n.)
      • NEVER a checkbox (`1. [ ] text`) — these are suggestions, not tasks;
        a leaked `[ ]` shows in the companion's suggestion title and rides
        along when the item is taken.
