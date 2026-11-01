@@ -1394,6 +1394,10 @@ def create_app(vault_path: str) -> Flask:
         return None
 
     subscribers: list[queue.Queue] = []
+    # How often an idle /events stream writes a heartbeat. A dropped client
+    # is only noticed when a write to its socket fails (the second write
+    # after it left), so a gone tab frees its slot within ~2 intervals.
+    app.config["SSE_HEARTBEAT_SECONDS"] = 5
     last_hashes: dict[str, str] = {}  # relpath -> sha256[:16] of last broadcast
     # Monotonic seconds of the last `wait-done` listener heartbeat (None until
     # one is seen this server lifetime). A Done/close click reads this to decide
@@ -1686,6 +1690,7 @@ def create_app(vault_path: str) -> Flask:
             return ("too many subscribers", 429)
         q: queue.Queue = queue.Queue()
         subscribers.append(q)
+        heartbeat = app.config["SSE_HEARTBEAT_SECONDS"]
 
         def stream():
             try:
@@ -1697,7 +1702,17 @@ def create_app(vault_path: str) -> Flask:
                 # invisible to onmessage.
                 yield ": connected\n\n"
                 while True:
-                    msg = q.get()
+                    try:
+                        msg = q.get(timeout=heartbeat)
+                    except queue.Empty:
+                        # A reload drops this stream without telling us, and
+                        # werkzeug only closes the generator (running the
+                        # finally below) when a write fails. Waiting for the
+                        # next broadcast to make that write meant reloads
+                        # with no edits leaked slots until the cap above
+                        # answered 429. The comment is ignored by onmessage.
+                        yield ": ping\n\n"
+                        continue
                     yield f"data: {msg}\n\n"
             finally:
                 try:
