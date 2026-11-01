@@ -24,7 +24,7 @@
       <div class="grid grid-cols-15 gap-0.5 mt-2" style="display:grid; grid-template-columns: repeat(15, 1fr); gap: 2px;">
         {% for c in r.cells %}
           {% if c.percent is none %}
-            <div class="hm-cell" style="aspect-ratio:1; background:#e5e1d6; border-radius:2px;"></div>
+            <div class="hm-cell hm-empty" style="aspect-ratio:1; border-radius:2px;"></div>
           {% elif c.percent >= 1.0 %}
             <div class="hm-cell" style="aspect-ratio:1; background:#5a8a3a; border-radius:2px;"></div>
           {% elif c.percent > 0 %}
