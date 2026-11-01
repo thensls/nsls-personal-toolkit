@@ -1,8 +1,12 @@
 import io
+import socket
 import sys
 import queue
+import threading
+import time
 
 import pytest
+from werkzeug.serving import make_server
 
 from companion.server import create_app
 
@@ -95,6 +99,55 @@ def test_subscribers_cap_returns_429(app):
         for it in iterables:
             if hasattr(it, "close"):
                 it.close()
+
+
+def _open_and_drop(port):
+    """One page load: open /events the way an EventSource does, wait for
+    the stream to start, then drop the connection the way a reload does.
+    Returns the HTTP status. No broadcast ever follows."""
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as s:
+        s.sendall(b"GET /events HTTP/1.1\r\nHost: 127.0.0.1\r\n"
+                  b"Accept: text/event-stream\r\n\r\n")
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+        status = int(buf.split(b" ", 2)[1])
+        while status == 200 and b": connected" not in buf:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+        return status
+
+
+def test_reloads_without_edits_do_not_exhaust_subscribers(app):
+    """Regression: reloading the page ~10 times without editing anything
+    left 'Reconnecting to the companion…' stuck on screen, because /events
+    answered 429. A dropped stream only freed its slot when a broadcast
+    wrote to the dead socket, and with no edits nothing ever did.
+
+    Runs a real threaded werkzeug server (as `toolkit-companion serve`
+    does), drops more streams than the cap without any broadcast, then
+    checks a fresh page can still subscribe."""
+    app.config["SSE_HEARTBEAT_SECONDS"] = 0.05
+    server = make_server("127.0.0.1", 0, app, threaded=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        for _ in range(15):
+            _open_and_drop(server.server_port)
+        # A browser retries with backoff; give the heartbeat a few rounds.
+        deadline = time.monotonic() + 5
+        status = _open_and_drop(server.server_port)
+        while status != 200 and time.monotonic() < deadline:
+            time.sleep(0.05)
+            status = _open_and_drop(server.server_port)
+        assert status == 200
+    finally:
+        server.shutdown()
+        server.server_close()
 
 
 def test_broadcast_dedups_on_unchanged_content(app, tmp_path):
