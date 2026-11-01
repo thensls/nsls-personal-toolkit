@@ -90,7 +90,11 @@ html[data-theme="dark"] .nsls-seg button.is-current { background: var(--nsls-tea
 html[data-theme="dark"] .nsls-seg button.is-current-done { background: var(--nsls-gold); }
 html[data-theme="dark"] .nsls-pills,
 html[data-theme="dark"] .nsls-pills button { border-color: var(--nsls-disc-empty); }
-html[data-theme="dark"] .nsls-pills button:hover:not(:disabled) { background: #202D3D; }
+/* Dark rules on a base selector outrank the light rule for its state or
+   hover, so every state and hover the light layer styles is restated here. */
+html[data-theme="dark"] .nsls-pills button:hover:not(:disabled):not(.is-active),
+html[data-theme="dark"] .nsls-seg button:hover:not(.is-below):not(.is-current):not(.is-current-done),
+html[data-theme="dark"] .nsls-energy-btn:hover:not(.is-selected) { background: #202D3D; }
 html[data-theme="dark"] .nsls-pills button.is-active { background: var(--nsls-teal); }
 html[data-theme="dark"] .nsls-pills button.is-del.is-active { background: var(--nsls-red); }
 html[data-theme="dark"] .nsls-pills button:disabled:not(.is-active) { color: #56657A; }
@@ -110,6 +114,8 @@ html[data-theme="dark"] .nsls-add-item select {
 html[data-theme="dark"] .nsls-tcard-title:focus { background: var(--nsls-field); }
 html[data-theme="dark"] .nsls-slot input { color: var(--nsls-nearblack); }
 html[data-theme="dark"] .nsls-habit-box { background: var(--nsls-field); color: var(--nsls-on-accent); }
+html[data-theme="dark"] .nsls-habit-box.is-done { background: var(--nsls-teal); }
+html[data-theme="dark"] .nsls-habit-box.is-partial { background: var(--nsls-lightblue); color: var(--nsls-teal-dark); }
 html[data-theme="dark"] .nsls-add-status { color: #68C895; }
 html[data-theme="dark"] .nsls-row-text.is-done,
 html[data-theme="dark"] .nsls-row-text.is-deleted { color: #77879A; }

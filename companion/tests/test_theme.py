@@ -48,3 +48,13 @@ def test_dark_palette_covers_the_task_lanes():
                      ".nsls-lane--top3", ".nsls-lane--bonus", ".nsls-add-item input"):
         assert selector in css, selector
 
+
+
+def test_dark_restates_the_states_its_base_rules_would_hide():
+    """A dark rule on a base selector outranks the light rule for its state."""
+    css = (STATIC / "theme.css").read_text(encoding="utf-8")
+    for selector in ('html[data-theme="dark"] .nsls-habit-box.is-done',
+                     'html[data-theme="dark"] .nsls-habit-box.is-partial',
+                     ".nsls-pills button:hover:not(:disabled):not(.is-active)",
+                     ".nsls-energy-btn:hover:not(.is-selected)"):
+        assert selector in css, selector
