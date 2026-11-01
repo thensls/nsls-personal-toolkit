@@ -56,5 +56,7 @@ def test_dark_restates_the_states_its_base_rules_would_hide():
     for selector in ('html[data-theme="dark"] .nsls-habit-box.is-done',
                      'html[data-theme="dark"] .nsls-habit-box.is-partial',
                      ".nsls-pills button:hover:not(:disabled):not(.is-active)",
-                     ".nsls-energy-btn:hover:not(.is-selected)"):
+                     ".nsls-energy-btn:hover:not(.is-selected)",
+                     'html[data-theme="dark"] .nsls-textarea:focus',
+                     'html[data-theme="dark"] input.border:focus'):
         assert selector in css, selector

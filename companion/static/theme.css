@@ -111,6 +111,15 @@ html[data-theme="dark"] .nsls-add-item input,
 html[data-theme="dark"] .nsls-add-item select {
   background: var(--nsls-field); border-color: var(--nsls-field-line); color: var(--nsls-nearblack);
 }
+html[data-theme="dark"] .nsls-add input:focus,
+html[data-theme="dark"] .nsls-textarea:focus,
+html[data-theme="dark"] .nsls-input:focus,
+html[data-theme="dark"] .nsls-est input:focus,
+html[data-theme="dark"] .nsls-add-item input:focus,
+html[data-theme="dark"] .nsls-add-item select:focus,
+html[data-theme="dark"] input.border:focus,
+html[data-theme="dark"] textarea.border:focus,
+html[data-theme="dark"] select.border:focus { border-color: var(--nsls-teal); }
 html[data-theme="dark"] .nsls-tcard-title:focus { background: var(--nsls-field); }
 html[data-theme="dark"] .nsls-slot input { color: var(--nsls-nearblack); }
 html[data-theme="dark"] .nsls-habit-box { background: var(--nsls-field); color: var(--nsls-on-accent); }
