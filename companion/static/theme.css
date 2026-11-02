@@ -1,0 +1,207 @@
+/* Light / dark theme. Dark is the default; static/theme.js sets
+ * <html data-theme> before the page paints, and the button in the top bar
+ * switches between the two. The dark palette is the low-glare
+ * "second-monitor" theme: navy-black surfaces, light text, teal and gold
+ * accents with dark text on them. Loaded after tailwind.css. */
+
+/* ---- The switch in the top bar (both themes) ---- */
+.nsls-theme-toggle {
+  margin-left: auto;
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 30px; padding: 5px 12px;
+  border: 1px solid rgba(255,255,255,0.2); border-radius: 999px;
+  color: rgba(255,255,255,0.88); background: rgba(255,255,255,0.07);
+  font-family: inherit; font-size: 0.75rem; font-weight: 600; line-height: 1;
+  cursor: pointer; transition: border-color .14s, background .14s, color .14s;
+}
+.nsls-theme-toggle:hover { border-color: rgba(255,255,255,0.42); color: #fff; background: rgba(255,255,255,0.13); }
+.nsls-theme-opt { display: inline-flex; align-items: center; gap: 7px; }
+.nsls-theme-opt svg {
+  width: 15px; height: 15px; fill: none; stroke: currentColor;
+  stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+/* The button names the theme you'd switch TO. */
+.nsls-theme-opt--light { display: none; }
+html[data-theme="dark"] .nsls-theme-opt--light { display: inline-flex; }
+html[data-theme="dark"] .nsls-theme-opt--dark { display: none; }
+
+/* ---- Dark palette ---- */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --nsls-navy: #B9CDF2;        /* headings and strong text */
+  --nsls-bluegray: #C6DCE5;
+  --nsls-darkblue: #A2B0C2;    /* quiet text */
+  --nsls-teal: #48BDD0;
+  --nsls-teal-dark: #7FD3E0;
+  --nsls-gold: #F0B82C;
+  --nsls-lightblue: #15343D;   /* hover and info tints */
+  --nsls-white: #182332;       /* card surface */
+  --nsls-nearblack: #E8EDF4;   /* body text */
+  --nsls-disc-empty: #344255;
+  --nsls-hairline: #2C394A;
+  --nsls-red: #B9454D;
+  --nsls-on-accent: #07131A;   /* text on teal */
+  --nsls-on-gold: #151105;     /* text on gold */
+  --nsls-control: #131E2D;     /* buttons and segmented controls */
+  --nsls-field: #101A28;       /* text boxes */
+  --nsls-field-line: #405065;
+  --nsls-popover: #172333;
+}
+
+/* Page, frame and nav */
+html[data-theme="dark"] body,
+html[data-theme="dark"] body.bg-stone-50 {
+  background: radial-gradient(circle at 15% -5%, rgba(72,189,208,0.08), transparent 31rem), #0B111B;
+  color: var(--nsls-nearblack);
+}
+html[data-theme="dark"] .nsls-shell { background: #0B1525; box-shadow: 0 18px 52px -22px rgba(0,0,0,0.9); }
+html[data-theme="dark"] .nsls-nav { background: #0B1525; }
+html[data-theme="dark"] .nsls-shell-main { background: #101927; }
+html[data-theme="dark"] .nsls-soon-pop { background: var(--nsls-popover); border: 1px solid var(--nsls-disc-empty); }
+html[data-theme="dark"] .nsls-soon-pop::before { border-bottom-color: var(--nsls-popover); }
+html[data-theme="dark"] ::placeholder { color: #77879A; }
+
+/* Cards, banners, stats */
+html[data-theme="dark"] .nsls-card { box-shadow: 0 1px 2px rgba(0,0,0,0.24), 0 12px 28px -16px rgba(0,0,0,0.78); }
+html[data-theme="dark"] .nsls-banner { border-color: #315766; }
+html[data-theme="dark"] .nsls-banner code { background: var(--nsls-field); border-color: #315766; }
+html[data-theme="dark"] .nsls-closed-head { background: #0B1525; color: var(--nsls-nearblack); border: 1px solid var(--nsls-disc-empty); }
+
+/* Buttons: dark text on the bright accents */
+html[data-theme="dark"] .nsls-btn-gold,
+html[data-theme="dark"] .nsls-test-flag,
+html[data-theme="dark"] .nsls-test-bar,
+html[data-theme="dark"] .nsls-seg button.is-current-done { color: var(--nsls-on-gold); }
+html[data-theme="dark"] .nsls-btn-gold:hover { background: #FFC94D; }
+html[data-theme="dark"] .nsls-btn-teal,
+html[data-theme="dark"] .nsls-seg button.is-below,
+html[data-theme="dark"] .nsls-seg button.is-current,
+html[data-theme="dark"] .nsls-energy-btn.is-selected,
+html[data-theme="dark"] .nsls-pills button.is-active:not(.is-del) { color: var(--nsls-on-accent); }
+html[data-theme="dark"] .nsls-btn-ghost,
+html[data-theme="dark"] .nsls-energy-btn,
+html[data-theme="dark"] .nsls-seg button,
+html[data-theme="dark"] .nsls-pills,
+html[data-theme="dark"] .nsls-pills button { background: var(--nsls-control); }
+html[data-theme="dark"] .nsls-energy-btn.is-selected { background: var(--nsls-teal); }
+html[data-theme="dark"] .nsls-seg button { color: var(--nsls-darkblue); }
+html[data-theme="dark"] .nsls-seg button.is-below,
+html[data-theme="dark"] .nsls-seg button.is-current { background: var(--nsls-teal); }
+html[data-theme="dark"] .nsls-seg button.is-current-done { background: var(--nsls-gold); }
+html[data-theme="dark"] .nsls-pills,
+html[data-theme="dark"] .nsls-pills button { border-color: var(--nsls-disc-empty); }
+/* Dark rules on a base selector outrank the light rule for its state or
+   hover, so every state and hover the light layer styles is restated here. */
+html[data-theme="dark"] .nsls-pills button:hover:not(:disabled):not(.is-active),
+html[data-theme="dark"] .nsls-seg button:hover:not(.is-below):not(.is-current):not(.is-current-done),
+html[data-theme="dark"] .nsls-energy-btn:hover:not(.is-selected) { background: #202D3D; }
+html[data-theme="dark"] .nsls-pills button.is-active { background: var(--nsls-teal); }
+html[data-theme="dark"] .nsls-pills button.is-del.is-active { background: var(--nsls-red); }
+html[data-theme="dark"] .nsls-pills button:disabled:not(.is-active) { color: #56657A; }
+html[data-theme="dark"] .nsls-del { background: var(--nsls-control); color: var(--nsls-darkblue); }
+html[data-theme="dark"] .nsls-del:hover { background: #392126; color: #F08A91; }
+html[data-theme="dark"] .nsls-del.is-deleted { background: var(--nsls-red); color: #fff; }
+
+/* Text boxes */
+html[data-theme="dark"] .nsls-add input,
+html[data-theme="dark"] .nsls-textarea,
+html[data-theme="dark"] .nsls-input,
+html[data-theme="dark"] .nsls-est input,
+html[data-theme="dark"] .nsls-add-item input,
+html[data-theme="dark"] .nsls-add-item select {
+  background: var(--nsls-field); border-color: var(--nsls-field-line); color: var(--nsls-nearblack);
+}
+html[data-theme="dark"] .nsls-add input:focus,
+html[data-theme="dark"] .nsls-textarea:focus,
+html[data-theme="dark"] .nsls-input:focus,
+html[data-theme="dark"] .nsls-est input:focus,
+html[data-theme="dark"] .nsls-add-item input:focus,
+html[data-theme="dark"] .nsls-add-item select:focus,
+html[data-theme="dark"] input.border:focus,
+html[data-theme="dark"] textarea.border:focus,
+html[data-theme="dark"] select.border:focus { border-color: var(--nsls-teal); }
+html[data-theme="dark"] .nsls-tcard-title:focus { background: var(--nsls-field); }
+html[data-theme="dark"] .nsls-slot input { color: var(--nsls-nearblack); }
+html[data-theme="dark"] .nsls-habit-box { background: var(--nsls-field); color: var(--nsls-on-accent); }
+html[data-theme="dark"] .nsls-habit-box.is-done { background: var(--nsls-teal); }
+html[data-theme="dark"] .nsls-habit-box.is-partial { background: var(--nsls-lightblue); color: var(--nsls-teal-dark); }
+html[data-theme="dark"] .nsls-add-status { color: #68C895; }
+html[data-theme="dark"] .nsls-row-text.is-done,
+html[data-theme="dark"] .nsls-row-text.is-deleted { color: #77879A; }
+
+/* The (i) tip */
+html[data-theme="dark"] .nsls-tip .ic { color: #0B111B; }
+html[data-theme="dark"] .nsls-tip .pop { background: var(--nsls-popover); border: 1px solid var(--nsls-disc-empty); }
+html[data-theme="dark"] .nsls-tip .pop::after { border-top-color: var(--nsls-popover); }
+
+/* Lanes and task cards */
+html[data-theme="dark"] .nsls-lane { background: #141F2E; }
+html[data-theme="dark"] .nsls-lane-head { background: rgba(255,255,255,0.03); }
+html[data-theme="dark"] .nsls-lane--top3 { border-color: #877949; background: #141F2E; }
+html[data-theme="dark"] .nsls-lane--top3 .nsls-lane-head { color: #F0C460; border-bottom-color: #726B4C; background: #22292F; }
+html[data-theme="dark"] .nsls-lane--bonus { border-color: #3E7D90; background: #141F2E; }
+html[data-theme="dark"] .nsls-lane--bonus .nsls-lane-head { border-bottom-color: #3B6E81; background: #182A39; }
+html[data-theme="dark"] .nsls-lane.is-drag-over { background: #1A2A33; }
+html[data-theme="dark"] .nsls-tcard { background: var(--nsls-white); border-color: #2C394A; box-shadow: none; }
+html[data-theme="dark"] .nsls-tcard:hover { border-color: #3A4A5F; box-shadow: 0 4px 14px -6px rgba(0,0,0,0.7); }
+html[data-theme="dark"] .nsls-tcard.is-set-aside { background: var(--nsls-control); }
+html[data-theme="dark"] .nsls-tcard.is-complete { background: #252C32; }
+html[data-theme="dark"] .nsls-grip { color: #5A6C81; }
+html[data-theme="dark"] .nsls-tcard:hover .nsls-grip { color: var(--nsls-darkblue); }
+html[data-theme="dark"] .nsls-tcard-meta { color: #8A99AB; }
+html[data-theme="dark"] .nsls-slot { border-color: #526278; background: rgba(255,255,255,0.02); }
+html[data-theme="dark"] .nsls-slot-n { color: #77879A; }
+html[data-theme="dark"] .nsls-slot--drop { color: #8A99AB; }
+html[data-theme="dark"] .nsls-drop-marker { box-shadow: 0 0 0 2px rgba(72,189,208,0.2); }
+
+/* Streaks heat map: the empty cell is the only colour that needs a dark twin */
+.hm-empty { background: #E5E1D6; }
+html[data-theme="dark"] .hm-empty { background: #263345; }
+
+/* Plain utility classes still used by the coach cards, results, streaks and week pages */
+html[data-theme="dark"] .bg-white { background-color: var(--nsls-white); }
+html[data-theme="dark"] .bg-stone-50 { background-color: #101927; }
+html[data-theme="dark"] .bg-stone-100 { background-color: var(--nsls-control); }
+html[data-theme="dark"] .bg-stone-200 { background-color: #202D3D; }
+html[data-theme="dark"] .bg-stone-700 { background-color: #5A6C81; }
+html[data-theme="dark"] .bg-amber-50,
+html[data-theme="dark"] .bg-amber-100 { background-color: #3B311A; }
+html[data-theme="dark"] .bg-blue-50 { background-color: #15343D; }
+html[data-theme="dark"] .bg-green-50 { background-color: #173127; }
+html[data-theme="dark"] .bg-red-50 { background-color: #382126; }
+html[data-theme="dark"] .text-stone-900,
+html[data-theme="dark"] .text-stone-800 { color: #E8EDF4; }
+html[data-theme="dark"] .text-stone-700 { color: #C9D3DF; }
+html[data-theme="dark"] .text-stone-600 { color: #A2B0C2; }
+html[data-theme="dark"] .text-stone-500 { color: #94A3B5; }
+html[data-theme="dark"] .text-stone-400 { color: #77879A; }
+html[data-theme="dark"] .text-blue-700,
+html[data-theme="dark"] .text-blue-900 { color: #B9CDF2; }
+html[data-theme="dark"] .text-amber-700,
+html[data-theme="dark"] .text-amber-800,
+html[data-theme="dark"] .text-amber-900,
+html[data-theme="dark"] .text-yellow-700 { color: #F0C460; }
+html[data-theme="dark"] .text-red-600,
+html[data-theme="dark"] .text-red-700 { color: #F08A91; }
+html[data-theme="dark"] .text-green-800,
+html[data-theme="dark"] .text-green-900 { color: #68C895; }
+html[data-theme="dark"] .border,
+html[data-theme="dark"] .border-stone-200,
+html[data-theme="dark"] .border-stone-300 { border-color: #344255; }
+html[data-theme="dark"] .border-b { border-bottom-color: #2C394A; }
+html[data-theme="dark"] .border-stone-700 { border-color: #5A6C81; }
+html[data-theme="dark"] .border-amber-200 { border-color: #5C4A1F; }
+html[data-theme="dark"] .border-amber-600,
+html[data-theme="dark"] .border-yellow-600 { border-color: #B38A2A; }
+html[data-theme="dark"] .border-green-200 { border-color: #386C51; }
+html[data-theme="dark"] .border-blue-200 { border-color: #315766; }
+html[data-theme="dark"] .hover\:bg-stone-50:hover,
+html[data-theme="dark"] .hover\:bg-stone-100:hover,
+html[data-theme="dark"] .hover\:bg-stone-200:hover { background-color: #202D3D; }
+html[data-theme="dark"] input.border,
+html[data-theme="dark"] textarea.border,
+html[data-theme="dark"] select.border {
+  background-color: var(--nsls-field); border-color: var(--nsls-field-line); color: var(--nsls-nearblack);
+}
+html[data-theme="dark"] .shadow,
+html[data-theme="dark"] .shadow-lg { box-shadow: 0 1px 2px rgba(0,0,0,0.24), 0 12px 28px -16px rgba(0,0,0,0.78); }

@@ -51,3 +51,10 @@ def test_streaks_tab_shows_heatmap_cells(client_with_today):
     resp = client.get("/streaks")
     # 30-day heatmap = 30 cells per habit, 2 habits => 60 cells
     assert resp.data.count(b'class="hm-cell') >= 60
+
+
+def test_empty_heatmap_cells_use_a_class_so_dark_mode_can_recolour_them(client_with_today):
+    client, _ = client_with_today
+    html = client.get("/streaks").get_data(as_text=True)
+    assert 'class="hm-cell hm-empty"' in html
+    assert "#e5e1d6" not in html.lower()

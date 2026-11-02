@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>NSLS Toolkit Companion</title>
   <link rel="stylesheet" href="/static/tailwind.css">
+  <link rel="stylesheet" href="/static/theme.css">
+  <script src="/static/theme.js"></script>
   <!-- htmx + Alpine are vendored locally (companion/static/) so the companion
        works fully offline / behind firewalls that block unpkg. A blocked CDN
        was silently leaving htmx undefined, so every button did nothing. The
@@ -26,6 +28,14 @@
           <span class="nsls-soon-pop" x-show="soon" x-cloak x-transition>Coming soon</span>
         </span>
         <a href="/streaks" class="nsls-nav-link {{ 'nsls-nav-active' if active_tab == 'streaks' else '' }}">Streaks</a>
+        <button type="button" class="nsls-theme-toggle" data-theme-toggle aria-label="Switch to the light theme">
+          <span class="nsls-theme-opt nsls-theme-opt--light">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>Light
+          </span>
+          <span class="nsls-theme-opt nsls-theme-opt--dark">
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 15.4A8.5 8.5 0 0 1 8.6 4a8.5 8.5 0 1 0 11.4 11.4Z"></path></svg>Dark
+          </span>
+        </button>
       </div>
     </nav>
     <main class="nsls-shell-main">
