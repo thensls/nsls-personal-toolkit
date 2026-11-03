@@ -2,9 +2,12 @@
 
 The extraction step asks Claude to identify moments in a meeting that are KB-worthy: **decisions**, **project definitions**, or **state changes**.
 
-## Pre-filter via rubric
+## Pre-filter via the REJECT list
 
-Before extraction, paste the rubric's **Never write** list from `60-nsls-knowledge/CLAUDE.md` so the model doesn't surface candidates that are guaranteed to fail Step 5 (rubric gate). Saves tokens and avoids "candidate dropped" noise in the approval list.
+Before extraction, paste the **REJECT** section of `references/sorting-guidelines.md` so the model
+doesn't surface candidates that are guaranteed to be rejected. Only that list is withheld here:
+business facts (deal terms, vendor pricing, security gaps, open legal questions) are extracted
+and go through the sort like anything else.
 
 ## Extraction prompt
 
@@ -13,10 +16,9 @@ You are extracting candidate KB entries from an SLT meeting at NSLS (a leadershi
 
 OUTPUT FORMAT: one JSON object. No prose, no markdown fences.
 {"candidates": [ ... ], "withheld": {"<category>": <count>, ...}}
-"withheld" counts the moments you left out because they fall in a never-write category,
-using these labels only: individual pay, people decision, private life, financials beyond
-revenue, deal or vendor terms, security, legal, not yet announced, outside-org gossip,
-member data. Count only; never describe them.
+"withheld" counts the moments you left out because they are on the REJECT list,
+using these labels only: individual pay, people decision, private life, profit and cash,
+not yet announced, access secrets, member data. Count only; never describe them.
 Each candidate: {"kind": "decision" | "project_definition" | "state_change" | "how_we_work",
                "text": "<one-sentence summary>",
                "fathom_timestamp_sec": <integer>,
@@ -42,8 +44,7 @@ DO NOT extract:
 - Plans-in-discussion or hypothetical proposals ("we should probably look at pricing")
 - Context, observations, or opinions ("Dana raised a good point")
 - Logistics and scheduling (offsites, meeting times, expense tools, holiday closures)
-- Anything that falls in these never-write categories from the NSLS sensitive-content
-  rubric: [paste the never-write categories table from 60-nsls-knowledge/CLAUDE.md]
+- Anything in the REJECT list: [paste the REJECT section of references/sorting-guidelines.md]
 
 For each candidate, provide a 1-sentence summary in the `text` field — not a full
 quote. The Fathom transcript URL + timestamp serves as the verbatim source.
@@ -118,4 +119,4 @@ This is intent without decision. NOT a candidate. Empty result.
 **Transcript excerpt:**
 > Devan (45:01): "Q1 net margin was 14.2%, up from 11.8% in Q4. Best in two years."
 
-This is a profit number. Rubric never-write category. Pre-filter drops it without proposing. Empty result.
+This is a profit number, which is on the REJECT list. Pre-filter drops it without proposing. Empty result.
