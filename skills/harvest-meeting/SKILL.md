@@ -790,7 +790,7 @@ For each meeting loaded in Step 2, ask Claude to extract candidate KB entries.
 - The `INPUT` block with the meeting's title, date, attendees, summary, and transcript
 
 **Invocation:** Call Claude with the constructed prompt. Parse the JSON response. Expect 0–10 candidates per meeting; flag if > 15 (probably mis-parsing). Attach the meeting's id, title, URL, date and attendee list from Step 2 to **every** candidate it
-produced (Step 6 needs them to apply the stricter 1:1 rules per candidate). Add each meeting's `withheld` counts into a run total (`/tmp/harvest-meeting-ctx/withheld.json`); Step 7's 🚫 line is withheld + Step 6 REJECTs. Stash all candidates in `/tmp/harvest-meeting-ctx/candidates.json`:
+produced (Step 6 needs them to apply the stricter 1:1 rules per candidate). Collect each meeting's `withheld` list into `/tmp/harvest-meeting-ctx/withheld.json` (this session's scratch only; never logged or written to the KB); Step 7's 🚫 list is withheld + Step 6 REJECTs. Stash all candidates in `/tmp/harvest-meeting-ctx/candidates.json`:
 
 ```json
 [{
@@ -897,6 +897,16 @@ counts by category for Step 7.
 Step 6: sorted → A add, T trimmed, U unsure, R rejected, S skipped
 ```
 
+## Step 6a: Second pass — edit the ✅ list
+
+Read every ADD and TRIM item together once more, using the "Second pass" section of
+`references/sorting-guidelines.md`: merge items about the same thing, demote anything that fails
+the three-weeks test to SKIP, turn a NEW into a REFINEMENT when Step 5 found a related entry, and
+drop any follow-up owner the transcript doesn't support. Run it as one call over the whole list,
+not per item.
+
+**Heartbeat:** `Step 6a: second pass → M merged, D demoted to skip, R now updates an existing entry`
+
 ## Step 6b: Merge current_state replacements (never clobber)
 
 A `state_change` candidate maps to `section: current_state`, which is a **whole-block replace**.
@@ -935,52 +945,56 @@ If Current State is empty, skip the merge — write the candidate text directly.
 
 ## Step 7: Present the three lists
 
-One screen, short enough to read in under a minute. Safe items are approved together; only
-UNSURE items need a decision each. **Never show the text of REJECT or SKIP items** — a count by
-category is enough, and repeating sensitive content in chat is its own small leak.
+One screen, short enough to read in under a minute. Every ✅ item starts ticked: `yes` keeps them
+all, and the builder only acts on the ones to untick. Show every item in the same plain format,
+never struck through. **Show what was left out**, as one line each with its category and gist, so
+the builder can see the filter working. The builder was in the meeting, so this is their own
+screen only: the gists are never logged (7b keeps counts), never written to the KB, never sent
+anywhere.
 
 **Render format:**
 
 ```
 Harvest from YYYY-MM-DD — {M} meeting(s)
 
-✅ Adding to the {company|local} KB ({A+T}):
-  1. <topic>.md → Key Decisions: <text> ([▶](<fathom_url>?timestamp=<sec>))
-  2. <topic>.md → Current State (rewrite): <one-line gist>   · `show 2` for the full diff
-  3. 🆕 <suggested_slug>.md: <text>
-  4. <topic>.md → Key Decisions: <text>   ✂ deal figure
-  5. <topic>.md → Key Decisions: <text>   · topic unsure, or <alt>.md? (`topic 5: <slug>`)
+✅ Adding to the {company|local} KB ({A+T}) — all ticked:
+  ☑ 1. <topic>.md → Key Decisions: <text> ([▶](<fathom_url>?timestamp=<sec>))
+  ☑ 2. <topic>.md → Current State (updates existing entry): <one-line gist>   · `show 2` for the full diff
+  ☑ 3. 🆕 <suggested_slug>.md: <text>
+  ☑ 4. <topic>.md → Key Decisions: <text>   (✂ cut: deal figure)
+  ☑ 5. <topic>.md → Key Decisions: <text>   · topic unsure, or <alt>.md? (`topic 5: <slug>`)
 
-❓ Your call ({U}, max 4):
-  u1. <text>
+❓ Your call ({U}, max 4) — unticked unless you name it:
+  ☐ u1. <text>
       → <question>
 
-🚫 Not adding — sensitive ({R}): individual pay (1), not yet announced (2)
-· Skipped {S} trivial item(s): <what kind, e.g. "short-lived sprint tasks"> · `show skipped`
+🚫 Left out — personal or unannounced ({R}):
+  · people decision: <gist> ([▶](<fathom_url>?timestamp=<sec>))
+  · private life: <gist>
+· Skipped {S} minor item(s): <what kind, e.g. "plumbing, interim steps"> · `show skipped`
 
-Reply: yes · yes + u1 · drop 3 · why 2 · edit 1: <text> · topic 5: <slug> · show 2 · cancel
-(`yes` adds the ✅ list and leaves every ❓ item out unless you name it.)
-> _
+Reply: yes · untick 3 5 · yes + u1 · why 2 · edit 1: <text> · topic 5: <slug> · show 2 · cancel
 ```
 
-Omit any section that is empty. If ✅ and ❓ are both empty, print the 🚫 and skipped lines,
-then `Nothing to add from today's meetings.` and exit cleanly without asking.
+Always show all four sections, in this order, even when one is empty: an empty section keeps
+its heading and says `(none this time)`. If ✅ and ❓ are both empty, print all four, then
+`Nothing to add from today's meetings.` and exit cleanly without asking.
 
 **Parser:**
 - `yes` → approve every ✅ item; reject every ❓ item
 - `yes + u1,u3` (or `add u1`) → also approve those ❓ items
-- `drop <numbers>` → remove those ✅ items, then approve the rest
+- `untick <numbers>` (or `drop <numbers>`) → remove those ✅ items, then approve the rest
 - `edit <N>: <text>` → replace item N's text, re-render, wait for `yes`
 - `topic <N>: <slug>` → file item N under that topic instead (low-confidence or `mapping:
   ERROR` items from Step 4 show their alternatives inline; an ERROR item with no valid slug is
   left out unless the builder picks one)
 - `why <N>` (or `why u1`) → print that item's reason, then wait
 - `show skipped` → list the SKIP items with their reasons (they're harmless by definition; REJECT
-  items are never listed)
+  items are already shown as one-line gists)
 - `show <N>` → print the full Current State diff (whole existing block as `-`, full
   `new_current_state` as `+`), then wait
 - `cancel` → abort, no writes
-- Compound replies are fine: `drop 2 edit 1: foo yes + u1`
+- Compound replies are fine: `untick 2 edit 1: foo yes + u1`
 
 **Heartbeat:**
 ```

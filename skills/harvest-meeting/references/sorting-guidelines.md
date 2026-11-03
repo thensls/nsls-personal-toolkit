@@ -1,7 +1,7 @@
 # Sorting Guidelines — Add / Not adding / Unsure
 
-Step 6 sorts every candidate into exactly one of five buckets. The builder sees three lists;
-SKIP and REJECT are counts. The goal is a short list the builder can approve in one
+Step 6 sorts every candidate into exactly one of five buckets. The builder sees ✅ and ❓ as
+lists, REJECT as one-line gists, and SKIP as a count. The goal is a short list the builder can approve in one
 keystroke, not a long list they wave through.
 
 | Bucket | Plain meaning | Goes in the KB? | What the builder sees |
@@ -9,7 +9,7 @@ keystroke, not a long list they wave through.
 | **ADD** | Useful and safe | Yes, on `yes` | ✅ list |
 | **TRIM** | Useful, but one detail was personal, so that detail was cut | Yes, minus the detail | ✅ list, marked ✂ |
 | **SKIP** | Harmless but trivial (small talk, logistics, undecided) | No | One count line; `show skipped` lists them |
-| **REJECT** | Personal or harmful to someone if shared internally | No | Count by category; never the content |
+| **REJECT** | Personal or harmful to someone if shared internally | No | One line each: category + vague gist, on screen only |
 | **UNSURE** | Can't tell without something only the builder knows | Only if named | ❓ list, max 4 |
 
 SKIP and REJECT both stay out. The difference is *why*: SKIP is boring, REJECT is risky.
@@ -89,18 +89,28 @@ These are explicitly fine and useful. Don't trim them.
 
 ## SKIP — harmless, but not knowledge
 
-Skip only these. When in doubt between SKIP and ADD, **ADD** — the ✅ list is approved with one
-`yes`, so an extra harmless line costs the builder almost nothing.
+The KB is for colleagues who were **not** in the meeting. The bar: *would someone outside this
+room look this up in three weeks?* When in doubt, **SKIP**. A short list the builder trusts beats
+a long one they have to read. A 40-minute call should usually yield a handful of items, not a dozen.
 
 - Small talk, scheduling, logistics.
 - Ideas floated but not decided ("maybe we should", "worth exploring").
 - Exact repeats of what the topic file already says (Step 5 catches most of these).
+- **Plumbing between the people in the room**: who granted whom access, table ownership, admin
+  rights, a cosmetic tweak to an internal dashboard. Keep the outcome a colleague would notice.
+- **Interim steps of a plan**: "turn it on for 10% first, then everyone in four days". Record the
+  durable result once it lands ("the collector is on for all staff; the all-staff message was
+  approved by Heather"), ideally as an update to the existing entry.
+- **Non-news**: "no one moved up a stage", "nothing changed on X", routine counts with no decision.
+- **Unreleased and not important**: work someone says isn't released yet goes out (REJECT, not
+  yet announced) without asking, unless it is a decision colleagues need now.
 
 ## UNSURE — at most 4, and zero is a good answer
 
-Use UNSURE only when the call turns on something the model cannot know from the transcript:
-*Has this been announced? Is this person's new scope public yet?* It is not a place for "I'd
-rather not decide".
+Use UNSURE only when the item is **useful enough to add** and the call turns on something the
+model cannot know from the transcript: *Has this been announced? Is this person's new scope
+public yet?* It is not a place for "I'd rather not decide". If the item is minor, decide it
+yourself (SKIP or REJECT) rather than spend one of the builder's decisions on it.
 
 - **A named person tied to fault** — shown as the cause of a miss, delay, bug or failure, or as
   falling short — goes here with the name left in. Question: "Names Sam as the cause of the
@@ -132,3 +142,19 @@ rather not decide".
 | "Owen will take over Partnerships once we tell the team Friday" | UNSURE (if Friday has passed) or REJECT | Turns on the announcement |
 | "The launch slipped because Sam missed the API deadline" | UNSURE | Name tied to fault; keep it? |
 | "Equity-rights grants vest over four years with a one-year cliff" | TRIM → ADD | ✂ program terms |
+| "Kevin handed the collector tables to the Signal owner role" | SKIP | Plumbing between attendees |
+| "Turn it on for 10% of people, then everyone four days later" | SKIP | Interim step; record the result later |
+| "No one moved up a Builder stage this fortnight" | SKIP | Non-news |
+| "Jenna built an org-design tool; not released yet" | REJECT (not yet announced) | Unreleased, and minor: don't ask |
+
+## Second pass — read the ✅ list as an editor
+
+After sorting, read the whole ✅ list once more before showing it (Step 6a):
+
+1. **Merge items about the same thing** into one entry ("the toolkit repo publishes the org
+   chart" + "both toolkit repos will be made private" → one security entry with the fix).
+2. **Re-apply the three-weeks test** to each survivor; demote anything that fails to SKIP.
+3. **Prefer updating an existing entry** over adding a new one when Step 5 found a related entry
+   (mark it REFINEMENT and name the entry it replaces).
+4. **Check each attribution against the transcript**: who said they'd do what. Drop a follow-up
+   owner the transcript doesn't support.
