@@ -20,14 +20,17 @@
 {% elif mode == 'results' %}
   {% include "_components/results.html" %}
 {% else %}
-{% include "_components/day_header.html" %}
-<p class="text-sm nsls-subtle mb-4">Command Center{% if not is_today %} — closing out a past day{% endif %}</p>
+{# The day on the left, starting energy on the right: no card of its own, so
+   the first task sits higher on the screen. #}
+<div class="nsls-day-head">
+  <div>
+    {% include "_components/day_header.html" %}
+    <p class="text-sm nsls-subtle">Command Center{% if not is_today %} — closing out a past day{% endif %}</p>
+  </div>
+  {% with when='morning', label='Energy — beginning of day', value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
+</div>
 
 {% with position='top' %}{% include "_components/command_banner.html" %}{% endwith %}
-
-<section class="nsls-card nsls-card--row">
-  {% with when='morning', label='Energy — beginning of day', value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
-</section>
 
 <section class="nsls-card">
   <div class="nsls-section-head">

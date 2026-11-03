@@ -1,6 +1,8 @@
 {# Command Center "Add an item" panel: type a task, pick Top 3 or Bonus, Add.
    Posts to /move-item (view=command, add=1); the response replaces the task
-   lanes and, out of band, the confirmation line below. #}
+   lanes and, out of band, the confirmation line below. The destination
+   defaults to Top 3 while it has room and to Bonus once it's full. #}
+{% set top3_full = top_3|length >= 3 %}
 <section class="nsls-card">
   <h2 class="nsls-section-title">Add an item</h2>
   <p class="nsls-section-sub">Capture a new task without leaving the Command Center.</p>
@@ -10,11 +12,29 @@
         hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
     <input type="text" name="text" placeholder="What needs to be done?" autocomplete="off"
            aria-label="New task" required maxlength="256">
-    <select name="to" aria-label="Where it goes">
-      <option value="top_3">Today · Top 3</option>
-      <option value="bonus" selected>Today · Bonus</option>
+    <select name="to" id="add-item-to" aria-label="Where it goes">
+      <option value="top_3"{% if not top3_full %} selected{% endif %}>Today · Top 3</option>
+      <option value="bonus"{% if top3_full %} selected{% endif %}>Today · Bonus</option>
     </select>
     <button type="submit" class="nsls-btn-gold">Add item</button>
   </form>
   <p id="add-item-status" class="nsls-add-status" aria-live="polite"></p>
+  <script>
+    // Follow the lanes as tasks move: when Top 3 fills up the default becomes
+    // Bonus, and when it frees up it becomes Top 3 again. Only a change in
+    // fullness moves it, so a destination picked by hand stays put otherwise.
+    (function () {
+      const select = document.getElementById("add-item-to");
+      let full = null;
+      function follow() {
+        const table = document.getElementById("task-table");
+        if (!select || !table || !table.dataset.top3Count) return;
+        const nowFull = Number(table.dataset.top3Count) >= 3;
+        if (full !== null && nowFull !== full) select.value = nowFull ? "bonus" : "top_3";
+        full = nowFull;
+      }
+      follow();
+      document.body.addEventListener("htmx:afterSettle", follow);
+    })();
+  </script>
 </section>
