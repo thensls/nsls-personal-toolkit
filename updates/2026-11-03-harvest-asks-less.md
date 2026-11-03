@@ -1,7 +1,7 @@
 ---
 date: 2026-11-03
 slug: harvest-asks-less
-last_commit: PLACEHOLDER
+last_commit: 7c6f59d091ec8dbce8a07b2d4ea34d9a853c0aa9
 skills_changed: [harvest-meeting]
 files_changed: 3
 cost_to_adopt: "2 min"
