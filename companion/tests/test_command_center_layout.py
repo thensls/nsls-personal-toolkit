@@ -108,6 +108,7 @@ def test_add_item_defaults_to_bonus_when_top_3_is_full(client_with_today):
     html = client.get("/?mode=command").get_data(as_text=True)
     assert '<option value="bonus" selected>' in html
     assert '<option value="top_3" selected>' not in html
+    assert 'data-top3-full="true"' in html
 
 
 def test_add_item_defaults_to_top_3_while_it_has_room(client_with_today):
@@ -116,6 +117,7 @@ def test_add_item_defaults_to_top_3_while_it_has_room(client_with_today):
     html = client.get("/?mode=command").get_data(as_text=True)
     assert '<option value="top_3" selected>' in html
     assert '<option value="bonus" selected>' not in html
+    assert 'data-top3-full="false"' in html
 
 
 def test_lanes_report_the_top_3_count_after_a_move(client_with_today):
@@ -125,3 +127,11 @@ def test_lanes_report_the_top_3_count_after_a_move(client_with_today):
         "text": "Charlie", "to": "bonus", "position": "0", "view": "command",
     }).get_data(as_text=True)
     assert 'data-top3-count="2"' in html
+
+
+def test_add_item_follow_script_registers_its_listener_once(client_with_today):
+    # The page refresh re-runs the panel's script; it must not stack listeners.
+    client, vault = client_with_today
+    _note(vault).write_text(ACTIVE)
+    html = client.get("/?mode=command").get_data(as_text=True)
+    assert "if (window.__addItemFollowsTop3) return;" in html

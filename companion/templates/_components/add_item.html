@@ -12,7 +12,7 @@
         hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
     <input type="text" name="text" placeholder="What needs to be done?" autocomplete="off"
            aria-label="New task" required maxlength="256">
-    <select name="to" id="add-item-to" aria-label="Where it goes">
+    <select name="to" id="add-item-to" aria-label="Where it goes" data-top3-full="{{ 'true' if top3_full else 'false' }}">
       <option value="top_3"{% if not top3_full %} selected{% endif %}>Today · Top 3</option>
       <option value="bonus"{% if top3_full %} selected{% endif %}>Today · Bonus</option>
     </select>
@@ -23,18 +23,19 @@
     // Follow the lanes as tasks move: when Top 3 fills up the default becomes
     // Bonus, and when it frees up it becomes Top 3 again. Only a change in
     // fullness moves it, so a destination picked by hand stays put otherwise.
+    // The page's own refresh re-runs this script, so the one body listener is
+    // added once and always looks up the current panel.
     (function () {
-      const select = document.getElementById("add-item-to");
-      let full = null;
-      function follow() {
+      if (window.__addItemFollowsTop3) return;
+      window.__addItemFollowsTop3 = true;
+      document.body.addEventListener("htmx:afterSettle", function () {
+        const select = document.getElementById("add-item-to");
         const table = document.getElementById("task-table");
         if (!select || !table || !table.dataset.top3Count) return;
-        const nowFull = Number(table.dataset.top3Count) >= 3;
-        if (full !== null && nowFull !== full) select.value = nowFull ? "bonus" : "top_3";
-        full = nowFull;
-      }
-      follow();
-      document.body.addEventListener("htmx:afterSettle", follow);
+        const full = String(Number(table.dataset.top3Count) >= 3);
+        if (full !== select.dataset.top3Full) select.value = full === "true" ? "bonus" : "top_3";
+        select.dataset.top3Full = full;
+      });
     })();
   </script>
 </section>
