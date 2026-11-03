@@ -976,8 +976,9 @@ Harvest from YYYY-MM-DD — {M} meeting(s)
 Reply: yes · untick 3 5 · yes + u1 · why 2 · edit 1: <text> · topic 5: <slug> · show 2 · cancel
 ```
 
-Omit any section that is empty. If ✅ and ❓ are both empty, print the 🚫 list and skipped line,
-then `Nothing to add from today's meetings.` and exit cleanly without asking.
+Always show all four sections, in this order, even when one is empty: an empty section keeps
+its heading and says `(none this time)`. If ✅ and ❓ are both empty, print all four, then
+`Nothing to add from today's meetings.` and exit cleanly without asking.
 
 **Parser:**
 - `yes` → approve every ✅ item; reject every ❓ item
