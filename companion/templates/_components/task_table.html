@@ -3,7 +3,7 @@
    so both lanes and their row indexes always come back together. Cards drag
    between and within the lanes (static/drag.js → /move-item, view=command). #}
 {% if swap_oob %}{% with oob=true %}{% include "_components/planned_total.html" %}{% endwith %}{% endif %}
-<div class="nsls-lanes" id="task-table" data-drag-view="command">
+<div class="nsls-lanes" id="task-table" data-drag-view="command" data-top3-count="{{ top_3|length }}">
   {# Column headings share the cards' grid (.nsls-cols), so each heading sits
      exactly over its column. #}
   <div class="nsls-lane-cols nsls-cols" aria-hidden="true">
