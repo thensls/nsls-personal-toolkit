@@ -1,6 +1,7 @@
 ---
 date: 2026-11-03
 slug: harvest-open-about-business
+last_commit: 93831f395aa5a7201eb332472df3c78e45e56ea2
 skills_changed: [harvest-meeting]
 files_changed: 4
 cost_to_adopt: "2 min"
