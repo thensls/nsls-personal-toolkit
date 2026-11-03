@@ -879,9 +879,9 @@ Return a JSON list, one object per candidate:
 {"id": ..., "bucket": "ADD" | "TRIM" | "REJECT" | "SKIP" | "UNSURE",
  "text": "<final text — the trimmed version for TRIM/UNSURE>",
  "reason": "<≤12 plain words — why this bucket>",
- "target_file": "<the target, with any partner/vendor/person name removed from a NEW page's slug and title>",
+ "target_file": "<the target; if the text was trimmed of a personal detail, remove it from a NEW page's slug and title too>",
  "cut": "<≤3 words, TRIM only>",
- "category": "<REJECT only — one of the withheld labels in candidate-extraction.md>",
+ "category": "<REJECT only — one of the withheld labels in candidate-extraction.md, or `unsure overflow`>",
  "question": "<UNSURE only — one question the builder can answer in a second>",
  "rank": <UNSURE only — 1 = most useful>}
 ```
