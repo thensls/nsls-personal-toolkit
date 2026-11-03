@@ -19,7 +19,7 @@ OUTPUT FORMAT: one JSON object. No prose, no markdown fences.
 "withheld" counts the moments you left out because they are on the REJECT list,
 using these labels only: individual pay, people decision, private life, profit and cash,
 not yet announced, access secrets, member data. Count only; never describe them.
-Each candidate: {"kind": "decision" | "project_definition" | "state_change" | "how_we_work",
+Each candidate: {"kind": "decision" | "project_definition" | "state_change" | "how_we_work" | "open_issue",
                "text": "<one-sentence summary>",
                "fathom_timestamp_sec": <integer>,
                "speaker": "<name or 'unknown'>",
@@ -31,6 +31,9 @@ KINDS:
 - project_definition: a project, initiative, or workstream is being scoped or
   introduced. Includes owner if mentioned. Phrasing like "Project X exists",
   "Y owns this", "we're kicking off Z".
+- open_issue: a problem or gap the meeting found that has no decision yet, which colleagues
+  should know about ("the collector records private skill names; Kevin is checking"). Files
+  under the topic's Open Questions.
 - how_we_work: a standing practice stated as current fact by someone who runs it, that a
   colleague elsewhere would look up ("partner onboarding takes about six weeks", "legal turns
   data-sharing agreements around in two to three weeks"). Not one-off logistics.

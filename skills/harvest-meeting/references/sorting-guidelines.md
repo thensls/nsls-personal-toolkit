@@ -45,8 +45,9 @@ is about protecting people; business information is not on it.
 - **Individual pay and negotiations**: salary, bonus, equity grant, offer, raise, day rate, any
   comp conversation about a named or identifiable person (first name alone counts).
 - **People decisions and judgments about a named person**: promotions, demotions, role or
-  hours changes, performance, terminations, hiring offers in flight, "X isn't working out",
-  criticism of a colleague, interpersonal friction.
+  hours changes **not yet announced**, performance, terminations, hiring offers in flight, "X
+  isn't working out", criticism of a colleague, interpersonal friction. An announced
+  appointment ("Ana is the new Head of Product, announced at all-hands") is an org fact: ADD.
 - **Private life**: health, leave, family, mental health, personal finances, travel, career
   aspirations or frustrations voiced in a 1:1.
 - **Profit and cash**: profit, margin, EBITDA, cash, runway, surplus. NSLS never shares profit
