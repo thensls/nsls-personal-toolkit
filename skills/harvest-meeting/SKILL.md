@@ -5,7 +5,7 @@ description: Harvest decisions, project definitions, and state changes from meet
 
 # Harvest Meeting — NSLS Knowledge Base Pipeline
 
-Pulls decisions, project definitions, and state changes from recorded meetings, gates them through the employee-facing sensitive-content rubric, and proposes precise edits to topic files. Routing is automatic: SLT members (on `kb_authors.txt`) write to the shared company KB (`60-nsls-knowledge`) and push to `main`; everyone else writes to a local, private KB (`60-nsls-knowledge-local`) that is committed locally and never pushed.
+Pulls decisions, project definitions, and state changes from recorded meetings, sorts them with `references/sorting-guidelines.md` (careful about people, open about business), and proposes precise edits to topic files. Routing is automatic: SLT members (on `kb_authors.txt`) write to the shared company KB (`60-nsls-knowledge`) and push to `main`; everyone else writes to a local, private KB (`60-nsls-knowledge-local`) that is committed locally and never pushed.
 
 ## The on/off switch for close-day and close-week
 
@@ -786,7 +786,7 @@ Defer; this mode's data load is handled in Task 11.
 For each meeting loaded in Step 2, ask Claude to extract candidate KB entries.
 
 **Prompt construction:** Read `references/candidate-extraction.md` for the full prompt template and examples. Substitute:
-- The `[paste the never-write categories table]` placeholder with the actual rubric table from `/tmp/harvest-meeting-ctx/rubric.md`
+- The `[paste the REJECT section …]` placeholder with the REJECT section of `references/sorting-guidelines.md`
 - The `INPUT` block with the meeting's title, date, attendees, summary, and transcript
 
 **Invocation:** Call Claude with the constructed prompt. Parse the JSON response. Expect 0–10 candidates per meeting; flag if > 15 (probably mis-parsing). Attach the meeting's id, title, URL, date and attendee list from Step 2 to **every** candidate it
@@ -863,13 +863,13 @@ Step 5: dedup → N NEW, M REFINEMENT (replacing existing), K DUPLICATE (dropped
 ## Step 6: Sort candidates — Add / Not adding / Unsure
 
 For each surviving candidate (NEW or REFINEMENT), sort it using
-`references/sorting-guidelines.md` **and** the KB rubric from `/tmp/harvest-meeting-ctx/rubric.md`
-(the rubric is the floor; the guidelines are stricter and win where they differ). Sort all of a
+`references/sorting-guidelines.md`. For harvest these guidelines replace the KB repo's
+sensitive-content rubric (still loaded in Step 1b for other uses); where they differ, follow
+the guidelines. Sort all of a
 run's candidates in one call so the UNSURE cap of 4 is applied across the run, not per item.
 
 ```
 <paste references/sorting-guidelines.md>
-<paste full rubric from /tmp/harvest-meeting-ctx/rubric.md>
 
 Today: <YYYY-MM-DD>. Each candidate carries its own meeting title, date and attendee count —
 judge meeting type per candidate, not per run.
@@ -879,9 +879,9 @@ Return a JSON list, one object per candidate:
 {"id": ..., "bucket": "ADD" | "TRIM" | "REJECT" | "SKIP" | "UNSURE",
  "text": "<final text — the trimmed version for TRIM/UNSURE>",
  "reason": "<≤12 plain words — why this bucket>",
- "target_file": "<the target, with any partner/vendor/person name removed from a NEW page's slug and title>",
+ "target_file": "<the target; if the text was trimmed of a personal detail, remove it from a NEW page's slug and title too>",
  "cut": "<≤3 words, TRIM only>",
- "category": "<REJECT only — one of the withheld labels in candidate-extraction.md>",
+ "category": "<REJECT only — one of the withheld labels in candidate-extraction.md, or `unsure overflow`>",
  "question": "<UNSURE only — one question the builder can answer in a second>",
  "rank": <UNSURE only — 1 = most useful>}
 ```
@@ -910,7 +910,7 @@ For each surviving candidate with `section == current_state`, ask Claude:
 You are updating the Current State of an NSLS Knowledge Base topic. Produce a complete,
 rewritten Current State that PRESERVES all still-true existing context and folds in the new
 change. Do not drop facts that are still accurate. Do not invent detail. Apply the
-sensitive-content rubric (no profit/comp/personnel/etc.).
+REJECT list in references/sorting-guidelines.md (nothing personal, no profit).
 
 Topic: <slug>.md
 Existing Current State:

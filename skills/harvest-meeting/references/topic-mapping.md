@@ -106,3 +106,8 @@ Approval step will surface this candidate with a "?" flag and let the user pick 
 File a `how_we_work` candidate under **Current State** of the topic it describes (it is how
 things work now), merged through Step 6b like any Current State change. If the topic has no
 Current State yet, write it there directly.
+
+## Open issues (`open_issue`)
+
+File an `open_issue` candidate under **Open Questions** of the topic it concerns. Never map any
+candidate to a page whose frontmatter has `source:` (machine-generated, overwritten on sync).

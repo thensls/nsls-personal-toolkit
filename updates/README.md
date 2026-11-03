@@ -8,6 +8,7 @@ Each release has a per-file detail page describing the change, its cost to adopt
 
 ---
 
+- **2026-11-03** — [Harvest keeps business facts, protects people](2026-11-03-harvest-open-about-business.md) — 2 min. Deal, vendor, security and open legal facts now go into the knowledge base; pay, people decisions, private life, profit and unannounced changes still never do.
 - **2026-10-10** — [Harvest asks you less: one short list, at most four questions](2026-10-10-harvest-three-lists.md) — 2 min. Harvest sorts before it asks: one ✅ list approved with `yes`, at most four ❓ items, and a count of what it held back. Pay, people, private, deal and unannounced material never reach the list.
 - **2026-10-07** — [Knowledge Base harvest is now off by default](2026-10-07-harvest-off-by-default.md) — 2 min. `/close-day` and `/close-week` stop harvesting your meetings until the filters are rebuilt; `/harvest-meeting` still works when you call it, and "turn on KB harvest" brings the daily step back.
 - **2026-08-13** — [The visual companion shows up — and updates finally reach you](2026-08-13-visual-companion-auto-update.md) — 15 min. Run `/open-day` and the panel just appears — it builds itself, even fetching its own Python when the machine's is too old — and this should be the last update you ever fetch by hand.
