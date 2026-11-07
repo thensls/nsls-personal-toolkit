@@ -43,7 +43,7 @@ C9 (team meeting) — Davo: "The contractor who built the chapter app is asking 
 | L1–L8, L12, L13 | Out | Claim, dispute or investigation involving a person, even unnamed |
 | L9, L10 | ADD | Open legal question about policy or a partner contract |
 | L11 | ADD | Dispute with a company, not a person |
-| L14 | TRIM | Keep the law-firm switch and rate; cut "the Jamie case" |
+| L14 | TRIM | Keep the law-firm switch; cut the rate (contractor terms) and "the Jamie case" |
 | L15 | SKIP or Out | One-off HR logistics about a person |
 | C1, C5, C9 | Out | Contractor's terms or a judgment about their work |
 | C3 | Out, or TRIM to the project with the rate cut | Individual's rate |
