@@ -19,16 +19,20 @@ colleague's leave", "small talk about the offsite"). The builder can ask `why <N
 
 **The test for everything:** *Will knowing this serve the company?* That is the main question.
 Then: *Would it hurt a person, or break a promise to a partner, if a colleague read it?* The KB
-is internal, read by NSLS staff only. Business facts are its whole point, including the
-uncomfortable ones: deal sizes, prices, vendor terms, security gaps, open legal questions. Be
-careful about **people**, not about **business**.
+is internal, read by NSLS staff and by contractors who work alongside them. Business facts are
+its whole point, including the uncomfortable ones: deal sizes, prices, software vendor terms,
+security gaps, open legal questions. Be careful about **people**, not about **business**, and
+remember that a contractor, and a person on the other side of a legal claim, are people.
 
 ## Which rule wins
 
 - **These guidelines replace the KB repo's sensitive-content rubric for harvest.** Where the
   two differ, follow these.
 - **TRIM beats REJECT** when a real decision survives the cut. REJECT only when cutting leaves
-  nothing.
+  nothing. Two exceptions, never trimmed: a **claim or dispute involving a person** and a
+  **contractor's terms**. Removing the name doesn't make either safe, because colleagues can
+  tell who it is.
+- **Those two REJECT rules beat "open legal questions" and "vendor details"** in the ADD list.
 - **A new page is sorted as one unit.** Its list fragments ("- shop revenue") ride with the page;
   don't SKIP them one by one. Open questions are fine to ADD when they're org-level.
 - **Mixed items**: keep the decided part, cut the "exploring" clause (TRIM).
@@ -57,6 +61,22 @@ is about protecting people; business information is not on it.
 - **Secrets that grant access**: passwords, keys, tokens, or step-by-step ways to get into a
   system. Describing a security gap and who is fixing it is fine.
 - **Member or student data**: names, emails, phone numbers, records of individual students.
+- **Claims and disputes involving a person**: lawsuits, demand letters, EEOC or other agency
+  charges, HR complaints and investigations, settlements and NDAs, unemployment or injury
+  claims, threatened suits, litigation holds, and counsel's advice, strategy or estimates about
+  any of them. This applies even with the name removed, whether the person is a former
+  employee, a contractor, a student or a parent. Why: who it is about is easy to guess,
+  colleagues may be witnesses or friends of the person, and spreading counsel's advice can waive
+  legal privilege. Legal tells the people who need to act. A dispute between NSLS and another
+  *company* (a publisher's copyright complaint, a partner contract question) is business: ADD.
+- **Contractors' terms and performance**: rates, retainers, invoices, renewals, negotiations,
+  equity asks, and judgments about the work of a freelancer, consultant, agency or small firm
+  doing work for NSLS ("Email Geniuses wants $9K a month", "Boris's team keeps missing
+  deadlines"). Their people often work alongside staff and can read the KB. No list of
+  contractors is needed. The test: **is this vendor people doing work for us, or a product we
+  buy?** People: treat their terms like pay. Product (software, platforms, Rippling, Anthropic):
+  vendor terms are ADD. What a contractor is doing, and until when, is fine ("Email Geniuses runs
+  the Customer.io migration through December"). Can't tell which it is: UNSURE.
 
 ## TRIM → ADD — keep the decision, cut the personal detail
 
@@ -77,11 +97,14 @@ These are explicitly fine and useful. Don't trim them.
 
 - Partner and deal details: school names, pricing per student, deal size, projected revenue,
   cohort dates, contract status.
-- Vendor details: names, per-user prices, contract length, renewal plans.
+- Software and platform vendor details: names, per-user prices, contract length, renewal plans.
+  Not contractors or agencies (see REJECT).
 - Security gaps and the work to close them ("several login paths aren't documented yet; Sam is
   documenting them").
-- Open legal and compliance questions ("legal is still reviewing whether member data can go to
-  the AI tool"; "the assessment names may carry copyright exposure").
+- Open legal and compliance questions about policy, contracts, data or IP ("legal is still
+  reviewing whether member data can go to the AI tool"; "the assessment names may carry
+  copyright exposure"; "a partner's agreement may not allow its student data in Claude"). Not a
+  claim or dispute involving a person (see REJECT).
 - What partners or competitors are doing, including concerns ("this partner has copied our
   ideas before").
 - Short-lived task owners ("Chris runs the load test by Oct 22"), standing practices, product
@@ -135,6 +158,12 @@ yourself (SKIP or REJECT) rather than spend one of the builder's decisions on it
 | "Pilot with Westbrook State projected at $180K and 4,000 members" | ADD | Deal facts are business knowledge |
 | "We'll sign the analytics vendor at $0.40/user, two-year term" | ADD | Vendor terms are business knowledge |
 | "Legal is still reviewing whether member data can go to the AI tool" | ADD | Open legal question the company should know |
+| "A former employee's lawyer sent a demand letter; counsel thinks we settle under $40K" | REJECT | Claim involving a person, even unnamed |
+| "Legal put a litigation hold on the Marketing channel" | REJECT | Reveals a live claim; legal tells custodians directly |
+| "A publisher complained about a video; it's down while legal reviews" | ADD | Dispute with a company, not a person |
+| "Email Geniuses wants $9K a month at renewal; we'll counter at $8K" | REJECT | Contractor's terms: people doing work for us |
+| "Rippling renews at $14/user/month, three-year term" | ADD | Software vendor terms |
+| "Email Geniuses runs the Customer.io migration through December" | ADD | What a contractor does, no terms |
 | "Priya's raise is held until the reorg lands" | REJECT | Individual pay |
 | "Sam has been out a lot since the surgery" | REJECT | Health |
 | "Q3 margin dropped to 9%" | REJECT | Profit is never shared |

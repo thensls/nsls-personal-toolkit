@@ -6,7 +6,7 @@ The extraction step asks Claude to identify moments in a meeting that are KB-wor
 
 Before extraction, paste the **REJECT** section of `references/sorting-guidelines.md` so the model
 doesn't surface candidates that are guaranteed to be rejected. Only that list is withheld here:
-business facts (deal terms, vendor pricing, security gaps, open legal questions) are extracted
+business facts (deal terms, software vendor pricing, security gaps, open legal questions) are extracted
 and go through the sort like anything else.
 
 ## Extraction prompt
@@ -18,7 +18,7 @@ OUTPUT FORMAT: one JSON object. No prose, no markdown fences.
 {"candidates": [ ... ], "withheld": [{"category": "<label>", "gist": "<≤10 words>", "fathom_timestamp_sec": <int>}, ...]}
 "withheld" lists the moments you left out because they are on the REJECT list, using these
 labels only: individual pay, people decision, private life, profit and cash, not yet announced,
-access secrets, member data. "gist" is a vague pointer the builder, who was in the meeting, will
+access secrets, member data, legal claim, contractor terms. "gist" is a vague pointer the builder, who was in the meeting, will
 recognise ("Kevin's private meeting-prep skill content"), never the sensitive detail itself.
 Each candidate: {"kind": "decision" | "project_definition" | "state_change" | "how_we_work" | "open_issue",
                "text": "<one-sentence summary>",
