@@ -1,0 +1,5 @@
+{# First-run tips for this screen. static/callouts.js reads this marker after
+   every swap of <main>: `screen` picks the tip set ("plan" or "command"), and
+   the dismissed list comes from the companion's saved state (ui_state.py), so
+   a tip the builder closed never comes back, in any browser. #}
+<div id="nsls-callouts" hidden data-screen="{{ screen }}" data-dismissed='{{ callouts_dismissed|tojson }}'></div>

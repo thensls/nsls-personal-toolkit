@@ -3,7 +3,7 @@
   <p class="text-sm nsls-subtle">Plan your day</p>
 </div>
 <div x-data="{ coachMode: true }" class="nsls-card max-w-2xl mx-auto">
-  <div class="mb-5 pb-4 nsls-divider">
+  <div class="mb-5 pb-4 nsls-divider" data-callout="plan-energy">
     {% with when='morning', label="How's your energy this morning?", value=morning_energy %}{% include "_components/energy_row.html" %}{% endwith %}
   </div>
 
@@ -12,6 +12,7 @@
   <div class="mt-6 flex justify-end">
     <button hx-post="/lock-in" hx-vals='{"phase":"morning"}'
             hx-select="main" hx-target="main" hx-swap="outerHTML"
-            class="nsls-btn-gold">Done — show Command Center →</button>
+            class="nsls-btn-gold" data-callout="plan-lockin">Done — show Command Center →</button>
   </div>
 </div>
+{% with screen='plan' %}{% include "_components/callouts.html" %}{% endwith %}

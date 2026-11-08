@@ -205,3 +205,15 @@ html[data-theme="dark"] select.border {
 }
 html[data-theme="dark"] .shadow,
 html[data-theme="dark"] .shadow-lg { box-shadow: 0 1px 2px rgba(0,0,0,0.24), 0 12px 28px -16px rgba(0,0,0,0.78); }
+
+/* First-run tips: the light card is navy, which is a light text colour here,
+   so the dark card gets its own raised navy and a hairline edge. */
+html[data-theme="dark"] .nsls-coach-card {
+  background: #223659; border: 1px solid #3B5486;
+  box-shadow: 0 16px 40px -14px rgba(0,0,0,0.9);
+}
+html[data-theme="dark"] .nsls-coach-card::before { border: inherit; }
+html[data-theme="dark"] .nsls-coach-card[data-side="below"]::before { border-right-color: transparent; border-bottom-color: transparent; }
+html[data-theme="dark"] .nsls-coach-card[data-side="above"]::before { border-left-color: transparent; border-top-color: transparent; }
+html[data-theme="dark"] .nsls-coach-ok { color: var(--nsls-on-gold); }
+html[data-theme="dark"] .nsls-coach-dot { border-color: #0B111B; box-shadow: 0 1px 6px rgba(0,0,0,0.6); }
