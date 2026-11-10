@@ -6,6 +6,8 @@
 //       "command") and the ids already dismissed (JSON array, read from the
 //       companion's saved state)
 //   [data-callout="<id>"]  a tip's target where it has no natural selector
+//   window.__toolkitCalloutStore  optional: {dismiss(ids)}; returning false
+//       (or a promise of false) means it wasn't saved
 //
 // A tip's dot sits just outside its control's top-right corner, or on its
 // left edge (dot: "left") for a control too small to share a corner with,
@@ -61,7 +63,8 @@
     dismiss(ids) {
       const body = new URLSearchParams();
       ids.forEach((id) => body.append("id", id));
-      return fetch("/callouts/dismiss", { method: "POST", body: body }).catch(() => {});
+      return fetch("/callouts/dismiss", { method: "POST", body: body })
+        .then((r) => r.ok, () => false);
     },
   };
   const store = () => window.__toolkitCalloutStore || serverStore;
@@ -113,7 +116,13 @@
 
   function dismiss(ids, advance) {
     ids.forEach((id) => { closedHere.add(id); dismissed.add(id); });
-    store().dismiss(ids);
+    // If it didn't save, bring the tip back rather than let it return on the
+    // next reload, so "Got it" can simply be clicked again.
+    Promise.resolve(store().dismiss(ids)).then((saved) => {
+      if (saved !== false) return;
+      ids.forEach((id) => closedHere.delete(id));
+      schedule();
+    });
     openId = null;
     draw();
     // Walk the builder to the next tip only when they asked for it.

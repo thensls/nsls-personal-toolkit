@@ -63,10 +63,17 @@ def _atomic_replace(tmp: str, path: Path, retries: int = 10, delay: float = 0.1)
             time.sleep(delay)
 
 
-def safe_modify(path: Path, transform: Callable[[str], str]) -> None:
+def safe_modify(
+    path: Path, transform: Callable[[str], str], *, set_aside_undecodable: bool = False
+) -> None:
     """Read path under exclusive lock, transform, write back atomically.
 
     If path doesn't exist, transform receives "" and the file is created.
+
+    A file that isn't UTF-8 raises UnicodeDecodeError, unless
+    set_aside_undecodable is set: then, still under the lock, it is renamed to
+    "<name>.unreadable" (kept, never deleted) and transform receives "". Only
+    for small state files that are safe to rebuild; notes never use it.
 
     Uses a separate .lock file so the lock survives the atomic rename of
     the data file (os.replace changes the inode, which would release a lock
@@ -82,6 +89,11 @@ def safe_modify(path: Path, transform: Callable[[str], str]) -> None:
             try:
                 existing = path.read_text(encoding="utf-8")
             except FileNotFoundError:
+                existing = ""
+            except UnicodeDecodeError:
+                if not set_aside_undecodable:
+                    raise
+                path.replace(path.with_name(path.name + ".unreadable"))
                 existing = ""
             updated = transform(existing)
             # Atomic write: tempfile in same dir, fsync, rename. newline=""

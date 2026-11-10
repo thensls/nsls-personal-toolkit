@@ -71,3 +71,24 @@ def test_creates_missing_file(tmp_path):
     f = tmp_path / "new.md"
     safe_modify(f, lambda existing: existing + "created")
     assert f.read_text(encoding="utf-8") == "created"
+
+
+def test_undecodable_file_raises_by_default(tmp_path):
+    import pytest
+    from companion.safe_write import safe_modify
+    p = tmp_path / "note.md"
+    p.write_bytes(b"caf\xe9")
+    with pytest.raises(UnicodeDecodeError):
+        safe_modify(p, lambda s: s + "x")
+    assert p.read_bytes() == b"caf\xe9"  # a note is never rebuilt behind the user's back
+
+
+def test_undecodable_file_can_be_set_aside_and_rebuilt(tmp_path):
+    from companion.safe_write import safe_modify
+    p = tmp_path / "state.json"
+    p.write_bytes(b"{\xff}")
+    seen = []
+    safe_modify(p, lambda s: (seen.append(s), "{}\n")[1], set_aside_undecodable=True)
+    assert seen == [""]
+    assert p.read_text() == "{}\n"
+    assert (tmp_path / "state.json.unreadable").read_bytes() == b"{\xff}"
