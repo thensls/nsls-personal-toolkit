@@ -781,6 +781,22 @@ Heartbeat: `Step 2: loaded 1 meeting from URL: <title>` — or
 
 Defer; this mode's data load is handled in Task 11.
 
+## Step 2b: Load the contractor list (when Signal has it)
+
+Contractors read the knowledge base, so their terms are treated like pay (sorting guidelines,
+REJECT). Signal keeps the current list, synced from Rippling. Call the Signal connector's
+`signal_contractors` tool once (live per-machine name, e.g.
+`mcp__plugin_nsls-builder-toolkit_signal__signal_contractors`) and keep the names for Steps 3
+and 6.
+
+- **Never show, log or write the list.** The names go into the Step 3 and Step 6 prompts and
+  nowhere else: not the screen, not `/tmp/harvest-meeting-ctx/`, not the KB.
+- **No tool, an error, or a 403** (only executives can read it): carry on without it. The
+  sorting test catches contractor terms without the list; the list only removes the guesswork.
+
+Heartbeat: `Step 2b: contractor list loaded (<N> names)` — or `Step 2b: skipped (contractor list
+not available here)`.
+
 ## Step 3: Extract candidates
 
 For each meeting loaded in Step 2, ask Claude to extract candidate KB entries.
@@ -788,6 +804,7 @@ For each meeting loaded in Step 2, ask Claude to extract candidate KB entries.
 **Prompt construction:** Read `references/candidate-extraction.md` for the full prompt template and examples. Substitute:
 - The `[paste the REJECT section …]` placeholder with the REJECT section of `references/sorting-guidelines.md`
 - The `INPUT` block with the meeting's title, date, attendees, summary, and transcript
+- The `Contractors` line with the Step 2b names, or `none loaded`
 
 **Invocation:** Call Claude with the constructed prompt. Parse the JSON response. Expect 0–10 candidates per meeting; flag if > 15 (probably mis-parsing). Attach the meeting's id, title, URL, date and attendee list from Step 2 to **every** candidate it
 produced (Step 6 needs them to apply the stricter 1:1 rules per candidate). Collect each meeting's `withheld` list into `/tmp/harvest-meeting-ctx/withheld.json` (this session's scratch only; never logged or written to the KB); Step 7's 🚫 list is withheld + Step 6 REJECTs. Stash all candidates in `/tmp/harvest-meeting-ctx/candidates.json`:
@@ -873,6 +890,7 @@ run's candidates in one call so the UNSURE cap of 4 is applied across the run, n
 
 Today: <YYYY-MM-DD>. Each candidate carries its own meeting title, date and attendee count —
 judge meeting type per candidate, not per run.
+Contractors (from Signal): <Step 2b names, or "none loaded">.
 Candidates: <JSON list of {id, meeting_title, meeting_date, meeting_attendees, kind, target_file, text}>
 
 Return a JSON list, one object per candidate:
