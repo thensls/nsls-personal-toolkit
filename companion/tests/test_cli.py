@@ -65,6 +65,86 @@ def test_status_reaps_after_grace_window(tmp_path, monkeypatch):
     assert not pidfile.exists()
 
 
+# --- a companion started from older code is replaced, not reused -------------
+
+def _status_against_listening_server(tmp_path, monkeypatch, fingerprint_line):
+    """Run `status` against a live pid whose port answers; return (result, terminated, pidfile)."""
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    addr = f"127.0.0.1:{listener.getsockname()[1]}"
+    pidfile = tmp_path / "companion.pid"
+    body = f"{os.getpid()}\n{addr}\n" + (f"{fingerprint_line}\n" if fingerprint_line is not None else "")
+    pidfile.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(cli, "PID_FILE", pidfile)
+    monkeypatch.setattr(cli.time, "sleep", lambda s: None)
+    terminated = []
+    real_kill = os.kill
+
+    def guarded_kill(pid, sig):
+        if sig == cli.signal.SIGTERM:
+            terminated.append(pid)
+            return
+        return real_kill(pid, sig)
+
+    monkeypatch.setattr(cli.os, "kill", guarded_kill)
+    try:
+        result = CliRunner().invoke(cli.main, ["status"])
+    finally:
+        listener.close()
+    return result, terminated, pidfile
+
+
+def test_status_replaces_server_started_from_older_code(tmp_path, monkeypatch):
+    """After a toolkit update the page called a route the old process lacked (404 banner)."""
+    result, terminated, pidfile = _status_against_listening_server(
+        tmp_path, monkeypatch, "0000000000000000")
+    assert "Not running (stopped a companion left over" in result.output
+    assert result.exit_code == 1
+    assert terminated == [os.getpid()]
+    assert not pidfile.exists()
+
+
+def test_status_replaces_server_from_before_fingerprints(tmp_path, monkeypatch):
+    """A two-line pidfile was written by a server older than this check."""
+    result, terminated, pidfile = _status_against_listening_server(tmp_path, monkeypatch, None)
+    assert "Not running (stopped a companion left over" in result.output
+    assert terminated == [os.getpid()]
+    assert not pidfile.exists()
+
+
+def test_status_keeps_server_running_current_code(tmp_path, monkeypatch):
+    result, terminated, pidfile = _status_against_listening_server(
+        tmp_path, monkeypatch, cli._code_fingerprint())
+    assert result.output.startswith("Running:")
+    assert result.exit_code == 0
+    assert terminated == []
+    assert pidfile.exists()
+
+
+def test_status_leaves_server_alone_when_code_unreadable(tmp_path, monkeypatch):
+    monkeypatch.setattr(cli, "_code_fingerprint", lambda: "")
+    result, terminated, pidfile = _status_against_listening_server(
+        tmp_path, monkeypatch, "0000000000000000")
+    assert result.output.startswith("Running:")
+    assert terminated == []
+
+
+def test_code_fingerprint_tracks_routes_templates_and_scripts(tmp_path):
+    (tmp_path / "server.py").write_text("routes = 1\n", encoding="utf-8")
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "templates" / "page.html").write_text("<p>v1</p>\n", encoding="utf-8")
+    (tmp_path / "static").mkdir()
+    (tmp_path / "static" / "drag.js").write_text("post('/plan-action')\n", encoding="utf-8")
+    first = cli._code_fingerprint(tmp_path)
+    assert first and first == cli._code_fingerprint(tmp_path)
+    (tmp_path / "static" / "drag.js").write_text("post('/move-item')\n", encoding="utf-8")
+    second = cli._code_fingerprint(tmp_path)
+    assert second != first
+    (tmp_path / "server.py").write_text("routes = 2\n", encoding="utf-8")
+    assert cli._code_fingerprint(tmp_path) != second
+
+
 def test_find_free_port_returns_int():
     port = _find_free_port(start=15000)
     assert isinstance(port, int)

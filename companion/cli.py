@@ -1,5 +1,6 @@
 """toolkit-companion CLI: serve, stop, status."""
 
+import hashlib
 import os
 import shutil
 import signal
@@ -25,6 +26,32 @@ TEST_DEFAULT_PORT = 7788
 # healthy servers.
 STARTUP_GRACE_SECONDS = 15
 TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+_COMPANION_DIR = Path(__file__).resolve().parent
+
+
+def _code_fingerprint(root: Path = _COMPANION_DIR) -> str:
+    """Short hash of the companion code a server started now would run.
+
+    ``serve`` records it on the pidfile's 3rd line; ``status`` compares it with
+    the code on disk. A companion is a long-lived process, but the page's
+    scripts are read from disk on every request: after a toolkit update the
+    page called a route the old process didn't have, and every click on it
+    showed a 404 banner. Empty string when the code can't be read — callers
+    treat that as "unknown" and leave the server alone.
+    """
+    h = hashlib.sha256()
+    try:
+        files = sorted(
+            p for pattern in ("*.py", "templates/**/*", "static/**/*")
+            for p in root.glob(pattern) if p.is_file()
+        )
+        for p in files:
+            h.update(p.relative_to(root).as_posix().encode("utf-8"))
+            h.update(b"\0")
+            h.update(p.read_bytes())
+    except OSError:
+        return ""
+    return h.hexdigest()[:16]
 
 
 def _pid_alive(pid: int) -> bool:
@@ -56,7 +83,7 @@ def _pid_alive(pid: int) -> bool:
 def _read_pidfile_addr(pid_file: Path):
     """Return the ``host:port`` recorded on the pidfile's 2nd line, or None.
 
-    ``serve`` writes ``<pid>\\n<host>:<port>\\n``; wait-done reads line 2 to find
+    ``serve`` writes ``<pid>\\n<host>:<port>\\n<code fingerprint>\\n``; wait-done reads line 2 to find
     the running companion so it can ping /listener-heartbeat. None whenever the
     file is missing or malformed — the caller then simply skips heartbeats.
     """
@@ -139,11 +166,14 @@ def serve(vault, port, no_open):
     port = port or _find_free_port(TEST_DEFAULT_PORT if test_mode else DEFAULT_PORT)
     host = "127.0.0.1"
 
+    # Hash before importing the server, so the fingerprint can only be older
+    # than the code loaded — never newer — and a race reads as outdated.
+    fingerprint = _code_fingerprint()
     from companion.server import create_app
     app = create_app(vault_path=str(vault_path))
 
     pid_file.parent.mkdir(parents=True, exist_ok=True)
-    pid_file.write_text(f"{os.getpid()}\n{host}:{port}\n", encoding="utf-8", newline="")
+    pid_file.write_text(f"{os.getpid()}\n{host}:{port}\n{fingerprint}\n", encoding="utf-8", newline="")
     pid_file.chmod(0o600)
 
     url = f"http://{host}:{port}"
@@ -309,6 +339,26 @@ def status(test_mode):
         except OSError:
             pass
         pid_file.unlink(missing_ok=True)
+        sys.exit(1)
+    # A server started from older code than what's on disk serves today's
+    # pages against yesterday's routes (see _code_fingerprint). Stop it and
+    # report Not running, so every caller's existing branch starts a fresh one.
+    # Pidfiles from before this check have no 3rd line: those servers are
+    # older by definition. An unreadable fingerprint leaves the server alone.
+    running_fp = lines[2].strip() if len(lines) > 2 else ""
+    current_fp = _code_fingerprint()
+    if current_fp and running_fp != current_fp:
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError:
+            pass
+        # Let it release the port, or the fresh server drifts to the next one.
+        for _ in range(10):
+            if not _pid_alive(pid):
+                break
+            time.sleep(0.3)
+        pid_file.unlink(missing_ok=True)
+        click.echo("Not running (stopped a companion left over from before the toolkit updated).")
         sys.exit(1)
     click.echo(f"Running: pid {pid}, address {addr}")
 
