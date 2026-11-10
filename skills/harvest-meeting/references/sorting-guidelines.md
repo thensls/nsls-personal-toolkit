@@ -34,7 +34,8 @@ remember that a contractor, and a person on the other side of a legal claim, are
   tell who it is.
 - **Those two REJECT rules beat "open legal questions" and "vendor details"** in the ADD list.
 - **A new page is sorted as one unit.** Its list fragments ("- shop revenue") ride with the page;
-  don't SKIP them one by one. Open questions are fine to ADD when they're org-level.
+  don't SKIP them one by one. Open questions are fine to ADD when they're org-level and still
+  open; one that's already answered is never asked (see UNSURE).
 - **Mixed items**: keep the decided part, cut the "exploring" clause (TRIM).
 - **Being named is not a problem.** "Dana owns chapter onboarding", "Chris runs the load test",
   "Sam owns the crash fix" are all fine. See UNSURE for the one exception: a name tied to fault.
@@ -119,6 +120,9 @@ a long one they have to read. A 40-minute call should usually yield a handful of
 - Small talk, scheduling, logistics.
 - Ideas floated but not decided ("maybe we should", "worth exploring").
 - Exact repeats of what the topic file already says (Step 5 catches most of these).
+- **Already settled**: a question that the topic file's Key Decisions, a later meeting in this
+  batch, or the builder's own notes or Slack already answer. If the KB doesn't have the answer
+  yet and it's useful, ADD the answer as a Key Decision instead; otherwise SKIP.
 - **Plumbing between the people in the room**: who granted whom access, table ownership, admin
   rights, a cosmetic tweak to an internal dashboard. Keep the outcome a colleague would notice.
 - **Interim steps of a plan**: "turn it on for 10% first, then everyone in four days". Record the
@@ -135,6 +139,9 @@ model cannot know from the transcript: *Has this been announced? Is this person'
 public yet?* It is not a place for "I'd rather not decide". If the item is minor, decide it
 yourself (SKIP or REJECT) rather than spend one of the builder's decisions on it.
 
+- **Never ask whether a question is still open.** If anything harvest can see answers it, it
+  isn't UNSURE (see SKIP, already settled). If nothing answers it, decide it yourself: ADD it to
+  Open Questions when it's org-level, SKIP it when it's minor.
 - **A named person tied to fault** — shown as the cause of a miss, delay, bug or failure, or as
   falling short — goes here with the name left in. Question: "Names Sam as the cause of the
   delay. Keep the name?" Don't trim it automatically.
@@ -175,6 +182,7 @@ yourself (SKIP or REJECT) rather than spend one of the builder's decisions on it
 | "Turn it on for 10% of people, then everyone four days later" | SKIP | Interim step; record the result later |
 | "No one moved up a Builder stage this fortnight" | SKIP | Non-news |
 | "Jenna built an org-design tool; not released yet" | REJECT (not yet announced) | Unreleased, and minor: don't ask |
+| "Should the collector hide personal skill names?" (later: they only show to admins and leaders, and Kevin was fine with it) | ADD the answer as a Key Decision, or SKIP if the KB has it | Answered later: never ask if it's still open |
 
 ## Second pass — read the ✅ list as an editor
 
