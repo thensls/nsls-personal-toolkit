@@ -3,7 +3,8 @@
 Invented snippets that test the two lines Kevin drew on 2026-11-03: no notes on a claim or
 dispute involving a person (his example: a lawsuit from a former employee), and no contractor
 terms (Email Geniuses, not Rippling). Run them through Steps 3 and 6 whenever the sorting rules
-change, and compare with the expected outcomes at the bottom. Cases are in the input file's
+change, and compare with the expected outcomes at the bottom. Give C10–C12 the contractor list
+`Marco Silva, Davo Wood`, as if Step 2b had loaded it; the other cases pass with or without it. Cases are in the input file's
 format; the expected outcomes are kept apart so a test run can be given only the cases.
 
 ## Cases
@@ -33,6 +34,9 @@ C6 (team meeting) — Jenna: "Davo's contract renews in January at the same rate
 C7 (team meeting) — Jenna: "The video agency charged thirty thousand for the campus roadshow series. It came in on budget."
 C8 (SLT meeting) — Kevin: "We're staying on the Claude Team plan at the current per-seat price for another year."
 C9 (team meeting) — Davo: "The contractor who built the chapter app is asking for equity instead of cash for phase two."
+C10 (SLT meeting) — Kevin: "Marco agreed to eight thousand for Q1, same scope as this quarter."
+C11 (team meeting) — Jenna: "Marco is rebuilding the chapter pages. He owns them through January."
+C12 (team meeting) — Kevin: "Davo is running the collector rollout; Jenna sends the all-staff note Thursday."
 
 ## Expected outcomes
 
@@ -51,3 +55,5 @@ C9 (team meeting) — Davo: "The contractor who built the chapter app is asking 
 | C2, C8 | ADD | Software vendor terms |
 | C4 | ADD | What a contractor does, no terms |
 | C7 | Out or UNSURE | An agency is people doing work for us; the price stays out |
+| C10 | Out | A listed contractor's terms, though the case never says "contractor" (a named person's terms are Out without the list too) |
+| C11, C12 | ADD | What a listed contractor does: being on the list isn't sensitive |

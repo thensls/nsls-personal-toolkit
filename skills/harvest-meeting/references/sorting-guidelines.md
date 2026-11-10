@@ -73,11 +73,14 @@ is about protecting people; business information is not on it.
 - **Contractors' terms and performance**: rates, retainers, invoices, renewals, negotiations,
   equity asks, and judgments about the work of a freelancer, consultant, agency or small firm
   doing work for NSLS ("Email Geniuses wants $9K a month", "Boris's team keeps missing
-  deadlines"). Their people often work alongside staff and can read the KB. No list of
-  contractors is needed. The test: **is this vendor people doing work for us, or a product we
-  buy?** People: treat their terms like pay. Product (software, platforms, Rippling, Anthropic):
-  vendor terms are ADD. What a contractor is doing, and until when, is fine ("Email Geniuses runs
-  the Customer.io migration through December"). Can't tell which it is: UNSURE.
+  deadlines"). Their people often work alongside staff and can read the KB. **When harvest has
+  the contractor list from Signal, anyone on it is a contractor**: their terms are REJECT even
+  when nothing else in the item says so ("Marco agreed to $8K for Q1"). Being on the list doesn't
+  make an item sensitive: what they're doing is still fine. Firms and support agencies aren't on
+  the list, so the test still applies to them: **is this vendor people doing work for us, or a
+  product we buy?** People: treat their terms like pay. Product (software, platforms, Rippling,
+  Anthropic): vendor terms are ADD. What a contractor is doing, and until when, is fine ("Email
+  Geniuses runs the Customer.io migration through December"). Can't tell which it is: UNSURE.
 
 ## TRIM → ADD — keep the decision, cut the personal detail
 
@@ -171,6 +174,8 @@ yourself (SKIP or REJECT) rather than spend one of the builder's decisions on it
 | "Email Geniuses wants $9K a month at renewal; we'll counter at $8K" | REJECT | Contractor's terms: people doing work for us |
 | "Rippling renews at $14/user/month, three-year term" | ADD | Software vendor terms |
 | "Email Geniuses runs the Customer.io migration through December" | ADD | What a contractor does, no terms |
+| "Marco agreed to $8K for Q1" (Marco is on the contractor list) | REJECT | A listed contractor's terms |
+| "Marco is rebuilding the chapter pages through January" (on the list) | ADD | What a contractor does, no terms |
 | "Priya's raise is held until the reorg lands" | REJECT | Individual pay |
 | "Sam has been out a lot since the surgery" | REJECT | Health |
 | "Q3 margin dropped to 9%" | REJECT | Profit is never shared |
