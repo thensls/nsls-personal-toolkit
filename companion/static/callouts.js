@@ -187,7 +187,10 @@
     const below = r.bottom + GAP + h <= window.innerHeight || r.top - GAP - h < 0;
     const top = below ? r.bottom + GAP : r.top - GAP - h;
     const cx = r.left + r.width / 2;
-    const left = Math.max(EDGE, Math.min(cx - w / 2, vw - EDGE - w));
+    // Centred on the control, or starting at it when the control is tiny (a
+    // drag handle at a card's edge), so the card stays over the page content.
+    const want = r.width < 48 ? cx - 24 : cx - w / 2;
+    const left = Math.max(EDGE, Math.min(want, vw - EDGE - w));
     el.dataset.side = below ? "below" : "above";
     el.style.setProperty("--arrow-x", Math.max(18, Math.min(cx - left, w - 18)) + "px");
     el.style.left = left + window.scrollX + "px";

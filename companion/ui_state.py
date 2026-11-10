@@ -54,8 +54,21 @@ def dismissed_callouts(vault: Path) -> list[str]:
     return _clean_ids(_parse(text).get("callouts_dismissed"))
 
 
+def _set_aside_if_unreadable(path: Path) -> None:
+    """A state file that isn't UTF-8 would make every write fail (safe_modify
+    decodes before it transforms). Move it aside so the next write starts
+    clean; the bytes are kept beside it, never deleted."""
+    try:
+        path.read_bytes().decode("utf-8")
+    except FileNotFoundError:
+        return
+    except UnicodeDecodeError:
+        path.replace(path.with_name(path.name + ".unreadable"))
+
+
 def dismiss_callouts(vault: Path, ids: list[str]) -> list[str]:
     """Add ids to the dismissed list (deduplicated) and return the new list."""
+    _set_aside_if_unreadable(state_path(vault))
     result: list[str] = []
 
     def _add(text: str) -> str:
