@@ -1,0 +1,48 @@
+name: hook-tests
+
+# The session hook and the installers decide whether a computer keeps getting
+# updates, and until now nothing ran their tests. Run hooks/tests on every PR
+# that touches them. Linux only: the tests stand a recording `git` in for the
+# real one, so there is nothing platform-specific left to prove here.
+on:
+  pull_request:
+    paths:
+      - 'hooks/**'
+      - 'install.sh'
+      - 'install.ps1'
+      - '.github/workflows/hook-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'hooks/**'
+      - 'install.sh'
+      - 'install.ps1'
+      - '.github/workflows/hook-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  hook-tests:
+    name: hooks/tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run every test file; report all failures, not just the first
+        shell: bash
+        run: |
+          failed=()
+          for t in hooks/tests/test_*.py; do
+            echo "::group::$t"
+            python "$t" || failed+=("$t")
+            echo "::endgroup::"
+          done
+          if [ ${#failed[@]} -gt 0 ]; then
+            printf 'FAILED: %s\n' "${failed[@]}"
+            exit 1
+          fi
+          echo "all test files passed"

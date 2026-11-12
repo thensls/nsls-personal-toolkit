@@ -24,6 +24,67 @@ steps are no longer asked for.
 
 ---
 
+## Step 0: How does this computer get the toolkit?
+
+There are two ways, and they update differently. Check before anything else:
+
+```bash
+REPO=~/.claude/local-plugins/nsls-personal-toolkit
+if [ -f "$REPO/.delivered-by-claude.json" ] && [ ! -d "$REPO/.git" ]; then echo "DELIVERED"; else echo "CHECKOUT"; fi
+```
+
+- **`CHECKOUT`** → the folder is a git checkout: the standard install, or the builder's own
+  fork. Carry on from Step 1.
+- **`DELIVERED`** → NSLS's Claude organization delivers the toolkit, and the Builder Toolkit's
+  session hook copies each new version into this folder. There is no git here and nothing to
+  fetch. **Skip Steps 1 to 1.7, Step 4c, Step 7.5 and Step 7.6**, and follow "A delivered
+  folder" below instead.
+
+### A delivered folder
+
+1. Ask the hook to bring the folder current now, and read its answer:
+
+   ```bash
+   ANSWER=""
+   for RUN in ~/.claude/plugins/synced/*/nsls-builder-toolkit/hooks/run-hook.sh \
+              ~/.claude/plugins/cache/nsls-toolkit/nsls-builder-toolkit/*/hooks/run-hook.sh \
+              ~/.claude/local-plugins/nsls-builder-toolkit/hooks/run-hook.sh; do
+     [ -f "$RUN" ] || continue
+     ANSWER="$(bash "$RUN" personal-delivery now 2>/dev/null)"
+     [ -n "$ANSWER" ] && break
+   done
+   echo "${ANSWER:-NO_ANSWER}"
+   ```
+
+   - `PERSONAL_TOOLKIT_READY` → the folder is current. Go on.
+   - `PERSONAL_TOOLKIT_PAUSED` → they changed or removed files in the folder, so NSLS's newer
+     version was not applied. Tell them in one plain sentence which files (the answer names
+     them) and offer the choice: keep their changes as they are (updates stay paused), or take
+     NSLS's version, which first moves their files into a `.set-aside` folder inside the
+     toolkit folder so nothing is lost. If they choose NSLS's version, run the same command
+     with `adopt` in place of `now`, and tell them where their files went.
+   - Anything else (`PERSONAL_TOOLKIT_RETRY`, `NO_ANSWER`, …) → say in one plain sentence that
+     the newest version could not be checked just now and will arrive by itself at a later
+     session start. Go on with what is in the folder.
+2. Say one plain sentence: *"Your toolkit arrives through Claude, so there's nothing to fetch.
+   Here's what's new."*
+3. Load the state as Step 2 does, creating it when it is missing. Never run Step 2's commit
+   check: there are no commits here. Every release in `updates/` is already in the folder, so
+   record each unprocessed one in `adopted_releases`, leave `skipped_releases` exactly as it
+   is, and set `first_run_initialized: true`. A release marked `offered: false` is recorded
+   silently, as everywhere else in this skill.
+4. Tell them what's new in **three to five plain bullets**, drawn from the releases you just
+   recorded, newest first: the changes that alter what they will see or can do. If none were
+   new, say they are up to date.
+5. Queue the manual steps of each release you just recorded, exactly as Step 4d does.
+6. Run Step 5 (save state), Step 6 (log), Step 7 (pending manual steps) and Step 8. In Step 8,
+   "fully up to date with NSLS" is **yes** when the answer above was `PERSONAL_TOOLKIT_READY`,
+   and otherwise says in plain words what is holding it back.
+
+The builder types none of this, as everywhere else in this skill.
+
+---
+
 ## Step 1: Prep
 
 ```bash
@@ -541,6 +602,11 @@ If you're tempted to "accept all" across several releases at once, run the comma
 **User customized a skill that upstream deleted.** Edge case — tell the user "Upstream removed `skills/<name>`. Your local version still exists. Keep it, or delete?" Default: keep.
 
 **Network failure on `git fetch`.** Fall back to whatever's already in `refs/nsls/upstream-main` locally; Step 1 fills it from an `nsls-upstream` remote left by an earlier run when it is missing. Say in one sentence that the list may be out of date. If Step 1 printed `NSLS_UNREACHABLE` there is nothing to work from: say NSLS could not be reached just now, suggest trying again once online, and stop.
+
+**The fetch fails although this computer is online.** NSLS's repository may be private. Fetching it then needs a GitHub sign-in on this computer, by an account that can read it, and git fails without one in the same way it fails offline. Check quietly whether the builder's own remote still answers (`git -C "$REPO" ls-remote --quiet origin HEAD`). If it does, or other sites are reachable, do not blame the network. Say one plain sentence: *"NSLS's toolkit is private now, so catching your own copy up needs you signed in to GitHub on this computer."* Then offer two ways forward and do the one they pick:
+
+- **Sign in.** Help them sign in to GitHub (`gh auth login`, which opens their browser), then run this skill again from Step 1.
+- **Stop keeping their own copy on this computer.** NSLS also delivers the toolkit through Claude, with no GitHub at all. With their yes, switch this folder to that copy using the launcher lookup in Step 0 with `adopt` in place of `now`. Their git history stays inside the folder, and every file it replaces is first moved to a `.set-aside` folder there. If the answer is `PERSONAL_TOOLKIT_NOT_DELIVERED`, NSLS is not delivering it to this account, so say so and leave the folder as it is.
 
 **User runs this with no releases yet** (fresh fork, empty `updates/`). Tell them: "No releases published yet — I'll bring in the base skills now." Then skip the release walk (Steps 2–7) and run Steps 1.6, 7.5 and 7.6 exactly as written — fast-forward first, a real merge if that's refused, conflicts resolved or aborted, edits set aside and put back. Never a bare `git pull` here: it can stop mid-merge with nothing to catch it.
 

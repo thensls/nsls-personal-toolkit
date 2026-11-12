@@ -140,9 +140,22 @@ _GIT_REPO_ENV = (
 
 
 def _git_env():
-    """The environment for every git call aimed at the toolkit checkout."""
+    """The environment for every git call aimed at the toolkit checkout.
+
+    A hook must never ask anyone for a sign-in. GIT_TERMINAL_PROMPT=0 stops
+    git's own terminal question, but two other askers ignore it: Git
+    Credential Manager opens a sign-in WINDOW when a remote wants credentials
+    it does not hold (only GCM_INTERACTIVE=never stops it), and an askpass
+    helper is a second program git runs to ask (an empty GIT_ASKPASS turns it
+    off). Stored credentials still work. NSLS's repository being private is
+    what makes this matter: a fork's catch-up fetches it by URL, and on a
+    computer with no GitHub sign-in that fetch must fail quietly, not open a
+    window at every session start. Same three as the Builder Toolkit's hook.
+    """
     env = {k: v for k, v in os.environ.items() if k not in _GIT_REPO_ENV}
     env["GIT_TERMINAL_PROMPT"] = "0"
+    env["GCM_INTERACTIVE"] = "never"
+    env["GIT_ASKPASS"] = ""
     return env
 
 
@@ -866,7 +879,27 @@ def sync_pointers():
         print(f"{created} personal-toolkit skill pointers synced", file=sys.stderr)
 
 
+# Written into this folder by the Builder Toolkit's session hook once the folder
+# is kept current from the copy NSLS delivers through Claude (its
+# hooks/personal_delivery.py). Same name there.
+_DELIVERED_RECORD = ".delivered-by-claude.json"
+
+
+def _follows_delivered_copy():
+    """True when this folder is not a checkout any more: NSLS's Claude
+    organization delivers the toolkit and the Builder Toolkit's hook copies each
+    version in. There is then nothing to pull and nothing for git to report,
+    and .git is a placeholder file that makes every git command fail."""
+    try:
+        return (PLUGIN_DIR / _DELIVERED_RECORD).is_file() and not (PLUGIN_DIR / ".git").is_dir()
+    except OSError:
+        return False
+
+
 def main():
+    if _follows_delivered_copy():
+        sync_pointers()
+        return
     # The installer registers the pull as its own bare `git` entry (no
     # interpreter needed, so the update path can't be broken by a missing or
     # miswired python) and passes --no-pull here to avoid a second round trip.

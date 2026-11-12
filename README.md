@@ -2,11 +2,13 @@
 
 Personal productivity skills for [Claude Code](https://claude.ai/code). Daily planning, end-of-day summaries, weekly reviews, project logging, and relationship tracking.
 
-**This is a starter template.** Fork it, make it yours.
+**This is a starter template.** Make it yours.
 
 ## Install
 
-**Easiest way:** Install the [NSLS Builder Toolkit](https://github.com/thensls/nsls-builder-toolkit) first, then say `/setup` in Claude Code — it offers to install this automatically.
+**If Claude already lists "nsls-personal-toolkit" among your plugins,** NSLS delivers it to you through Claude: there is nothing to install and it keeps itself current. Say `/personal-setup` in Claude Code to connect your accounts.
+
+**Otherwise, the easiest way:** Install the [NSLS Builder Toolkit](https://github.com/thensls/nsls-builder-toolkit) first, then say `/setup` in Claude Code — it offers to install this automatically.
 
 **Standalone install:**
 
@@ -25,9 +27,13 @@ NSLS_PERSONAL_REPO=https://github.com/<your-github>/nsls-personal-toolkit.git \
 
 ## Updates
 
-Updates apply themselves: the installer registers a SessionStart hook in
-`~/.claude/settings.json` that fast-forwards the toolkit every time you start
-Claude Code.
+**Delivered through Claude:** each new version is copied into your toolkit folder at the
+start of a session. If you have edited or removed one of NSLS's files, updates pause and
+Claude asks whether to keep yours or take NSLS's; nothing of yours is replaced without a yes.
+
+**Installed with the installer (a git checkout):** updates apply themselves: the installer
+registers a SessionStart hook in `~/.claude/settings.json` that fast-forwards the toolkit
+every time you start Claude Code.
 
 **If you installed before that hook shipped**, catch up once — the hook can only
 start working after it's on your machine. Re-running the installer registers it,
