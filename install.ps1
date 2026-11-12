@@ -23,6 +23,17 @@ if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
   Write-Error "Git not found. Install from https://git-scm.com and re-run."; exit 1
 }
 
+# A folder NSLS's Claude organization keeps current is not a checkout: the
+# Builder Toolkit's session hook copies each version in and leaves this record.
+# Pulling it, or registering a pull for it, would only produce an error at
+# every session start.
+if ((Test-Path -LiteralPath (Join-Path $PluginDir '.delivered-by-claude.json') -PathType Leaf) -and
+    -not (Test-Path -LiteralPath (Join-Path $PluginDir '.git') -PathType Container)) {
+  Write-Host "This computer already gets the NSLS Personal Toolkit through Claude, and it keeps itself current."
+  Write-Host "Nothing to install. In Claude Code, say /personal-setup to connect your accounts."
+  exit 0
+}
+
 Write-Host "Installing NSLS Personal Productivity Toolkit..."
 Write-Host "  Repo: $RepoUrl"
 

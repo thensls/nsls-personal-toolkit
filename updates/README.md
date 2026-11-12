@@ -8,6 +8,7 @@ Each release has a per-file detail page describing the change, its cost to adopt
 
 ---
 
+- **2026-11-12** — [The toolkit can reach you through Claude, with no GitHub](2026-11-12-delivered-through-claude.md) — 0 min. When NSLS delivers the toolkit through Claude, your folder is kept current from that copy; your own changes pause updates until you choose; a fork stays on GitHub and needs a sign-in once NSLS's copy is private.
 - **2026-11-03** — [Harvest asks less and shows what it left out](2026-11-03-harvest-asks-less.md) — 2 min. A second pass cuts plumbing, interim steps and duplicates; every item starts ticked; left-out items are listed on your screen only.
 - **2026-11-03** — [Harvest keeps business facts, protects people](2026-11-03-harvest-open-about-business.md) — 2 min. Deal, vendor, security and open legal facts now go into the knowledge base; pay, people decisions, private life, profit and unannounced changes still never do.
 - **2026-10-10** — [Harvest asks you less: one short list, at most four questions](2026-10-10-harvest-three-lists.md) — 2 min. Harvest sorts before it asks: one ✅ list approved with `yes`, at most four ❓ items, and a count of what it held back. Pay, people, private, deal and unannounced material never reach the list.

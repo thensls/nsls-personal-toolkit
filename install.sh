@@ -59,6 +59,16 @@ install_companion_launchd() {
 # Fall back to the NSLS template if we can't detect it
 REPO_URL="${NSLS_PERSONAL_REPO:-https://github.com/thensls/nsls-personal-toolkit.git}"
 
+# A folder NSLS's Claude organization keeps current is not a checkout: the
+# Builder Toolkit's session hook copies each version in and leaves this record.
+# Pulling it, or registering a pull for it, would only produce an error at
+# every session start.
+if [ -f "$PLUGIN_DIR/.delivered-by-claude.json" ] && [ ! -d "$PLUGIN_DIR/.git" ]; then
+  echo "This computer already gets the NSLS Personal Toolkit through Claude, and it keeps itself current."
+  echo "Nothing to install. In Claude Code, say /personal-setup to connect your accounts."
+  exit 0
+fi
+
 echo "Installing NSLS Personal Productivity Toolkit..."
 echo "  Repo: $REPO_URL"
 echo ""

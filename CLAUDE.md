@@ -170,7 +170,42 @@ Note `hooks/session-start.py` sat unregistered for a long time — nothing point
 it, so on macOS/Linux this toolkit never auto-updated and every fix had to be
 pulled by hand.
 
+### When NSLS delivers the toolkit through Claude
+
+Everything above describes a **git checkout**. There is a second way a computer can get
+this toolkit, and it needs no GitHub sign-in: NSLS's Claude organization delivers it as a
+plugin (this repository carries `.claude-plugin/marketplace.json` for that), and the
+**Builder Toolkit's** session hook copies each delivered version into this same folder
+(`hooks/personal_delivery.py` there). Such a folder is recognisable by two things:
+
+- a file `.delivered-by-claude.json` at its top, listing what was delivered;
+- `.git` is a small **file**, not a directory. It names a repository that does not exist, so
+  every git command stops there instead of climbing to a repository above the folder.
+
+In a delivered folder:
+
+- **Nothing here pulls, and nothing should.** `hooks/session-start.py` only syncs pointers,
+  `install.sh` / `install.ps1` stop without changing anything, and
+  `/update-personal-productivity` asks the Builder Toolkit's hook to refresh the folder
+  instead of fetching (its Step 0).
+- **A person's own files are never touched**: `.env`, the companion's `.venv`,
+  `.toolkit-state.json`, skills of their own.
+- **A file they edited or removed pauses updates** until they choose: keep theirs, or take
+  NSLS's (theirs is moved to `.set-aside/` inside the folder first).
+- A checkout that was taken over keeps its history in `.git.before-claude-delivery/`.
+
+A checkout is only taken over when it holds nothing of its owner's. **A fork, or a checkout
+with your own commits or edits, stays on git** and keeps working exactly as described above.
+An empty file named `.keep-on-github` at the top of the folder keeps any checkout on git for
+good.
+
 ## Keeping Your Fork Updated
+
+A fork needs GitHub, and once NSLS's repository is private it needs a sign-in that can read
+it: the session hook and `/update-personal-productivity` both fetch NSLS's `main` by URL. With
+no sign-in those fetches fail quietly (no window, no prompt) and the fork stops hearing about
+NSLS's changes, so stay signed in on any computer that runs your fork.
+
 
 If you run your own fork, you can pull template improvements selectively:
 ```bash
