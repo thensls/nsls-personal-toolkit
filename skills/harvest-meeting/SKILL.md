@@ -964,7 +964,9 @@ If Current State is empty, skip the merge — write the candidate text directly.
 ## Step 7: Present the three lists
 
 One screen, short enough to read in under a minute. Every ✅ item starts ticked: `yes` keeps them
-all, and the builder only acts on the ones to untick. Show every item in the same plain format,
+all, and the builder only acts on the ones to untick. The boxes are the cue that each line can be
+changed, so draw them as the coloured emoji ✅ and ⬜, never the small text glyphs ☑ and ☐, and put
+the one reply that changes them right in the section heading. Show every item in the same plain format,
 never struck through. **Show what was left out**, as one line each with its category and gist, so
 the builder can see the filter working. The builder was in the meeting, so this is their own
 screen only: the gists are never logged (7b keeps counts), never written to the KB, never sent
@@ -975,15 +977,15 @@ anywhere.
 ```
 Harvest from YYYY-MM-DD — {M} meeting(s)
 
-✅ Adding to the {company|local} KB ({A+T}) — all ticked:
-  ☑ 1. <topic>.md → Key Decisions: <text> ([▶](<fathom_url>?timestamp=<sec>))
-  ☑ 2. <topic>.md → Current State (updates existing entry): <one-line gist>   · `show 2` for the full diff
-  ☑ 3. 🆕 <suggested_slug>.md: <text>
-  ☑ 4. <topic>.md → Key Decisions: <text>   (✂ cut: deal figure)
-  ☑ 5. <topic>.md → Key Decisions: <text>   · topic unsure, or <alt>.md? (`topic 5: <slug>`)
+📥 Adding to the {company|local} KB ({A+T}) — all ticked. To take one out, reply `untick <number>`:
+  ✅ 1. <topic>.md → Key Decisions: <text> ([▶](<fathom_url>?timestamp=<sec>))
+  ✅ 2. <topic>.md → Current State (updates existing entry): <one-line gist>   · `show 2` for the full diff
+  ✅ 3. 🆕 <suggested_slug>.md: <text>
+  ✅ 4. <topic>.md → Key Decisions: <text>   (✂ cut: deal figure)
+  ✅ 5. <topic>.md → Key Decisions: <text>   · topic unsure, or <alt>.md? (`topic 5: <slug>`)
 
-❓ Your call ({U}, max 4) — unticked unless you name it:
-  ☐ u1. <text>
+❓ Your call ({U}, max 4) — not added. To add one, reply `yes + u<number>`:
+  ⬜ u1. <text>
       → <question>
 
 🚫 Left out — personal or unannounced ({R}):
