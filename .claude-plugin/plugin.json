@@ -1,7 +1,7 @@
 {
   "name": "nsls-personal-toolkit",
-  "version": "1.9.1",
-  "description": "Personal productivity skills for Claude Code \u2014 daily planning, end-of-day summaries, weekly reviews, project logging, and relationship tracking. Fork this repo and make it your own.",
+  "version": "1.9.2",
+  "description": "Personal productivity skills for Claude Code \u2014 daily planning, end-of-day summaries, weekly reviews, project logging, and relationship tracking.",
   "author": {
     "name": "NSLS",
     "email": "builders@nsls.org"
