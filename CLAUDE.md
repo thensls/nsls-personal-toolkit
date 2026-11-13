@@ -182,6 +182,20 @@ plugin (this repository carries `.claude-plugin/marketplace.json` for that), and
 - `.git` is a small **file**, not a directory. It names a repository that does not exist, so
   every git command stops there instead of climbing to a repository above the folder.
 
+**The delivered plugin shows no skills or commands of its own, on purpose.** It is only the
+carrier for this folder: people run the skills through the folder and its pointers, exactly
+as on a git checkout. If the delivered plugin also listed them, every skill would appear
+twice in Claude Code (`/open-day` and `/nsls-personal-toolkit:open-day`), and all of them
+would appear in claude.ai chat and Cowork, where the folder they need does not exist. Two
+settings do it, and both must stay:
+
+- `.claude-plugin/marketplace.json` points the entry's `skills` at `no-plugin-skills/`, an
+  empty folder. For an entry whose source is the repository root, only the listed folders
+  load and `skills/` is not scanned.
+- `.claude-plugin/plugin.json` sets `"commands": []`, which replaces the scan of `commands/`.
+
+Neither changes a folder install: that is not loaded as a plugin, so its manifest is not read.
+
 In a delivered folder:
 
 - **Nothing here pulls, and nothing should.** `hooks/session-start.py` only syncs pointers,

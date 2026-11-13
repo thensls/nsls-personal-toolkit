@@ -8,7 +8,10 @@
     {
       "name": "nsls-personal-toolkit",
       "source": "./",
-      "description": "Personal productivity skills for NSLS staff: daily and weekly planning, end-of-day summaries, project logging and relationship tracking."
+      "description": "Personal productivity skills for NSLS staff: daily and weekly planning, end-of-day summaries, project logging and relationship tracking.",
+      "skills": [
+        "./no-plugin-skills/"
+      ]
     }
   ]
 }
