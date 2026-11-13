@@ -59,6 +59,7 @@ When `visual_mode` is **on** (the default):
   Write an **`### AI Suggested: Top 3` section** — but it is the AI's *top picks*, not a cap: list the 3 strongest first, then include **every other carry-over and candidate below them in the same pool** (a second `### AI Suggested: …` subsection is fine — the grid merges them). Source, in priority order:
   1. **Real, from the last close-day** — if today's note already has them (close-day seeded them) or the most recent prior close-day wrote next-day suggestions, use those verbatim.
   2. **Real, from carry-overs** — pull unfinished items from recent daily notes' `## Carrying Over` / incomplete Top 3 **into the candidate pool** (NOT into `### Bonus`).
+  Every candidate from 1 and 2 is re-checked in Step 2n before it is seeded: a suggestion the builder already finished, or that a meeting made unnecessary, never goes back in the pool as if it were open.
   3. **Reasonable, generated** — only if there's nothing real (fresh user, no prior close, e.g. first run or after a reset on an empty week): generate 3 sensible suggestions from what you DO know — the builder profile (role, projects in `20-projects/`, operating memo), this week's stack rank, today's calendar. Mark them plainly (e.g. a one-line note "suggested from your role/projects — no prior close-day to pull from"). Keep them realistic, not filler. This guarantees the companion always has something to react to — important for new users and testing.
 - **Skip Steps 3, 4, 4a, 5** — the companion handles priority selection, not chat.
 - **Step 8**: Open the visual companion and stop. Print exactly: *"Continue in the browser at <url>. Pick your Top 3, review suggestions, then click Done. Say 'done' here when you're ready."* **Then stop. Do not print coaching, suggestions, or commentary.**
@@ -541,7 +542,7 @@ goal_cues = [{
 
 Skip this step silently if no goal files exist or none fire today.
 
-**2n. Completed-work sweep — what's already done**
+**2n. Re-check every candidate, then find what's new**
 
 *Runs last on purpose.* This step reads every candidate the 2-series has
 gathered — Asana (2b), carry-overs (2c), seeded suggestions (2e), the stack
@@ -551,7 +552,15 @@ work from them. **Any new candidate-producing step belongs before this one.**
 
 ⚠️ **This step exists because task boards lie.** Asana due dates and GitHub cards keep showing work as open long after it shipped, because closing them out is manual and nobody does it. Seeding a builder's morning with finished work is worse than useless — it burns their trust in every other suggestion. So before presenting anything, check the sources that record *completion* rather than *intent*.
 
-Run these in order and stop as soon as an item is confidently resolved. Both are cheap; neither requires scraping session transcripts.
+**Every candidate gets re-checked, every morning — carry-overs and close-day's suggestions most of all.** A suggestion copied forward from yesterday is yesterday's guess. The builder may have done it last night, a meeting may have made it unnecessary, or someone may have asked for something more urgent. Copying the list forward unchecked is the failure this step exists to stop: a builder who sees "send the comments to Trina" the morning after they sent them stops trusting every other line.
+
+**Give this step real time.** Builders would rather wait three to five minutes for a list that's right than triage a stale one. Run the sources below in parallel where the surface allows.
+
+**The window.** Look back from now to the start of the previous open-day or close-day, whichever is earlier, and never less than three days. For any candidate older than that, also search from the date in its own text (e.g. "Kevin Nov 3") forward.
+
+**If a source can't be read, say so — never imply it was checked.** A connector can be missing, or connected with its tools switched off (the call fails with "This tool has been disabled in your connector settings"). Name each source you couldn't read in one line under `- Capacity:`, with where to turn it on (claude.ai Settings › Connectors, or the app's connector settings), and keep going with the rest. A morning where Slack, email and meetings were all unreadable must say so plainly, because the list is then mostly unchecked.
+
+Check the sources in this order, and stop as soon as an item is confidently resolved. Sources 1 and 2 are the builder's own record; 3–7 are what actually happened since.
 
 **1. The builder's own recent daily notes (primary — they already have this).** A builder who runs `/close-day` is recording completion every evening. Read the last ~10 notes in `01-daily/` and collect:
 
@@ -574,7 +583,17 @@ slack_search_public_and_private(
 
 Lines reading `100% DONE`, `shipped`, `merged`, or sitting under a `WINS` heading are completions. **A project that has silently dropped out of the quicknote is a different signal** — usually killed or deprioritized, not finished. Flag it as "no longer appearing"; never record it as an achievement.
 
-**Deliberately NOT swept: Claude Code / cowork session transcripts.** Grepping session `.jsonl` files is slow and low-precision — transcripts are full of plans, abandoned attempts, and things the builder decided *against*, all phrased in completion language. The two sources above are faster and honest. If a builder's vault is stale *and* they post no quicknote, the correct answer is to say the completion data isn't there — not to guess from transcripts.
+**3. Slack — what the builder sent, and what's waiting on them.** Search the builder's own messages in the window (`from:<@$SLACK_USER_ID> after:YYYY-MM-DD`), then each candidate's key words with the person's name. A sent message that does the thing ("comments attached", "here's the answer on the repos") makes it **done**. Also search `to:<@$SLACK_USER_ID>` and read the DMs that come up: where someone else's message is last and asks for something, that is a **new candidate**. Any candidate that involves setting up a meeting gets a Slack search for the scheduling thread, every time. This reuses Step 2h's queries; widen them to the window here.
+
+**4. Meetings since the window start (Fathom, or whatever records the builder's meetings).** List the builder's meetings in the window and read each summary and its action items. A decision that removes a candidate's reason to exist ("we'll find a path that doesn't need a dedicated Mac") makes it **possibly moot**. An action item assigned to the builder is a **new candidate**, cited to the meeting. If nobody recorded a meeting that's on the calendar, say so; don't guess what was decided.
+
+**5. Email.** Search sent and received mail in the window. A sent reply that does the thing makes it done; an unanswered ask is a new candidate. Skip newsletters and notifications.
+
+**6. Calendar — what already happened, not just today.** Today's events feed Steps 3 and 5. Also look back over the window: a candidate like "set up time with Erin" is done if that meeting now exists, and "prep for Trina" is moot if the meeting has already happened.
+
+**7. Claude Code and Cowork sessions since the window start.** Use the session list and transcript search when this surface has them (in the desktop app: the session-management tools; otherwise the builder's `~/.claude/projects/*/` transcripts, searched by key word, never read whole). Sessions show where work got to, but they are full of plans and abandoned attempts written in completion language. So a session can only make an item **in progress**, with where it stopped, unless you can confirm it with a primary source: a merged PR, a commit, a deployed page, or a sent message quoted in the session. Then it is done, cited to that source.
+
+**Evidence beats the builder's memory, and the builder beats the board.** If the builder tells you something is done, it is; record their word as the source. If a board says open but a primary source says done, trust the primary source.
 
 **How to present what you find — as pre-checked Done rows, never as silent deletions:**
 
@@ -633,6 +652,19 @@ Rules:
 - **Only today's note pre-checks; prior days bury.** `_recent_dispositions` tombstones anything marked Done/Deleted in the *previous* week's notes, so a correctly-completed item won't resurface tomorrow — and if the builder unchecks a wrong call today, no tombstone is written. This is why pre-checking is safe and silent suppression is not.
 - **Separate "done" from "gone."** Work that vanished from the quicknote without a completion signal goes under `### AI Suggested: Possibly dropped` instead, and is **not** added to `### Done` — the builder confirms the kill rather than having it recorded as an achievement.
 - If a source disagrees with the board, **trust the completion source** and say so in one line — the board is the thing that's stale.
+
+**Possibly moot: a decision changed the premise.** Work that a meeting, email or message made unnecessary goes under `### AI Suggested: Possibly moot`, cited in a trailing parenthetical like everything else, and is **not** added to `### Done`. It wasn't achieved, so it mustn't be recorded as an achievement. The builder deletes it with one click or keeps it.
+
+**New since yesterday: add it, cited.** Asks and action items found in sources 3–7 go into the candidate pool with their source in a trailing parenthetical: `Reply to Kevin on repo access (Slack DM, Nov 12: "what would it take?")`. Rank them with everything else; a fresh ask from a manager usually belongs near the top.
+
+**Top up from the task board — only when it's worth it.** After the re-check, count the candidates still open. Board items come in two ways:
+
+- **Someone asked about it in the window** (a Slack message, an email, a meeting action item, an issue comment): it goes in regardless of count, cited to the ask.
+- **Fewer than 10 open candidates:** add up to 5 more from the board, most urgent first (overdue, then due soon, then most recently touched). Never pad past 5.
+
+**Board items get the same re-check before they're shown.** They join after the sweep above, so check each one now: search sources 3–7 for its key words (the evidence you already gathered usually answers it), and for a GitHub item also look for a merged PR that closes or names it. A board item that turns out done goes under `### AI Suggested: Likely already done` with its citation, like any other; if it was a top-up pick, pick the next board item instead.
+
+The board is `task_board:` in the builder profile: `asana` (the default, from Step 2b's tasks) or `github`, with `task_board_github: <owner>/<project-number>` (e.g. `thensls/37`). For GitHub, read the project's items assigned to the builder that aren't in a Done column (`gh project item-list <number> --owner <owner> --format json`), plus open issues assigned to them in that owner (`gh search issues --assignee @me --state open --owner <owner>`). Cite each as `(board: <repo>#<number>)` or `(board: <project> draft)`. Skip quietly if the profile names no board and Asana isn't connected; otherwise say in one line why the board couldn't be read.
 
 ### Step 3: Draft Morning Check-in
 
