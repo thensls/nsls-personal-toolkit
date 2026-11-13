@@ -129,16 +129,18 @@
     document.body.appendChild(layer);
   }
 
-  function dismiss(ids) {
+  // byHand: the builder clicked Got it. If that doesn't save, the tip comes
+  // back so Got it can be clicked again. A tip that retired itself stays
+  // retired in this tab either way: bringing it back would retire it again at
+  // once and retry the save in a loop. It simply tries again on the next load.
+  function dismiss(ids, byHand) {
     ids = ids.filter((id) => !dismissed.has(id));
     if (!ids.length) return;
     ids.forEach((id) => { closedHere.add(id); dismissed.add(id); });
     openId = null;
     advanced = true;
-    // If it didn't save, bring the tip back rather than let it return on the
-    // next reload, so Got it can simply be clicked again.
     Promise.resolve(store().dismiss(ids)).then((saved) => {
-      if (saved !== false) return;
+      if (saved !== false || !byHand) return;
       ids.forEach((id) => closedHere.delete(id));
       schedule();
     });
@@ -184,7 +186,7 @@
       ok.type = "button";
       ok.className = "nsls-coach-ok";
       ok.textContent = "Got it";
-      ok.addEventListener("click", () => dismiss([tip.id]));
+      ok.addEventListener("click", () => dismiss([tip.id], true));
       row.append(ok);
     }
     el.append(row);
