@@ -13,35 +13,37 @@
 //       "drag"; progress and add are read from HTMX responses here; the demo
 //       sends all three itself.
 //
-// Tips are short: "Tip 1 of 3", a heading, and Got it. One is open at a time,
-// beside its control (right, left or below, falling back to below when the
-// side has no room) and never on top of it. A tip can wait for its moment
-// (when), point at a control found at that moment (target as a function), and
-// retire on its own once the builder has done the thing it teaches (doneWhen,
-// doneOn). Dismissals go to POST /callouts/dismiss unless the page installs
-// its own store first (the setup.nsls.org demo).
+// Tips are short: "Tip 1 of 3", a heading, and Got it. They run as a tour, one
+// at a time: the next appears when the builder clicks Got it or does what the
+// tip teaches (doneWhen: a state is reached; doneOn: an action happened). Each
+// sits beside its control (right, left or below, falling back to below when
+// the side has no room), never on top of it. A tip that waits for the builder
+// to act (noOk) has no Got it. Dismissals go to POST /callouts/dismiss unless
+// the page installs its own store first (the setup.nsls.org demo).
 (function () {
   "use strict";
 
   const plan = (sel) => document.querySelectorAll("#plan-your-day " + sel);
   const placed = (lane) => plan(".nsls-lane--" + lane + " [data-drag-item]").length;
   const twoPlaced = () => placed("top3") >= 2 || placed("bonus") >= 2;
-  // Dragging only makes sense in a section with two tasks to reorder.
-  const laneToDrag = () => {
+  // The task to drag: the first in a section with two to reorder, else the
+  // first placed task, else the first suggestion (it can be dragged in).
+  const firstTask = (sel) => plan(sel + " [data-drag-item]:not(.is-set-aside)")[0] || null;
+  const taskToDrag = () => {
     for (const lane of ["top3", "bonus"]) {
-      if (placed(lane) >= 2) return plan(".nsls-lane--" + lane)[0] || null;
+      if (placed(lane) >= 2) return firstTask(".nsls-lane--" + lane);
     }
-    return null;
+    return firstTask(".nsls-lane--top3") || firstTask(".nsls-lane--bonus") || firstTask(".nsls-lane--pool");
   };
 
   const TIPS = {
     plan: [
-      { id: "plan-assign", target: "#plan-your-day .nsls-lane--pool", side: "right",
+      { id: "plan-assign", target: () => firstTask(".nsls-lane--pool"), side: "right",
         doneWhen: twoPlaced,
         title: "Assign task priorities" },
-      { id: "plan-drag", target: laneToDrag, side: "left", when: twoPlaced, doneOn: "drag",
+      { id: "plan-drag", target: taskToDrag, side: "left", doneOn: "drag",
         title: "Drag to change a priority" },
-      { id: "plan-lockin", target: '[data-callout="plan-lockin"]', when: twoPlaced,
+      { id: "plan-lockin", target: '[data-callout="plan-lockin"]',
         title: "When everything looks good, click Done" },
     ],
     command: [
@@ -54,8 +56,9 @@
       { id: "cc-add", target: ".nsls-add-item", side: "below", doneOn: "add",
         title: "Add a task here",
         body: "Type it, pick Today · Top 3 or Today · Bonus, then click Add item." },
-      { id: "cc-close", target: '[data-callout="cc-close"]',
-        title: "Close your day" },
+      { id: "cc-close", target: '[data-callout="cc-close"]', noOk: true, doneOn: "close",
+        title: "Close your day",
+        body: "At the end of your day, click “I'm done — close my day”." },
     ],
   };
 
@@ -79,6 +82,9 @@
   const closedHere = new Set();
   let openId = null;
   let shownId = null;      // the open tip we last scrolled into view
+  // Set when the builder moves the tour on, so the next tip is scrolled into
+  // view; a screen that has just opened is left where it is (at the top).
+  let advanced = false;
   let layer = null;
   let frame = 0;
   const dots = new Map();  // tip id -> dot button
@@ -105,13 +111,13 @@
     return null;
   }
 
-  // Tips waiting on this screen whose moment has come and whose control is on
-  // the page, in tour order.
+  // The next tip on this tour whose control is on the page: one at a time.
   function pending() {
     return (TIPS[screen] || [])
-      .filter((tip) => !dismissed.has(tip.id) && (!tip.when || tip.when()))
+      .filter((tip) => !dismissed.has(tip.id))
       .map((tip) => ({ tip: tip, el: findTarget(tip) }))
-      .filter((p) => p.el);
+      .filter((p) => p.el)
+      .slice(0, 1);
   }
 
   function ensureLayer() {
@@ -128,6 +134,7 @@
     if (!ids.length) return;
     ids.forEach((id) => { closedHere.add(id); dismissed.add(id); });
     openId = null;
+    advanced = true;
     // If it didn't save, bring the tip back rather than let it return on the
     // next reload, so Got it can simply be clicked again.
     Promise.resolve(store().dismiss(ids)).then((saved) => {
@@ -171,12 +178,15 @@
     title.className = "nsls-coach-title";
     title.textContent = tip.title;
     head.append(step, title);
-    const ok = document.createElement("button");
-    ok.type = "button";
-    ok.className = "nsls-coach-ok";
-    ok.textContent = "Got it";
-    ok.addEventListener("click", () => dismiss([tip.id]));
-    row.append(head, ok);
+    row.append(head);
+    if (!tip.noOk) {
+      const ok = document.createElement("button");
+      ok.type = "button";
+      ok.className = "nsls-coach-ok";
+      ok.textContent = "Got it";
+      ok.addEventListener("click", () => dismiss([tip.id]));
+      row.append(ok);
+    }
     el.append(row);
     if (tip.body) {
       const body = document.createElement("p");
@@ -238,6 +248,8 @@
   function reveal(id, target, el) {
     if (shownId === id) return;
     shownId = id;
+    if (!advanced) return;
+    advanced = false;
     const a = target.getBoundingClientRect();
     const b = el.getBoundingClientRect();
     const top = Math.min(a.top, b.top) - EDGE;
@@ -314,6 +326,7 @@
     if (!d.successful || !d.requestConfig) return;
     const path = d.requestConfig.path || "";
     if (path === "/set-progress") did("progress");
+    else if (path === "/close-ready") did("close");
     else if (path === "/move-item" && d.elt && d.elt.closest && d.elt.closest(".nsls-add-item")) did("add");
   });
   if ("ResizeObserver" in window) new ResizeObserver(schedule).observe(document.body);

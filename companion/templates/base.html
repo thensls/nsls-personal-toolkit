@@ -44,6 +44,12 @@
     </main>
   </div>
   <script>
+    // Always open at the top: browsers otherwise restore the last scroll
+    // position on reload, and the day should start with its heading in view.
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    window.scrollTo(0, 0);
+  </script>
+  <script>
     (function () {
       let es = null;
       let reconnectDelay = 1000;        // backoff base
