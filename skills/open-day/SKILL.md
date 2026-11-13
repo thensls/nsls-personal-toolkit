@@ -660,7 +660,9 @@ Rules:
 **Top up from the task board — only when it's worth it.** After the re-check, count the candidates still open. Board items come in two ways:
 
 - **Someone asked about it in the window** (a Slack message, an email, a meeting action item, an issue comment): it goes in regardless of count, cited to the ask.
-- **Fewer than 10 open candidates:** add up to 5 more from the board, most urgent first (overdue, then due soon, then most recently touched). Never pad past 5, and skip anything the re-check above shows is already done.
+- **Fewer than 10 open candidates:** add up to 5 more from the board, most urgent first (overdue, then due soon, then most recently touched). Never pad past 5.
+
+**Board items get the same re-check before they're shown.** They join after the sweep above, so check each one now: search sources 3–7 for its key words (the evidence you already gathered usually answers it), and for a GitHub item also look for a merged PR that closes or names it. A board item that turns out done goes under `### AI Suggested: Likely already done` with its citation, like any other; if it was a top-up pick, pick the next board item instead.
 
 The board is `task_board:` in the builder profile: `asana` (the default, from Step 2b's tasks) or `github`, with `task_board_github: <owner>/<project-number>` (e.g. `thensls/37`). For GitHub, read the project's items assigned to the builder that aren't in a Done column (`gh project item-list <number> --owner <owner> --format json`), plus open issues assigned to them in that owner (`gh search issues --assignee @me --state open --owner <owner>`). Cite each as `(board: <repo>#<number>)` or `(board: <project> draft)`. Skip quietly if the profile names no board and Asana isn't connected; otherwise say in one line why the board couldn't be read.
 
