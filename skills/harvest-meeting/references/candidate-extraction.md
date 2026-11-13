@@ -59,6 +59,9 @@ Meeting date: <YYYY-MM-DD>
 Attendees: <list>
 Summary: <Fathom summary>
 Transcript: <full transcript>
+Contractors (from Signal): <names, or "none loaded">. Anyone named here is a contractor: their
+rates, renewals, negotiations and judgments of their work are contractor terms, even when the
+transcript doesn't say "contractor".
 ```
 
 ## Worked examples

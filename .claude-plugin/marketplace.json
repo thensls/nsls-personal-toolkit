@@ -1,0 +1,14 @@
+{
+  "name": "nsls-personal",
+  "owner": {
+    "name": "NSLS",
+    "email": "builders@nsls.org"
+  },
+  "plugins": [
+    {
+      "name": "nsls-personal-toolkit",
+      "source": "./",
+      "description": "Personal productivity skills for NSLS staff: daily and weekly planning, end-of-day summaries, project logging and relationship tracking."
+    }
+  ]
+}
