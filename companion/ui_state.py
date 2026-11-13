@@ -31,7 +31,9 @@ def state_path(vault: Path) -> Path:
 def _parse(text: str) -> dict:
     try:
         data = json.loads(text) if text.strip() else {}
-    except ValueError:
+    except (ValueError, RecursionError):
+        # Damaged or absurdly nested: read as empty. This runs on every page
+        # render, so it must never raise.
         return {}
     return data if isinstance(data, dict) else {}
 

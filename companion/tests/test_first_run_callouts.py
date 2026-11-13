@@ -129,6 +129,19 @@ def test_state_file_that_is_not_utf8_is_set_aside_not_fatal(vault):
     assert (state.parent / "state.json.unreadable").read_bytes().endswith(b"\xff\xfe")
 
 
+def test_absurdly_nested_state_file_never_breaks_a_page(vault):
+    _note(vault, ACTIVE)
+    state = vault / ".toolkit-companion" / "state.json"
+    state.parent.mkdir()
+    state.write_text("[" * 200000)
+    client = _client(vault)
+    resp = client.get("/?mode=command")
+    assert resp.status_code == 200
+    assert _marker(resp.get_data(as_text=True)) == ("command", [])
+    assert client.post("/callouts/dismiss", data={"id": "cc-add"}).status_code == 204
+    assert json.loads(state.read_text())["callouts_dismissed"] == ["cc-add"]
+
+
 def test_state_file_keeps_other_keys(vault):
     state = vault / ".toolkit-companion" / "state.json"
     state.parent.mkdir()
