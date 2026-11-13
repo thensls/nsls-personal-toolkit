@@ -12,6 +12,9 @@ connector's get_my_tasks — resolve the live name from this session's tools").
 The only ``mcp__`` tokens allowed in skill prose are:
   - ``mcp__<uuid>__``        the literal placeholder used to EXPLAIN the rule
   - ``mcp__apple-health__*`` a local MCP server with a stable install-time name
+  - ``mcp__plugin_*``        a plugin's own server (e.g. the Builder Toolkit's
+                             Signal tools): named from the plugin and server,
+                             so it is the same on every machine
 """
 import re
 from pathlib import Path
@@ -22,7 +25,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # (mcp__<uuid>…) counts as hardcoded — including exotic prefixes like
 # mcp___x or mcp__-x, which the earlier [A-Za-z0-9] check let through.
 HARDCODED = re.compile(r"mcp__(?!<uuid>)")
-ALLOWED = re.compile(r"mcp__apple-health__")
+ALLOWED = re.compile(r"mcp__(apple-health__|plugin_)")
 
 
 def test_no_hardcoded_connector_tool_names():
@@ -43,3 +46,14 @@ def test_no_hardcoded_connector_tool_names():
         "capability by intent and resolve the live name at runtime:\n"
         + "\n".join(offenders)
     )
+
+
+def test_plugin_names_pass_but_per_machine_connector_names_do_not():
+    def flagged(line):
+        return any(not ALLOWED.match(line, m.start()) for m in HARDCODED.finditer(line))
+
+    assert not flagged("call `mcp__plugin_nsls-builder-toolkit_signal__signal_contractors`")
+    assert not flagged("`mcp__apple-health__apple_health_daily`")
+    assert not flagged("named `mcp__<uuid>__<tool>` per machine")
+    assert flagged("`mcp__d139fb01-5559-43e3-965e-e22cea0f5e03__get_my_tasks`")
+    assert flagged("`mcp__claude_ai_Asana__get_my_tasks`")
