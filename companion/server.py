@@ -22,6 +22,7 @@ from companion.parsers import (
 from companion.safe_write import safe_modify
 from companion.streak import DayResult, compute_concern, status_for, streak_days
 from companion.testmode import is_test_vault
+from companion.ui_state import CALLOUT_ID_RE, dismiss_callouts, dismissed_callouts
 from companion.week_parsers import (
     parse_quick_notes,
     parse_stack_rank_table,
@@ -1367,6 +1368,12 @@ def create_app(vault_path: str) -> Flask:
         # Makes `test_mode` available to every template (base.html's TEST bar,
         # day.html's TEST flag) without threading it through each render call.
         return {"test_mode": app.config["TEST_MODE"]}
+
+    @app.context_processor
+    def _inject_callouts():
+        # First-run tips the builder has dismissed, read fresh per render so a
+        # dismissal from another tab or browser holds everywhere.
+        return {"callouts_dismissed": dismissed_callouts(app.config["VAULT_PATH"])}
     # Pick up template edits on the next request without a server restart. The
     # server runs with debug=off (no auto-reloader), so without this a template
     # change is invisible until the process is restarted — the recurring "stale
@@ -1534,6 +1541,19 @@ def create_app(vault_path: str) -> Flask:
         best-effort — the listener swallows failures, since the durable close
         path is the close_ready flag, not this signal."""
         listener_state["last_heartbeat"] = time.monotonic()
+        return ("", 204)
+
+    @app.route("/callouts/dismiss", methods=["POST"])
+    def callouts_dismiss():
+        """A first-run tip's "Got it" (one id) or "Hide these tips" (several).
+
+        Stored in the companion's own state file, not browser storage, so a
+        dismissed tip stays gone across restarts and browsers. Nothing in the
+        daily note changes, so nothing is broadcast."""
+        ids = request.form.getlist("id")
+        if not ids or len(ids) > 20 or not all(CALLOUT_ID_RE.match(i) for i in ids):
+            return ("bad tip id", 400)
+        dismiss_callouts(app.config["VAULT_PATH"], ids)
         return ("", 204)
 
     def _week_of() -> str:

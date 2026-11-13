@@ -108,6 +108,7 @@ html, body { margin: 0; padding: 0; }
 .items-center { align-items: center; }
 .items-start { align-items: flex-start; }
 .justify-between { justify-content: space-between; }
+.justify-end { justify-content: flex-end; }
 .gap-0\.5 { gap: 0.125rem; }
 .gap-1 { gap: 0.25rem; }
 .gap-2 { gap: 0.5rem; }
@@ -233,7 +234,7 @@ body {
 .nsls-shell-main {
   background: #F4F6FA;
   border-radius: 15px;
-  padding: 1.75rem 1.5rem 1.5rem;
+  padding: 1rem 1.5rem 1.5rem;
 }
 
 /* Top nav — the top edge of the navy shell */
@@ -641,3 +642,63 @@ body {
   box-shadow: 0 0 0 2px rgba(0,145,174,0.15); margin: -1px 0.3rem;
 }
 
+
+/* ---- First-run tips (static/callouts.js) ----
+   A pulsing gold dot on each control with a tip waiting, and one small card
+   beside the control it explains, arrow pointing at it. Positioned in page
+   coordinates, so they scroll with the page. */
+.nsls-coach-layer { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 45; }
+/* The open card sits above every dot, so a neighbouring tip's dot never lands on it. */
+.nsls-coach-dot {
+  position: absolute; z-index: 1; width: 14px; height: 14px; margin: -7px 0 0 -7px; padding: 0;
+  border: 2px solid #fff; border-radius: 50%; background: var(--nsls-gold);
+  box-shadow: 0 1px 4px rgba(24,49,90,0.35); cursor: pointer;
+}
+.nsls-coach-dot::after {
+  content: ""; position: absolute; inset: -7px; border-radius: 50%;
+  border: 2px solid var(--nsls-gold); opacity: 0; pointer-events: none;
+  animation: nsls-coach-pulse 1.8s ease-out infinite;
+}
+.nsls-coach-dot:focus-visible { outline: 2px solid var(--nsls-teal); outline-offset: 3px; }
+@keyframes nsls-coach-pulse {
+  0% { transform: scale(0.5); opacity: 0.9; }
+  80%, 100% { transform: scale(1.5); opacity: 0; }
+}
+.nsls-coach-card {
+  position: absolute; z-index: 2; width: max-content; padding: 0.65rem 0.7rem 0.65rem 0.9rem; border-radius: 12px;
+  background: var(--nsls-navy); color: #fff; font-size: 0.8rem; line-height: 1.45;
+  box-shadow: 0 14px 34px -12px rgba(24,49,90,0.6);
+  animation: nsls-coach-in 0.18s ease-out;
+}
+.nsls-coach-card::before {
+  content: ""; position: absolute; left: var(--arrow-x, 24px);
+  width: 12px; height: 12px; margin-left: -6px; border-radius: 2px;
+  background: inherit; transform: rotate(45deg);
+}
+.nsls-coach-card[data-side="below"]::before { top: -6px; }
+.nsls-coach-card[data-side="above"]::before { bottom: -6px; }
+/* Beside the control: the arrow sits on the card's near edge, level with it. */
+.nsls-coach-card[data-side="right"]::before,
+.nsls-coach-card[data-side="left"]::before { top: var(--arrow-y, 22px); margin: -6px 0 0; }
+.nsls-coach-card[data-side="right"]::before { left: -6px; }
+.nsls-coach-card[data-side="left"]::before { left: auto; right: -6px; }
+@keyframes nsls-coach-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.nsls-coach-step {
+  font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--nsls-gold);
+}
+.nsls-coach-row { display: flex; align-items: center; justify-content: space-between; gap: 0.9rem; }
+.nsls-coach-title { margin: 0.1rem 0 0; font-size: 0.92rem; font-weight: 700; color: #fff; }
+.nsls-coach-body { margin: 0.45rem 0 0; color: rgba(255,255,255,0.86); }
+.nsls-coach-ok {
+  flex: none; padding: 0.38rem 0.85rem; border: none; border-radius: 8px; cursor: pointer;
+  background: var(--nsls-gold); color: #18315A;
+  font-family: inherit; font-size: 0.78rem; font-weight: 700;
+}
+.nsls-coach-ok:hover { background: #FFC94D; }
+.nsls-coach-ok:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .nsls-coach-dot::after { animation: none; opacity: 0.45; transform: scale(1.2); }
+  .nsls-coach-card { animation: none; }
+}
+@media print { .nsls-coach-layer { display: none; } }

@@ -157,6 +157,24 @@
       position: String(index),
       est: card.dataset.est || "",
     });
+    movedText = card.dataset.text;
+  });
+
+  // Tell the first-run tips (callouts.js) the builder has dragged a task, but
+  // only once the move has saved: htmx.ajax settles on an error reply too.
+  // The swap replaces the card, so htmx reports the request from a live
+  // ancestor; recognise it by what it sent instead (only a drop sends a
+  // position).
+  let movedText = null;
+  document.addEventListener("htmx:afterRequest", (e) => {
+    const cfg = e.detail.requestConfig;
+    if (movedText === null || !cfg || cfg.path !== "/move-item") return;
+    const sent = cfg.parameters || {};
+    if (sent.text !== movedText || sent.position === undefined) return;
+    movedText = null;
+    if (e.detail.successful) {
+      document.dispatchEvent(new CustomEvent("toolkit:did", { detail: { action: "drag" } }));
+    }
   });
 
   document.addEventListener("dragend", () => {

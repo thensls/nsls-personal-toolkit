@@ -11,7 +11,7 @@
         hx-on:htmx:after-request="if(event.detail.successful){const i=this.querySelector('input'); i.value=''; i.focus()}"
         hx-on:htmx:response-error="window.__toolkitErrorToast(event)">
     <input type="text" name="text" placeholder="What needs to be done?" autocomplete="off"
-           aria-label="New task" required maxlength="256">
+           aria-label="New task" required maxlength="256" data-callout="cc-add">
     <select name="to" id="add-item-to" aria-label="Where it goes" data-top3-full="{{ 'true' if top3_full else 'false' }}">
       <option value="top_3"{% if not top3_full %} selected{% endif %}>Today · Top 3</option>
       <option value="bonus"{% if top3_full %} selected{% endif %}>Today · Bonus</option>

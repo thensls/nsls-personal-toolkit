@@ -14,6 +14,7 @@
   <script src="/static/htmx.min.js"
           onerror="this.onerror=null;var s=document.createElement('script');s.src='https://unpkg.com/htmx.org@1.9.10';document.head.appendChild(s);"></script>
   <script defer src="/static/drag.js"></script>
+  <script defer src="/static/callouts.js"></script>
   <script defer src="/static/alpine.min.js"
           onerror="this.onerror=null;var s=document.createElement('script');s.defer=true;s.src='https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js';document.head.appendChild(s);"></script>
 </head>
@@ -42,6 +43,12 @@
       {% block content %}{% endblock %}
     </main>
   </div>
+  <script>
+    // Always open at the top: browsers otherwise restore the last scroll
+    // position on reload, and the day should start with its heading in view.
+    if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+    window.scrollTo(0, 0);
+  </script>
   <script>
     (function () {
       let es = null;
@@ -183,6 +190,13 @@
       });
 
       connect();
+
+      // Done on Plan your day swaps in the next screen: start it at the top,
+      // not wherever the builder had scrolled to on the plan.
+      document.body.addEventListener("htmx:afterRequest", function (e) {
+        const cfg = e.detail && e.detail.requestConfig;
+        if (e.detail.successful && cfg && cfg.path === "/lock-in") window.scrollTo(0, 0);
+      });
 
       // Expose the smart re-render (preserves dirty fields, no scary confirm)
       // so injected partials — e.g. the closing-spinner self-heal timer — can
