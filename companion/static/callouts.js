@@ -13,6 +13,10 @@
 // left edge (dot: "left") for a control too small to share a corner with,
 // like a drag handle.
 //
+// A tip can wait for the moment it's useful (when: it shows only once that's
+// true) and retire itself once the builder has done the thing (doneWhen: it
+// is then dismissed as if they'd clicked Got it).
+//
 // One tip is open at a time: a small card beside its control, with an arrow,
 // never on top of it. Every other tip still waiting on this screen shows as a
 // pulsing dot on its control; click a dot to open that tip. "Got it" closes a
@@ -23,18 +27,25 @@
 (function () {
   "use strict";
 
+  // Plan your day starts with one job, sorting the suggestions; dragging and
+  // locking in only make sense once a couple of tasks are placed.
+  const placed = (lane) =>
+    document.querySelectorAll("#plan-your-day .nsls-lane--" + lane + " [data-drag-item]").length;
+  const twoPlaced = () => placed("top3") >= 2 || placed("bonus") >= 2;
+
   const TIPS = {
     plan: [
-      { id: "plan-energy", target: '[data-callout="plan-energy"] .nsls-energy-row > div',
-        title: "Start with your energy",
-        body: "Pick Low, Medium or High. It's saved with today's note." },
-      { id: "plan-add", target: "#plan-your-day .nsls-slot input",
-        title: "Add a task here",
-        body: "Type a priority and press Enter, or drag a suggestion into a slot." },
-      { id: "plan-drag", target: "#plan-your-day [data-drag-item] .nsls-grip", dot: "left",
-        title: "Click and drag to reorder",
-        body: "Grab any task by its handle to reorder it, or move it between Top 3, Bonus and suggestions." },
-      { id: "plan-lockin", target: '[data-callout="plan-lockin"]',
+      { id: "plan-assign",
+        target: "#plan-your-day .nsls-lane--pool [data-drag-item]:not(.is-set-aside) .nsls-pills",
+        doneWhen: twoPlaced,
+        title: "Assign your tasks",
+        body: "Choose a priority for each suggestion: click Top 3 or Bonus. Defer, ✓ and ✕ set it aside." },
+      { id: "plan-drag",
+        target: "#plan-your-day .nsls-lane--top3 [data-drag-item] .nsls-grip, #plan-your-day .nsls-lane--bonus [data-drag-item] .nsls-grip",
+        dot: "left", when: twoPlaced,
+        title: "Drag to change a priority",
+        body: "Grab a task by its handle to reorder it, or move it between Top 3 and Bonus." },
+      { id: "plan-lockin", target: '[data-callout="plan-lockin"]', when: twoPlaced,
         title: "Lock in your day",
         body: "When your Top 3 looks right, click Done. Your Command Center opens." },
     ],
@@ -97,12 +108,23 @@
     return null;
   }
 
-  // Tips waiting on this screen whose control is on the page, in tour order.
+  // Tips waiting on this screen whose moment has come and whose control is on
+  // the page, in tour order.
   function pending() {
     return (TIPS[screen] || [])
-      .filter((tip) => !dismissed.has(tip.id))
+      .filter((tip) => !dismissed.has(tip.id) && (!tip.when || tip.when()))
       .map((tip) => ({ tip: tip, el: findTarget(tip) }))
       .filter((p) => p.el);
+  }
+
+  // Tips the builder has outgrown by doing the thing they teach.
+  function retireOutgrown() {
+    const done = (TIPS[screen] || [])
+      .filter((tip) => !dismissed.has(tip.id) && tip.doneWhen && tip.doneWhen())
+      .map((tip) => tip.id);
+    if (!done.length) return;
+    done.forEach((id) => { closedHere.add(id); dismissed.add(id); });
+    store().dismiss(done);
   }
 
   function ensureLayer() {
@@ -209,6 +231,7 @@
   function draw() {
     frame = 0;
     readConfig();
+    retireOutgrown();
     const items = pending();
     if (!items.length) {
       if (layer) layer.replaceChildren();
