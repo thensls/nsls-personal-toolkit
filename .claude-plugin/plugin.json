@@ -1,6 +1,6 @@
 {
   "name": "nsls-personal-toolkit",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "description": "Personal productivity skills for Claude Code \u2014 daily planning, end-of-day summaries, weekly reviews, project logging, and relationship tracking.",
   "author": {
     "name": "NSLS",
@@ -12,5 +12,6 @@
     "obsidian",
     "daily-planning",
     "weekly-review"
-  ]
+  ],
+  "commands": []
 }
