@@ -49,7 +49,9 @@
       { id: "cc-progress", target: "#task-table [data-drag-item]", side: "right",
         doneOn: "progress",
         title: "Mark your progress here" },
-      { id: "cc-add", target: '[data-callout="cc-add"]', side: "below", doneOn: "add",
+      // The whole form, not just its text box: on a narrow screen the picker and
+      // the Add item button wrap below the box, and the card must clear them.
+      { id: "cc-add", target: ".nsls-add-item", side: "below", doneOn: "add",
         title: "Add a task here",
         body: "Type it, pick Today · Top 3 or Today · Bonus, then click Add item." },
       { id: "cc-close", target: '[data-callout="cc-close"]',
