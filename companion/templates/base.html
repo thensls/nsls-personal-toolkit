@@ -185,6 +185,13 @@
 
       connect();
 
+      // Done on Plan your day swaps in the next screen: start it at the top,
+      // not wherever the builder had scrolled to on the plan.
+      document.body.addEventListener("htmx:afterRequest", function (e) {
+        const cfg = e.detail && e.detail.requestConfig;
+        if (e.detail.successful && cfg && cfg.path === "/lock-in") window.scrollTo(0, 0);
+      });
+
       // Expose the smart re-render (preserves dirty fields, no scary confirm)
       // so injected partials — e.g. the closing-spinner self-heal timer — can
       // refresh <main> to pick up the server's honest current state.

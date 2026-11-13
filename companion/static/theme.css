@@ -215,5 +215,7 @@ html[data-theme="dark"] .nsls-coach-card {
 html[data-theme="dark"] .nsls-coach-card::before { border: inherit; }
 html[data-theme="dark"] .nsls-coach-card[data-side="below"]::before { border-right-color: transparent; border-bottom-color: transparent; }
 html[data-theme="dark"] .nsls-coach-card[data-side="above"]::before { border-left-color: transparent; border-top-color: transparent; }
+html[data-theme="dark"] .nsls-coach-card[data-side="right"]::before { border-top-color: transparent; border-right-color: transparent; }
+html[data-theme="dark"] .nsls-coach-card[data-side="left"]::before { border-bottom-color: transparent; border-left-color: transparent; }
 html[data-theme="dark"] .nsls-coach-ok { color: var(--nsls-on-gold); }
 html[data-theme="dark"] .nsls-coach-dot { border-color: #0B111B; box-shadow: 0 1px 6px rgba(0,0,0,0.6); }

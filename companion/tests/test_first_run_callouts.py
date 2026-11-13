@@ -50,6 +50,12 @@ def test_plan_screen_carries_its_tip_marker_and_targets(vault):
     assert 'id="plan-your-day"' in html and "nsls-slot" in html
 
 
+def test_done_on_plan_your_day_lands_at_the_top_of_the_command_center(vault):
+    _note(vault, PLANNING)
+    html = _client(vault).get("/?mode=coach-morning").get_data(as_text=True)
+    assert 'cfg.path === "/lock-in") window.scrollTo(0, 0)' in html
+
+
 def test_command_center_carries_its_tip_marker_and_targets(vault):
     _note(vault, ACTIVE)
     html = _client(vault).get("/?mode=command").get_data(as_text=True)

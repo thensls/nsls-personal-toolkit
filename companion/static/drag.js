@@ -27,8 +27,8 @@
 
   function post(source, path, values) {
     const view = source.closest("[data-drag-view]");
-    if (!view || !window.htmx) return;
-    htmx.ajax("POST", path, {
+    if (!view || !window.htmx) return Promise.resolve();
+    return htmx.ajax("POST", path, {
       source: source,
       target: "#" + view.id,
       swap: "outerHTML",
@@ -156,6 +156,9 @@
       to: to,
       position: String(index),
       est: card.dataset.est || "",
+    }).then(() => {
+      // Tells the first-run tips (callouts.js) the builder has dragged a task.
+      document.dispatchEvent(new CustomEvent("toolkit:did", { detail: { action: "drag" } }));
     });
   });
 

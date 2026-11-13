@@ -8,67 +8,57 @@
 //   [data-callout="<id>"]  a tip's target where it has no natural selector
 //   window.__toolkitCalloutStore  optional: {dismiss(ids)}; returning false
 //       (or a promise of false) means it wasn't saved
+//   "toolkit:did" events on document, detail {action: "drag" | "progress" |
+//       "add"}: the builder just did that, so its tip retires. drag.js sends
+//       "drag"; progress and add are read from HTMX responses here; the demo
+//       sends all three itself.
 //
-// A tip's dot sits just outside its control's top-right corner, or on its
-// left edge (dot: "left") for a control too small to share a corner with,
-// like a drag handle.
-//
-// A tip can wait for the moment it's useful (when: it shows only once that's
-// true) and retire itself once the builder has done the thing (doneWhen: it
-// is then dismissed as if they'd clicked Got it).
-//
-// One tip is open at a time: a small card beside its control, with an arrow,
-// never on top of it. Every other tip still waiting on this screen shows as a
-// pulsing dot on its control; click a dot to open that tip. "Got it" closes a
-// tip for good and opens the next; "Hide these tips" closes the screen's set.
-// A tip whose control isn't on the page (no tasks yet, Top 3 full) waits until
-// it is. Dismissals go to POST /callouts/dismiss unless the page installs its
-// own store first (window.__toolkitCalloutStore — the setup.nsls.org demo).
+// Tips are short: "Tip 1 of 3", a heading, and Got it. One is open at a time,
+// beside its control (right, left or below, falling back to below when the
+// side has no room) and never on top of it. A tip can wait for its moment
+// (when), point at a control found at that moment (target as a function), and
+// retire on its own once the builder has done the thing it teaches (doneWhen,
+// doneOn). Dismissals go to POST /callouts/dismiss unless the page installs
+// its own store first (the setup.nsls.org demo).
 (function () {
   "use strict";
 
-  // Plan your day starts with one job, sorting the suggestions; dragging and
-  // locking in only make sense once a couple of tasks are placed.
-  const placed = (lane) =>
-    document.querySelectorAll("#plan-your-day .nsls-lane--" + lane + " [data-drag-item]").length;
+  const plan = (sel) => document.querySelectorAll("#plan-your-day " + sel);
+  const placed = (lane) => plan(".nsls-lane--" + lane + " [data-drag-item]").length;
   const twoPlaced = () => placed("top3") >= 2 || placed("bonus") >= 2;
+  // Dragging only makes sense in a section with two tasks to reorder.
+  const laneToDrag = () => {
+    for (const lane of ["top3", "bonus"]) {
+      if (placed(lane) >= 2) return plan(".nsls-lane--" + lane)[0] || null;
+    }
+    return null;
+  };
 
   const TIPS = {
     plan: [
-      { id: "plan-assign",
-        target: "#plan-your-day .nsls-lane--pool [data-drag-item]:not(.is-set-aside) .nsls-pills",
+      { id: "plan-assign", target: "#plan-your-day .nsls-lane--pool", side: "right",
         doneWhen: twoPlaced,
-        title: "Assign your tasks",
-        body: "Choose a priority for each suggestion: click Top 3 or Bonus. Defer, ✓ and ✕ set it aside." },
-      { id: "plan-drag",
-        target: "#plan-your-day .nsls-lane--top3 [data-drag-item] .nsls-grip, #plan-your-day .nsls-lane--bonus [data-drag-item] .nsls-grip",
-        dot: "left", when: twoPlaced,
-        title: "Drag to change a priority",
-        body: "Grab a task by its handle to reorder it, or move it between Top 3 and Bonus." },
+        title: "Assign task priorities" },
+      { id: "plan-drag", target: laneToDrag, side: "left", when: twoPlaced, doneOn: "drag",
+        title: "Drag to change a priority" },
       { id: "plan-lockin", target: '[data-callout="plan-lockin"]', when: twoPlaced,
-        title: "Lock in your day",
-        body: "When your Top 3 looks right, click Done. Your Command Center opens." },
+        title: "When everything looks good, click Done" },
     ],
     command: [
-      { id: "cc-drag", target: "#task-table [data-drag-item] .nsls-grip", dot: "left",
-        title: "Click and drag to reorder",
-        body: "Move tasks up and down, or between Top 3 and Bonus." },
-      { id: "cc-progress", target: "#task-table [data-drag-item] .nsls-seg",
-        title: "Mark your progress here",
-        body: "Click 25, 50, 75 or 100 as you go. Anything under 100 carries over to tomorrow." },
-      { id: "cc-add", target: '[data-callout="cc-add"]',
+      // Anchored to the whole task row, so the card clears the row's ✕ too.
+      { id: "cc-progress", target: "#task-table [data-drag-item]", side: "right",
+        doneOn: "progress",
+        title: "Mark your progress here" },
+      { id: "cc-add", target: '[data-callout="cc-add"]', side: "below", doneOn: "add",
         title: "Add a task here",
-        body: "Type it, pick Top 3 or Bonus, then click Add item." },
+        body: "Type it, pick Today · Top 3 or Today · Bonus, then click Add item." },
       { id: "cc-close", target: '[data-callout="cc-close"]',
-        title: "Close your day",
-        body: "When you're finished, click I'm done to close your day." },
+        title: "Close your day" },
     ],
   };
 
-  const GAP = 14;          // target edge to card edge, room for the arrow
+  const GAP = 14;          // control edge to card edge, room for the arrow
   const EDGE = 12;         // card never closer than this to the viewport side
-  const reducedMotion = () =>
-    window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   const serverStore = {
     dismiss(ids) {
@@ -86,6 +76,7 @@
   // bring a closed tip back.
   const closedHere = new Set();
   let openId = null;
+  let shownId = null;      // the open tip we last scrolled into view
   let layer = null;
   let frame = 0;
   const dots = new Map();  // tip id -> dot button
@@ -102,6 +93,10 @@
   }
 
   function findTarget(tip) {
+    if (typeof tip.target === "function") {
+      const el = tip.target();
+      return el && el.getClientRects().length ? el : null;
+    }
     for (const el of document.querySelectorAll(tip.target)) {
       if (el.getClientRects().length) return el;
     }
@@ -117,16 +112,6 @@
       .filter((p) => p.el);
   }
 
-  // Tips the builder has outgrown by doing the thing they teach.
-  function retireOutgrown() {
-    const done = (TIPS[screen] || [])
-      .filter((tip) => !dismissed.has(tip.id) && tip.doneWhen && tip.doneWhen())
-      .map((tip) => tip.id);
-    if (!done.length) return;
-    done.forEach((id) => { closedHere.add(id); dismissed.add(id); });
-    store().dismiss(done);
-  }
-
   function ensureLayer() {
     if (layer && layer.isConnected) return;
     dots.clear();
@@ -136,71 +121,79 @@
     document.body.appendChild(layer);
   }
 
-  function dismiss(ids, advance) {
+  function dismiss(ids) {
+    ids = ids.filter((id) => !dismissed.has(id));
+    if (!ids.length) return;
     ids.forEach((id) => { closedHere.add(id); dismissed.add(id); });
+    openId = null;
     // If it didn't save, bring the tip back rather than let it return on the
-    // next reload, so "Got it" can simply be clicked again.
+    // next reload, so Got it can simply be clicked again.
     Promise.resolve(store().dismiss(ids)).then((saved) => {
       if (saved !== false) return;
       ids.forEach((id) => closedHere.delete(id));
       schedule();
     });
-    openId = null;
-    draw();
-    // Walk the builder to the next tip only when they asked for it.
-    if (advance && card) {
-      const next = pending().find((p) => p.tip.id === card.id);
-      const r = next && next.el.getBoundingClientRect();
-      if (r && (r.top < 0 || r.bottom > window.innerHeight)) {
-        next.el.scrollIntoView({ block: "center", behavior: reducedMotion() ? "auto" : "smooth" });
-      }
-    }
+    schedule();
   }
 
-  // "Tip 2 of 4": the tip's place in this screen's tour, which stays put as
-  // earlier tips are closed.
+  // The builder did what a tip teaches: by reaching its state (doneWhen) or by
+  // the action itself (doneOn). Either way it has served its purpose.
+  function retireOutgrown() {
+    const done = (TIPS[screen] || [])
+      .filter((tip) => !dismissed.has(tip.id) && tip.doneWhen && tip.doneWhen())
+      .map((tip) => tip.id);
+    if (done.length) dismiss(done);
+  }
+  function did(action) {
+    readConfig();
+    dismiss((TIPS[screen] || []).filter((tip) => tip.doneOn === action).map((tip) => tip.id));
+  }
+
   function stepLabel(tip) {
     const tour = TIPS[screen] || [];
     return tour.length > 1 ? "Tip " + (tour.indexOf(tip) + 1) + " of " + tour.length : "Tip";
   }
 
-  function buildCard(item) {
+  function buildCard(tip) {
     const el = document.createElement("div");
     el.className = "nsls-coach-card";
     el.setAttribute("role", "dialog");
-    el.setAttribute("aria-label", item.tip.title);
+    el.setAttribute("aria-label", tip.title);
+    const row = document.createElement("div");
+    row.className = "nsls-coach-row";
+    const head = document.createElement("div");
     const step = document.createElement("div");
     step.className = "nsls-coach-step";
-    step.textContent = stepLabel(item.tip);
+    step.textContent = stepLabel(tip);
     const title = document.createElement("p");
     title.className = "nsls-coach-title";
-    title.textContent = item.tip.title;
-    const body = document.createElement("p");
-    body.className = "nsls-coach-body";
-    body.textContent = item.tip.body;
-    const foot = document.createElement("div");
-    foot.className = "nsls-coach-foot";
-    const skip = document.createElement("button");
-    skip.type = "button";
-    skip.className = "nsls-coach-skip";
-    skip.textContent = "Hide these tips";
-    skip.addEventListener("click", () => dismiss((TIPS[screen] || []).map((t) => t.id), false));
+    title.textContent = tip.title;
+    head.append(step, title);
     const ok = document.createElement("button");
     ok.type = "button";
     ok.className = "nsls-coach-ok";
     ok.textContent = "Got it";
-    ok.addEventListener("click", () => dismiss([item.tip.id], true));
-    foot.append(skip, ok);
-    el.append(step, title, body, foot);
+    ok.addEventListener("click", () => dismiss([tip.id]));
+    row.append(head, ok);
+    el.append(row);
+    if (tip.body) {
+      const body = document.createElement("p");
+      body.className = "nsls-coach-body";
+      body.textContent = tip.body;
+      el.append(body);
+    }
     return el;
   }
 
+  // Where the arrow points: a short control's middle, or near the top of a
+  // tall one (a whole section), level with its heading.
+  const anchorY = (r) => r.top + Math.min(r.height / 2, 22);
+
   function placeDot(dot, tip, r, vw) {
     let x, y;
-    if (tip.dot === "left") {
-      x = r.left - 9;
-      y = r.top + r.height / 2;
-    } else {
+    if (tip.side === "right") { x = r.right + 2; y = anchorY(r); }
+    else if (tip.side === "left") { x = r.left - 2; y = anchorY(r); }
+    else {
       // Top-right corner; top-left if that's off-screen.
       x = r.right + 10 > vw ? r.left - 4 : r.right + 4;
       y = r.top - 4;
@@ -209,23 +202,50 @@
     dot.style.top = y + window.scrollY + "px";
   }
 
-  function placeCard(el, r, vw) {
-    const w = Math.min(300, vw - EDGE * 2);
-    el.style.width = w + "px";
+  function placeCard(el, tip, r, vw) {
+    el.style.maxWidth = Math.min(320, vw - EDGE * 2) + "px";
+    const w = el.offsetWidth;
     const h = el.offsetHeight;
-    // Below the control unless that runs off the bottom and above fits. Either
-    // way the card starts past the control's edge, so it never covers it.
-    const below = r.bottom + GAP + h <= window.innerHeight || r.top - GAP - h < 0;
-    const top = below ? r.bottom + GAP : r.top - GAP - h;
-    const cx = r.left + r.width / 2;
-    // Centred on the control, or starting at it when the control is tiny (a
-    // drag handle at a card's edge), so the card stays over the page content.
-    const want = r.width < 48 ? cx - 24 : cx - w / 2;
-    const left = Math.max(EDGE, Math.min(want, vw - EDGE - w));
-    el.dataset.side = below ? "below" : "above";
-    el.style.setProperty("--arrow-x", Math.max(18, Math.min(cx - left, w - 18)) + "px");
+    let side = tip.side;
+    if (side === "right" && r.right + GAP + w > vw - EDGE) side = null;
+    if (side === "left" && r.left - GAP - w < EDGE) side = null;
+    let left, top;
+    if (side === "right" || side === "left") {
+      const y = anchorY(r);
+      left = side === "right" ? r.right + GAP : r.left - GAP - w;
+      top = Math.max(EDGE, y - 22);
+      el.style.setProperty("--arrow-y", y - top + "px");
+    } else {
+      // Below the control, unless it was free to choose and only above fits.
+      // Either way the card starts past the control's edge, so it never covers it.
+      const below = tip.side === "below" || r.bottom + GAP + h <= window.innerHeight || r.top - GAP - h < 0;
+      side = below ? "below" : "above";
+      top = below ? r.bottom + GAP : r.top - GAP - h;
+      const cx = r.left + r.width / 2;
+      // Centred on the control, or starting at it when the control is tiny.
+      const want = r.width < 48 ? cx - 24 : cx - w / 2;
+      left = Math.max(EDGE, Math.min(want, vw - EDGE - w));
+      el.style.setProperty("--arrow-x", Math.max(18, Math.min(cx - left, w - 18)) + "px");
+    }
+    el.dataset.side = side;
     el.style.left = left + window.scrollX + "px";
     el.style.top = top + window.scrollY + "px";
+  }
+
+  // When a tip opens, bring its control and card fully into view, once.
+  function reveal(id, target, el) {
+    if (shownId === id) return;
+    shownId = id;
+    const a = target.getBoundingClientRect();
+    const b = el.getBoundingClientRect();
+    const top = Math.min(a.top, b.top) - EDGE;
+    const bottom = Math.max(a.bottom, b.bottom) + EDGE;
+    let dy = 0;
+    if (bottom > window.innerHeight) dy = bottom - window.innerHeight;
+    if (top - dy < 0) dy = top;
+    // A plain jump: smooth scrolling never runs in a tab that isn't painting
+    // (a background or embedded view), and then the tip would stay off-screen.
+    if (dy) window.scrollBy(0, dy);
   }
 
   function draw() {
@@ -262,10 +282,11 @@
       placeDot(dot, item.tip, r, vw);
       if (item.tip.id === openId) {
         if (!card) {
-          card = { id: openId, el: buildCard(item) };
+          card = { id: openId, el: buildCard(item.tip) };
           layer.appendChild(card.el);
         }
-        placeCard(card.el, r, vw);
+        placeCard(card.el, item.tip, r, vw);
+        reveal(openId, item.el, card.el);
       }
     });
   }
@@ -284,15 +305,26 @@
   window.addEventListener("resize", schedule);
   window.addEventListener("load", schedule);
   document.addEventListener("htmx:afterSettle", schedule);
+  document.addEventListener("toolkit:did", (e) => did(e.detail && e.detail.action));
+  // The companion's own controls: marking progress and adding a task.
+  document.addEventListener("htmx:afterRequest", (e) => {
+    const d = e.detail || {};
+    if (!d.successful || !d.requestConfig) return;
+    const path = d.requestConfig.path || "";
+    if (path === "/set-progress") did("progress");
+    else if (path === "/move-item" && d.elt && d.elt.closest && d.elt.closest(".nsls-add-item")) did("add");
+  });
   if ("ResizeObserver" in window) new ResizeObserver(schedule).observe(document.body);
   schedule();
 
   // For pages that switch screens or reset themselves (the demo).
   window.__toolkitCallouts = {
     refresh: schedule,
+    did: did,
     reset() {
       closedHere.clear();
       openId = null;
+      shownId = null;
       schedule();
     },
   };

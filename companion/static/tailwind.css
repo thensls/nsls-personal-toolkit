@@ -665,7 +665,7 @@ body {
   80%, 100% { transform: scale(1.5); opacity: 0; }
 }
 .nsls-coach-card {
-  position: absolute; z-index: 2; padding: 0.8rem 0.9rem 0.75rem; border-radius: 12px;
+  position: absolute; z-index: 2; width: max-content; padding: 0.65rem 0.7rem 0.65rem 0.9rem; border-radius: 12px;
   background: var(--nsls-navy); color: #fff; font-size: 0.8rem; line-height: 1.45;
   box-shadow: 0 14px 34px -12px rgba(24,49,90,0.6);
   animation: nsls-coach-in 0.18s ease-out;
@@ -677,29 +677,26 @@ body {
 }
 .nsls-coach-card[data-side="below"]::before { top: -6px; }
 .nsls-coach-card[data-side="above"]::before { bottom: -6px; }
+/* Beside the control: the arrow sits on the card's near edge, level with it. */
+.nsls-coach-card[data-side="right"]::before,
+.nsls-coach-card[data-side="left"]::before { top: var(--arrow-y, 22px); margin: -6px 0 0; }
+.nsls-coach-card[data-side="right"]::before { left: -6px; }
+.nsls-coach-card[data-side="left"]::before { left: auto; right: -6px; }
 @keyframes nsls-coach-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .nsls-coach-step {
   font-size: 0.64rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--nsls-gold);
 }
-.nsls-coach-title { margin: 0.2rem 0 0.15rem; font-size: 0.92rem; font-weight: 700; color: #fff; }
-.nsls-coach-body { margin: 0; color: rgba(255,255,255,0.86); }
-.nsls-coach-foot {
-  display: flex; align-items: center; justify-content: space-between; gap: 0.75rem;
-  margin-top: 0.7rem;
-}
-.nsls-coach-skip {
-  padding: 0; border: none; background: none; cursor: pointer;
-  font-family: inherit; font-size: 0.74rem; color: rgba(255,255,255,0.7); text-decoration: underline;
-}
-.nsls-coach-skip:hover { color: #fff; }
+.nsls-coach-row { display: flex; align-items: center; justify-content: space-between; gap: 0.9rem; }
+.nsls-coach-title { margin: 0.1rem 0 0; font-size: 0.92rem; font-weight: 700; color: #fff; }
+.nsls-coach-body { margin: 0.45rem 0 0; color: rgba(255,255,255,0.86); }
 .nsls-coach-ok {
-  padding: 0.38rem 0.85rem; border: none; border-radius: 8px; cursor: pointer;
+  flex: none; padding: 0.38rem 0.85rem; border: none; border-radius: 8px; cursor: pointer;
   background: var(--nsls-gold); color: #18315A;
   font-family: inherit; font-size: 0.78rem; font-weight: 700;
 }
 .nsls-coach-ok:hover { background: #FFC94D; }
-.nsls-coach-skip:focus-visible, .nsls-coach-ok:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.nsls-coach-ok:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) {
   .nsls-coach-dot::after { animation: none; opacity: 0.45; transform: scale(1.2); }
   .nsls-coach-card { animation: none; }
