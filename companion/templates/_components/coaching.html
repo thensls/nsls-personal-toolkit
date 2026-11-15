@@ -1,0 +1,32 @@
+{# Claude's coaching (## Coaching in the note, written by open-day and
+   close-day). Collapsed while the builder works; open on the closed day.
+   The slot is always present so the page can fill it in when Claude finishes
+   writing (base.html refreshes it from /coaching on a change to the note),
+   even on screens that don't reload as a whole. #}
+<div id="coaching-slot" data-date="{{ today }}">
+{% if coaching.state != 'none' %}
+<details class="nsls-coaching" {% if coaching_open %}open{% endif %}>
+  <summary>
+    <span class="nsls-coaching-title">Coaching from Claude</span>
+    {% if coaching.state == 'writing' %}
+    <span class="nsls-coaching-note"><span class="nsls-spinner" aria-hidden="true"></span>Claude is writing…</span>
+    {% elif coaching.label %}
+    <span class="nsls-coaching-note">{{ coaching.label }}</span>
+    {% endif %}
+  </summary>
+  <div class="nsls-coaching-body">
+    {% if coaching.state == 'writing' %}
+    <p class="nsls-subtle">Claude is still writing your coaching. It appears here as soon as it's ready; carry on meanwhile.</p>
+    {% else %}
+    {% for block in coaching.blocks %}
+      {% if block.type == 'list' %}
+      <ul>{% for item in block['items'] %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% else %}
+      <p>{{ block.text }}</p>
+      {% endif %}
+    {% endfor %}
+    {% endif %}
+  </div>
+</details>
+{% endif %}
+</div>

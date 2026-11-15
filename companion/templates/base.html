@@ -91,6 +91,8 @@
           if (Date.now() < suppressNextReload) return;
         }
         lastReload = Date.now();
+        // An expanded coaching section stays expanded across the refresh.
+        const coachingWasOpen = !!document.querySelector("#coaching-slot details[open]");
 
         // Never make the user lose what they're typing, and never show a scary
         // confirm. Snapshot any in-progress (unsaved) textarea AND text-input
@@ -119,6 +121,10 @@
           select: "main",
           swap: "outerHTML",
         }).then(function () {
+          if (coachingWasOpen) {
+            const d = document.querySelector("#coaching-slot details");
+            if (d) d.open = true;
+          }
           if (!Object.keys(dirty).length) return;
           document.querySelectorAll("main textarea, main input[type=text]").forEach((t, i) => {
             const key = fieldKey(t, i);
@@ -133,6 +139,17 @@
             }
           });
         });
+      }
+
+      // Claude's coaching can land while the builder is mid-plan: refresh just
+      // that section when its day's note changes, even on screens that don't
+      // reload as a whole (Plan your day), keeping it open if it was open.
+      function refreshCoaching(path) {
+        const slot = document.getElementById("coaching-slot");
+        if (!slot || !window.htmx || path !== "01-daily/" + slot.dataset.date + ".md") return;
+        const open = slot.querySelector("details[open]") ? "1" : "0";
+        htmx.ajax("GET", "/coaching?date=" + encodeURIComponent(slot.dataset.date) + "&open=" + open,
+                  { target: "#coaching-slot", swap: "outerHTML" });
       }
 
       // Tiny status pill shown while the SSE stream is down (e.g. the
@@ -169,6 +186,7 @@
         es.onmessage = (e) => {
           const path = e.data;
           if (path.startsWith("01-daily/") || path.startsWith("30-habits/") || path.startsWith("02-weekly/")) {
+            refreshCoaching(path);
             reloadMain();
           }
         };

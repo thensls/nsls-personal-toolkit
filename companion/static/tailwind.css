@@ -702,3 +702,32 @@ body {
   .nsls-coach-card { animation: none; }
 }
 @media print { .nsls-coach-layer { display: none; } }
+
+/* ---- Claude's coaching (_components/coaching.html) ----
+   A collapsible card under the day heading: closed while the builder works,
+   open on the closed day. */
+.nsls-coaching {
+  margin-bottom: 1rem; border-radius: 12px; background: var(--nsls-white);
+  border: 1px solid var(--nsls-hairline); border-left: 4px solid var(--nsls-gold);
+  box-shadow: 0 1px 2px rgba(24,49,90,0.05);
+}
+.nsls-coaching > summary {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.7rem 1rem; cursor: pointer; list-style: none; user-select: none;
+}
+.nsls-coaching > summary::-webkit-details-marker { display: none; }
+.nsls-coaching > summary::before {
+  content: "▸"; color: var(--nsls-darkblue); font-size: 0.8rem; transition: transform .15s;
+}
+.nsls-coaching[open] > summary::before { transform: rotate(90deg); }
+.nsls-coaching-title { font-weight: 700; color: var(--nsls-navy); font-size: 0.95rem; }
+.nsls-coaching-note { display: inline-flex; align-items: center; font-size: 0.78rem; color: var(--nsls-darkblue); }
+.nsls-coaching-body { padding: 0 1rem 0.9rem 2.05rem; font-size: 0.9rem; line-height: 1.5; color: var(--nsls-nearblack); }
+.nsls-coaching-body p { margin: 0 0 0.5rem; }
+.nsls-coaching-body ul { margin: 0 0 0.5rem; padding-left: 1.1rem; }
+.nsls-coaching-body li { margin: 0.2rem 0; }
+.nsls-coaching > summary:focus-visible { outline: 2px solid var(--nsls-teal); outline-offset: 2px; border-radius: 10px; }
+
+/* Closed day: the date on the left, Open tomorrow on the right. */
+.nsls-closed-head--next { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.nsls-open-next { text-decoration: none; white-space: nowrap; }
