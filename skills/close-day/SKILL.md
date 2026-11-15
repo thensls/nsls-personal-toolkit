@@ -908,6 +908,10 @@ goal_<slug>_moved: [true | false]   # one line per active personal goal — see 
 
 [2-3 sentences MAX, written FOR the companion's day-closed card — the builder reads this on the web page instead of the chat. Plain language, no headers/bullets/markdown structure. Cover: what landed today (the one-line win), what carries to tomorrow, and one short coaching or momentum line. Do NOT summarize mechanics ("I updated your note") — speak to the builder about their day.]
 
+## Coaching
+<!-- from: tonight's close -->
+- [2-4 short bullets of coaching FOR the builder, shown in the companion's "Coaching from Claude" section — open on the closed day, collapsed tomorrow morning. Plain words, one idea per bullet, no headers or jargon. Draw on what you already have: one thing that went well and why it matters; one pattern worth noticing (energy, carry-overs, where the time went); the one focus for tomorrow; the role-coach cue from Step 4d if it ran; a coaching action for someone they'll see tomorrow (person-intelligence), if any. Never anything private about another person.]
+
 ## Insight Reflection
 
 [Paragraph 1 — primary pattern: what the data reveals that you might not have noticed. One concrete data point must anchor it. Max 3 sentences.]
@@ -1477,6 +1481,10 @@ Check if tomorrow's note exists at `${OBSIDIAN_VAULT_PATH}/01-daily/YYYY-MM-DD+1
 ```markdown
 # YYYY-MM-DD+1 — [Day of Week]
 
+## Coaching
+<!-- from: last night's close -->
+- [Copy the forward-looking bullets of tonight's `## Coaching` (the focus for tomorrow, the role-coach cue, any coaching action): they show, collapsed, at the top of tomorrow's Plan your day and Command Center. Leave the section out if tonight wrote none.]
+
 ## Morning Check-in
 - Energy:
 
@@ -1517,6 +1525,8 @@ SORT priority ASC
 This seeds the next day with the AI-suggested priorities so the builder sees them first thing in the morning. They overwrite "My Top 3" with his actual priorities during `/open-day` or manually.
 
 If the file already exists (user or `/open-day` already created it), do NOT overwrite. Instead, check if it has the AI suggestion sections (`### AI Suggested: …`). If not, insert them as `###` subsections **inside** `## Morning Check-in` — specifically, between the `## Morning Check-in` heading and the `### My Top 3` heading (or at the end of the section if `### My Top 3` doesn't exist yet). The companion's parser only reads AI suggestions from within `## Morning Check-in`, so placing them anywhere else makes them invisible.
+
+Do the same for coaching: if the existing file has no `## Coaching` section, add the one from the template above, as its own `##` section before `## Morning Check-in`. If it already has one, leave it.
 
 ### Step 9: Confirm
 
