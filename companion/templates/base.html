@@ -147,6 +147,9 @@
       // One refresh at a time: a second note change while one is in flight is
       // remembered and run after it, against the slot as it is then (a queued
       // request would swap into the element the first one replaced).
+      // Sent from the slot itself, not the page: page refreshes (reloadMain)
+      // queue on the page, and sharing that queue let one resolve before its
+      // swap, restoring unsaved text into the main it was about to replace.
       let coachingBusy = false, coachingAgain = false;
       function refreshCoaching(path) {
         const slot = document.getElementById("coaching-slot");
@@ -155,7 +158,7 @@
         coachingBusy = true;
         const open = slot.querySelector("details[open]") ? "1" : "0";
         Promise.resolve(htmx.ajax("GET", "/coaching?date=" + encodeURIComponent(slot.dataset.date) + "&open=" + open,
-                                  { target: slot, swap: "outerHTML" }))
+                                  { source: slot, target: slot, swap: "outerHTML" }))
           .catch(function () {})
           .then(function () {
             coachingBusy = false;
