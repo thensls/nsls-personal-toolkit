@@ -8,6 +8,7 @@ Each release has a per-file detail page describing the change, its cost to adopt
 
 ---
 
+- **2026-11-14** — [Claude's coaching shows up in your Command Center](2026-11-14-coaching-in-the-command-center.md) — 0 min. Close-day writes a few lines of coaching that open on the closed-day screen with an Open tomorrow button; tomorrow they wait, collapsed, at the top of Plan your day and the Command Center.
 - **2026-11-13** — [Open-day checks its suggestions before it shows them](2026-11-13-open-day-rechecks-suggestions.md) — 0 min. Each morning it re-checks every suggestion against your Slack, meetings, email, calendar and Claude sessions, marks what's done or moot with the evidence, adds new asks, and tops up a short list from your task board.
 - **2026-11-12** — [The toolkit can reach you through Claude, with no GitHub](2026-11-12-delivered-through-claude.md) — 0 min. When NSLS delivers the toolkit through Claude, your folder is kept current from that copy; your own changes pause updates until you choose; a fork stays on GitHub and needs a sign-in once NSLS's copy is private.
 - **2026-11-03** — [Harvest asks less and shows what it left out](2026-11-03-harvest-asks-less.md) — 2 min. A second pass cuts plumbing, interim steps and duplicates; every item starts ticked; left-out items are listed on your screen only.

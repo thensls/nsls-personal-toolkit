@@ -1044,6 +1044,20 @@ $OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md
 > on Windows PowerShell — **never `mkdir -p` on Windows**. (A visual-mode run
 > is already covered: the companion's `ensure_vault_structure` creates it on startup.)
 
+**Coaching for the companion (`## Coaching`).** The companion shows this section,
+collapsed, as "Coaching from Claude" at the top of Plan your day and the
+Command Center. Last night's close-day may already have seeded it (labelled
+`<!-- from: last night's close -->`): keep those bullets. Then add this
+morning's coaching under them as short plain-word bullets: the goal cue that
+fires today, up to three coaching actions for today's people (from "Coaching
+Actions for Today"), and one line on today's shape if it's unusual (back-to-back
+meetings, a light day). If there was no section, start it with
+`<!-- from: this morning -->`. If the morning coaching will take a while to
+work out, write `## Coaching` with just `<!-- coaching: writing -->` in this
+step, open the companion, then replace the marker with the bullets: the page
+fills the section in on its own while the builder plans. Never leave the
+writing marker behind.
+
 The daily note should include:
 
 ```markdown
