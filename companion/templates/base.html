@@ -144,12 +144,23 @@
       // Claude's coaching can land while the builder is mid-plan: refresh just
       // that section when its day's note changes, even on screens that don't
       // reload as a whole (Plan your day), keeping it open if it was open.
+      // One refresh at a time: a second note change while one is in flight is
+      // remembered and run after it, against the slot as it is then (a queued
+      // request would swap into the element the first one replaced).
+      let coachingBusy = false, coachingAgain = false;
       function refreshCoaching(path) {
         const slot = document.getElementById("coaching-slot");
         if (!slot || !window.htmx || path !== "01-daily/" + slot.dataset.date + ".md") return;
+        if (coachingBusy) { coachingAgain = true; return; }
+        coachingBusy = true;
         const open = slot.querySelector("details[open]") ? "1" : "0";
-        htmx.ajax("GET", "/coaching?date=" + encodeURIComponent(slot.dataset.date) + "&open=" + open,
-                  { target: "#coaching-slot", swap: "outerHTML" });
+        Promise.resolve(htmx.ajax("GET", "/coaching?date=" + encodeURIComponent(slot.dataset.date) + "&open=" + open,
+                                  { target: slot, swap: "outerHTML" }))
+          .catch(function () {})
+          .then(function () {
+            coachingBusy = false;
+            if (coachingAgain) { coachingAgain = false; refreshCoaching(path); }
+          });
       }
 
       // Tiny status pill shown while the SSE stream is down (e.g. the

@@ -111,8 +111,18 @@ def test_a_running_close_says_claude_is_writing(setup):
     now = datetime.now(timezone.utc).isoformat()
     (vault / "01-daily" / f"{TODAY}.md").write_text(
         f'---\nstatus: active\nclose_ready: 1\nclose_ready_at: "{now}"\n---\n## Morning Check-in\n')
+    client.post("/listener-heartbeat")
     html = client.get("/?mode=command").get_data(as_text=True)
     assert "Claude is writing…" in html
+
+
+def test_a_click_with_no_claude_attached_promises_no_coaching(setup):
+    client, vault = setup
+    now = datetime.now(timezone.utc).isoformat()
+    (vault / "01-daily" / f"{TODAY}.md").write_text(
+        f'---\nstatus: active\nclose_ready: 1\nclose_ready_at: "{now}"\n---\n## Morning Check-in\n')
+    html = client.get("/?mode=command").get_data(as_text=True)
+    assert "Claude is writing…" not in html
 
 
 def test_partial_keeps_the_section_open_when_asked(setup):

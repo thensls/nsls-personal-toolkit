@@ -1313,8 +1313,11 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
 
     # Claude's coaching (## Coaching). While a close is running and nothing has
     # been written yet, say Claude is writing rather than show nothing.
+    # close_ready is only the click, so it takes a Claude listener actually
+    # attached for "writing" to be true; otherwise nothing is coming.
+    listener_live = app.config.get("LISTENER_LIVE", lambda: False)()
     coaching = parse_coaching(sections.get("Coaching"))
-    if coaching["state"] == "none" and close_ready and not close_ready_stale:
+    if coaching["state"] == "none" and close_ready and not close_ready_stale and listener_live:
         coaching = {"state": "writing", "label": "", "blocks": []}
     next_day = (datetime.strptime(today, "%Y-%m-%d") + timedelta(days=1)).date()
     return {
@@ -1429,6 +1432,8 @@ def create_app(vault_path: str) -> Flask:
     def _listener_live() -> bool:
         last = listener_state["last_heartbeat"]
         return last is not None and (time.monotonic() - last) <= LISTENER_HEARTBEAT_FRESH_SECONDS
+
+    app.config["LISTENER_LIVE"] = _listener_live   # read by _build_day_context
 
     def _target_date() -> str:
         """Return the target date from ?date= query param or form field, default today.
