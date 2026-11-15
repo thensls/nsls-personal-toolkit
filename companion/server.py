@@ -1345,7 +1345,11 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
         "plan": plan,
         "coaching": coaching,
         "next_day": next_day.isoformat(),
-        "next_day_is_tomorrow": next_day == date.today() + timedelta(days=1),
+        # "Open tomorrow" when closing today, "Open today" when catching up on
+        # yesterday, "Open the next day" further back.
+        "open_next_label": ("Open tomorrow" if next_day == date.today() + timedelta(days=1)
+                            else "Open today" if next_day == date.today()
+                            else "Open the next day"),
     }
 
 

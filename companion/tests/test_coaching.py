@@ -81,6 +81,14 @@ def test_closed_day_opens_coaching_and_offers_tomorrow(setup):
     assert html.index("Open tomorrow") < html.index("nsls-coaching")
 
 
+def test_closing_yesterday_offers_today(setup):
+    client, vault = setup
+    yday = (date.today() - timedelta(days=1)).isoformat()
+    (vault / "01-daily" / f"{yday}.md").write_text("---\nstatus: closed\n---\n" + COACHING)
+    html = client.get(f"/?date={yday}").get_data(as_text=True)
+    assert f'href="/?date={TODAY}"' in html and "Open today →" in html
+
+
 def test_a_past_closed_day_offers_the_next_day(setup):
     client, vault = setup
     past = (date.today() - timedelta(days=3)).isoformat()

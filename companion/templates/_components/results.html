@@ -1,7 +1,7 @@
 <div class="max-w-2xl mx-auto">
   <header class="nsls-closed-head nsls-closed-head--next mb-4">
     <h2 class="font-semibold"><span class="nsls-closed-flag">Day closed</span> · {{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h2>
-    <a class="nsls-btn-gold nsls-open-next" href="/?date={{ next_day }}">{{ 'Open tomorrow' if next_day_is_tomorrow else 'Open the next day' }} →</a>
+    <a class="nsls-btn-gold nsls-open-next" href="/?date={{ next_day }}">{{ open_next_label }} →</a>
   </header>
 
   {% with coaching_open=true %}{% include "_components/coaching.html" %}{% endwith %}
