@@ -150,7 +150,13 @@
       // Sent from the slot itself, not the page: page refreshes (reloadMain)
       // queue on the page, and sharing that queue let one resolve before its
       // swap, restoring unsaved text into the main it was about to replace.
-      let coachingBusy = false, coachingAgain = false;
+      // The open/closed state that counts is the one at swap time: a click
+      // while the request is in flight must not be undone by the reply.
+      let coachingBusy = false, coachingAgain = false, coachingOpenAtSwap = null;
+      document.body.addEventListener("htmx:beforeSwap", function (e) {
+        const t = e.detail && e.detail.target;
+        if (t && t.id === "coaching-slot") coachingOpenAtSwap = !!t.querySelector("details[open]");
+      });
       function refreshCoaching(path) {
         const slot = document.getElementById("coaching-slot");
         if (!slot || !window.htmx || path !== "01-daily/" + slot.dataset.date + ".md") return;
@@ -161,6 +167,11 @@
                                   { source: slot, target: slot, swap: "outerHTML" }))
           .catch(function () {})
           .then(function () {
+            if (coachingOpenAtSwap !== null) {
+              const d = document.querySelector("#coaching-slot details");
+              if (d) d.open = coachingOpenAtSwap;
+              coachingOpenAtSwap = null;
+            }
             coachingBusy = false;
             if (coachingAgain) { coachingAgain = false; refreshCoaching(path); }
           });
