@@ -59,6 +59,8 @@ def test_the_builders_own_mark_wins():
 def test_an_invalid_estimate_is_ignored_but_still_hidden():
     [it] = _items("1. [ ] Alpha <!--c:40-->")
     assert it["text"] == "Alpha" and it["claude"] is None
+    [zero] = _items("1. [ ] Alpha <!--c:0-->")
+    assert zero["text"] == "Alpha" and zero["claude"] is None
 
 
 def test_command_center_shows_the_estimate_light_blue_with_a_legend(setup):
