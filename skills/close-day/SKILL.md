@@ -171,7 +171,7 @@ Read the **target date's** daily note (`$OBSIDIAN_VAULT_PATH/01-daily/<target-da
 **(a) Top 3 / Bonus completion** — from `## Morning Check-in` → `### My Top 3` and `### Bonus`:
 - `[x]`, or a trailing `<!--p:100-->` → **done (100%)**
 - a trailing `<!--p:NN-->` marker where NN is 25/50/75 → **partial, NN%** (line still shows `[ ]`; the marker is an HTML comment, invisible in rendered Obsidian)
-- `[ ]` with no marker → **not started**
+- `[ ]` with no marker, or with `<!--p:0-->` (the builder set it to zero over Claude's estimate) → **not started**
 - a `<!--c:NN-->` marker and no `<!--p:NN-->` → **NN%, Claude's estimate**: the midnight sweep guessed it from evidence (it shows light blue in the Command Center) and the builder closed without changing it, so use it as the progress, and call it "Claude's estimate" in the Step 4 summary so they can correct it
 - text also listed under `## Carrying Over` → the builder chose to **carry it forward**
 
@@ -193,12 +193,17 @@ usually already done the heavy reading. Look for
 `$OBSIDIAN_VAULT_PATH/50-reference/sweeps/<target-date>.md` with
 `status: complete`. If it's there:
 
-- **Collect only what the sweep didn't see.** The sweep file and the note
-  hold the day up to `swept_through`. In Step 1, read Slack, email, meetings
-  and Claude sessions only from `swept_through` minus 15 minutes onward. If the
-  sweep ran after the day ended, that's nothing for the day itself: just glance
-  at anything since that changes the picture (a late reply, a merge first thing
-  this morning). The day's calendar is cheap; read it whole.
+- **Collect only what the sweep didn't see, when it recorded the day.** If the
+  sweep file has a `## The day` section, it holds the day's meetings (with
+  takeaways and action items), what was shipped and sent, and where each Claude
+  thread got to, up to `swept_through`: build the Work Log and meeting notes
+  from it, and in Step 1 read Slack, email, meetings and Claude sessions only
+  from `swept_through` minus 15 minutes onward (plus any source under its
+  `missed:`, from the time recorded there). If the sweep ran after the day
+  ended, that's nothing for the day itself: just glance at anything since that
+  changes the picture (a late reply, a merge first thing this morning). **No
+  `## The day` section: read the full day's sources as usual**; the rest of the
+  sweep still helps. The day's calendar is cheap; read it whole.
 - **Start the coaching from the sweep's.** The note's `## Coaching` has the
   sweep's bullets under `<!-- from: last night's sweep -->`. Check only what
   changed since `swept_through`, then write tonight's coaching in their place

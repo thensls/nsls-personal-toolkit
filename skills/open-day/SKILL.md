@@ -217,7 +217,10 @@ builder worked).
   again only when something in that window mentions it. The 15-minute overlap
   means you'll see some of what the sweep saw: match items by their task text
   (ignoring the citation), never list one twice, and let the newer evidence
-  win. A sweep file that isn't `status: complete` doesn't count. Carry-overs (2c) and
+  win. A sweep file that isn't `status: complete` doesn't count. **Anything
+  the sweep never saw** (a task added to the board since, a board top-up, an
+  item from a source listed under the sweep's `missed:`) gets the full Step 2n
+  check, and a source under `missed:` is read from the time recorded there. Carry-overs (2c) and
   close-day suggestions (2e) are already folded in; add only what changed after
   the sweep. Everything else in Step 2 (today's calendar, health, PRs) runs as
   usual. The capacity line says so: "Started from last night's sweep

@@ -111,7 +111,10 @@ a cached date, and name absolute dates with the weekday in anything you write).
   catch-up can both fire.) A run by hand always runs, replacing the file.
 - **The window.** From the previous sweep file's `swept_through` minus 15
   minutes (messages and meeting summaries can land late), or from the start of
-  `SWEEP_DAY` when there is none. When checking a candidate, also look back at
+  `SWEEP_DAY` when there is none. **A source the previous sweep couldn't read**
+  is listed under `missed:` in its frontmatter with the time it was last read
+  up to; read that source from that time instead, so a connector that was down
+  last night loses nothing. When checking a candidate, also look back at
   least three days and from the date in the candidate's own text.
 - **Note the start time** now. It becomes `swept_through`, so anything that
   happens while the sweep runs is caught by the next look, not lost.
@@ -152,15 +155,20 @@ session's tools.
 8. **The task board**: `task_board` in the profile (Asana by default, or the
    GitHub project in `task_board_github`), read as open-day's Step 2n does.
 
-**If a source can't be read, record it** under `## Sources` and keep going.
-Never imply a source was checked when it wasn't.
+**If a source can't be read, record it** under `## Sources` and in the
+frontmatter's `missed:` map with the start of its window (carry the older time
+forward if it was already missed last time), and keep going. Never imply a
+source was checked when it wasn't.
 
 ### Step 3: Build tomorrow's list, checking every candidate on its own
 
 **The pool:** `SWEEP_DAY`'s unfinished Top 3 and Bonus items (keep each
 `<!--e:X-->` remaining estimate), `## Carrying Over`, AI suggestions the
-builder never dispositioned, new asks and action items from Step 2, and task
-board items (top-ups by open-day Step 2n's rule: anything someone asked about,
+builder never dispositioned, **the `### AI Suggested: …` lines close-day
+already seeded into the next working day's note** (when the day was closed
+before the sweep), **the previous sweep file's suggestions and waiting items
+that are still unresolved** (so a rerun never drops an ask from before its
+window), new asks and action items from Step 2, and task board items (top-ups by open-day Step 2n's rule: anything someone asked about,
 plus up to five when fewer than ten are open).
 
 **Check each candidate separately.** For every one, search each source for its
@@ -202,7 +210,9 @@ changed (the builder marked the task), leave it. If an edit is refused, re-read
 and try once more, then skip that line.
 
 For each Top 3 and Bonus item the builder hasn't marked (still `[ ]`, no
-`<!--p:NN-->`, not under `### Done` or `### Deleted`), estimate 25, 50, 75 or
+`<!--p:NN-->` of any value, `<!--p:0-->` included, which is the builder
+setting it to zero over an earlier estimate; not under `### Done` or
+`### Deleted`), estimate 25, 50, 75 or
 100 from the evidence in Step 2: a merged PR or a sent deliverable is 100; a
 shared draft is 50 to 75; work started in a thread is 25. **No evidence, no
 estimate**: leave the line alone.
@@ -250,8 +260,16 @@ Command Center strips) and the remaining estimate as `<!--e:X-->`.
 sweep_day: 2026-11-17
 swept_through: 2026-11-18T00:03:00-05:00
 status: complete
+missed:
+  email: 2026-11-16T00:02:00-05:00
 ---
 # Midnight sweep: Tuesday, Nov 17
+
+## The day
+- Meeting: PII gate test with Jenna (Fathom): the direct HubSpot route was blocked, the secure route worked. Your action: plan the full HubSpot block.
+- Shipped: four reporter PRs merged (employee-profiles 233–237).
+- Sent: six colleague notes on Slack (Brandon, Royce, Heather, …).
+- Claude threads: "PII gate" (block plan drafted, not finished).
 
 ## Suggestions for Wednesday, Nov 18
 1. Answer Brandon on the S3 bucket (Slack DM, Nov 18 2:05 AM: "where does the key live?") <!--e:0.25-->
@@ -280,7 +298,12 @@ status: complete
 - Couldn't read: none
 ```
 
-Leave out any section that would be empty, except `## Sources`.
+`## The day` is the record close-day builds the Work Log and meeting notes
+from when the day is closed after the sweep: every meeting with its takeaways
+and the builder's action items, what they shipped or sent, and where each
+Claude thread got to, one line each with its source. Leave `missed:` out when
+every source was read, and leave out any section that would be empty, except
+`## Sources`.
 
 ### Step 7: Reply
 
