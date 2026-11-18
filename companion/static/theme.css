@@ -46,8 +46,8 @@ html[data-theme="dark"] {
   --nsls-field: #101A28;       /* text boxes */
   --nsls-field-line: #405065;
   --nsls-popover: #172333;
-  --nsls-claude: #3F7EA6;      /* Claude's estimate: muted light blue on dark */
-  --nsls-claude-ink: #EAF4FB;
+  --nsls-claude: #9CC9EE;      /* Claude's estimate: still very light blue on dark */
+  --nsls-claude-ink: #0B1A2A;
 }
 
 /* Page, frame and nav */
