@@ -88,11 +88,31 @@ _PROGRESS_RE = re.compile(r"\s*<!--\s*p:(\d{1,3})\s*-->\s*$")
 _VALID_PROGRESS = (0, 25, 50, 75, 100)
 
 
+# Claude's own progress estimate (`<!--c:50-->`), written by the midnight sweep
+# when a day wasn't closed. It is never the builder's progress: it only colours
+# the row light blue until the builder clicks a level, and any write of the
+# builder's own progress drops it. Stripped wherever progress is, so it can
+# never leak into a task's visible text.
+_CLAUDE_EST_RE = re.compile(r"\s*<!--\s*c:(\d{1,3})\s*-->")
+
+
+def _claude_estimate(text: str) -> int | None:
+    """Claude's estimate on an item line (the last valid ``<!--c:NN-->``), or None."""
+    found = [int(v) for v in _CLAUDE_EST_RE.findall(text)]
+    found = [v for v in found if v in _VALID_PROGRESS]
+    return found[-1] if found else None
+
+
 def _strip_progress(text: str) -> tuple[str, int]:
     """Split a trailing ``<!--p:NN-->`` marker off item text.
 
-    Returns (clean_text, progress). progress is 0 if no marker.
+    Returns (clean_text, progress). progress is 0 if no marker. Claude's
+    ``<!--c:NN-->`` estimates are removed too (wherever they sit), so every
+    caller that rewrites an item's progress also retires Claude's guess.
     """
+    cleaned = _CLAUDE_EST_RE.sub("", text)
+    if cleaned != text:
+        text = cleaned.rstrip()
     m = _PROGRESS_RE.search(text)
     if m:
         return text[: m.start()].rstrip(), int(m.group(1))
@@ -168,6 +188,7 @@ def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
             text = after_num[3:].strip()
         else:
             text = after_num
+        claude = _claude_estimate(text)
         text, est = _strip_est(text)
         text, prog = _strip_progress(text)
         if text:
@@ -175,6 +196,9 @@ def _extract_numbered_checkbox_list(section: str, heading: str) -> list[dict]:
                 "text": text,
                 "checked": checked,
                 "progress": 100 if checked else prog,
+                # Claude's estimate shows only while the builder hasn't marked
+                # the task themselves.
+                "claude": claude if not checked and prog == 0 else None,
                 "est": est,
                 "raw_index": raw,
             })
@@ -336,6 +360,7 @@ def _extract_ai_suggestions(morning_section: str) -> list[dict]:
         # remaining estimate) BEFORE cleaning — the marker must never surface
         # as visible text, and it pre-fills the estimate when the item is taken.
         raw_text, est = _strip_est(list_m.group(1))
+        raw_text = _CLAUDE_EST_RE.sub("", raw_text)
         cleaned = _clean_ai_item(raw_text)
         if not cleaned:
             continue
@@ -759,7 +784,7 @@ def _extract_carryover_texts(daily_md: str) -> set[str]:
         if in_section and line.startswith("## ") and not line.startswith("### "):
             break
         if in_section and line.strip().startswith("- "):
-            t = line.strip()[2:].strip()
+            t = _CLAUDE_EST_RE.sub("", line.strip()[2:]).strip()
             if t:
                 out.add(t)
     return out
@@ -929,13 +954,13 @@ def _set_nth_item_text(md: str, heading: str, index: int, text: str) -> str:
         has_box = rest[:3] in ("[ ]", "[x]", "[X]")
         marker = rest[:3] if has_box else "[ ]"
         body = rest[3:] if has_box else rest
-        existing_text = re.sub(r"<!--[pe]:.*?-->", "", body).strip()
+        existing_text = re.sub(r"<!--[pec]:.*?-->", "", body).strip()
         # Preserve trailing progress/estimate markers ONLY when the title is
         # unchanged (e.g. a checkbox toggle re-writing the same text). A genuine
         # rename — or a cleared slot reused by a new task — must NOT inherit the
         # previous task's progress/estimate, which would misstate its state.
         if existing_text == text.strip():
-            markers = re.findall(r"<!--[pe]:.*?-->", body)
+            markers = re.findall(r"<!--[pec]:.*?-->", body)
             suffix = (" " + " ".join(markers)) if markers else ""
         else:
             suffix = ""

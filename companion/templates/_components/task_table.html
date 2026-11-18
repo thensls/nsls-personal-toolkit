@@ -11,6 +11,9 @@
     <span class="nsls-col-est">Estimated time remaining<span class="nsls-tip"><span class="ic">i</span><span class="pop"><b>Timeboxing.</b> Give each task a time container — “this gets 90 min.” Naming the box sharpens focus and curbs overrun; the estimate matters more than hitting it exactly.</span></span></span>
     <span class="nsls-col-prog">Progress</span>
   </div>
+  {% if (top_3 + bonus) | selectattr("claude") | rejectattr("deleted") | list %}
+  <p class="nsls-claude-legend"><span class="nsls-claude-swatch" aria-hidden="true"></span>Light blue is Claude's estimate from last night's sweep. Click a level to set your own.</p>
+  {% endif %}
   {% with section='top_3', items=top_3 %}{% include "_components/task_rows.html" %}{% endwith %}
   {% with section='bonus', items=bonus %}{% include "_components/task_rows.html" %}{% endwith %}
 </div>

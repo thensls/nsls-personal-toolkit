@@ -3,14 +3,18 @@
   <div class="nsls-lane-head"><span>{{ 'Top 3' if section == 'top_3' else 'Bonus' }}</span></div>
   <div id="tasklist-{{ section }}" class="nsls-lane-stack">
     {% for item in rows %}
-    <div class="nsls-tcard nsls-tcard--cc nsls-cols{% if item.deleted %} is-deleted{% elif item.progress >= 100 %} is-complete{% endif %}"
+    {# Claude's estimate (light blue) shows only until the builder marks the
+       task: `item.claude` is None once they have. #}
+    {% set guess = item.claude if (item.claude and not item.deleted) else none %}
+    <div class="nsls-tcard nsls-tcard--cc nsls-cols{% if item.deleted %} is-deleted{% elif item.progress >= 100 %} is-complete{% endif %}{% if guess %} is-claude-estimate{% endif %}"
          draggable="true" data-drag-item data-lane="{{ section }}" data-text="{{ item.text }}">
       <span class="nsls-grip" title="Drag to move" aria-hidden="true">⋮⋮</span>
       <span class="nsls-disc
         {%- if item.deleted %} nsls-disc--deleted
         {%- elif item.progress >= 100 %} nsls-disc--done
-        {%- elif item.progress > 0 %} nsls-disc--partial{% endif %}"
-        {% if item.progress > 0 and item.progress < 100 and not item.deleted %}style="--p: {{ item.progress }}"{% endif %}></span>
+        {%- elif item.progress > 0 %} nsls-disc--partial
+        {%- elif guess %} nsls-disc--claude{% endif %}"
+        {% if item.progress > 0 and item.progress < 100 and not item.deleted %}style="--p: {{ item.progress }}"{% elif guess %}style="--p: {{ guess }}" title="Claude's estimate: {{ guess }}%"{% endif %}></span>
       <span class="nsls-row-text {% if item.progress >= 100 %}is-done{% elif item.deleted %}is-deleted{% endif %}" title="{{ item.text }}">{{ item.text }}</span>
       <span class="nsls-tcard-controls">
         <span class="nsls-est">
@@ -27,11 +31,11 @@
         </span>
         <span class="nsls-seg">
           {% for lvl in [0, 25, 50, 75, 100] %}
-          <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl %}is-current{% elif lvl < item.progress %}is-below{% endif %}"
+          <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl and not (guess and lvl == 0) %}is-current{% elif lvl < item.progress %}is-below{% endif %}{% if guess and 0 < lvl <= guess %} is-claude{% if lvl == guess %} is-claude-current{% endif %}{% endif %}"
                   hx-post="/set-progress"
                   hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
                   hx-target="#task-table" hx-swap="outerHTML" hx-sync="#task-table:replace"
-                  title="{{ lvl }}%{% if lvl == 0 %} — didn't get to it{% elif lvl == 100 %} — done{% endif %}">{{ lvl }}</button>
+                  title="{% if guess and lvl == guess %}Claude's estimate: {{ lvl }}%. Click to confirm it{% else %}{{ lvl }}%{% if lvl == 0 %} — didn't get to it{% elif lvl == 100 %} — done{% endif %}{% endif %}">{{ lvl }}</button>
           {% endfor %}
         </span>
         <button class="nsls-del {{ 'is-deleted' if item.deleted else '' }}"
