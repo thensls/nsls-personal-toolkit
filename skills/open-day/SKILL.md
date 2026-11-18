@@ -214,7 +214,10 @@ builder worked).
   Step 2n **over the window since the sweep only** (its `swept_through` minus
   15 minutes, to now): what the builder finished, what was asked of them, and
   every line under `## Re-check in the morning`. Re-check a sweep candidate
-  again only when something in that window mentions it. Carry-overs (2c) and
+  again only when something in that window mentions it. The 15-minute overlap
+  means you'll see some of what the sweep saw: match items by their task text
+  (ignoring the citation), never list one twice, and let the newer evidence
+  win. A sweep file that isn't `status: complete` doesn't count. Carry-overs (2c) and
   close-day suggestions (2e) are already folded in; add only what changed after
   the sweep. Everything else in Step 2 (today's calendar, health, PRs) runs as
   usual. The capacity line says so: "Started from last night's sweep

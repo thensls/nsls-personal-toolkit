@@ -69,10 +69,10 @@ grep -E '^(OBSIDIAN_VAULT_PATH|SLACK_USER_ID)=' ~/.claude/local-plugins/nsls-per
      `work_schedule` is `weekdays` or absent; `0 0 * * *` otherwise. The app
      adds a few minutes of spread on its own.
    - `notifyOnCompletion`: `false`
-   - `prompt`: `Run the midnight-sweep skill from the NSLS Personal Toolkit (the
-     skill named exactly midnight-sweep), with its defaults. Never send
-     messages, emails or Slack posts to anyone. Keep the chat reply to two
-     lines.`
+   - `prompt`: `This is the scheduled run. Run the midnight-sweep skill from
+     the NSLS Personal Toolkit (the skill named exactly midnight-sweep), with
+     its defaults. Never send messages, emails or Slack posts to anyone. Keep
+     the chat reply to two lines.`
 4. **Record it**: set `midnight_sweep: on` in the builder profile's top block
    (add the line if missing; never rewrite the rest of the file).
 5. **Tell them, in plain words** (three lines at most): it runs at midnight
@@ -95,14 +95,20 @@ are more than three days old.
 Run `date` fresh (Date Discipline in open-day applies here in full: never reuse
 a cached date, and name absolute dates with the weekday in anything you write).
 
-- **`SWEEP_DAY`** is today's date if the local time is 18:00 or later, and
-  otherwise yesterday's date. A midnight run therefore covers the day that just
-  ended; a run that fires late because the computer was asleep still covers it;
-  an evening run by hand covers the day in progress.
-- **Already done?** If `$V/50-reference/sweeps/<SWEEP_DAY>.md` exists with
-  `status: complete` and its `swept_through` is less than two hours ago, stop
-  and reply "Already swept at <time>." (A missed run and its catch-up can both
-  fire.)
+- **`SWEEP_DAY`, the scheduled run** (its prompt says "This is the scheduled
+  run"): always yesterday's date. The schedule fires at midnight after a
+  workday, so the day it's for is the one before the day it runs on, even when
+  it fires hours late because the computer was asleep or the app was closed.
+  Never work it out from the time of day: a catch-up at 7 PM still belongs to
+  yesterday. If it missed several nights, the window below still reaches back
+  to the last sweep, so nothing is skipped; only the most recent day gets
+  estimates and coaching.
+- **`SWEEP_DAY`, a run by hand:** a date the builder names ("sweep Monday"),
+  otherwise today's date if it's 18:00 or later, otherwise yesterday's.
+- **Already done?** For the scheduled run, if `$V/50-reference/sweeps/<SWEEP_DAY>.md`
+  exists with `status: complete` and a `swept_through` after the end of
+  `SWEEP_DAY`, stop and reply "Already swept at <time>." (A missed run and its
+  catch-up can both fire.) A run by hand always runs, replacing the file.
 - **The window.** From the previous sweep file's `swept_through` minus 15
   minutes (messages and meeting summaries can land late), or from the start of
   `SWEEP_DAY` when there is none. When checking a candidate, also look back at
@@ -175,13 +181,25 @@ already-logged ask ended up on a morning list. Open-day's Step 2n
   when a nudge is due (three working days, or a deadline).
 
 Classify every candidate as open, done (cited), possibly moot (cited), or
-waiting. Rank the open ones as open-day would, a fresh ask from a manager near
+waiting. **If a source that would settle a candidate couldn't be read, say so
+in its citation** ("not checked: Slack was unreadable") rather than presenting
+it as confirmed open. Rank the open ones as open-day would, a fresh ask from a manager near
 the top, and keep the three strongest first.
 
 ### Step 4: Claude's progress estimates (unclosed days only)
 
-Only when `SWEEP_DAY`'s note is not `status: closed` and the profile doesn't
-say `claude_estimates: off`.
+Only when `SWEEP_DAY`'s note is not `status: closed`, has no `close_ready: 1`
+(a close is waiting or running), and the profile doesn't say
+`claude_estimates: off`.
+
+**Writing to a daily note, safely** (this step and the next). The builder, the
+Command Center and close-day can all be changing the same note. So: never
+rewrite the whole file; change one line (or the one `## Coaching` block) at a
+time with the Edit tool, which refuses if the file changed since you read it.
+**Re-read the note right before each edit.** If it is now `status: closed` or
+has `close_ready: 1`, stop writing to it. If the line you meant to change has
+changed (the builder marked the task), leave it. If an edit is refused, re-read
+and try once more, then skip that line.
 
 For each Top 3 and Bonus item the builder hasn't marked (still `[ ]`, no
 `<!--p:NN-->`, not under `### Done` or `### Deleted`), estimate 25, 50, 75 or
@@ -284,7 +302,12 @@ idempotency check is skipped.
 - **Weekends.** The weekday schedule skips Saturday and Sunday nights.
   Monday's open-day starts from Friday's sweep and checks everything since.
 - **The builder is still working when it runs.** Fine: estimates only go on
-  unmarked tasks, and any click of theirs replaces them.
+  unmarked tasks, any click of theirs replaces them, and every note edit
+  re-reads first (Step 4).
+- **Close-day runs while the sweep is still working.** The sweep file only
+  appears, complete, at the very end, so close-day either finds none (and
+  reads the day in full) or a finished one. The sweep stops writing to the
+  note the moment it sees `close_ready: 1` or `status: closed`.
 - **The day gets closed after the sweep.** Close-day starts from the sweep's
   work and replaces its coaching block with tonight's close (see close-day
   Step 0.7).
