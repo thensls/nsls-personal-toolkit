@@ -707,9 +707,15 @@ def _set_nth_progress(md: str, heading: str, index: int, level: int) -> str:
             if rest.startswith("[ ]") or rest[:3].lower() == "[x]":
                 rest = rest[3:].lstrip()
             rest, est = _strip_est(rest)          # preserve the time estimate
+            had_guess = _claude_estimate(rest) is not None
             rest, _ = _strip_progress(rest)
             box = "[x]" if level == 100 else "[ ]"
             marker = f" <!--p:{level}-->" if 0 < level < 100 else ""
+            # Setting 0 over Claude's estimate is the builder saying "no":
+            # record it, or a later sweep would see an untouched task and
+            # estimate it again.
+            if level == 0 and had_guess:
+                marker = " <!--p:0-->"
             est_marker = f" <!--e:{_fmt_hours(est)}-->" if est else ""
             lines[i] = f"{prefix}{box} {rest}{marker}{est_marker}".rstrip()
             break
