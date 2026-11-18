@@ -46,6 +46,8 @@ html[data-theme="dark"] {
   --nsls-field: #101A28;       /* text boxes */
   --nsls-field-line: #405065;
   --nsls-popover: #172333;
+  --nsls-claude: #3F7EA6;      /* Claude's estimate: muted light blue on dark */
+  --nsls-claude-ink: #EAF4FB;
 }
 
 /* Page, frame and nav */
@@ -88,6 +90,7 @@ html[data-theme="dark"] .nsls-seg button { color: var(--nsls-darkblue); }
 html[data-theme="dark"] .nsls-seg button.is-below,
 html[data-theme="dark"] .nsls-seg button.is-current { background: var(--nsls-teal); }
 html[data-theme="dark"] .nsls-seg button.is-current-done { background: var(--nsls-gold); }
+html[data-theme="dark"] .nsls-seg button.is-claude { background: var(--nsls-claude); color: var(--nsls-claude-ink); }
 html[data-theme="dark"] .nsls-pills,
 html[data-theme="dark"] .nsls-pills button { border-color: var(--nsls-disc-empty); }
 /* Dark rules on a base selector outrank the light rule for its state or
