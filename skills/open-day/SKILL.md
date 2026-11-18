@@ -632,8 +632,8 @@ Lines reading `100% DONE`, `shipped`, `merged`, or sitting under a `WINS` headin
 **Three misses this step must not repeat:**
 
 - **The builder's own words anywhere count as their word.** "I've recorded the video" in a Claude thread or a Slack message makes the item done, cited to that message.
-- **The builder's own files count.** For "add X to the list for Kevin", look in the vault for the list (a meeting-prep note, a project note) changed in the window: if X is on it, it's done.
-- **Never hand the builder a checking job.** "Check that Boris confirmed the merge" is yours to check, with the sources above, before the list goes up. Confirmed: done, cited. Not yet: rewrite it as the action that follows ("Nudge Boris: the merge link expires 6 PM today"). Keep any deadline in the text.
+- **The builder's own files count.** For "add X to the list for my manager", look in the vault for the list (a meeting-prep note, a project note) changed in the window: if X is on it, it's done.
+- **Never hand the builder a checking job.** "Check that Sam confirmed the merge" is yours to check, with the sources above, before the list goes up. Confirmed: done, cited. Not yet: rewrite it as the action that follows ("Nudge Sam: the merge link expires 6 PM today"). Keep any deadline in the text.
 
 **Check each candidate on its own.** Search for its key words and the people in it; a single "messages I sent since Monday" search is not a check of thirty candidates.
 

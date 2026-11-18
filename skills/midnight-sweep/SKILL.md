@@ -177,10 +177,10 @@ not a check of thirty candidates; that shortcut is how a finished video and an
 already-logged ask ended up on a morning list. Open-day's Step 2n
 (`skills/open-day/SKILL.md`) holds the evidence rules; follow them, plus these:
 
-- **Never hand the builder a checking job.** "Check that Boris confirmed the
-  Slack merge" is Claude's job: search for the confirmation now. Confirmed:
+- **Never hand the builder a checking job.** "Check that Sam confirmed the
+  account merge" is Claude's job: search for the confirmation now. Confirmed:
   it's done, cited. Not yet: rewrite it as the action that follows ("Nudge
-  Boris: the Slack merge link expires 6 PM Wednesday") and add a line to
+  Sam: the merge link expires 6 PM Wednesday") and add a line to
   `## Re-check in the morning` so open-day looks again before showing it.
 - **Deadlines travel with the item.** Keep the date and time in the text, and
   if the deadline passes before the morning, say so.
@@ -266,29 +266,29 @@ missed:
 # Midnight sweep: Tuesday, Nov 17
 
 ## The day
-- Meeting: PII gate test with Jenna (Fathom): the direct HubSpot route was blocked, the secure route worked. Your action: plan the full HubSpot block.
-- Shipped: four reporter PRs merged (employee-profiles 233–237).
-- Sent: six colleague notes on Slack (Brandon, Royce, Heather, …).
-- Claude threads: "PII gate" (block plan drafted, not finished).
+- Meeting: security test with your manager (Fathom): the test passed. Your action: write the rollout plan.
+- Shipped: four PRs merged (reporting-repo 233–237).
+- Sent: six colleague notes on Slack.
+- Claude threads: "Security test" (rollout plan drafted, not finished).
 
 ## Suggestions for Wednesday, Nov 18
-1. Answer Brandon on the S3 bucket (Slack DM, Nov 18 2:05 AM: "where does the key live?") <!--e:0.25-->
+1. Answer Alex on where the storage key lives (Slack DM, Nov 18 2:05 AM: "where does the key live?") <!--e:0.25-->
 2. …
 
 ## Likely already done
-1. Record the Command Center video (Claude thread "Skill Orchestrator", Nov 17: "I've recorded it")
+1. Record the demo video (Claude thread "Launch prep", Nov 17: "I've recorded it")
 
 ## Possibly moot
 1. …
 
 ## Waiting on others
-- Kevin: owner rights on the repos (asked Nov 17 10:47, no reply)
+- Your manager: admin rights on the repos (asked Nov 17 10:47, no reply)
 
 ## Re-check in the morning
-- Boris's Slack merge confirmation (link expires Wednesday 6 PM): search Slack from Boris since the sweep.
+- Sam's account-merge confirmation (link expires Wednesday 6 PM): search Slack from Sam since the sweep.
 
 ## Claude's progress estimates
-- Plan the full HubSpot block: 50% (draft plan in Claude thread "PII gate", Nov 17)
+- Write the rollout plan: 50% (draft in Claude thread "Security test", Nov 17)
 
 ## Coaching for the morning
 - …
