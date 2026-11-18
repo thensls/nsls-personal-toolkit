@@ -111,3 +111,17 @@ def test_markers_never_leak_into_suggestions_or_carry_overs():
     assert sugg[0]["text"] == "Alpha" and sugg[0]["est"] == 1.0
     carried = _extract_carryover_texts("## Carrying Over\n- Bravo <!--c:25-->\n")
     assert carried == {"Bravo"}
+
+
+def test_setting_zero_over_an_estimate_is_remembered(setup):
+    client, vault = setup
+    path = _note(vault, "1. [ ] Alpha <!--c:50--> <!--e:2-->\n2. [ ] Bravo")
+    client.post("/set-progress", data={"section": "top_3", "index": 0, "level": 0})
+    client.post("/set-progress", data={"section": "top_3", "index": 1, "level": 0})
+    lines = path.read_text().splitlines()
+    alpha = next(l for l in lines if "Alpha" in l)
+    bravo = next(l for l in lines if "Bravo" in l)
+    assert "<!--p:0-->" in alpha and "c:" not in alpha and "<!--e:2-->" in alpha
+    assert "<!--p:" not in bravo  # no estimate to reject, nothing recorded
+    [it] = _items(alpha)
+    assert it["text"] == "Alpha" and it["progress"] == 0 and it["claude"] is None
