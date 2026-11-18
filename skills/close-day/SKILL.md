@@ -172,6 +172,7 @@ Read the **target date's** daily note (`$OBSIDIAN_VAULT_PATH/01-daily/<target-da
 - `[x]`, or a trailing `<!--p:100-->` → **done (100%)**
 - a trailing `<!--p:NN-->` marker where NN is 25/50/75 → **partial, NN%** (line still shows `[ ]`; the marker is an HTML comment, invisible in rendered Obsidian)
 - `[ ]` with no marker → **not started**
+- a `<!--c:NN-->` marker and no `<!--p:NN-->` → **NN%, Claude's estimate**: the midnight sweep guessed it from evidence (it shows light blue in the Command Center) and the builder closed without changing it, so use it as the progress, and call it "Claude's estimate" in the Step 4 summary so they can correct it
 - text also listed under `## Carrying Over` → the builder chose to **carry it forward**
 
 **(b) Unplanned wins** — from `### Unplanned` under Morning Check-in. These are things the builder did that weren't on the plan and **wants credit for**. Fold them into the synthesized `## Work Log` and consider them for Achievements — they are real outputs, not noise.
@@ -180,10 +181,30 @@ Read the **target date's** daily note (`$OBSIDIAN_VAULT_PATH/01-daily/<target-da
 
 Use all of the above to:
 1. **Report a brief "Priorities vs. Reality" read** in the Step 4 summary — each Top 3 item with its outcome (done / NN% / not started / carried), plus any Unplanned wins.
-2. **Seed Carrying Over** — any Top 3 **or Bonus** item that is <100%, **plus any item the builder moved to `### Deferred`** (defer = "not today, but keep it" — explicitly *not* a delete), that isn't already under `## Carrying Over` is a carry-over candidate; add it so it resurfaces in tomorrow's `/open-day`. Skip **only** items the builder **deleted** (`### Deleted`). **Preserve the time estimate:** if the item carries an `<!--e:X-->` marker (estimated *remaining* time — the builder may have updated it during the day), append that exact marker to the carry-over line (e.g. `- Reply to vendor thread <!--e:0.5-->`). The companion reads it to pre-fill tomorrow's estimate field; dropping it loses the builder's timeboxing data.
+2. **Seed Carrying Over** — any Top 3 **or Bonus** item that is <100%, **plus any item the builder moved to `### Deferred`** (defer = "not today, but keep it" — explicitly *not* a delete), that isn't already under `## Carrying Over` is a carry-over candidate; add it so it resurfaces in tomorrow's `/open-day`. Skip **only** items the builder **deleted** (`### Deleted`). **Preserve the time estimate:** if the item carries an `<!--e:X-->` marker (estimated *remaining* time — the builder may have updated it during the day), append that exact marker to the carry-over line (e.g. `- Reply to vendor thread <!--e:0.5-->`). The companion reads it to pre-fill tomorrow's estimate field; dropping it loses the builder's timeboxing data. **Never copy a `<!--c:NN-->` marker** onto a carry-over or a suggestion: it belongs to today's estimate only.
 3. **Feed the Work Log and Insight Reflection** (b) and (c) above.
 
 `<!--p:NN-->` markers and the `### Unplanned` / `### Done` / `### Deleted` / `### Deferred` / `## Daily Insight` sections are companion-written — read them, never author them from the skill. In CLI-only mode they simply won't be present. **Never create a `### Unplanned` (or `### Done`/`### Deleted`/`### Deferred`) heading anywhere else in the note — especially not under `## End of Day`.** The companion reads these only from inside `## Morning Check-in`; a same-named heading elsewhere makes builder input invisible (this happened: an End-of-Day `### Unplanned` swallowed unplanned wins silently).
+
+### Step 0.7: Start from the midnight sweep, if it already covered this day
+
+When a day is closed late (the next morning, say), the midnight sweep has
+usually already done the heavy reading. Look for
+`$OBSIDIAN_VAULT_PATH/50-reference/sweeps/<target-date>.md` with
+`status: complete`. If it's there:
+
+- **Collect only what the sweep didn't see.** The sweep file and the note
+  hold the day up to `swept_through`. In Step 1, read Slack, email, meetings
+  and Claude sessions only from `swept_through` minus 15 minutes onward. If the
+  sweep ran after the day ended, that's nothing for the day itself: just glance
+  at anything since that changes the picture (a late reply, a merge first thing
+  this morning). The day's calendar is cheap; read it whole.
+- **Start the coaching from the sweep's.** The note's `## Coaching` has the
+  sweep's bullets under `<!-- from: last night's sweep -->`. Check only what
+  changed since `swept_through`, then write tonight's coaching in their place
+  (label `<!-- from: tonight's close -->`), keeping what still holds.
+
+No sweep file: Step 1 runs in full, as below.
 
 ### Step 1: Collect data (run in parallel where possible)
 

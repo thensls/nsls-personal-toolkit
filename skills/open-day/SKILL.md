@@ -178,6 +178,11 @@ Two distinct states — do NOT conflate them:
 
    > **Monday, July 13 (2026-07-13)** was never closed. Check this link to make sure your progress is reported — http://localhost:<port>/?date=2026-07-13&closing=1 — then click **"I'm done — close my day"**. Or say **done** here (or **skip it** to open today without closing it).
 
+   If the midnight sweep already covered that day, the close page shows its
+   coaching and, on tasks the builder never marked, Claude's estimated progress
+   in light blue: say so in the prompt ("I've estimated your progress in light
+   blue; change anything that's off, then click").
+
 4. **Arm the listener as a background task** (Monitor / run_in_background — never a blocking foreground Bash call), using that same freshly computed date:
 
    ```bash
@@ -192,6 +197,31 @@ Two distinct states — do NOT conflate them:
 **If present:** Continue silently to Step 2.
 
 ### Step 2: Collect data (run in parallel)
+
+**2.0 Start from last night's sweep, when there is one**
+
+The midnight sweep (`skills/midnight-sweep/SKILL.md`) does the slow,
+thorough check overnight and writes it to `$OBSIDIAN_VAULT_PATH/50-reference/sweeps/<day>.md`.
+Look for the newest file there with `status: complete`. It is **fresh** when its
+`swept_through` is less than 72 hours ago and its `sweep_day` is on or after
+the date of the most recent daily note before today (it saw the last day the
+builder worked).
+
+- **Fresh sweep: start from it.** Its `## Suggestions for …`, `## Likely
+  already done` and `## Possibly moot` lines are this morning's candidate pool,
+  already checked one by one; copy them as written (citations and `<!--e:X-->`
+  included) into the matching `### AI Suggested: …` sections in Step 6. Then run
+  Step 2n **over the window since the sweep only** (its `swept_through` minus
+  15 minutes, to now): what the builder finished, what was asked of them, and
+  every line under `## Re-check in the morning`. Re-check a sweep candidate
+  again only when something in that window mentions it. Carry-overs (2c) and
+  close-day suggestions (2e) are already folded in; add only what changed after
+  the sweep. Everything else in Step 2 (today's calendar, health, PRs) runs as
+  usual. The capacity line says so: "Started from last night's sweep
+  (Tuesday 12:03 AM) and re-checked everything since."
+- **No fresh sweep:** run Step 2 in full, as below.
+
+Either way, today's calendar is read live: a sweep never replaces it.
 
 **2a. Google Calendar — today's meetings**
 
@@ -592,6 +622,14 @@ Lines reading `100% DONE`, `shipped`, `merged`, or sitting under a `WINS` headin
 **6. Calendar — what already happened, not just today.** Today's events feed Steps 3 and 5. Also look back over the window: a candidate like "set up time with Erin" is done if that meeting now exists, and "prep for Trina" is moot if the meeting has already happened.
 
 **7. Claude Code and Cowork sessions since the window start.** Use the session list and transcript search when this surface has them (in the desktop app: the session-management tools; otherwise the builder's `~/.claude/projects/*/` transcripts, searched by key word, never read whole). Sessions show where work got to, but they are full of plans and abandoned attempts written in completion language. So a session can only make an item **in progress**, with where it stopped, unless you can confirm it with a primary source: a merged PR, a commit, a deployed page, or a sent message quoted in the session. Then it is done, cited to that source.
+
+**Three misses this step must not repeat:**
+
+- **The builder's own words anywhere count as their word.** "I've recorded the video" in a Claude thread or a Slack message makes the item done, cited to that message.
+- **The builder's own files count.** For "add X to the list for Kevin", look in the vault for the list (a meeting-prep note, a project note) changed in the window: if X is on it, it's done.
+- **Never hand the builder a checking job.** "Check that Boris confirmed the merge" is yours to check, with the sources above, before the list goes up. Confirmed: done, cited. Not yet: rewrite it as the action that follows ("Nudge Boris: the merge link expires 6 PM today"). Keep any deadline in the text.
+
+**Check each candidate on its own.** Search for its key words and the people in it; a single "messages I sent since Monday" search is not a check of thirty candidates.
 
 **Evidence beats the builder's memory, and the builder beats the board.** If the builder tells you something is done, it is; record their word as the source. If a board says open but a primary source says done, trust the primary source.
 
@@ -1047,7 +1085,9 @@ $OBSIDIAN_VAULT_PATH/01-daily/YYYY-MM-DD.md
 **Coaching for the companion (`## Coaching`).** The companion shows this section,
 collapsed, as "Coaching from Claude" at the top of Plan your day and the
 Command Center. Last night's close-day may already have seeded it (labelled
-`<!-- from: last night's close -->`): keep those bullets. Then add this
+`<!-- from: last night's close -->`): keep those bullets. If Step 2.0 started
+from a sweep, copy its `## Coaching for the morning` bullets in too, under
+`<!-- from: last night's sweep -->`, leaving out any that repeat the close's. Then add this
 morning's coaching under them as short plain-word bullets: the goal cue that
 fires today, up to three coaching actions for today's people (from "Coaching
 Actions for Today"), and one line on today's shape if it's unusual (back-to-back
@@ -1308,6 +1348,24 @@ When you don't skip:
    ```
 
    The Command Center's banner shows an **"I'm done — close my day"** button all day. When the builder clicks it, this listener fires (`STATUS close-ready <date>`) — first re-run `date` and take the target date from the `STATUS` payload, not from memory (Date Discipline #3: this listener routinely fires hours after arming, sometimes across midnight), then **immediately run the `/close-day` skill for that payload date**, preserving mode (`-t` open → `close day -t`; real → real). Then close-day's own flow takes over (it clears `close_ready` when it writes the note). If the listener times out (12h) or errors, do nothing — the builder can still run `close day` by hand. If background tasks aren't available on this surface, skip arming it silently.
+
+### Step 9: Offer the midnight sweep (once)
+
+After the plan is locked (in companion mode, after Step 8's summary and
+listener; in chat, after Step 7), check the builder profile for a
+`midnight_sweep:` line. **If there is one, skip this step for good.** If there
+isn't, and this session has the Claude desktop app's scheduled-tasks tools,
+ask once:
+
+> Would you like me to run a midnight sweep, so open-day happens faster? Each
+> night after a workday I'd check what happened that day, so the morning only
+> has to look at what's new. (yes / no)
+
+- **Yes:** follow the midnight-sweep skill's **Turning it on**.
+- **No:** add `midnight_sweep: off` to the profile. They can say "turn on the
+  midnight sweep" any time.
+- **No scheduled-tasks tools here** (not the desktop app): don't ask and record
+  nothing, so the question comes up the first time open-day runs in the app.
 
 ### Day-of-Week Additions
 

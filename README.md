@@ -53,6 +53,7 @@ skipping quietly.
 |-------|---------|-------------|
 | open-day | `/open-day`, "start my day" | Morning planning — calendar, tasks, priorities |
 | close-day | `/close-day`, "close my day" | End-of-day summary — what happened, what's next |
+| midnight-sweep | "turn on the midnight sweep" (open-day asks once) | Checks each workday overnight so the morning plan is fast and current; drafts coaching; estimates progress on unclosed days |
 | close-week | `/close-week`, "weekly review" | Friday roll-up — achievements, time allocation, priorities vs reality |
 | log | `/log`, "log this session" | Log session progress to Obsidian project notes |
 | familiar | "what did I work on" | Recall past screen activity and work context |
