@@ -97,9 +97,13 @@ _CLAUDE_EST_RE = re.compile(r"\s*<!--\s*c:(\d{1,3})\s*-->")
 
 
 def _claude_estimate(text: str) -> int | None:
-    """Claude's estimate on an item line (the last valid ``<!--c:NN-->``), or None."""
+    """Claude's estimate on an item line (the last valid ``<!--c:NN-->``), or None.
+
+    0 counts as no estimate: the sweep only writes 25/50/75/100 ("no evidence,
+    no estimate"), and an empty light-blue disc would look like no estimate anyway.
+    """
     found = [int(v) for v in _CLAUDE_EST_RE.findall(text)]
-    found = [v for v in found if v in _VALID_PROGRESS]
+    found = [v for v in found if v in _VALID_PROGRESS and v > 0]
     return found[-1] if found else None
 
 
