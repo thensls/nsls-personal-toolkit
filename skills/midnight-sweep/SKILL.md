@@ -162,7 +162,8 @@ source was checked when it wasn't.
 
 ### Step 3: Build tomorrow's list, checking every candidate on its own
 
-**The pool:** `SWEEP_DAY`'s unfinished Top 3 and Bonus items (keep each
+**The pool:** `SWEEP_DAY`'s unfinished Top 3 and Bonus items and its
+`### Deferred` items (deferred means "not today, but keep it"; keep each
 `<!--e:X-->` remaining estimate), `## Carrying Over`, AI suggestions the
 builder never dispositioned, **the `### AI Suggested: …` lines close-day
 already seeded into the next working day's note** (when the day was closed
