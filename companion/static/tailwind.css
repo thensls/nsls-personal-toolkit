@@ -702,3 +702,41 @@ body {
   .nsls-coach-card { animation: none; }
 }
 @media print { .nsls-coach-layer { display: none; } }
+
+/* ---- Claude's coaching (_components/coaching.html) ----
+   A collapsible card under the day heading: closed while the builder works,
+   open on the closed day. */
+.nsls-coaching {
+  margin-bottom: 1rem; border-radius: 12px; background: var(--nsls-white);
+  border: 1px solid var(--nsls-hairline); border-left: 4px solid var(--nsls-gold);
+  box-shadow: 0 1px 2px rgba(24,49,90,0.05);
+}
+.nsls-coaching > summary {
+  display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+  padding: 0.7rem 1rem; cursor: pointer; list-style: none; user-select: none;
+}
+.nsls-coaching > summary::-webkit-details-marker { display: none; }
+/* Show / Hide with a chevron on the right, so it reads as something to click
+   (a small triangle on the left wasn't noticed). */
+.nsls-coaching-toggle {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 0.3rem;
+  font-size: 0.78rem; font-weight: 600; color: var(--nsls-teal);
+  padding: 0.2rem 0.55rem; border: 1px solid var(--nsls-hairline); border-radius: 999px;
+}
+.nsls-coaching > summary:hover .nsls-coaching-toggle { background: var(--nsls-lightblue); }
+.nsls-coaching-chev { display: inline-block; font-size: 0.85rem; transition: transform .15s; }
+.nsls-coaching[open] .nsls-coaching-chev { transform: rotate(180deg); }
+.nsls-coaching[open] .nsls-coaching-show,
+.nsls-coaching:not([open]) .nsls-coaching-hide { display: none; }
+.nsls-coaching-title { font-weight: 700; color: var(--nsls-navy); font-size: 0.95rem; }
+.nsls-coaching-note { display: inline-flex; align-items: center; font-size: 0.78rem; color: var(--nsls-darkblue); }
+.nsls-coaching-body { padding: 0 1rem 0.9rem 1rem; font-size: 0.9rem; line-height: 1.5; color: var(--nsls-nearblack); }
+.nsls-coaching-body p { margin: 0 0 0.5rem; }
+.nsls-coaching-body ul { margin: 0 0 0.5rem; padding-left: 1.1rem; }
+.nsls-coaching-body li { margin: 0.2rem 0; }
+.nsls-coaching > summary:focus-visible { outline: 2px solid var(--nsls-teal); outline-offset: 2px; border-radius: 10px; }
+
+/* Closed day: the date on the left, Open tomorrow on the right. */
+.nsls-closed-head--next { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.nsls-open-next { text-decoration: none; white-space: nowrap; }
+.nsls-open-next-foot { display: flex; justify-content: center; margin: 1.25rem 0 0.5rem; }

@@ -91,6 +91,8 @@
           if (Date.now() < suppressNextReload) return;
         }
         lastReload = Date.now();
+        // An expanded coaching section stays expanded across the refresh.
+        const coachingWasOpen = !!document.querySelector("#coaching-slot details[open]");
 
         // Never make the user lose what they're typing, and never show a scary
         // confirm. Snapshot any in-progress (unsaved) textarea AND text-input
@@ -119,6 +121,10 @@
           select: "main",
           swap: "outerHTML",
         }).then(function () {
+          if (coachingWasOpen) {
+            const d = document.querySelector("#coaching-slot details");
+            if (d) d.open = true;
+          }
           if (!Object.keys(dirty).length) return;
           document.querySelectorAll("main textarea, main input[type=text]").forEach((t, i) => {
             const key = fieldKey(t, i);
@@ -133,6 +139,42 @@
             }
           });
         });
+      }
+
+      // Claude's coaching can land while the builder is mid-plan: refresh just
+      // that section when its day's note changes, even on screens that don't
+      // reload as a whole (Plan your day), keeping it open if it was open.
+      // One refresh at a time: a second note change while one is in flight is
+      // remembered and run after it, against the slot as it is then (a queued
+      // request would swap into the element the first one replaced).
+      // Sent from the slot itself, not the page: page refreshes (reloadMain)
+      // queue on the page, and sharing that queue let one resolve before its
+      // swap, restoring unsaved text into the main it was about to replace.
+      // The open/closed state that counts is the one at swap time: a click
+      // while the request is in flight must not be undone by the reply.
+      let coachingBusy = false, coachingAgain = false, coachingOpenAtSwap = null;
+      document.body.addEventListener("htmx:beforeSwap", function (e) {
+        const t = e.detail && e.detail.target;
+        if (t && t.id === "coaching-slot") coachingOpenAtSwap = !!t.querySelector("details[open]");
+      });
+      function refreshCoaching(path) {
+        const slot = document.getElementById("coaching-slot");
+        if (!slot || !window.htmx || path !== "01-daily/" + slot.dataset.date + ".md") return;
+        if (coachingBusy) { coachingAgain = true; return; }
+        coachingBusy = true;
+        const open = slot.querySelector("details[open]") ? "1" : "0";
+        Promise.resolve(htmx.ajax("GET", "/coaching?date=" + encodeURIComponent(slot.dataset.date) + "&open=" + open,
+                                  { source: slot, target: slot, swap: "outerHTML" }))
+          .catch(function () {})
+          .then(function () {
+            if (coachingOpenAtSwap !== null) {
+              const d = document.querySelector("#coaching-slot details");
+              if (d) d.open = coachingOpenAtSwap;
+              coachingOpenAtSwap = null;
+            }
+            coachingBusy = false;
+            if (coachingAgain) { coachingAgain = false; refreshCoaching(path); }
+          });
       }
 
       // Tiny status pill shown while the SSE stream is down (e.g. the
@@ -169,6 +211,7 @@
         es.onmessage = (e) => {
           const path = e.data;
           if (path.startsWith("01-daily/") || path.startsWith("30-habits/") || path.startsWith("02-weekly/")) {
+            refreshCoaching(path);
             reloadMain();
           }
         };

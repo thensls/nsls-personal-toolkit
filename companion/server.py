@@ -13,6 +13,7 @@ from flask import Flask, Response, render_template, request, stream_with_context
 
 from companion.parsers import (
     append_day_to_log,
+    parse_coaching,
     parse_daily_note_sections,
     parse_frontmatter,
     parse_habits,
@@ -1309,6 +1310,25 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     # "not locked in" branch right after the builder locked in.
     fm = parse_frontmatter(daily_md)
     close_ready, close_ready_stale, close_ready_recheck_ms = _close_ready_freshness(fm)
+
+    # Claude's coaching (## Coaching). While a close is running and nothing has
+    # been written yet, say Claude is writing rather than show nothing.
+    # close_ready is only the click, so it takes a Claude listener actually
+    # attached for "writing" to be true; otherwise nothing is coming.
+    listener_live = app.config.get("LISTENER_LIVE", lambda: False)()
+    coaching = parse_coaching(sections.get("Coaching"))
+    if coaching["state"] == "none" and close_ready and not close_ready_stale and listener_live:
+        coaching = {"state": "writing", "label": "", "blocks": []}
+    # After closing: closing today offers tomorrow; closing a day you're
+    # catching up on offers TODAY (closing Tuesday on Friday means you want
+    # Friday, not Wednesday).
+    the_day = datetime.strptime(today, "%Y-%m-%d").date()
+    real_today = date.today()
+    if the_day < real_today:
+        next_day, open_next_label = real_today, "Open today"
+    else:
+        next_day = the_day + timedelta(days=1)
+        open_next_label = "Open tomorrow" if the_day == real_today else "Open the next day"
     return {
         "today": today,
         "today_pretty": today_pretty,
@@ -1335,6 +1355,9 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
         "stats": stats,
         "step": step,
         "plan": plan,
+        "coaching": coaching,
+        "next_day": next_day.isoformat(),
+        "open_next_label": open_next_label,
     }
 
 
@@ -1414,6 +1437,8 @@ def create_app(vault_path: str) -> Flask:
     def _listener_live() -> bool:
         last = listener_state["last_heartbeat"]
         return last is not None and (time.monotonic() - last) <= LISTENER_HEARTBEAT_FRESH_SECONDS
+
+    app.config["LISTENER_LIVE"] = _listener_live   # read by _build_day_context
 
     def _target_date() -> str:
         """Return the target date from ?date= query param or form field, default today.
@@ -1542,6 +1567,20 @@ def create_app(vault_path: str) -> Flask:
         path is the close_ready flag, not this signal."""
         listener_state["last_heartbeat"] = time.monotonic()
         return ("", 204)
+
+    @app.route("/coaching")
+    def coaching_partial():
+        """Just the coaching section for ?date=, so the page can fill it in when
+        Claude finishes writing without reloading the screen the builder is
+        working in. `open=1` keeps it expanded if they had it open."""
+        today = _target_date()
+        note_path = app.config["VAULT_PATH"] / "01-daily" / f"{today}.md"
+        daily_md = note_path.read_text(encoding="utf-8") if note_path.exists() else ""
+        sections = parse_daily_note_sections(daily_md)
+        morning = sections.get("Morning Check-in", "")
+        ctx = _build_day_context(app, daily_md, _extract_top_3(morning), _extract_bonus(morning), today)
+        return render_template("_components/coaching.html",
+                               coaching_open=request.args.get("open") == "1", **ctx)
 
     @app.route("/callouts/dismiss", methods=["POST"])
     def callouts_dismiss():

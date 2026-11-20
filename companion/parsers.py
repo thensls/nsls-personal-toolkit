@@ -209,3 +209,52 @@ def parse_habits_from_daily_note(daily_md: str, active_habits: list[dict]) -> di
         else:
             result[habit_id] = 0.0
     return result
+
+
+# `## Coaching` in a daily note: what Claude's open-day and close-day write for
+# the builder to read in the companion. Contract (the skills write it):
+#   <!-- from: last night's close -->   optional label, shown beside the title
+#   <!-- coaching: writing -->          Claude has started and isn't done yet
+#   - a bullet line                     anything else: bullets or paragraphs
+_COACHING_FROM = re.compile(r"<!--\s*from:\s*(.*?)\s*-->", re.IGNORECASE)
+_COACHING_WRITING = re.compile(r"<!--\s*coaching:\s*writing\s*-->", re.IGNORECASE)
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+
+
+def parse_coaching(body: str | None) -> dict:
+    """Parse a `## Coaching` section body into what the companion renders.
+
+    Returns {"state", "label", "blocks"}. state is "none" (no section), "writing"
+    (only the writing marker, or nothing yet) or "ready". blocks is a list of
+    {"type": "list", "items": [...]} and {"type": "p", "text": ...}, in order.
+    """
+    if body is None:
+        return {"state": "none", "label": "", "blocks": []}
+    m = _COACHING_FROM.search(body)
+    label = m.group(1) if m else ""
+    writing = bool(_COACHING_WRITING.search(body))
+    blocks: list[dict] = []
+    para: list[str] = []
+
+    def end_para():
+        if para:
+            blocks.append({"type": "p", "text": " ".join(para)})
+            para.clear()
+
+    for raw in _HTML_COMMENT.sub("", body).splitlines():
+        line = raw.strip()
+        bullet = re.match(r"^[-*]\s+(.*)$", line)
+        if bullet:
+            end_para()
+            if not blocks or blocks[-1]["type"] != "list":
+                blocks.append({"type": "list", "items": []})
+            blocks[-1]["items"].append(bullet.group(1))
+        elif line:
+            para.append(line)
+        else:
+            end_para()
+    end_para()
+    state = "ready" if blocks else "writing"
+    if writing and not blocks:
+        state = "writing"
+    return {"state": state, "label": label, "blocks": blocks}

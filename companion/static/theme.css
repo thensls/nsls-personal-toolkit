@@ -219,3 +219,7 @@ html[data-theme="dark"] .nsls-coach-card[data-side="right"]::before { border-top
 html[data-theme="dark"] .nsls-coach-card[data-side="left"]::before { border-bottom-color: transparent; border-left-color: transparent; }
 html[data-theme="dark"] .nsls-coach-ok { color: var(--nsls-on-gold); }
 html[data-theme="dark"] .nsls-coach-dot { border-color: #0B111B; box-shadow: 0 1px 6px rgba(0,0,0,0.6); }
+
+/* Claude's coaching */
+html[data-theme="dark"] .nsls-coaching { border-color: var(--nsls-hairline); border-left-color: var(--nsls-gold); box-shadow: none; }
+html[data-theme="dark"] .nsls-open-next { color: var(--nsls-on-gold); }
