@@ -20,8 +20,8 @@ open-day because the wait was too long.
 
 - **A new midnight sweep** runs after each workday while the Claude app is open.
   It checks every suggestion one by one against Slack, meetings, email, the
-  calendar, your Claude threads, your own notes and GitHub, and writes the
-  result to a file.
+  calendar, your Claude threads, your own notes, Google Docs, GitHub and your
+  task board (Asana or GitHub), and writes the result to a file.
 - **Open-day starts from that file** and only checks what happened since, so
   the morning is faster and the list is current.
 - **Claude checks things for you** instead of suggesting you check them, and

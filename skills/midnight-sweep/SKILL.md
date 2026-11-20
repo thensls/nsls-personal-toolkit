@@ -132,8 +132,10 @@ Then gather the day from every source the profile turns on, in parallel where
 the surface allows. Resolve each connector's live tool name from this
 session's tools.
 
-1. **Slack**: the builder's own messages (`from:<@$SLACK_USER_ID>`), messages
-   to them and their DMs, and threads they took part in, all in the window.
+1. **Slack**: the builder's own messages (`from:<@$SLACK_USER_ID>`) in DMs
+   **and in channels** (an announcement with a video attached in a team
+   channel finishes "record the video"), messages to them and their DMs, and
+   threads they took part in, all in the window.
 2. **Meetings** (Fathom, or whatever records them): every meeting in the window,
    with its summary and action items.
 3. **Email**: sent and received in the window. Skip newsletters and
@@ -143,17 +145,27 @@ session's tools.
 5. **Claude Code and Cowork sessions** in the window: the session tools when
    the surface has them, otherwise `~/.claude/projects/*/` transcripts,
    searched by key word, never read whole. **The builder's own words in a
-   thread count as their word** ("I've recorded the video").
+   thread count as their word** ("I've recorded the video", "add this to the
+   list for my manager"). **When a session matches a candidate, read its
+   latest messages, not just the line that matched**: the newest state is
+   what counts (a thread that went on to draft the announcement, or was asked
+   to host the video, shows the video exists).
 6. **The builder's own files**: notes in the vault changed in the window,
    outside `01-daily/` (a meeting-prep list, a project note). An item already
    added to a list the builder keeps is done for "add X to that list".
    ```bash
    find "$V" -name '*.md' -newermt "<window start>" -not -path '*/01-daily/*' -not -path '*/.toolkit-companion/*' -not -path '*/50-reference/sweeps/*' | head -40
    ```
-7. **GitHub**: the builder's PRs opened, merged or reviewed, and issues they
+7. **Google Docs and Drive** (when connected): documents the builder created,
+   edited or commented on in the window. Read only the parts that mention a
+   candidate; a list or agenda the builder keeps in a doc counts like a vault
+   note in source 6.
+8. **GitHub**: the builder's PRs opened, merged or reviewed, and issues they
    touched, in the window.
-8. **The task board**: `task_board` in the profile (Asana by default, or the
+9. **The task board**: `task_board` in the profile (Asana by default, or the
    GitHub project in `task_board_github`), read as open-day's Step 2n does.
+   **For Asana, read tasks completed in the window as well as open ones**: a
+   task the builder ticked off in Asana is done, cited to Asana.
 
 **If a source can't be read, record it** under `## Sources` and in the
 frontmatter's `missed:` map with the start of its window (carry the older time
@@ -173,7 +185,10 @@ window), new asks and action items from Step 2, and task board items (top-ups by
 plus up to five when fewer than ten are open).
 
 **Check each candidate separately.** For every one, search each source for its
-key words and the people in it. One shared "messages I sent today" search is
+key words and the people in it. **To decide whether it's done, look back to
+when the candidate first appeared** (the oldest note or sweep file that lists
+it), and never less than 14 days: the evidence that finishes it can be older
+than the window. One shared "messages I sent today" search is
 not a check of thirty candidates; that shortcut is how a finished video and an
 already-logged ask ended up on a morning list. Open-day's Step 2n
 (`skills/open-day/SKILL.md`) holds the evidence rules; follow them, plus these:
