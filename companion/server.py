@@ -1319,7 +1319,16 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
     coaching = parse_coaching(sections.get("Coaching"))
     if coaching["state"] == "none" and close_ready and not close_ready_stale and listener_live:
         coaching = {"state": "writing", "label": "", "blocks": []}
-    next_day = (datetime.strptime(today, "%Y-%m-%d") + timedelta(days=1)).date()
+    # After closing: closing today offers tomorrow; closing a day you're
+    # catching up on offers TODAY (closing Tuesday on Friday means you want
+    # Friday, not Wednesday).
+    the_day = datetime.strptime(today, "%Y-%m-%d").date()
+    real_today = date.today()
+    if the_day < real_today:
+        next_day, open_next_label = real_today, "Open today"
+    else:
+        next_day = the_day + timedelta(days=1)
+        open_next_label = "Open tomorrow" if the_day == real_today else "Open the next day"
     return {
         "today": today,
         "today_pretty": today_pretty,
@@ -1348,11 +1357,7 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
         "plan": plan,
         "coaching": coaching,
         "next_day": next_day.isoformat(),
-        # "Open tomorrow" when closing today, "Open today" when catching up on
-        # yesterday, "Open the next day" further back.
-        "open_next_label": ("Open tomorrow" if next_day == date.today() + timedelta(days=1)
-                            else "Open today" if next_day == date.today()
-                            else "Open the next day"),
+        "open_next_label": open_next_label,
     }
 
 

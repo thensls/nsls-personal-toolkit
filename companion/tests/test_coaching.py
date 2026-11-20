@@ -89,13 +89,28 @@ def test_closing_yesterday_offers_today(setup):
     assert f'href="/?date={TODAY}"' in html and "Open today →" in html
 
 
-def test_a_past_closed_day_offers_the_next_day(setup):
+def test_closing_an_older_day_offers_today_not_the_day_after_it(setup):
     client, vault = setup
     past = (date.today() - timedelta(days=3)).isoformat()
     (vault / "01-daily" / f"{past}.md").write_text("---\nstatus: closed\n---\n" + COACHING)
     html = client.get(f"/?date={past}").get_data(as_text=True)
-    nxt = (date.today() - timedelta(days=2)).isoformat()
-    assert f'href="/?date={nxt}"' in html and "Open the next day →" in html
+    assert f'href="/?date={TODAY}"' in html and "Open today →" in html
+    assert "Open the next day" not in html
+
+
+def test_the_closed_day_offers_the_next_day_top_and_bottom(setup):
+    client, vault = setup
+    _note(vault, "closed")
+    html = client.get("/?closing=1").get_data(as_text=True)
+    assert html.count("Open tomorrow →") == 2
+    assert html.rindex("Open tomorrow →") > html.index("nsls-coaching-body")
+
+
+def test_coaching_says_it_can_be_opened_and_closed(setup):
+    client, vault = setup
+    _note(vault, "active")
+    html = client.get("/?mode=command").get_data(as_text=True)
+    assert "nsls-coaching-toggle" in html and ">Show<" in html and ">Hide<" in html
 
 
 def test_no_coaching_and_no_close_shows_nothing_but_the_slot(setup):

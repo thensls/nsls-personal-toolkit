@@ -13,6 +13,7 @@
     {% elif coaching.label %}
     <span class="nsls-coaching-note">{{ coaching.label }}</span>
     {% endif %}
+    <span class="nsls-coaching-toggle" aria-hidden="true"><span class="nsls-coaching-show">Show</span><span class="nsls-coaching-hide">Hide</span><span class="nsls-coaching-chev">▾</span></span>
   </summary>
   <div class="nsls-coaching-body">
     {% if coaching.state == 'writing' %}
