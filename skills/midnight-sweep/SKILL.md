@@ -145,8 +145,9 @@ session's tools.
 5. **Claude Code and Cowork sessions** in the window: the session tools when
    the surface has them, otherwise `~/.claude/projects/*/` transcripts,
    searched by key word, never read whole. **The builder's own words in a
-   thread count as their word** ("I've recorded the video", "add this to the
-   list for my manager"). **When a session matches a candidate, read its
+   thread count as their word** ("I've recorded the video", "it's on the
+   list for my manager now"). A request ("can you add this?") is not a
+   completion until someone confirms it was done. **When a session matches a candidate, read its
    latest messages, not just the line that matched**: the newest state is
    what counts (a thread that went on to draft the announcement, or was asked
    to host the video, shows the video exists).
