@@ -211,3 +211,22 @@ def test_status_test_ignores_real_pidfile(tmp_path, monkeypatch):
     result = CliRunner().invoke(main, ["status", "--test"])
     assert result.exit_code == 1
     assert "Not running" in result.output
+
+
+def test_test_vault_carries_fake_jira_issues_only(test_vault_at):
+    import json
+    vault = ensure_test_vault()
+    data = json.loads((vault / "50-reference" / "jira-fixture.json").read_text())
+    issues = data["issues"]
+    assert issues and all(i["summary"].startswith("[TEST]") for i in issues)
+    # Fake project keys only, plus one support-desk ticket the exclude list must drop.
+    assert {i["project"] for i in issues} == {"DEMO", "HELP"}
+    assert [i["key"] for i in issues if i["project"] == "HELP"] == ["HELP-0000"]
+
+
+def test_jira_fixture_is_never_overwritten(test_vault_at):
+    vault = ensure_test_vault()
+    f = vault / "50-reference" / "jira-fixture.json"
+    f.write_text('{"issues": []}')
+    ensure_test_vault()
+    assert f.read_text() == '{"issues": []}'

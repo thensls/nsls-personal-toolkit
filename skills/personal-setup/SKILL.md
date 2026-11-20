@@ -182,6 +182,14 @@ get_me()
 - **Detected**: "Your Asana workspace GID is `XXXX` and your user GID is `XXXX` — correct?"
 - **Not detected**: "Asana integration is only needed for /open-day and /close-day task sync. Want to skip this for now?" If they want to set it up, walk them through finding their GIDs manually.
 
+### Where your tasks live
+
+Ask once: "Where do your work tasks live: Asana, a GitHub project board, or Jira?" Write the answer to the builder profile:
+
+- **Asana:** `task_board: asana` (the default; the step above covers it).
+- **GitHub project:** `task_board: github` and `task_board_github: <owner>/<project-number>`.
+- **Jira:** `task_board: jira`, `task_board_jira: <site>` (NSLS's is `societyleadership.atlassian.net`) and `task_board_jira_exclude: [HELP]`. Then tell them to connect **Atlassian** in claude.ai Settings › Connectors and sign in with their work account, and to set the connector's write tools to "Needs approval" or off: open-day only reads.
+
 ### Builder Email and GitHub Username
 
 Both may already be set — the org `/setup` collects and validates them — so
