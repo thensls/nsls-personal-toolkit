@@ -75,6 +75,18 @@
         }
       });
 
+      // The coaching section's open/closed state is read at SWAP time, not
+      // when the refresh starts: a click while the request is in flight must
+      // win over the state the refresh began with.
+      let reloadingMain = false, mainCoachingOpenAtSwap = null;
+      document.body.addEventListener("htmx:beforeSwap", function (e) {
+        const t = e.detail && e.detail.target;
+        if (reloadingMain && t && t.tagName === "MAIN") {
+          const d = t.querySelector("#coaching-slot details");
+          mainCoachingOpenAtSwap = d ? d.open : null;
+        }
+      });
+
       function reloadMain(force) {
         if (Date.now() - lastReload < RELOAD_DEBOUNCE_MS) return;
         if (!force) {
@@ -91,8 +103,8 @@
           if (Date.now() < suppressNextReload) return;
         }
         lastReload = Date.now();
-        // An expanded coaching section stays expanded across the refresh.
-        const coachingWasOpen = !!document.querySelector("#coaching-slot details[open]");
+        reloadingMain = true;
+        mainCoachingOpenAtSwap = null;
 
         // Never make the user lose what they're typing, and never show a scary
         // confirm. Snapshot any in-progress (unsaved) textarea AND text-input
@@ -121,9 +133,12 @@
           select: "main",
           swap: "outerHTML",
         }).then(function () {
-          if (coachingWasOpen) {
+          reloadingMain = false;
+          // Keep the coaching section the way the builder left it.
+          if (mainCoachingOpenAtSwap !== null) {
             const d = document.querySelector("#coaching-slot details");
-            if (d) d.open = true;
+            if (d) d.open = mainCoachingOpenAtSwap;
+            mainCoachingOpenAtSwap = null;
           }
           if (!Object.keys(dirty).length) return;
           document.querySelectorAll("main textarea, main input[type=text]").forEach((t, i) => {
