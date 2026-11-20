@@ -31,7 +31,7 @@
         </span>
         <span class="nsls-seg">
           {% for lvl in [0, 25, 50, 75, 100] %}
-          <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl and not (guess and lvl == 0) %}is-current{% elif lvl < item.progress %}is-below{% endif %}{% if guess and 0 < lvl <= guess %} is-claude{% if lvl == guess %} is-claude-current{% endif %}{% endif %}"
+          <button class="{% if item.progress == lvl and lvl == 100 %}is-current-done{% elif item.progress == lvl and not (guess and lvl == 0) %}is-current{% elif lvl < item.progress %}is-below{% endif %}{% if guess and lvl <= guess %} is-claude{% if lvl == guess %} is-claude-current{% endif %}{% endif %}"
                   hx-post="/set-progress"
                   hx-vals='{"section":"{{ section }}","index":{{ item.index }},"level":{{ lvl }}}'
                   hx-target="#task-table" hx-swap="outerHTML" hx-sync="#task-table:replace"
