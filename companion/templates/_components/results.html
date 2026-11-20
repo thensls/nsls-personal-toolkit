@@ -1,7 +1,7 @@
 <div class="max-w-2xl mx-auto">
   <header class="nsls-closed-head nsls-closed-head--next mb-4">
     <h2 class="font-semibold"><span class="nsls-closed-flag">Day closed</span> · {{ today_pretty }}{% if test_mode %}<span class="nsls-test-flag">Test</span>{% endif %}</h2>
-    <a class="nsls-btn-gold nsls-open-next" href="/?date={{ next_day }}">{{ open_next_label }} →</a>
+    {% if close_step == "seeding" %}<span class="nsls-btn-gold nsls-open-next is-waiting" aria-disabled="true"><span class="nsls-spinner" aria-hidden="true"></span>Setting up tomorrow…</span>{% else %}<a class="nsls-btn-gold nsls-open-next" href="/?date={{ next_day }}">{{ open_next_label }} →</a>{% endif %}
   </header>
 
   {% with coaching_open=true %}{% include "_components/coaching.html" %}{% endwith %}
@@ -64,6 +64,6 @@
   {# The same move again at the end of the read: the builder's attention is
      here, so the next day is one click away. #}
   <div class="nsls-open-next-foot">
-    <a class="nsls-btn-gold nsls-open-next" href="/?date={{ next_day }}">{{ open_next_label }} →</a>
+    {% if close_step == "seeding" %}<span class="nsls-btn-gold nsls-open-next is-waiting" aria-disabled="true"><span class="nsls-spinner" aria-hidden="true"></span>Setting up tomorrow…</span>{% else %}<a class="nsls-btn-gold nsls-open-next" href="/?date={{ next_day }}">{{ open_next_label }} →</a>{% endif %}
   </div>
 </div>

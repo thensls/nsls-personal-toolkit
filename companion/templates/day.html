@@ -96,6 +96,7 @@
 
 <div class="mt-6">{% with position='bottom' %}{% include "_components/command_banner.html" %}{% endwith %}</div>
 {% with screen='command' %}{% include "_components/callouts.html" %}{% endwith %}
+{% if close_ready and not close_ready_stale %}{% include "_components/closing_overlay.html" %}{% else %}<div id="closing-overlay"></div>{% endif %}
 
 {% endif %}
 </div>
