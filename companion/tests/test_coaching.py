@@ -164,3 +164,11 @@ def test_page_refreshes_the_coaching_section_on_a_note_change(setup):
     _note(vault, "active")
     html = client.get("/?mode=command").get_data(as_text=True)
     assert "function refreshCoaching(path)" in html and "refreshCoaching(path);" in html
+
+
+def test_a_page_refresh_keeps_coaching_as_left_at_swap_time(setup):
+    client, vault = setup
+    _note(vault, "active")
+    html = client.get("/?mode=command").get_data(as_text=True)
+    assert "mainCoachingOpenAtSwap = d ? d.open : null" in html
+    assert "coachingWasOpen" not in html
