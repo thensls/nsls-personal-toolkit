@@ -118,6 +118,27 @@ status: planning
 """
 
 
+# Made-up Jira issues: project DEMO, every summary marked [TEST], due dates as
+# days from today so the file never goes stale. One done yesterday (should
+# count as done, not suggested) and one in an excluded support project (HELP,
+# should never appear).
+_JIRA_FIXTURE = """{
+  "note": "Fake Jira issues for open-day test mode only. Never real data.",
+  "issues": [
+    {"key": "DEMO-101", "summary": "[TEST] Fix the enrollment report totals", "status": "In Progress", "statusCategory": "In Progress", "priority": "High", "due_in_days": -2, "updated_days_ago": 1, "project": "DEMO"},
+    {"key": "DEMO-102", "summary": "[TEST] Ship the chapter dashboard filter", "status": "To Do", "statusCategory": "To Do", "priority": "High", "due_in_days": 0, "updated_days_ago": 3, "project": "DEMO"},
+    {"key": "DEMO-103", "summary": "[TEST] Review the data dictionary draft", "status": "In Review", "statusCategory": "In Progress", "priority": "Medium", "due_in_days": 1, "updated_days_ago": 0, "project": "DEMO"},
+    {"key": "DEMO-104", "summary": "[TEST] Add the spring cohort to the weekly export", "status": "To Do", "statusCategory": "To Do", "priority": "Medium", "due_in_days": 4, "updated_days_ago": 6, "project": "DEMO"},
+    {"key": "DEMO-105", "summary": "[TEST] Blocked: waiting on the warehouse access request", "status": "Blocked", "statusCategory": "In Progress", "priority": "Medium", "due_in_days": null, "updated_days_ago": 9, "project": "DEMO"},
+    {"key": "DEMO-106", "summary": "[TEST] Clean up old Snowflake views", "status": "To Do", "statusCategory": "To Do", "priority": "Low", "due_in_days": null, "updated_days_ago": 30, "project": "DEMO"},
+    {"key": "DEMO-107", "summary": "[TEST] Document the invitations pipeline", "status": "To Do", "statusCategory": "To Do", "priority": "Low", "due_in_days": 10, "updated_days_ago": 2, "project": "DEMO"},
+    {"key": "DEMO-108", "summary": "[TEST] Answer the school's data request", "status": "Done", "statusCategory": "Done", "priority": "High", "due_in_days": -1, "updated_days_ago": 1, "resolved_days_ago": 1, "project": "DEMO"},
+    {"key": "HELP-0000", "summary": "[TEST] Support ticket that must never be shown", "status": "Open", "statusCategory": "To Do", "priority": "High", "due_in_days": 0, "updated_days_ago": 0, "project": "HELP"}
+  ]
+}
+"""
+
+
 def ensure_test_vault(seed_today: bool = True) -> Path:
     """Create + seed the test vault and return its path. Idempotent.
 
@@ -145,6 +166,13 @@ def ensure_test_vault(seed_today: bool = True) -> Path:
     if not has_habit:
         habits.parent.mkdir(parents=True, exist_ok=True)
         habits.write_text(_SAMPLE_HABITS, encoding="utf-8", newline="")
+
+    # Fake Jira issues for `open day -t` with `task_board: jira`: open-day
+    # reads this file instead of the connector, in the test vault only.
+    fixture = vault / "50-reference" / "jira-fixture.json"
+    if not fixture.exists():
+        fixture.parent.mkdir(parents=True, exist_ok=True)
+        fixture.write_text(_JIRA_FIXTURE, encoding="utf-8", newline="")
 
     if seed_today:
         today_note = vault / "01-daily" / f"{date.today().isoformat()}.md"
