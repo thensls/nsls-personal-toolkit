@@ -226,3 +226,5 @@ html[data-theme="dark"] .nsls-coach-dot { border-color: #0B111B; box-shadow: 0 1
 /* Claude's coaching */
 html[data-theme="dark"] .nsls-coaching { border-color: var(--nsls-hairline); border-left-color: var(--nsls-gold); box-shadow: none; }
 html[data-theme="dark"] .nsls-open-next { color: var(--nsls-on-gold); }
+html[data-theme="dark"] .nsls-closing-overlay { background: rgba(0, 0, 0, 0.5); }
+html[data-theme="dark"] .nsls-closing-card { box-shadow: 0 24px 60px -20px rgba(0,0,0,0.9); border: 1px solid var(--nsls-disc-empty); border-top: 4px solid var(--nsls-gold); }

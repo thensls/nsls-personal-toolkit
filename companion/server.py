@@ -1370,6 +1370,10 @@ def _build_day_context(app, daily_md: str, top_3: list, bonus: list, today: str)
         "is_today": is_today,
         "day_status": fm.get("status", ""),
         "close_ready": close_ready,
+        # close-day's stage while it runs (reading / writing / seeding), for
+        # the centered progress card; "seeding" also holds "Open tomorrow"
+        # until tomorrow's suggestions are written.
+        "close_step": fm.get("close_step", ""),
         # close_ready alone means "builder clicked done" — NOT "a close is
         # running". When stale, the banner drops the spinner for a calm nudge.
         "close_ready_stale": close_ready_stale,
@@ -1579,7 +1583,7 @@ def create_app(vault_path: str) -> Flask:
         # The inline timer self-heals a tab left open on the spinner: if no
         # close lands within the window, it re-renders into the calm state.
         recheck_ms = CLOSE_READY_STALE_SECONDS * 1000 + 1000
-        return (
+        banner = (
             '<div class="nsls-banner"><span class="nsls-spinner" aria-hidden="true"></span>'
             '<span class="font-medium">Claude is closing your day…</span> '
             "This page will show your closing summary when it's done. "
@@ -1589,6 +1593,11 @@ def create_app(vault_path: str) -> Flask:
             "if(window.__toolkitReloadMain)window.__toolkitReloadMain(true);else location.reload();},"
             f"{recheck_ms});}})();</script></div>"
         )
+        # The centered progress card, swapped in by id (out of band) so the
+        # click shows it at once; later renders carry it from day.html.
+        overlay = render_template("_components/closing_overlay.html",
+                                  close_step="", oob=True)
+        return banner + overlay
 
     @app.route("/listener-heartbeat", methods=["POST"])
     def listener_heartbeat():

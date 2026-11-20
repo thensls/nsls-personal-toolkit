@@ -1,0 +1,20 @@
+{# Centered progress while Claude closes the day (after "I'm done — close my
+   day"). close-day reports its stage in the note's frontmatter as
+   `close_step:` (reading → writing → seeding); every note change re-renders
+   the page, so the bar moves on its own. No stage yet: an indeterminate bar.
+   The page flips to the closed day when the note says `status: closed`.
+   `oob` marks the copy the /close-ready click returns, swapped in by id. #}
+{% set steps = {
+  "reading": (25, "Reading your day: calendar, messages and meetings"),
+  "writing": (60, "Writing your work log, reflection and coaching"),
+  "seeding": (90, "Setting up tomorrow's suggestions"),
+} %}
+{% set step = steps.get(close_step or "", (0, "Starting…")) %}
+<div id="closing-overlay" class="nsls-closing-overlay" role="status" aria-live="polite"{% if oob %} hx-swap-oob="true"{% endif %}>
+  <div class="nsls-closing-card">
+    <h2 class="nsls-closing-title">Claude is closing your day</h2>
+    <div class="nsls-closing-bar{% if not step[0] %} is-indeterminate{% endif %}"><span{% if step[0] %} style="width: {{ step[0] }}%"{% endif %}></span></div>
+    <p class="nsls-closing-step">{{ step[1] }}</p>
+    <p class="nsls-subtle nsls-closing-note">Usually two or three minutes. Your summary and “Open tomorrow” appear here when it's done.</p>
+  </div>
+</div>

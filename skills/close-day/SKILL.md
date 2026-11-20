@@ -164,6 +164,14 @@ If `$TC` comes back **empty**, the companion genuinely can't run here — surfac
 
 6. After they say done, re-read the target date's daily note to pick up their changes, then proceed to Step 1 — synthesizing **for the target date only**.
 
+**Report your progress to the companion as you go.** After the click, the Command Center shows a centered progress card that moves with a `close_step:` key in the target note's frontmatter. Set it with a one-line frontmatter edit at each stage (never a whole-file rewrite):
+- `close_step: reading` as soon as the close starts (Step 0.6 and Step 1);
+- `close_step: writing` when you start drafting (Step 3);
+- `close_step: seeding` in the same write that sets `status: closed` (Step 5), so the closed page holds its "Open tomorrow" button ("Setting up tomorrow…") until tomorrow's note has its suggestions;
+- **remove `close_step`** once Step 8 has seeded tomorrow. Never leave it behind: while it says `seeding`, the closed day can't open tomorrow.
+
+In a chat-only close (no companion) these keys are harmless; set them anyway.
+
 ### Step 0.6: Read the day's captured signal
 
 Read the **target date's** daily note (`$OBSIDIAN_VAULT_PATH/01-daily/<target-date>.md` — Step 0's date, which is today by default but a past date when catching up) and pull in everything the builder recorded during the day — whether they used the companion or filled the note by hand. **This is a read; the skill never authors the companion-written sections.** In CLI-only use these sections are simply absent, and this step degrades with no behavior change.
@@ -1273,7 +1281,7 @@ This matters because `scripts/hrv_band.py` builds the baseline band by reading `
 
 If Apple Health returned an error for the target date (no data synced yet), still ensure the frontmatter block exists, write the goal keys from whatever evidence exists (workouts, morning cue), and leave the numeric health keys you couldn't source as `null` rather than dropping the block.
 
-**Set `status: closed` in the note's YAML frontmatter** as part of this write — and make this the LAST thing that changes: write the full note content (including `## Closing Note`) in the same write or before it, because the status flip is what makes the builder's open browser tab re-render into the Results view, and the Closing Note must already be there when it does. Also REMOVE any `close_ready:` key in the same write (it was the I'm-done click signal; leaving it would make the next close's listener fire instantly). `status` (`planning | active | closed`) is the single signal the web companion reads to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
+**Set `status: closed` in the note's YAML frontmatter** as part of this write — and make this the LAST thing that changes: write the full note content (including `## Closing Note`) in the same write or before it, because the status flip is what makes the builder's open browser tab re-render into the Results view, and the Closing Note must already be there when it does. Also set `close_step: seeding` (see Step 0.5) and REMOVE any `close_ready:` key in the same write (it was the I'm-done click signal; leaving it would make the next close's listener fire instantly). `status` (`planning | active | closed`) is the single signal the web companion reads to pick a mode — closing the day means `status: closed`, which renders the read-only Results view. If the note has no frontmatter yet (e.g. it was created before this contract, or never went through open-day), add a frontmatter block with `status: closed`; if it already has frontmatter, replace the `status:` value (don't duplicate the key). Never infer the closed state from section presence — write the status explicitly.
 
 ### Step 6: Update project session logs
 
@@ -1553,6 +1561,8 @@ This seeds the next day with the AI-suggested priorities so the builder sees the
 If the file already exists (user or `/open-day` already created it), do NOT overwrite. Instead, check if it has the AI suggestion sections (`### AI Suggested: …`). If not, insert them as `###` subsections **inside** `## Morning Check-in` — specifically, between the `## Morning Check-in` heading and the `### My Top 3` heading (or at the end of the section if `### My Top 3` doesn't exist yet). The companion's parser only reads AI suggestions from within `## Morning Check-in`, so placing them anywhere else makes them invisible.
 
 Do the same for coaching: if the existing file has no `## Coaching` section, add the one from the template above, as its own `##` section before `## Morning Check-in`. If it already has one, leave it.
+
+**Then remove `close_step` from today's note** (the target date's): tomorrow is ready, and the closed page's "Open tomorrow" button comes back.
 
 ### Step 9: Confirm
 
