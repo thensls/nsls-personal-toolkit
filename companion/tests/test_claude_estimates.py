@@ -69,6 +69,9 @@ def test_command_center_shows_the_estimate_light_blue_with_a_legend(setup):
     html = client.get("/?mode=command").get_data(as_text=True)
     assert "nsls-disc--claude" in html and 'style="--p: 50"' in html
     assert "is-claude-current" in html
+    # The bar fills from 0 up to the estimate, like the builder's own fill.
+    row = html[html.index('data-text="Alpha"'):html.index('data-text="Bravo"')]
+    assert row.count(" is-claude") - row.count(" is-claude-current") == 3  # 0, 25, 50
     assert "Light blue is Claude's estimate" in html
     assert "c:50" not in html
 
